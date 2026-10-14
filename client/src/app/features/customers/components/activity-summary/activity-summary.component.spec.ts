@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { TestBed } from '@angular/core/testing';
-import { ComponentRef } from '@angular/core';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentRef, signal } from '@angular/core';
 import { ActivitySummaryComponent } from './activity-summary.component';
 import { AppStateService } from '@core/services/app-state.service';
-import { Customer } from '@models';
+import { CommodityConversion, Customer, Ticket } from '@models';
 
 /**
  * The summary is open by default, and collapsing it has to STICK — including when the user moves to
@@ -83,5 +83,90 @@ describe('ActivitySummaryComponent — collapsible', () => {
   it('defaults to open when the stored value is missing or unrecognised', () => {
     localStorage.setItem(KEY, 'not-a-boolean');
     expect(createComponent().component.expanded()).toBe(true);
+  });
+});
+
+/**
+ * The unapplied-ticket sentence converts each ticket's dock pounds to bushels through the commodity
+ * conversion list (GNP024). Rendered through the real template, with the conversions as a signal
+ * so the list can be replaced the way app state replaces it.
+ */
+describe('ActivitySummaryComponent — unapplied ticket bushels', () => {
+  const conversions = signal<CommodityConversion[]>([]);
+  let fixture: ComponentFixture<ActivitySummaryComponent>;
+
+  const summary = (): string =>
+    (fixture.nativeElement.querySelector('#activity-summary-body')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+
+  /** An unapplied ticket from long enough ago that it is not also a recent spot load. */
+  const ticket = (over: Partial<Ticket>): Ticket =>
+    ({ id: 1, farmId: 'F1', ticketNumber: '1', date: '2025-01-15', grossWeight: 0, tareWeight: 0, netWeight: 0,
+      isApplied: false, isActive: true, ...over }) as Ticket;
+
+  function render(tickets: Ticket[]): void {
+    fixture = TestBed.createComponent(ActivitySummaryComponent);
+    fixture.componentRef.setInput('customer', makeCustomer(1));
+    fixture.componentRef.setInput('tickets', tickets);
+    fixture.detectChanges();
+  }
+
+  beforeEach(() => {
+    localStorage.removeItem(KEY);
+    conversions.set([]);
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [{ provide: AppStateService, useValue: { harvestWindows: signal([]), commodityConversions: conversions } }],
+    });
+  });
+
+  it('totals the unapplied tickets in bushels, skipping products with no conversion', () => {
+    conversions.set([{ commodityCode: ' yc ', lbsPerUnit: 56 }, { commodityCode: 'SB', lbsPerUnit: 0 }]);
+    render([
+      ticket({ id: 1, productCode: 'YC', appliedDockQuantity: 56000 }),
+      ticket({ id: 2, productCode: 'HRW', appliedDockQuantity: 60000 }),   // not in the list: dropped
+      ticket({ id: 3, productCode: 'SB', appliedDockQuantity: 60000 }),    // zero lbs/bu: dropped
+    ]);
+
+    expect(summary()).toContain('3 unapplied tickets (1,000 bushels) not yet matched to a contract.');
+  });
+
+  it('leaves the bushel figure out while the conversions have not loaded', () => {
+    render([ticket({ productCode: 'YC', appliedDockQuantity: 56000 })]);
+
+    expect(summary()).toContain('1 unapplied ticket not yet matched to a contract.');
+  });
+
+  it('re-converts when the conversion list is replaced by one of the same length', () => {
+    conversions.set([{ commodityCode: 'YC', lbsPerUnit: 56 }]);
+    render([ticket({ productCode: 'YC', appliedDockQuantity: 56000 })]);
+    expect(summary()).toContain('1 unapplied ticket (1,000 bushels) not yet matched');
+
+    conversions.set([{ commodityCode: 'YC', lbsPerUnit: 50 }]);
+    fixture.detectChanges();
+
+    expect(summary()).toContain('1 unapplied ticket (1,120 bushels) not yet matched');
+  });
+
+  it('builds the conversion lookup once per conversion list, not once per ticket', () => {
+    let builds = 0;
+    const list: CommodityConversion[] = [{ commodityCode: 'YC', lbsPerUnit: 56 }];
+    Object.defineProperty(list, 'map', {
+      value: function (this: CommodityConversion[], ...args: Parameters<CommodityConversion[]['map']>) {
+        builds++;
+        return Array.prototype.map.apply(this, args);
+      },
+    });
+    conversions.set(list);
+    render([
+      ticket({ id: 1, productCode: 'YC', appliedDockQuantity: 56000 }),
+      ticket({ id: 2, productCode: 'YC', appliedDockQuantity: 112000 }),
+    ]);
+    expect(summary()).toContain('2 unapplied tickets (3,000 bushels)');
+
+    fixture.componentRef.setInput('tickets', [ticket({ id: 3, productCode: 'YC', appliedDockQuantity: 168000 })]);
+    fixture.detectChanges();
+
+    expect(summary()).toContain('1 unapplied ticket (3,000 bushels)');
+    expect(builds).toBe(1);
   });
 });

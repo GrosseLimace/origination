@@ -5,7 +5,7 @@ import { MsalService } from '@azure/msal-angular';
 import { CustomerPrintReportComponent } from './customer-print-report.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
-import { Commodity, Contract, ContractPricingLine, Customer, PlantingIntention, StoredGrain, Ticket } from '@models';
+import { Commodity, CommodityConversion, Contract, ContractPricingLine, Customer, PlantingIntention, StoredGrain, Ticket } from '@models';
 
 // Behaviour safety net for the Producer Summary Report dialog ahead of its OnPush conversion. Pins,
 // through the signal inputs, the sidebar checkboxes and the rendered preview:
@@ -479,6 +479,52 @@ describe('CustomerPrintReportComponent', () => {
   });
 
   // ── Unapplied tickets ─────────────────────────────────────────────────────
+
+  it('re-converts unapplied bushels when the conversion list is replaced by one of the same length', () => {
+    appState.commodityConversions.set([{ commodityCode: 'YC', lbsPerUnit: 56 }]);
+    open({ tickets: [makeTicket({ id: 1, productCode: 'YC', appliedDockQuantity: 168000, date: '2026-09-01' })] });
+    expect(sectionRows('Unapplied Tickets')[0][2]).toBe('3,000 bu');
+
+    appState.commodityConversions.set([{ commodityCode: 'YC', lbsPerUnit: 50 }]);
+    fixture.detectChanges();
+    expect(sectionRows('Unapplied Tickets')[0][2]).toBe('3,360 bu');
+
+    // An empty list, and a list without this product, both fall back to pounds.
+    appState.commodityConversions.set([]);
+    fixture.detectChanges();
+    expect(sectionRows('Unapplied Tickets')[0][2]).toBe('168,000 lbs');
+
+    appState.commodityConversions.set([{ commodityCode: 'HRW', lbsPerUnit: 60 }]);
+    fixture.detectChanges();
+    expect(sectionRows('Unapplied Tickets')[0][2]).toBe('168,000 lbs');
+  });
+
+  it('builds the conversion lookup once per conversion list, not once per product', () => {
+    let builds = 0;
+    const conversions: CommodityConversion[] = [{ commodityCode: 'YC', lbsPerUnit: 56 }, { commodityCode: 'HRW', lbsPerUnit: 60 }];
+    Object.defineProperty(conversions, 'map', {
+      value: function (this: CommodityConversion[], ...args: Parameters<CommodityConversion[]['map']>) {
+        builds++;
+        return Array.prototype.map.apply(this, args);
+      },
+    });
+    appState.commodityConversions.set(conversions);
+    open({
+      tickets: [
+        makeTicket({ id: 1, productCode: 'YC', appliedDockQuantity: 56000, date: '2026-09-01' }),
+        makeTicket({ id: 2, productCode: 'HRW', appliedDockQuantity: 60000, date: '2026-09-01' }),
+      ],
+    });
+
+    expect(sectionRows('Unapplied Tickets').map(r => r[2])).toEqual(['1,000 bu', '1,000 bu']);
+    expect(builds).toBe(1);
+
+    // New tickets, same conversions: the lookup is reused.
+    ref.setInput('tickets', [makeTicket({ id: 3, productCode: 'YC', appliedDockQuantity: 112000, date: '2026-09-02' })]);
+    fixture.detectChanges();
+    expect(sectionRows('Unapplied Tickets').map(r => r[2])).toEqual(['2,000 bu']);
+    expect(builds).toBe(1);
+  });
 
   it('summarises unapplied tickets per product: bushels when convertible, quality averages, wheat-only protein', () => {
     appState.commodityConversions.set([{ commodityCode: 'YC', lbsPerUnit: 56 }]);

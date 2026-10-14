@@ -47,7 +47,11 @@ export class ContractsTableComponent {
   private readonly usageTracking = inject(UsageTrackingService);
   private readonly cdr = inject(ChangeDetectorRef);
 
-  private _conversionMap: Map<string, number> | null = null;
+  /** Commodity code → lbs per bushel. Derived from the signal, so any replacement of the conversion
+   *  list rebuilds it (it used to be cached until the list's length changed, and reset by hand in
+   *  the cache-invalidation effect below). */
+  private readonly _conversionMap = computed(() =>
+    new Map(this.appState.commodityConversions().map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit])));
 
   public isLoading = input(false);
   public contracts = input<Contract[]>([]);
@@ -162,7 +166,6 @@ export class ContractsTableComponent {
       this.appState.commodityConversions();
       this._deliveryStatsCache.clear();
       this._statusCache.clear();
-      this._conversionMap = null;
     });
 
     // Reset expansion + search and apply any deep-link openContractId only when the
@@ -672,13 +675,7 @@ export class ContractsTableComponent {
     const code = (productCode || '').trim().toUpperCase();
     if (!code) return null;
 
-    const conversions = this.appState.commodityConversions();
-    if (conversions.length === 0) return null;
-
-    if (!this._conversionMap || this._conversionMap.size !== conversions.length) {
-      this._conversionMap = new Map(conversions.map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit]));
-    }
-    const lbs = this._conversionMap.get(code);
+    const lbs = this._conversionMap().get(code);
     return lbs && lbs > 0 ? lbs : null;
   }
 

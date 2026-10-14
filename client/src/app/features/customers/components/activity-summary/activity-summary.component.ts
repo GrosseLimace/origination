@@ -1,4 +1,4 @@
-import { Component, input, effect, inject, signal, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import { Component, input, effect, inject, signal, computed, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, HarvestWindow } from '@models';
 import { AppStateService } from '@core/services/app-state.service';
@@ -19,7 +19,11 @@ import { parseServerTime } from '@shared/utils/server-time';
 export class ActivitySummaryComponent {
   private readonly appState = inject(AppStateService);
   private readonly cdr = inject(ChangeDetectorRef);
-  private _conversionMap: Map<string, number> | null = null;
+
+  /** Commodity code → lbs per bushel. Derived from the signal, so any replacement of the conversion
+   *  list rebuilds it (it used to be cached until the list's length changed). */
+  private readonly _conversionMap = computed(() =>
+    new Map(this.appState.commodityConversions().map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit])));
 
   public customer = input.required<Customer>();
   public contracts = input<Contract[]>([]);
@@ -596,12 +600,7 @@ export class ActivitySummaryComponent {
   private _lbsPerBushel(productCode: string | undefined | null): number | null {
     const code = (productCode || '').trim().toUpperCase();
     if (!code) return null;
-    const conversions = this.appState.commodityConversions();
-    if (conversions.length === 0) return null;
-    if (!this._conversionMap || this._conversionMap.size !== conversions.length) {
-      this._conversionMap = new Map(conversions.map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit]));
-    }
-    const lbs = this._conversionMap.get(code);
+    const lbs = this._conversionMap().get(code);
     return lbs && lbs > 0 ? lbs : null;
   }
 

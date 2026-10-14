@@ -506,17 +506,15 @@ export class CustomerPrintReportComponent {
 
   // --- Delivery / status / conversion logic mirrors contracts-table.component.ts ---
 
-  private _conversionMap: Map<string, number> | null = null;
+  /** Commodity code → lbs per bushel. Derived from the signal, so any replacement of the conversion
+   *  list rebuilds it (it used to be cached until the list's length changed). */
+  private readonly _conversionMap = computed(() =>
+    new Map(this.appState.commodityConversions().map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit])));
 
   private _lookupLbsPerBushel(productCode: string | undefined | null): number | null {
     const code = (productCode || '').trim().toUpperCase();
     if (!code) return null;
-    const conversions = this.appState.commodityConversions();
-    if (conversions.length === 0) return null;
-    if (!this._conversionMap || this._conversionMap.size !== conversions.length) {
-      this._conversionMap = new Map(conversions.map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit]));
-    }
-    const lbs = this._conversionMap.get(code);
+    const lbs = this._conversionMap().get(code);
     return lbs && lbs > 0 ? lbs : null;
   }
 
