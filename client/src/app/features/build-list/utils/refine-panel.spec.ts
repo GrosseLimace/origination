@@ -45,13 +45,17 @@ describe('hasAnyRefinement', () => {
     expect(hasAnyRefinement({ avgTestWeightUnder: 0 })).toBe(true);
   });
 
-  // Pins CURRENT behaviour (moved verbatim from the page): the DP refinements are counted by
-  // countActiveRefinements but not seen here, so a saved list filtered only on DP shows no
-  // "filtered" marker. Recorded rather than fixed — this refactor must not change behaviour.
-  it('does not see the DP refinements (unlike countActiveRefinements)', () => {
-    const r: RefinementFilters = { hasDpContracts: true, dpDaysOver: 90, dpBushelsOver: 1, dpChargesOver: 1 };
-    expect(hasAnyRefinement(r)).toBe(false);
-    expect(countActiveRefinements(r)).toBe(4);
+  // A saved list filtered only on DP used to show no "Refined" marker: these four were counted by
+  // countActiveRefinements but not seen here.
+  it.each([
+    [{ hasDpContracts: true }], [{ dpDaysOver: 90 }], [{ dpBushelsOver: 1 }], [{ dpChargesOver: 1 }],
+  ] as [RefinementFilters][])('sees the DP refinement %o, like countActiveRefinements', r => {
+    expect(hasAnyRefinement(r)).toBe(true);
+    expect(countActiveRefinements(r)).toBe(1);
+  });
+
+  it('ignores DP thresholds left at zero or unset', () => {
+    expect(hasAnyRefinement({ hasDpContracts: false, dpDaysOver: 0, dpBushelsOver: null, dpChargesOver: 0 } as RefinementFilters)).toBe(false);
   });
 });
 

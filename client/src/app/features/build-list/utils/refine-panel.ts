@@ -84,6 +84,12 @@ export function hasAnyRefinement(filters: RefinementFilters): boolean {
     (filters.storageDaysOver != null && filters.storageDaysOver > 0) ||
     (filters.storageQuantityOver != null && filters.storageQuantityOver > 0) ||
     (filters.storageReceivableOver != null && filters.storageReceivableOver > 0) ||
+    // DP refinements, as countActiveRefinements counts them; without these a saved list filtered
+    // only on DP showed no "Refined" marker.
+    filters.hasDpContracts ||
+    (filters.dpBushelsOver != null && filters.dpBushelsOver > 0) ||
+    (filters.dpDaysOver != null && filters.dpDaysOver > 0) ||
+    (filters.dpChargesOver != null && filters.dpChargesOver > 0) ||
     filters.plantingYear != null || filters.irrigatedOnly || filters.drylandOnly || filters.doubleCropOnly ||
     (filters.plantingAcresOver != null && filters.plantingAcresOver > 0) ||
     (filters.grainOnFarmBushelsOver != null && filters.grainOnFarmBushelsOver > 0) ||
