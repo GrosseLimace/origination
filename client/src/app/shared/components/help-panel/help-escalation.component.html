@@ -1,10 +1,13 @@
 <section class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-4 flex flex-col gap-3" aria-labelledby="help-escalation-title">
   <div>
     <h3 id="help-escalation-title" class="text-[15px] font-semibold text-gray-900 dark:text-white">Still need help?</h3>
-    <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">These details help support find the problem quickly. Copy them into your request.</p>
+    <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+      @if (helpDeskUrl) { Submit a help desk ticket. These steps copy everything support needs into it. }
+      @else { These details help support find the problem quickly. Copy them into your request. }
+    </p>
   </div>
 
-  <dl class="rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 divide-y divide-gray-200 dark:divide-gray-700 text-sm">
+  <dl class="rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 divide-y divide-gray-200 dark:divide-gray-700 text-sm" aria-label="Support details">
     @for (row of rows(); track row.label) {
       <div class="px-3 py-1.5 grid grid-cols-[7.5rem_minmax(0,1fr)] gap-2">
         <dt class="text-gray-500 dark:text-gray-400">{{ row.label }}</dt>
@@ -21,27 +24,71 @@
     </label>
   }
 
-  <div class="flex flex-wrap items-center gap-2">
-    <button type="button" (click)="copy()"
-      class="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm font-medium text-white bg-scoular-blue-medium hover:bg-scoular-blue-dark dark:bg-[#006BA6] dark:hover:bg-scoular-blue-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue focus-visible:ring-offset-1">
+  @if (helpDeskUrl) {
+    <!-- ServiceNow form walk-through. Copy-and-paste rather than prefilling: nothing goes in the URL,
+         and the copies survive a ServiceNow sign-in redirect. -->
+    <ol class="flex flex-col gap-3 text-sm text-gray-700 dark:text-gray-300" aria-label="Submit a help desk ticket">
+      <li class="flex gap-2">
+        <span class="shrink-0 w-5 h-5 rounded-full bg-scoular-blue/10 dark:bg-scoular-blue/20 text-scoular-blue-medium dark:text-[#7CC4EC] text-xs font-semibold flex items-center justify-center">1</span>
+        <div class="min-w-0">
+          <a [href]="helpDeskUrl" target="_blank" rel="noopener noreferrer" (click)="openedHelpDesk()"
+            class="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm font-medium text-white bg-scoular-blue-medium hover:bg-scoular-blue-dark dark:bg-[#006BA6] dark:hover:bg-scoular-blue-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue focus-visible:ring-offset-1">
+            Open ServiceNow
+            <app-help-icon name="external-link" [size]="14" />
+            <span class="sr-only">(opens in a new tab)</span>
+          </a>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">It uses your Scoular sign-in. If it opens on the portal home page instead of the form, click the button again.</p>
+        </div>
+      </li>
+      <li class="flex gap-2">
+        <span class="shrink-0 w-5 h-5 rounded-full bg-scoular-blue/10 dark:bg-scoular-blue/20 text-scoular-blue-medium dark:text-[#7CC4EC] text-xs font-semibold flex items-center justify-center">2</span>
+        <p>For <strong class="font-semibold text-gray-900 dark:text-white">Please choose a topic</strong>, pick <strong class="font-semibold text-gray-900 dark:text-white">{{ helpDeskTopic }}</strong>.</p>
+      </li>
+      <li class="flex gap-2">
+        <span class="shrink-0 w-5 h-5 rounded-full bg-scoular-blue/10 dark:bg-scoular-blue/20 text-scoular-blue-medium dark:text-[#7CC4EC] text-xs font-semibold flex items-center justify-center">3</span>
+        <div class="min-w-0 flex-1">
+          <label for="help-ticket-summary"><strong class="font-semibold text-gray-900 dark:text-white">Short Description</strong> — what's wrong, in a few words (optional)</label>
+          <input id="help-ticket-summary" type="text" autocomplete="off" maxlength="100" [value]="summary()" (input)="onSummary($event)"
+            placeholder="e.g. Producer missing from my list"
+            class="mt-1 w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-blue" />
+          <button type="button" (click)="copy('short')"
+            class="mt-1.5 inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm font-medium border border-scoular-blue/40 text-scoular-blue-medium dark:text-[#7CC4EC] hover:bg-scoular-blue/5 dark:hover:bg-scoular-blue/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue">
+            <app-help-icon [name]="copied() === 'short' ? 'check-circle' : 'copy'" [size]="14" />
+            {{ copied() === 'short' ? 'Copied' : 'Copy short description' }}
+          </button>
+        </div>
+      </li>
+      <li class="flex gap-2">
+        <span class="shrink-0 w-5 h-5 rounded-full bg-scoular-blue/10 dark:bg-scoular-blue/20 text-scoular-blue-medium dark:text-[#7CC4EC] text-xs font-semibold flex items-center justify-center">4</span>
+        <div class="min-w-0">
+          <p><strong class="font-semibold text-gray-900 dark:text-white">Additional information</strong> — paste the details above, then add what you were doing and what went wrong.</p>
+          <button type="button" (click)="copy('details')"
+            class="mt-1.5 inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm font-medium border border-scoular-blue/40 text-scoular-blue-medium dark:text-[#7CC4EC] hover:bg-scoular-blue/5 dark:hover:bg-scoular-blue/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue">
+            <app-help-icon [name]="copied() === 'details' ? 'check-circle' : 'copy'" [size]="14" />
+            {{ copied() === 'details' ? 'Copied' : 'Copy additional information' }}
+          </button>
+        </div>
+      </li>
+      <li class="flex gap-2">
+        <span class="shrink-0 w-5 h-5 rounded-full bg-scoular-blue/10 dark:bg-scoular-blue/20 text-scoular-blue-medium dark:text-[#7CC4EC] text-xs font-semibold flex items-center justify-center">5</span>
+        <p>Attach a screenshot if you have one, then submit.</p>
+      </li>
+    </ol>
+  } @else {
+    <button type="button" (click)="copy('details')"
+      class="self-start inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm font-medium text-white bg-scoular-blue-medium hover:bg-scoular-blue-dark dark:bg-[#006BA6] dark:hover:bg-scoular-blue-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue focus-visible:ring-offset-1">
       <app-help-icon [name]="copied() ? 'check-circle' : 'copy'" [size]="14" />
       {{ copied() ? 'Copied' : 'Copy details' }}
     </button>
-    @if (helpDeskUrl) {
-      <a [href]="helpDeskUrl" target="_blank" rel="noopener noreferrer"
-        class="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm font-medium border border-scoular-blue/40 text-scoular-blue-medium dark:text-[#7CC4EC] hover:bg-scoular-blue/5 dark:hover:bg-scoular-blue/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue">
-        Open a help desk ticket
-        <app-help-icon name="external-link" [size]="14" />
-        <span class="sr-only">(opens in a new tab)</span>
-      </a>
-    }
-  </div>
+  }
 
   <p class="text-sm text-gray-600 dark:text-gray-400" aria-live="polite">
     @if (copyFailed()) {
-      Your browser blocked copying. Select the details above and copy them by hand.
-    } @else if (copied()) {
-      @if (helpDeskUrl) { Copied — paste them into the ticket description. } @else { Copied — paste them into a message to the Origination team. }
+      Your browser blocked copying. Select the text above and copy it by hand.
+    } @else if (copied() === 'short') {
+      Copied — paste it into Short Description.
+    } @else if (copied() === 'details') {
+      @if (helpDeskUrl) { Copied — paste it into Additional information. } @else { Copied — paste the details into a message to the Origination team. }
     } @else if (!helpDeskUrl) {
       Send these details to the Origination team.
     }

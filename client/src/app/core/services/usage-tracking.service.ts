@@ -76,6 +76,11 @@ export class UsageTrackingService {
     this.postClickEvent('interaction', 'system', 'help-troubleshoot', outcome);
   }
 
+  /** "Open ServiceNow" on the Still need help? card — how often help ends in a ticket. */
+  trackHelpTicketOpened(): void {
+    this.postClickEvent('interaction', 'system', 'help-ticket-opened');
+  }
+
   trackHelpFeedback(faqId: string, helpful: boolean): void {
     this.postClickEvent('interaction', 'system', helpful ? 'help-helpful' : 'help-not-helpful', faqId);
   }

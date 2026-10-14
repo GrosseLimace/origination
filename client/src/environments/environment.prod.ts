@@ -54,11 +54,14 @@ export const environment = {
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.
   tradeUnitPreferencesUrl: 'https://tradeunitprefs.scoular.com/my-preferences',
-  // Help desk form the Help panel's "Still need help?" card opens, once the Origination support
-  // group exists (ServiceNow today, SIMS after the end-of-November 2026 cutover). Empty means "not set
-  // up yet": the card still copies the details and tells the user to contact the Origination team,
-  // and never shows a dead link. A plain link, not an integration; nothing is sent in the URL.
-  helpDeskUrl: '',
+  // ServiceNow form behind the Help panel's "Still need help?" card (one ServiceNow instance, so the
+  // same form in every environment). The card walks the user through it: open the form, pick
+  // helpDeskTopic, then copy the short description and additional information in. A plain link —
+  // nothing is added to the URL; the details travel by clipboard. Empty URL hides the walk-through.
+  // SIMS replaces ServiceNow at the end of November 2026: change these two values at cutover.
+  helpDeskUrl: 'https://scoular.service-now.com/sp?id=sc_cat_item&sys_id=7c12ac1ddbc43340289064904b961939&sysparm_category=99935075db949f00df8168d35b96192b',
+  // The topic users pick on that form. "Something Else" until the Help Desk adds an Origination topic.
+  helpDeskTopic: 'Something Else',
   apiBaseUrl: '/api',
   msalConfig: {
     auth: {
