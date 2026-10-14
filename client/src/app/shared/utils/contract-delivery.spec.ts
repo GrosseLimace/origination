@@ -50,9 +50,9 @@ describe('getContractDeliveryStats', () => {
     expect(s.progressPercent).toBe(0);
   });
 
-  it('assumes nothing delivered when CTRM has not populated the open balance, and says so', () => {
-    // The model types the missing aggregate as undefined; the API's JSON null takes the same `== null` path.
-    const s = getContractDeliveryStats(contract({ quantity: 5_000, openBalanceQuantity: undefined }));
+  it.each([null, undefined])('assumes nothing delivered when CTRM has not populated the open balance (%s), and says so', (missing) => {
+    // The API sends JSON null for an unpopulated aggregate; undefined (field absent) takes the same `== null` path.
+    const s = getContractDeliveryStats(contract({ quantity: 5_000, openBalanceQuantity: missing }));
 
     expect(s.remainingIsUnknown).toBe(true);
     expect(s.delivered).toBe(0);
@@ -100,12 +100,21 @@ describe('getContractDeliveryStats', () => {
     const s = getContractDeliveryStats(contract({ quantity: 0, openBalanceQuantity: undefined }));
 
     // rawRemaining falls back to qty (0), which is under the 0.01 floor, so it reads as complete.
-    // NOTE: the source comment says the floor exists so quantity-0 contracts DON'T fall through to
-    // complete — they do. Pinned as-is; remainingIsUnknown is what keeps past-due gates honest here.
+    // Intended: there are no bushels to chase, so it stays off Unshipped Bushels and the past-due
+    // gates. (The source comment used to claim the floor stops this; it was the comment that was wrong.)
     expect(s.isEffectivelyComplete).toBe(true);
     expect(s.remainingIsUnknown).toBe(true);
     expect(s.delivered).toBe(0);
     expect(s.remaining).toBe(0);
+  });
+
+  it('a zero-quantity contract with a zero open balance is complete, not left open at 0%', () => {
+    const s = getContractDeliveryStats(contract({ quantity: 0, openBalanceQuantity: 0 }));
+
+    // The 0.01 floor is what does this: a threshold of 0.1% of 0 would be 0, and 0 < 0 is false.
+    expect(s.isEffectivelyComplete).toBe(true);
+    expect(s.remaining).toBe(0);
+    expect(s.progressPercent).toBe(100);
   });
 
   it('a zero-quantity contract with an open balance reports 0% instead of dividing by zero', () => {
