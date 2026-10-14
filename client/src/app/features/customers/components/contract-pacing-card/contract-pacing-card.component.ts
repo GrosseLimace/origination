@@ -1,4 +1,4 @@
-import { Component, DestroyRef, computed, effect, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ThemeService } from '@core/services/theme.service';
@@ -22,7 +22,11 @@ interface CommodityPacingRow {
   standalone: true,
   imports: [CommonModule],
   host: { class: 'block' },
-  templateUrl: './contract-pacing-card.component.html'
+  templateUrl: './contract-pacing-card.component.html',
+  // The template reads inputs, signals, computeds, and style getters over the theme's isDarkMode
+  // signal. The self-fetch's subscribe callbacks write signals, so a history that arrives (or fails)
+  // after the first render still marks the view.
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ContractPacingCardComponent {
   // Open contracts from parent (pre-filtered to !closedDate)

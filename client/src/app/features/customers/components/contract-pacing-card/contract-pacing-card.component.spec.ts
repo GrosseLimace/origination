@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ComponentRef, signal } from '@angular/core';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { ContractPacingCardComponent } from './contract-pacing-card.component';
 import { ThemeService } from '@core/services/theme.service';
 import { ApiService } from '@core/services/api.service';
@@ -63,6 +63,7 @@ describe('ContractPacingCardComponent', () => {
   let fixture: ComponentFixture<ContractPacingCardComponent>;
   let ref: ComponentRef<ContractPacingCardComponent>;
   let getHistoricalContractsForPacing: ReturnType<typeof vi.fn>;
+  const isDarkMode = signal(false);
 
   function setInputs(inputs: {
     contracts?: Contract[]; harvestWindows?: HarvestWindow[]; customerId?: number | null;
@@ -112,10 +113,11 @@ describe('ContractPacingCardComponent', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(NOW);
     getHistoricalContractsForPacing = vi.fn(() => of<Contract[]>([]));
+    isDarkMode.set(false);
     await TestBed.configureTestingModule({
       imports: [ContractPacingCardComponent],
       providers: [
-        { provide: ThemeService, useValue: { isDarkMode: signal(false) } },
+        { provide: ThemeService, useValue: { isDarkMode } },
         { provide: ApiService, useValue: { getHistoricalContractsForPacing } },
         { provide: AppStateService, useValue: {} },
       ],
@@ -319,5 +321,46 @@ describe('ContractPacingCardComponent', () => {
     setInputs({ contracts: [makeContract({ id: 1, quantity: 1000 }), makeContract({ id: 2, quantity: 2000 })] });
     expect(statCards()[1].value).toBe('3,000');
     expect(rows()[0].thisYear).toBe('3,000');
+  });
+
+  // ── Updates that arrive after the first render ────────────────────────────
+  // The real history read is an HTTP call, so its result (or failure) lands after the card has
+  // rendered. The `of()` / `throwError()` tests above resolve synchronously and cannot see that.
+
+  it('folds in a self-fetched history that arrives after the card has rendered', () => {
+    const history$ = new Subject<Contract[]>();
+    getHistoricalContractsForPacing.mockReturnValue(history$);
+    setInputs({ customerId: 42, harvestWindows: [CORN], contracts: [makeContract({ id: 1, quantity: 10000 })] });
+    expect(statCards()[0].value).toBe('—');
+
+    history$.next([makeContract({ id: 70, quantity: 15000, deliveryStart: on(LAST_YEAR, 9, 1), deliveryEnd: on(LAST_YEAR, 11, 30) })]);
+    fixture.detectChanges();
+
+    expect(statCards()[0].value).toBe('15,000');
+    expect(rows().map(r => [r.lastYear, r.thisYear, r.arrow])).toEqual([['15,000', '10,000', '▼']]);
+  });
+
+  it('labels last year "Unavailable" when a pending self-fetch fails after the card has rendered', () => {
+    const history$ = new Subject<Contract[]>();
+    getHistoricalContractsForPacing.mockReturnValue(history$);
+    setInputs({ customerId: 42, harvestWindows: [CORN], contracts: [makeContract({ quantity: 10000 })] });
+    expect(statCards()[0].value).toBe('—');
+
+    history$.error(new Error('CTRM down'));
+    fixture.detectChanges();
+
+    expect(statCards()[0].value).toBe('Unavailable');
+  });
+
+  it('restyles the card when the theme switches to dark', () => {
+    setInputs({ harvestWindows: [CORN], contracts: [makeContract()] });
+    const card = (): string => host().querySelector<HTMLElement>('[style*="linear-gradient"]')!.getAttribute('style') ?? '';
+    expect(card()).toContain('#64748b');
+
+    isDarkMode.set(true);
+    fixture.detectChanges();
+
+    expect(card()).toContain('#0f172a');
+    expect(card()).not.toContain('#64748b');
   });
 });
