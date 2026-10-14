@@ -10,13 +10,17 @@ import { AppStateService, DashboardCacheEntry } from '@core/services/app-state.s
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, Commodity } from '@models';
-import { buildLbsPerBushelMap, quantityInBushels, sumInBushels } from '@shared/utils/production-coverage';
+import { buildLbsPerBushelMap } from '@shared/utils/production-coverage';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import { commodityColor, commodityRowClass } from '@shared/utils/commodity-color';
 import { CommodityChipClassPipe } from '@shared/pipes/commodity-chip-class.pipe';
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
 import { inSelectedTradeUnits } from '@shared/utils/planting-trade-unit-filter';
 import { dashboardCropKey, formatAcres, formatK, getFormattedLocation, getInitials, toTitleCase } from '../../utils/dashboard-format';
+import {
+  buildContractCommodityLegend, buildContractCoverageRows, buildContractStatus, buildCropDistribution, buildHarvestTimeline,
+  buildSalesOpportunities, contractedBushelsByCategory, filterContractsForYear,
+} from '../../utils/dashboard-contracts';
 
 /** One producer card on the Producers tab. Both views build these; the fields only the "with
  *  intentions" view has (acres, production, trade unit, the per-crop breakdown) are optional, and
@@ -191,17 +195,6 @@ export class DashboardComponent {
   producerSortKey = signal<'acres' | 'production'>('acres');
   producerSortDir = signal<'asc' | 'desc'>('desc');
 
-  private readonly CHART_COLORS = [
-    { bar: 'bg-scoular-green', dot: 'bg-scoular-green', hex: '#00A36F' },
-    { bar: 'bg-blue-500', dot: 'bg-blue-500', hex: '#3b82f6' },
-    { bar: 'bg-amber-500', dot: 'bg-amber-500', hex: '#f59e0b' },
-    { bar: 'bg-purple-500', dot: 'bg-purple-500', hex: '#a855f7' },
-    { bar: 'bg-red-500', dot: 'bg-red-500', hex: '#ef4444' },
-    { bar: 'bg-teal-500', dot: 'bg-teal-500', hex: '#14b8a6' },
-    { bar: 'bg-orange-500', dot: 'bg-orange-500', hex: '#f97316' },
-    { bar: 'bg-indigo-500', dot: 'bg-indigo-500', hex: '#6366f1' },
-  ];
-
   estimatesSaving = signal(false);
 
   // Buffered user edits. Entries here = unsaved changes. Cleared on Save success or Cancel.
@@ -236,27 +229,11 @@ export class DashboardComponent {
 
   // Pre-indexed contracted quantity by resolved category — uses Commodities table lookup
   // so contracts group by the same category name as planting intentions.
-  private readonly _contractedByCategory = computed(() => {
-    const commodityMap = this._commodityByCode();
-    // Totals are BUSHELS, not raw quantity. A commodity group carries processed products priced by
-    // weight — soybean meal and oil in short tons, popcorn by the pound — and adding their quantity
-    // straight in overstated contracted volume against a bushel production estimate. Same helper the
-    // producer page uses, so the two agree.
-    const lbsPerBushelByCode = buildLbsPerBushelMap(this.appStateService.commodityConversions());
-    const byCategory = new Map<string, Contract[]>();
-    for (const c of this.contractsForYear()) {
-      const commodity = commodityMap.get(c.commodityCode || '') || commodityMap.get(c.commodityDescription || '');
-      const category = (commodityPlantingCategory(commodity) || c.commodityDescription || c.commodityGroup || c.commodityCode || '').toLowerCase();
-      const arr = byCategory.get(category);
-      if (arr) arr.push(c); else byCategory.set(category, [c]);
-    }
-
-    const map = new Map<string, number>();
-    for (const [category, contracts] of byCategory) {
-      map.set(category, sumInBushels(contracts, lbsPerBushelByCode).contracted);
-    }
-    return map;
-  });
+  private readonly _contractedByCategory = computed(() =>
+    contractedBushelsByCategory(
+      this.contractsForYear(),
+      this._commodityByCode(),
+      buildLbsPerBushelMap(this.appStateService.commodityConversions())));
 
   // Data-ready guard — skip expensive computations until commodities are loaded
   private readonly _dataReady = computed(() =>
@@ -849,60 +826,15 @@ export class DashboardComponent {
   });
 
   readonly contractsForYear = computed(() => {
-    const year = this.selectedPlantingYear();
-    const cropFilter = this.selectedCropFilter();
     // Prefer the base.Contract feed for the selected year (open + closed historical).
     // Falls back to appState.contracts() while the crop-year fetch is in flight or empty
     // so the UI never goes blank during the swap.
     const cropYearContracts = this._cropYearContracts();
     const source = cropYearContracts.length > 0 ? cropYearContracts : this.contracts();
-    const commodityByCode = this._commodityByCode();
-    return source.filter(c => {
-      if (c.cropYear !== year) return false;
-      if (cropFilter) {
-        const filter = cropFilter.toLowerCase();
-        const group = (c.commodityGroup || c.commodityDescription || c.commodityCode || '').toLowerCase();
-        // The top crop filter can now be a planting label ("Organic Soybeans") that no ODS commodity
-        // group text contains, so also match the contract's commodity through the same resolver.
-        const label = (commodityPlantingCategory(commodityByCode.get(c.commodityCode || '')) || '').toLowerCase();
-        if (label !== filter && !group.includes(filter) && filter !== group) return false;
-      }
-      return true;
-    });
+    return filterContractsForYear(source, this.selectedPlantingYear(), this.selectedCropFilter(), this._commodityByCode());
   });
 
-  readonly harvestTimelineMonths = computed(() => {
-    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const commodityColorMap = new Map<string, string>();
-    let colorIdx = 0;
-    const monthData: Map<number, Map<string, number>> = new Map();
-    for (let i = 0; i < 12; i++) monthData.set(i, new Map());
-
-    for (const c of this.contractsForYear()) {
-      if (!c.deliveryStart) continue;
-      if (!c.sourceContractId?.startsWith('P')) continue; // Purchase contracts only
-      const d = new Date(c.deliveryStart);
-      const monthIdx = d.getMonth();
-      const commodity = c.commodityDescription || c.commodityGroup || c.commodityCode || 'Other';
-      if (!commodityColorMap.has(commodity)) {
-        commodityColorMap.set(commodity, this.CHART_COLORS[colorIdx++ % this.CHART_COLORS.length].hex);
-      }
-      const m = monthData.get(monthIdx)!;
-      m.set(commodity, (m.get(commodity) || 0) + (c.quantity || 0));
-    }
-
-    const raw = MONTHS.map((month, i) => {
-      const m = monthData.get(i)!;
-      const segments = [...m.entries()].map(([commodity, bushels]) => ({
-        commodity, bushels, hex: commodityColorMap.get(commodity)!
-      }));
-      const total = segments.reduce((s, x) => s + x.bushels, 0);
-      return { month, monthIndex: i, segments, total, barHeightPct: 0 };
-    });
-
-    const max = Math.max(...raw.map(m => m.total), 1);
-    return raw.map(m => ({ ...m, barHeightPct: (m.total / max) * 100 }));
-  });
+  readonly harvestTimelineMonths = computed(() => buildHarvestTimeline(this.contractsForYear()));
 
   readonly harvestTimelineMax = computed(() =>
     Math.max(...this.harvestTimelineMonths().map(m => m.total), 1)
@@ -912,78 +844,15 @@ export class DashboardComponent {
     Math.floor(this.harvestTimelineMax() / 2)
   );
 
-  readonly contractCommodityLegend = computed(() => {
-    const seen = new Set<string>();
-    const result: { commodity: string; hex: string }[] = [];
-    for (const m of this.harvestTimelineMonths()) {
-      for (const seg of m.segments) {
-        if (!seen.has(seg.commodity)) {
-          seen.add(seg.commodity);
-          result.push({ commodity: seg.commodity, hex: seg.hex });
-        }
-      }
-    }
-    return result;
-  });
+  readonly contractCommodityLegend = computed(() => buildContractCommodityLegend(this.harvestTimelineMonths()));
 
-  readonly contractCoverageRows = computed(() => {
-    const contractedMap = this._contractedByCategory();
-    return this.categoryRows().map((row, i) => {
-      const categoryLower = row.category.toLowerCase();
-      const contracted = contractedMap.get(categoryLower) || 0;
-      const pct = row.totalEstimatedProduction > 0
-        ? Math.min(Math.round((contracted / row.totalEstimatedProduction) * 100), 999)
-        : 0;
-      return {
-        category: row.category,
-        estimatedBu: Math.round(row.totalEstimatedProduction),
-        contractedBu: contracted,
-        pct,
-        hex: this.CHART_COLORS[i % this.CHART_COLORS.length].hex
-      };
-    });
-  });
+  readonly contractCoverageRows = computed(() =>
+    buildContractCoverageRows(this.categoryRows(), this._contractedByCategory()));
 
-  // In BUSHELS, like Contract Coverage beside it. On raw quantity a 30-ton contract read as "30 bu"
-  // while Coverage counted it as 1,000, and in PROD 18% of purchase contracts are not in bushels
-  // (short tons, pounds, metric tons, ...). A contract whose unit cannot be expressed in bushels
-  // (rail cars, gallons, "each", or a commodity with no lb-per-bushel factor) is left out and
-  // counted, so the card can say so rather than dropping it silently. Avg Price is total value per
-  // bushel, so a $/ton price no longer averages in as if it were $/bu.
-  private readonly _salesOpportunities = computed(() => {
-    const lbsPerBushelByCode = buildLbsPerBushelMap(this.appStateService.commodityConversions());
-    const map = new Map<string, { total: number; open: number; priced: number; value: number; count: number }>();
-    let excludedContracts = 0;
-    for (const c of this.contractsForYear()) {
-      const total = quantityInBushels(c, c.quantity || 0, lbsPerBushelByCode);
-      if (total == null) {
-        excludedContracts++;
-        continue;
-      }
-      const cat = c.commodityDescription || c.commodityGroup || c.commodityCode || 'Other';
-      if (!map.has(cat)) map.set(cat, { total: 0, open: 0, priced: 0, value: 0, count: 0 });
-      const m = map.get(cat)!;
-      m.total += total;
-      // Same unit as the contract quantity, so the same conversion applies.
-      m.open += quantityInBushels(c, c.openBalanceQuantity || 0, lbsPerBushelByCode) ?? 0;
-      m.priced += quantityInBushels(c, c.pricedQuantity || 0, lbsPerBushelByCode) ?? 0;
-      m.value += c.totalValue || ((c.quantity || 0) * (c.price || 0));
-      m.count++;
-    }
-    const rows = [...map.entries()]
-      .map(([commodity, v], i) => ({
-        commodity,
-        contracts: v.count,
-        totalBu: v.total,
-        openBu: v.open,
-        unpricedBu: Math.max(0, v.total - v.priced),
-        avgPrice: v.total > 0 ? v.value / v.total : 0,
-        hex: this.CHART_COLORS[i % this.CHART_COLORS.length].hex
-      }))
-      .filter(r => r.totalBu > 0)
-      .sort((a, b) => b.openBu - a.openBu);
-    return { rows, excludedContracts };
-  });
+  // In BUSHELS, like Contract Coverage beside it; contracts whose unit cannot be expressed in
+  // bushels are left out and counted (see buildSalesOpportunities).
+  private readonly _salesOpportunities = computed(() =>
+    buildSalesOpportunities(this.contractsForYear(), buildLbsPerBushelMap(this.appStateService.commodityConversions())));
 
   readonly salesOpportunityRows = computed(() => this._salesOpportunities().rows);
   /** Contracts left out of Sales Opportunities because their unit cannot be shown in bushels. */
@@ -1296,66 +1165,14 @@ export class DashboardComponent {
     this.activeContracts.set(openContracts.filter(c => c.status === 'Active').length);
     this.totalContractValue.set(openContracts.reduce((sum, c) => sum + (c.totalValue || 0), 0));
 
-    this._calculateCropDistribution();
-    this._calculateContractStatus();
+    // Shares are in bushels, so a tonnage commodity's slice is not sized by its ton count.
+    this.cropDistribution.set(
+      buildCropDistribution(this.contracts(), buildLbsPerBushelMap(this.appStateService.commodityConversions())));
+    this.contractStatus.set(buildContractStatus(this.contracts()));
   }
 
   navigateToCustomer(customerId: number): void {
     this.router.navigate(['/'], { queryParams: { customerId } });
-  }
-
-  private _calculateCropDistribution(): void {
-    // Shares are computed from BUSHELS. On raw quantity a tonnage commodity's slice was sized by its
-    // ton count, so it looked far smaller than the volume it represents.
-    const lbsPerBushelByCode = buildLbsPerBushelMap(this.appStateService.commodityConversions());
-    const cropMap = new Map<string, number>();
-    for (const contract of this.contracts().filter(c => !c.closedDate)) {
-      const commodity = contract.commodityDescription || contract.commodityCode || 'Unknown';
-      const bushels = quantityInBushels(contract, contract.quantity || 0, lbsPerBushelByCode);
-      if (bushels == null) continue;
-      cropMap.set(commodity, (cropMap.get(commodity) || 0) + bushels);
-    }
-
-    const total = Array.from(cropMap.values()).reduce((a, b) => a + b, 0);
-    const cropColors: Record<string, string> = {
-      'Corn': 'bg-green-500',
-      'Soybeans': 'bg-blue-500',
-      'Wheat': 'bg-amber-500',
-      'Milo': 'bg-orange-500'
-    };
-
-    this.cropDistribution.set(
-      Array.from(cropMap.entries())
-        .map(([name, bushels]) => ({
-          name,
-          bushels,
-          percentage: Math.round((bushels / total) * 100),
-          color: cropColors[name] || 'bg-gray-500'
-        }))
-        .sort((a, b) => b.bushels - a.bushels)
-    );
-  }
-
-  private _calculateContractStatus(): void {
-    const statusMap = new Map<string, number>();
-    for (const contract of this.contracts().filter(c => !c.closedDate)) {
-      statusMap.set(contract.status, (statusMap.get(contract.status) || 0) + 1);
-    }
-
-    const statusColors: Record<string, string> = {
-      'Active': 'bg-green-500',
-      'Pending': 'bg-amber-500',
-      'Fulfilled': 'bg-blue-500',
-      'Cancelled': 'bg-scoular-red'
-    };
-
-    this.contractStatus.set(
-      Array.from(statusMap.entries()).map(([name, count]) => ({
-        name,
-        count,
-        dotColor: statusColors[name] || 'bg-gray-500'
-      }))
-    );
   }
 
   // =========================================================================
