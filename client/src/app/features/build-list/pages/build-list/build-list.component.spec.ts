@@ -1325,6 +1325,21 @@ describe('BuildListComponent', () => {
         expect(text()).toContain('This prompt needs a saved season yield target');
       });
 
+      it('planting prompts show per-crop acre chips and put the most acres first', () => {
+        setUp([]);
+        api.getPlantingIntentions.mockReturnValue(of([
+          { id: 1, customerId: 1, crop: 'YC', acres: 100, plantingYear: 2026 },
+          { id: 2, customerId: 2, crop: 'SB', acres: 50, plantingYear: 2026, type: 'Irrigated' },
+          { id: 3, customerId: 2, crop: 'SB', acres: 400, plantingYear: 2026, type: 'Irrigated' },
+        ] as never));
+        const c = mount();
+        c.selectLibraryQuery({ id: 9, category: 'Planting', name: 'Planting', queryText: 'Producers with planting intentions', sortOrder: 1 });
+
+        expect(names(c.displayedCustomers())).toEqual(['Bravo Grain', 'Alpha Acres', 'Charlie Farms']);
+        expect(c.resultChips(BRAVO).map(x => x.text)).toEqual(['Irrigated SB · 450 ac · 2026']);
+        expect(text()).toContain('YC · 100 ac · 2026');
+      });
+
       it('with no planting intentions, ends with an empty result and no spinner', () => {
         setUp([]);
         api.getPlantingIntentions.mockReturnValue(of([]));
@@ -1335,6 +1350,120 @@ describe('BuildListComponent', () => {
         expect(c.filteredCustomers()).toEqual([]);
         expect(c.queryReturnedNoMatches()).toBe(true);
       });
+    });
+
+    // ── Result rows: identity, crops, inline chips, linked producers, bin sites ──
+
+    it('result rows show initials, the best location, and up to five de-duplicated crops from every source', () => {
+      api.getCustomers.mockReturnValue(of([
+        makeCustomer({ id: 1, name: 'Alpha Acres', location: 'Pratt', stateProvince: 'KS', extendedCity: 'Dodge City', extendedStateProvince: 'KS',
+          commodities: ['Corn', 'corn ', 'Soybeans'] }),
+        makeCustomer({ id: 2, name: 'Bravo', location: 'Madrid', stateProvince: 'NE' }),
+        makeCustomer({ id: 3, name: 'C', location: '', stateProvince: 'KS' }),
+      ]));
+      api.getContracts.mockReturnValue(of([
+        makeContract({ id: 1, ctrmCustomerId: 'C1', commodityCode: 'YC' }),
+        makeContract({ id: 2, ctrmCustomerId: 'C1', commodityCode: 'SB', closedDate: new Date(NOW.getTime() - DAY) }),
+        makeContract({ id: 3, ctrmCustomerId: 'C2', commodityCode: 'HRW' }),
+      ]));
+      api.getPlantingIntentions.mockReturnValue(of([{ id: 1, customerId: 1, crop: 'WHT', acres: 1, plantingYear: 2026 }] as never));
+      api.getTickets.mockReturnValue(of([{ id: 1, customerId: 1, customerCode: 'C1', productCode: 'MILO', date: '2026-10-01' }] as never));
+      api.getStoredGrain.mockReturnValue(of([{ customerId: 2, crop: 'OATS', quantity: 5 }] as never));
+      const c = mount();
+      c.selectLibraryQuery(LIB_ALL);
+
+      expect(c.getCustomerCrops(1)).toEqual(['Corn', 'Soybeans', 'YC', 'SB', 'WHT']);
+      expect(c.getCustomerCrops(2)).toEqual(['HRW', 'OATS']);
+      expect(c.getCustomerCrops(99)).toEqual([]);
+      const page = text();
+      expect(page).toContain('Dodge City, KS');
+      expect(page).toContain('Madrid, NE');
+      expect(c.getInitials('Alpha Acres')).toBe('AA');
+      expect(c.getInitials('Bravo')).toBe('BR');
+      expect(c.getInitials('C')).toBe('??');
+      expect(c.getFormattedLocation(c.customers()[2])).toBe('KS');
+    });
+
+    it('storage prompts show per-crop bushel chips and put the most storage first', () => {
+      appState.setCommodities([{ id: 1, code: 'YC', name: 'Yellow Corn', category: 'Corn', isActive: true }]);
+      api.getStoredGrain.mockReturnValue(of([
+        { customerId: 1, crop: 'YC', quantity: 3000 },
+        { customerId: 1, crop: 'YC', quantity: 3000 },
+        { customerId: 1, crop: 'SB', quantity: 100 },
+        { customerId: 3, crop: 'SB', quantity: 9000 },
+        { customerId: 3, crop: 'XX', quantity: 0 },
+      ] as never));
+      const c = mount();
+      c.selectLibraryQuery({ id: 8, category: 'Storage', name: 'Storage', queryText: 'Producers with grain in storage', sortOrder: 1 });
+
+      expect(names(c.displayedCustomers())).toEqual(['Charlie Farms', 'Alpha Acres', 'Bravo Grain']);
+      expect(c.resultChips(ALPHA)).toEqual([{ text: 'YC 6,000', colorKey: 'Corn' }, { text: 'SB 100', colorKey: 'SB' }]);
+      expect(c.storageBu(CHARLIE)).toBe(9000);
+      expect(text()).toContain('SB 9,000');
+    });
+
+    it('DP prompts count each delivery once in the chips and the order', () => {
+      api.getDpContracts.mockReturnValue(of([
+        { id: 'a1', ticketKey: 'a', customerId: 2, crop: 'YC', bushels: 7000, receivableAmount: 10 },
+        { id: 'a2', ticketKey: 'a', customerId: 2, crop: 'YC', bushels: 7000, receivableAmount: 10 },
+        { id: 'b1', ticketKey: 'b', customerId: 1, crop: 'SB', bushels: 500, receivableAmount: 10 },
+      ] as never));
+      const c = mount();
+      c.selectLibraryQuery({ id: 10, category: 'DP Contracts', name: 'DP', queryText: 'Producers on DP', sortOrder: 1 });
+      TestBed.tick();
+
+      expect(names(c.displayedCustomers())).toEqual(['Bravo Grain', 'Alpha Acres', 'Charlie Farms']);
+      expect(c.resultChips(BRAVO).map(x => x.text)).toEqual(['YC 7,000']);
+      expect(c.dpBu(BRAVO)).toBe(7000);
+    });
+
+    it('the linked-records prompt folds linked producers into one row with a linked panel', () => {
+      api.getCustomers.mockReturnValue(of([
+        makeCustomer({ id: 1, name: 'Alpha Acres', linkedProducerIds: ['C2'] }),
+        makeCustomer({ id: 2, name: 'Bravo Grain' }),
+        makeCustomer({ id: 3, name: 'Charlie Farms' }),
+      ]));
+      const c = mount();
+      c.queryText.set('Producers with linked records');
+      c.processQuery();
+
+      expect(c.linkedFeatureActive()).toBe(true);
+      expect(names(c.displayedCustomers())).toEqual(['Alpha Acres', 'Charlie Farms']);
+      expect(c.linkedProducerInfoByCustomer().get(1)).toEqual({ count: 1, producers: [expect.objectContaining({ id: 2 })] });
+      expect(c.linkedProducerInfoByCustomer().get(2)!.producers.map(p => p.id)).toEqual([1]);
+      expect(c.logicallyInResultsIds()).toEqual(new Set([1, 2, 3]));
+
+      c.excludeCustomerFromList(2);
+      expect(c.linkedProducerInfoByCustomer().has(1)).toBe(false);
+    });
+
+    it('grain-on-farm prompts list bin sites with a grain summary and a "show more" link', () => {
+      const sites = ['North', 'South', 'East', 'West', 'Home'].map((name, i) => ({ siteKey: `k${i}`, name }));
+      api.getCustomers.mockReturnValue(of([
+        makeCustomer({ id: 1, name: 'Alpha Acres', binSites: sites, grainOnFarm: [
+          { binSiteKey: 'k0', commodityCode: 'YC', bushelsOnHand: 20000 },
+          { binSiteKey: 'k0', commodityCode: 'SB', bushelsOnHand: 15000 },
+          { binSiteKey: 'k1', commodityCode: 'YC', bushelsOnHand: 500 },
+        ] }),
+        makeCustomer({ id: 2, name: 'Bravo Grain', binSites: [{ siteKey: 'b', name: 'Only' }] }),
+        makeCustomer({ id: 3, name: 'Charlie Farms' }),
+      ]));
+      const c = mount();
+      c.selectLibraryQuery({ id: 11, category: 'Grain on Farm & Bin Sites', name: 'GoF', queryText: 'Producers with grain on farm', sortOrder: 1 });
+
+      expect(c.resultChips(c.customers()[0])).toEqual([{ text: '5 bin sites', colorKey: '', neutral: true }]);
+      expect(c.resultChips(c.customers()[1])[0].text).toBe('1 bin site');
+      expect(c.resultChips(c.customers()[2])[0].text).toBe('No bin sites');
+      expect(c.grainOnFarmBreakdown(c.customers()[0])).toEqual([
+        { commodityCode: 'YC', bushelsOnHand: 20500 }, { commodityCode: 'SB', bushelsOnHand: 15000 },
+      ]);
+      const page = text();
+      expect(page).toContain('North');
+      expect(page).toContain('2 crops · 35,000 bu');
+      expect(page).toContain('1 crop · 500 bu');
+      expect(page).toContain('No grain on farm');
+      expect(page).toContain('Show 1 more bin site');
+      expect(page).not.toContain('Home');
     });
   });
 });

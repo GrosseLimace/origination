@@ -13,7 +13,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserRolesService } from '@core/services/user-roles.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, DpContract, SavedList, TeamMember, ProducerDetails, RefinementFilters, QueryLibraryItem, GrainOnFarmItem, DashboardPlantingEstimate, Commodity } from '@models';
-import { dpTotalBushels, dpBreakdownByCrop } from '@shared/utils/dp-aggregate';
+import { dpTotalBushels } from '@shared/utils/dp-aggregate';
 import { commodityChipClass } from '@shared/utils/commodity-color';
 import { plantingChips, plantingQueryScope, PlantingChip } from '@shared/utils/planting-chips';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '@shared/components/card/card.component';
@@ -33,6 +33,10 @@ import { filterByRefinements, applyMemberOverrides, collapseLinkedComponents, Re
 import { aggregateMatchingNotes, buildNoteFilterPredicate, indexMatchingNotesByCode, isNoteFilterActive, lastContactBadges, lastContactTimeByCustomer, MatchedNote, noteScope, NoteScope, parseNoteTime } from '../../utils/note-filters';
 import { customerPacingDirection } from '../../utils/contract-pacing';
 import { evaluatePlantingCoverage } from '../../utils/planting-coverage';
+import {
+  binSiteGrainHiddenLabel, binSiteGrainSummary, commodityCategoryByKey, contractsByCustomerCode, CropBushels, cropsByCustomer, dpBreakdown,
+  formattedLocation, grainOnFarmBreakdown, groupByCustomerId, hasBinSiteGrain, initials, linkedProducerInfo, storageBreakdown, storageTotalBushels,
+} from '../../utils/result-rows';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
@@ -818,26 +822,10 @@ export class BuildListComponent {
   // ── Pre-indexed computed signals for O(1) lookups ────────────────────────
 
   /** ALL contracts grouped by ctrmCustomerId — includes prior-year closed contracts for pacing. */
-  private readonly _contractsByCustomer = computed(() => {
-    const map = new Map<string, Contract[]>();
-    for (const c of this.contracts()) {
-      if (!c.ctrmCustomerId) continue;
-      const arr = map.get(c.ctrmCustomerId);
-      if (arr) arr.push(c); else map.set(c.ctrmCustomerId, [c]);
-    }
-    return map;
-  });
+  private readonly _contractsByCustomer = computed(() => contractsByCustomerCode(this.contracts()));
 
   /** Open contracts only — used by refinement filters (no active, unconfirmed, overdue bu, etc.). */
-  private readonly _openContractsByCustomer = computed(() => {
-    const map = new Map<string, Contract[]>();
-    for (const c of this.contracts()) {
-      if (!c.ctrmCustomerId || c.closedDate) continue;
-      const arr = map.get(c.ctrmCustomerId);
-      if (arr) arr.push(c); else map.set(c.ctrmCustomerId, [c]);
-    }
-    return map;
-  });
+  private readonly _openContractsByCustomer = computed(() => contractsByCustomerCode(this.contracts(), true));
 
   /** Raw latest-contact time (ms since epoch) per customerId, from the lightweight last-contact
    *  AGGREGATE (always loaded on TU change — not the full note set) with the linked-producer
@@ -921,38 +909,12 @@ export class BuildListComponent {
     return customer.scoularId ? (this._matchedNotesByCode().get(customer.scoularId) ?? []) : [];
   }
 
-  /** Distinct linked-producer info per customer (bidirectional, excluding self).
-   *  Only includes producers whose Customer record is loaded — codes without a match are dropped.
-   *  Manually-excluded customers are filtered out so the exclude action affects the linked panel too.
+  /** Linked producers per customer for the inline linked panel (see linkedProducerInfo in utils).
    *  Returns an empty map unless the linked-as-one-entity feature is active (notes prompts or
-   *  the "Producers with linked records" prompt) — for other queries each producer is its own row.
-   *  `producers` is the actual Customer[] for inline detail rendering. */
+   *  the "Producers with linked records" prompt) — for other queries each producer is its own row. */
   readonly linkedProducerInfoByCustomer = computed(() => {
-    const map = new Map<number, { count: number; producers: Customer[] }>();
-    if (!this.linkedFeatureActive()) return map;
-    const customers = this.customers();
-    const excludedIds = this.manuallyExcludedCustomerIds();
-    const components = this.linkedProducerComponents();
-
-    const customerByCode = new Map<string, Customer>();
-    for (const c of customers) {
-      if (c.scoularId) customerByCode.set(c.scoularId, c);
-    }
-
-    for (const customer of customers) {
-      if (!customer.scoularId) continue;
-      const component = components.get(customer.scoularId);
-      if (!component || component.size <= 1) continue;
-      const producers: Customer[] = [];
-      for (const code of component) {
-        if (code === customer.scoularId) continue;
-        const linked = customerByCode.get(code);
-        if (linked && !excludedIds.has(linked.id)) producers.push(linked);
-      }
-      if (producers.length === 0) continue;
-      map.set(customer.id, { count: producers.length, producers });
-    }
-    return map;
+    if (!this.linkedFeatureActive()) return new Map<number, { count: number; producers: Customer[] }>();
+    return linkedProducerInfo(this.customers(), this.manuallyExcludedCustomerIds(), this.linkedProducerComponents());
   });
 
   /** Customer ids that are reachable in the result list — either as their own
@@ -969,62 +931,8 @@ export class BuildListComponent {
   });
 
   /** Crops per customer — merged from ProducerDetails, contracts, intentions. */
-  readonly cropsByCustomer = computed(() => {
-    const map = new Map<number, string[]>();
-    const contractMap = this._contractsByCustomer();
-
-    // Pre-index intention crops by customerId — O(intentions) instead of O(customers × intentions)
-    const intentionCropsByCustomer = new Map<number, Set<string>>();
-    for (const p of this.plantingIntentions()) {
-      if (!intentionCropsByCustomer.has(p.customerId)) {
-        intentionCropsByCustomer.set(p.customerId, new Set());
-      }
-      intentionCropsByCustomer.get(p.customerId)!.add(p.crop);
-    }
-
-    // Pre-index ticket product codes by customerId
-    const ticketCropsByCustomer = new Map<number, Set<string>>();
-    for (const t of this.tickets()) {
-      if (!t.customerId || !t.productCode) continue;
-      if (!ticketCropsByCustomer.has(t.customerId)) {
-        ticketCropsByCustomer.set(t.customerId, new Set());
-      }
-      ticketCropsByCustomer.get(t.customerId)!.add(t.productCode);
-    }
-
-    // Pre-index stored grain crops by customerId
-    const storedGrainCropsByCustomer = new Map<number, Set<string>>();
-    for (const sg of this.storedGrain()) {
-      if (!sg.customerId || !sg.crop) continue;
-      if (!storedGrainCropsByCustomer.has(sg.customerId)) {
-        storedGrainCropsByCustomer.set(sg.customerId, new Set());
-      }
-      storedGrainCropsByCustomer.get(sg.customerId)!.add(sg.crop);
-    }
-
-    for (const customer of this.customers()) {
-      const detailCrops = customer.commodities?.length ? [...customer.commodities] : [];
-      const contractCrops = customer.scoularId
-        ? [...new Set(
-            (contractMap.get(customer.scoularId) || [])
-              .map(c => c.commodityCode)
-              .filter((crop): crop is string => !!crop)
-          )]
-        : [];
-      const intentionCrops = [...(intentionCropsByCustomer.get(customer.id) || [])];
-      const ticketCrops = [...(ticketCropsByCustomer.get(customer.id) || [])];
-      const storageCrops = [...(storedGrainCropsByCustomer.get(customer.id) || [])];
-      // Dedupe by trimmed uppercase value, but keep original casing for display
-      const seen = new Set<string>();
-      const unique: string[] = [];
-      for (const crop of [...detailCrops, ...contractCrops, ...intentionCrops, ...ticketCrops, ...storageCrops]) {
-        const key = crop.trim().toUpperCase();
-        if (key && !seen.has(key)) { seen.add(key); unique.push(crop.trim()); }
-      }
-      map.set(customer.id, unique.slice(0, 5));
-    }
-    return map;
-  });
+  readonly cropsByCustomer = computed(() => cropsByCustomer(
+    this._contractsByCustomer(), this.plantingIntentions(), this.tickets(), this.storedGrain(), this.customers()));
 
   // ── Query Library ──────────────────────────────────────────────────────
   queryLibrary = signal<QueryLibraryItem[]>([]);
@@ -3178,24 +3086,11 @@ export class BuildListComponent {
   }
 
   getInitials(name: string): string {
-    const parts = name.split(' ').filter(p => p.length > 0);
-    if (parts.length >= 2) {
-      return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-    }
-    if (parts.length === 1 && parts[0].length >= 2) {
-      return parts[0].substring(0, 2).toUpperCase();
-    }
-    return '??';
+    return initials(name);
   }
 
   getFormattedLocation(customer: Customer): string {
-    if (customer.extendedCity && customer.extendedStateProvince) {
-      return `${customer.extendedCity}, ${customer.extendedStateProvince}`;
-    }
-    if (customer.location && customer.stateProvince) {
-      return `${customer.location}, ${customer.stateProvince}`;
-    }
-    return customer.extendedCity || customer.location || customer.stateProvince || '';
+    return formattedLocation(customer);
   }
 
   getLastContactInfo(customerId: number): { text: string; colorClass: string; daysAgo: number } {
@@ -3211,38 +3106,18 @@ export class BuildListComponent {
     return this.cropsByCustomer().get(customerId) ?? [];
   }
 
-  /**
-   * Per-crop grain on farm with bushels on hand, largest first — the chips shown inline on Grain on
-   * Farm results. Rows are per bin site, so one crop stored at two sites is summed into one chip.
-   */
+  /** Per-crop grain on farm with bushels on hand, largest first — see grainOnFarmBreakdown (utils). */
   grainOnFarmBreakdown(customer: Customer): GrainOnFarmItem[] {
-    const byCrop = new Map<string, GrainOnFarmItem>();
-    for (const g of customer.grainOnFarm ?? []) {
-      if (!g.commodityCode || (g.bushelsOnHand ?? 0) <= 0) continue;
-      const key = g.commodityCode.toUpperCase();
-      const seen = byCrop.get(key);
-      byCrop.set(key, seen
-        ? { ...seen, bushelsOnHand: (seen.bushelsOnHand ?? 0) + (g.bushelsOnHand ?? 0) }
-        : { commodityCode: g.commodityCode, bushelsOnHand: g.bushelsOnHand });
-    }
-    return [...byCrop.values()].sort((a, b) => (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0));
+    return grainOnFarmBreakdown(customer);
   }
 
   /** Storage receipts grouped by numeric customerId (StoredGrain joins on Customer.id, not scoularId). */
-  private readonly _storageByCustomerId = computed(() => {
-    const map = new Map<number, StoredGrain[]>();
-    for (const s of this.storedGrain()) {
-      const arr = map.get(s.customerId);
-      if (arr) arr.push(s); else map.set(s.customerId, [s]);
-    }
-    return map;
-  });
+  private readonly _storageByCustomerId = computed(() => groupByCustomerId(this.storedGrain()));
 
   /** Total bushels a producer currently has in storage (sum of NET_QUANTITY across all receipts).
    *  Drives the Storage-results sort (most storage first). */
   storageBu(customer: Customer): number {
-    const recs = this._storageByCustomerId().get(customer.id) ?? [];
-    return recs.reduce((sum, s) => sum + (s.quantity ?? 0), 0);
+    return storageTotalBushels(this._storageByCustomerId().get(customer.id) ?? []);
   }
 
   /** Shared per-crop chip color, exposed to the template. */
@@ -3250,44 +3125,18 @@ export class BuildListComponent {
 
   /** Lower-cased commodity code OR name → crop category ("yc"/"corn" → "Corn"), from the
    *  Commodities table — so storage chips (which carry codes like YC/SOR) color by their crop. */
-  private readonly _commodityCategoryByKey = computed(() => {
-    const map = new Map<string, string>();
-    for (const cm of this.appState.commodities()) {
-      const group = (cm.category || cm.name || '').trim();
-      if (!group) continue;
-      if (cm.code) map.set(cm.code.trim().toLowerCase(), group);
-      if (cm.name) map.set(cm.name.trim().toLowerCase(), group);
-    }
-    return map;
-  });
+  private readonly _commodityCategoryByKey = computed(() => commodityCategoryByKey(this.appState.commodities()));
 
   /** Per-commodity storage totals (bushels summed across locations), largest first — mirrors the
    *  grain-on-farm chips so Storage results show each commodity + bushels inline without opening
    *  the producer. `category` is the resolved crop name used for the shared chip color (the raw
    *  `crop` code is still what's displayed). */
-  storageBreakdown(customer: Customer): { crop: string; bushels: number; category: string }[] {
-    const byCrop = new Map<string, number>();
-    for (const s of this._storageByCustomerId().get(customer.id) ?? []) {
-      const qty = s.quantity ?? 0;
-      if (qty <= 0) continue;
-      const crop = (s.crop || 'Unknown').trim();
-      byCrop.set(crop, (byCrop.get(crop) ?? 0) + qty);
-    }
-    const catByKey = this._commodityCategoryByKey();
-    return [...byCrop.entries()]
-      .map(([crop, bushels]) => ({ crop, bushels, category: catByKey.get(crop.toLowerCase()) ?? crop }))
-      .sort((a, b) => b.bushels - a.bushels);
+  storageBreakdown(customer: Customer): CropBushels[] {
+    return storageBreakdown(this._storageByCustomerId().get(customer.id) ?? [], this._commodityCategoryByKey());
   }
 
   /** DP rows grouped by numeric customerId. Mirror of `_storageByCustomerId`. */
-  private readonly _dpByCustomerId = computed(() => {
-    const map = new Map<number, DpContract[]>();
-    for (const d of this.dpContracts()) {
-      const arr = map.get(d.customerId);
-      if (arr) arr.push(d); else map.set(d.customerId, [d]);
-    }
-    return map;
-  });
+  private readonly _dpByCustomerId = computed(() => groupByCustomerId(this.dpContracts()));
 
   /** Total bushels a producer has on DP. Drives the DP-results sort (most DP first).
    *  Counted once per delivery — the view repeats the quantity on every charge-type row. */
@@ -3297,26 +3146,13 @@ export class BuildListComponent {
 
   /** Per-commodity DP totals, largest first — the inline chips on DP results. Bushels are
    *  per-delivery and charges are summed across charge rows (see dp-aggregate). */
-  dpBreakdown(customer: Customer): { crop: string; bushels: number; category: string }[] {
+  dpBreakdown(customer: Customer): CropBushels[] {
     const catByKey = this._commodityCategoryByKey();
-    return dpBreakdownByCrop(this._dpByCustomerId().get(customer.id) ?? [])
-      .filter(b => b.bushels > 0)
-      .map(b => ({
-        crop: b.crop,
-        bushels: b.bushels,
-        category: catByKey.get(b.crop.toLowerCase()) ?? b.crop,
-      }));
+    return dpBreakdown(this._dpByCustomerId().get(customer.id) ?? [], catByKey);
   }
 
   /** Planting intentions grouped by numeric customerId. Mirror of `_storageByCustomerId`. */
-  private readonly _plantingByCustomerId = computed(() => {
-    const map = new Map<number, PlantingIntention[]>();
-    for (const p of this.plantingIntentions()) {
-      const arr = map.get(p.customerId);
-      if (arr) arr.push(p); else map.set(p.customerId, [p]);
-    }
-    return map;
-  });
+  private readonly _plantingByCustomerId = computed(() => groupByCustomerId(this.plantingIntentions()));
 
   /**
    * Season / irrigation type the running prompt asks about ("Producers with 2025 planting
@@ -3394,8 +3230,7 @@ export class BuildListComponent {
 
   /** "Show 3 more bin sites", or null when every site is listed. */
   binSiteGrainHiddenLabel(groups: BinSiteGrainGroup[]): string | null {
-    const sites = Math.max(0, groups.length - this.binSitesVisible);
-    return sites ? `Show ${sites} more bin site${sites === 1 ? '' : 's'}` : null;
+    return binSiteGrainHiddenLabel(groups, this.binSitesVisible);
   }
 
   /** Open bin sites, as "customerId:index" (index into binSiteGrainBreakdown, which keeps the saved site
@@ -3425,10 +3260,7 @@ export class BuildListComponent {
 
   /** A closed site's line: "2 crops · 35,000 bu", or "No grain on farm". */
   binSiteGrainSummary(group: BinSiteGrainGroup): string {
-    const n = group.rows.length;
-    if (n === 0) return 'No grain on farm';
-    const bushels = group.rows.reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0);
-    return `${n} crop${n === 1 ? '' : 's'} · ${bushels.toLocaleString('en-US')} bu`;
+    return binSiteGrainSummary(group);
   }
   /** Producers whose full list of bin sites is showing. */
   readonly binSitesShowAll = signal<ReadonlySet<number>>(new Set());
@@ -3442,7 +3274,7 @@ export class BuildListComponent {
   }
 
   hasBinSiteGrain(customer: Customer): boolean {
-    return (customer.binSites?.length ?? 0) > 0 || (customer.grainOnFarm?.length ?? 0) > 0;
+    return hasBinSiteGrain(customer);
   }
 
   /** The rows of a producer's breakdown — see binSiteGrainBreakdown in shared/utils/grain-on-farm. */
