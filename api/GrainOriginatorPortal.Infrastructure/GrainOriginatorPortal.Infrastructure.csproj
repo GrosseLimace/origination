@@ -17,7 +17,13 @@
          (GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf, CVE-2026-47302, CVE-2026-50525 &
          CVE-2026-50648 — EncryptedXml DoS — and CVE-2026-47304 — EncryptedXml security-feature
          bypass). Patched in the .NET 10 line at 10.0.10; using that to match the net10 TFM. -->
-    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.10" />
+    <!-- 2026-10-13: raised 10.0.10 -> 10.0.13 for CVE-2026-96958, CVE-2026-96959 and CVE-2026-96960
+         (SignedXml / C14N / EncryptedXml DoS, affected <= 10.0.12). The previous 10.0.10 floor had
+         itself fallen inside the new range. NOTE: this pin does NOT reach the deployed web app -
+         .NET 10 package pruning drops it, and the app loads System.Security.Cryptography.Xml and
+         System.Private.Xml from the App Service's ASP.NET Core / .NET runtime, which must be on the
+         patched October 2026 servicing release for the running app to be fixed. -->
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.13" />
   </ItemGroup>
 
 </Project>
