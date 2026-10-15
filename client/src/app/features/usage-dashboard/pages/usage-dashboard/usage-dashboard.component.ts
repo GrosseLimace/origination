@@ -227,7 +227,6 @@ export class UsageDashboardComponent {
     { id: 'dashboard', label: 'Planting Intention Dashboard' },
     { id: 'build-a-list', label: 'Build a List' },
     { id: 'insights', label: 'Actionable Insights' },
-    { id: 'unshipped-bushels', label: 'Unshipped Bushels' },
     { id: 'bidsheet', label: 'Bid Sheet' },
     { id: 'daily-recap', label: 'Daily Recap' },
   ];

@@ -48,7 +48,6 @@ describe('UsageTrackingService', () => {
     ['/insights', 'insights'],
     ['/dashboard', 'dashboard'],
     ['/bid-sheet', 'bidsheet'],
-    ['/unshipped-bushels', 'unshipped-bushels'],
     ['/daily-digest', 'daily-recap'],
   ])('posts screen_enter for %s as feature "%s"', (path, featureCode) => {
     navigateTo(path);
