@@ -21,6 +21,8 @@ export const environment = {
   // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite
   // admin consent on this env SPA app registration. Granted 2026-09-21 — enabled.
   remindersEnabled: true,
+  // 45Z field data + carbon intensity: prototype only, not released here.
+  carbonIntensityEnabled: false,
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.
   tradeUnitPreferencesUrl: 'https://tradeunitprefs-qa.scoular.com/my-preferences',

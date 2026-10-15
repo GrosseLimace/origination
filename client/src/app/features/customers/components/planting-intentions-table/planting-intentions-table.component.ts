@@ -5,12 +5,16 @@ import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowCompo
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
 import { InputComponent } from '@shared/components/input/input.component';
-import { Customer, PlantingIntention, Commodity } from '@models';
+import { Customer, PlantingIntention, Commodity, FdCicCrop } from '@models';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
+import { fdCicCropFor } from '@shared/utils/ci-illustrative';
+import { environment } from '@env/environment';
+import { CiIntentionStripComponent } from '../carbon-intensity/ci-intention-strip.component';
+import { CiFieldDialogComponent } from '../carbon-intensity/ci-field-dialog.component';
 
 type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'tradeUnit';
 type SortDirection = 'none' | 'asc' | 'desc';
@@ -37,7 +41,9 @@ type PlantingRow = PlantingIntention;
     DialogDescriptionComponent,
     DialogContentComponent,
     DialogFooterComponent,
-    InputComponent
+    InputComponent,
+    CiIntentionStripComponent,
+    CiFieldDialogComponent
   ],
   templateUrl: './planting-intentions-table.component.html'
 })
@@ -276,6 +282,18 @@ export class PlantingIntentionsTableComponent {
   /** Crop-column label for a row: "[Type ]Category" (e.g. "Double Crop Corn", "Irrigated Wheat"). */
   rowCropLabel(row: PlantingRow): string {
     return `${row.type ? row.type + ' ' : ''}${this.cropCategoryFor(row.crop, row.category)}`;
+  }
+
+  // ── 45Z field data (prototype, behind carbonIntensityEnabled) ─────────────
+  // Read-only beside the row: nothing here changes an intention or its acres.
+  readonly carbonIntensityEnabled = environment.carbonIntensityEnabled;
+  ciIntention: PlantingIntention | null = null;
+  /** Hover text on the "not a scored crop" note, so a missing 45Z link doesn't read as a fault. */
+  readonly ciNotScoredHelp = 'The USDA 45Z calculator (FD-CIC v1.0) only scores corn, soybeans, sorghum and canola, so this crop has no CI score.';
+
+  /** The FD-CIC crop for a row, or null when the crop isn't scored (no 45Z strip is shown). */
+  ciCropFor(row: PlantingRow): FdCicCrop | null {
+    return this.carbonIntensityEnabled ? fdCicCropFor(this.cropCategoryFor(row.crop, row.category)) : null;
   }
 
   get sortedIntentions(): PlantingRow[] {

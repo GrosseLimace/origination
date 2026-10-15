@@ -51,6 +51,8 @@ export const environment = {
   // app but silently fails to create the Outlook event, which is worse than the feature being
   // absent: the user believes they have been reminded.
   remindersEnabled: true,
+  // 45Z field data + carbon intensity: prototype only, not released here.
+  carbonIntensityEnabled: false,
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.
   tradeUnitPreferencesUrl: 'https://tradeunitprefs.scoular.com/my-preferences',
