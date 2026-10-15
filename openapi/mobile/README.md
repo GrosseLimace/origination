@@ -11,22 +11,26 @@ This directory is the contract for the Origination Workbench **mobile** surface,
 **Status: Phase 1 contract, draft for review.** Scope comes from GitHub cards #641–#648 (Phase 1) created 2026-09-23, plus the group → trade units → producers flow agreed in the 2026-09-23 preview. Saved lists were removed from mobile on 2026-10-14 (originators search instead). 17 operations. Two open decisions still affect the *Offline behaviour* column and are marked below.
 
 
-> **Decided 2026-10-14: Burdi's hosting pattern.** The mobile app is served by the existing Origination App Service at `/mobile` (like Burdi's `/driver`), and Origination becomes "hybrid internet-accessible" like Burdi: from the internet, FortiGate and the Application Gateway WAF let through only `/mobile/*` and `/api/mobile/v1/*`. **No Static Web App, no APIM, no Data Integrations work.** Sign-in stays separate from the desktop (own app registration and `Origination.Mobile.{Env}` scope), so the server refuses phone sign-ins outside the mobile API even if the WAF list changes; sharing the desktop sign-in like Burdi was considered and deferred until Security confirms it. Sections below that describe a Static Web App or APIM are superseded by this note.
+> **Decided 2026-10-15: follow Grain Vision's external app — supersedes the Burdi notes above.** Grain Vision (IT/grain-vision) implements the EXTERNAL-SPA-GUIDE: the field app is its own Azure Static Web App (Dev `ext-origination-dev.scoular.com`; QA/Prod on the desktop's address via split-horizon DNS), it calls the API through APIM at `api{dev,qa,}.scoular.com/external/origination/v1` (App Gateway + WAF in front; Dev too, as Grain Vision's does), and the App Service stays fully private — no "hybrid" paths, no `/mobile` on the App Service. Sign-in stays shared with the desktop (Grain Vision does the same). Open: the Guide restricts external access to company-managed devices; our originators use personal, unmanaged phones (PLATFORM-REQUESTS.md D1).
+>
+> ~~**Decided 2026-10-14: Burdi's hosting pattern.**~~ The mobile app is served by the existing Origination App Service at `/mobile` (like Burdi's `/driver`), and Origination becomes "hybrid internet-accessible" like Burdi: from the internet, FortiGate and the Application Gateway WAF let through only `/mobile/*` and `/api/mobile/v1/*`. **No Static Web App, no APIM, no Data Integrations work.** Sign-in stays separate from the desktop (own app registration and `Origination.Mobile.{Env}` scope), so the server refuses phone sign-ins outside the mobile API even if the WAF list changes; sharing the desktop sign-in like Burdi was considered and deferred until Security confirms it. Sections below that describe a Static Web App or APIM are superseded by this note.
 
 ## Routing
 
 | Environment | Base URL | Route |
 |---|---|---|
 | Local | `http://localhost:5000/api/mobile/v1` | Direct to the .NET API |
-| Dev | `https://origination-dev.scoular.com/api/mobile/v1` | Direct to App Service (no APIM in dev) |
-| QA | `https://apiqa.scoular.com/{apimPathPrefix}` | Through APIM |
-| Prod | `https://api.scoular.com/{apimPathPrefix}` | Through APIM |
+| Dev | `https://apidev.scoular.com/external/origination/v1` | Through APIM (as Grain Vision's Dev external app) |
+| QA | `https://apiqa.scoular.com/external/origination/v1` | Through APIM |
+| Prod | `https://api.scoular.com/external/origination/v1` | Through APIM |
+
+The prefix `/external/origination/v1` is our proposal (Grain Vision uses `/external/grainvision/v1`); Data Integrations confirms it.
 
 Paths in `specification.yaml` are relative to the APIM path prefix (for example `/customers/{id}`, not `/api/mobile/v1/customers/{id}`). The backend web-service URL configured in APIM must include `/api/mobile/v1` so operation templates map 1:1 with no rewrite policy.
 
 ## Authentication
 
-Entra ID, same tenant as the desktop app (`1521f999-f722-4a4f-9747-166f93e9b0d1`). Sign-in is **shared with the desktop, as in Burdi** (decided 2026-10-15): tokens come from the Origination SPA registration with audience = the Origination API app registration and scope `Origination.Application.{Env}`. The backend validates scope, client id (only the Origination SPA registration) and trade-unit entitlement on every request. Customers outside the caller's entitlement return 404, not 403.
+Entra ID, same tenant as the desktop app (`1521f999-f722-4a4f-9747-166f93e9b0d1`). Sign-in is **shared with the desktop, as in Grain Vision** (decided 2026-10-15): tokens come from the Origination SPA registration with audience = the Origination API app registration and scope `Origination.Application.{Env}`. APIM validates the token and passes it through unchanged; the backend re-validates scope, client id (only the Origination SPA registration) and trade-unit entitlement on every request. Customers outside the caller's entitlement return 404, not 403.
 
 ## Workflows and offline behaviour
 

@@ -26,12 +26,12 @@ info:
 servers:
   - url: http://localhost:5000/api/mobile/v1
     description: Local development (direct to the .NET API)
-  - url: https://origination-dev.scoular.com/api/mobile/v1
-    description: Dev (company network only)
-  - url: https://origination-qa.scoular.com/api/mobile/v1
-    description: QA (internet access through the App Gateway WAF, mobile paths only)
-  - url: https://origination.scoular.com/api/mobile/v1
-    description: Production (internet access through the App Gateway WAF, mobile paths only)
+  - url: https://apidev.scoular.com/external/origination/v1
+    description: Dev through APIM (path prefix proposed; Data Integrations confirms). Backend https://app-origination-dev-eus.azurewebsites.net/api/mobile/v1
+  - url: https://apiqa.scoular.com/external/origination/v1
+    description: QA through APIM (App Gateway + WAF in front). Backend https://app-origination-qa-eus.azurewebsites.net/api/mobile/v1
+  - url: https://api.scoular.com/external/origination/v1
+    description: Production through APIM (App Gateway + WAF in front). Backend https://app-origination-eus.azurewebsites.net/api/mobile/v1
 security:
   - entraId: []
 tags:

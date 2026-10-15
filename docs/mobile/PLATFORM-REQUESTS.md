@@ -1,30 +1,39 @@
 # Mobile Component — Platform and Team Requests
 
-Requests the Origination app team makes to other teams, grouped by owner. Source: [MOBILE-ARCHITECTURE-PLAN.md](MOBILE-ARCHITECTURE-PLAN.md).
+Requests the Origination app team makes to other teams, grouped by owner. Source: [MOBILE-ARCHITECTURE-PLAN.md](MOBILE-ARCHITECTURE-PLAN.md). Ready-to-send wording: [REQUEST-MESSAGES.md](REQUEST-MESSAGES.md).
 
-> **Decided 2026-10-14: follow Burdi's hosting pattern.** The mobile app is served by the existing Origination App Service at `/mobile`, like Burdi's `/driver` app, and Origination becomes "hybrid internet-accessible" like Burdi. From the internet, FortiGate and the Application Gateway WAF let through only `/mobile/*` and `/api/mobile/v1/*`; everything else stays internal. There is **no Static Web App and no APIM**, so Data Integrations is not involved. Phones are personal and unmanaged; there is no app-store app.
-
-> **Decided 2026-10-15: sign-in shared with the desktop, as in Burdi.** The phone signs in with the existing Origination SPA registration and the `Origination.Application.{Env}` scope, with `/mobile` added as a redirect URI — exactly as Burdi's PWA registration lists `/driver`. The mobile API still accepts only tokens issued to that registration (`Mobile:AllowedClientAppIds`), and the WAF allow-list is what keeps the rest of the API off the internet. `Mobile:SharedSignIn` switches back to a separate registration if Security ever requires it.
+> **Decided 2026-10-15: follow Grain Vision's external app** (replaces the 2026-10-14 Burdi hosting decision). Grain Vision implements Infrastructure's [EXTERNAL-SPA-GUIDE](reference/EXTERNAL-SPA-GUIDE.md): the field app is its own **Azure Static Web App** (Dev on its own `ext-` address; QA and Prod on the desktop's address through split-horizon DNS), it calls the API through **APIM** (`api{dev,qa,}.scoular.com/external/{app}/v1`, App Gateway + WAF in front), and the **App Service stays fully private**. Sign-in is the **desktop's** (same SPA registration and scope; no separate external registration). Origination does the same, with APIM forwarding to our dedicated `api/mobile/v1` surface. One difference Grain Vision does not have: **our originators use personal, unmanaged phones**, while the Guide restricts external access to company-managed devices, so that question goes to Infrastructure and Security first.
 
 ## Infrastructure
 
 | # | Request | We provide | Status |
 |---|---|---|---|
-| H1 | Make Origination **hybrid internet-accessible like Burdi** in QA and Prod, with `externalAllowedPaths` = `/mobile/*` and `/api/mobile/v1/*`. Confirm how Dev can be tested from a phone (Burdi's pattern opens QA and Prod only) | The two paths | |
-| E3 | Add the `/mobile` redirect URI (SPA platform) to the **existing** Origination SPA registrations, as Burdi's PWA registration lists `/driver`: `https://origination-dev.scoular.com/mobile` on Dev `e0f25943-ae8b-4c2d-8060-c9ffbd448aff`, `https://origination-qa.scoular.com/mobile` on QA `c2bb1208-063d-43aa-bad0-6b51d21437b4`, `https://origination.scoular.com/mobile` on Prod `958fd665-daa3-42c5-9903-3c9c00638bf1`. No new registration or scope (`http://localhost:4201` is already on the Dev one) | The three URIs | |
-| E12 | Application Insights alerts: 401/403 spikes on `api/mobile/*`, sustained 429s, WAF blocks on the mobile paths | KQL based on `SecurityAuditMiddleware` fields | |
+| E1 | Enable Origination's **external app** like Grain Vision's: Static Web Apps `swa-origination-dev-eus`, `swa-origination-qa-eus`, `swa-origination-eus`; Dev address `ext-origination-dev.scoular.com`; QA/Prod on `origination-qa.scoular.com` / `origination.scoular.com` via split-horizon DNS; App Gateway + WAF in front of APIM for our path | This list; `openapi/mobile/` | |
+| E3 | Add `https://ext-origination-dev.scoular.com` as a redirect URI (SPA platform) on the existing **Origination - Dev** registration `e0f25943-ae8b-4c2d-8060-c9ffbd448aff`. QA and Prod need nothing: split-horizon reuses the existing `https://origination-qa.scoular.com` / `https://origination.scoular.com` redirect URIs, as for Grain Vision | The URI | |
+| E5 | Let the GitHub Actions service principal deploy to the three Static Web Apps (our `deploy-mobile.yml`, the same shape as Grain Vision's `deploy-external.yml`) | Workflow | |
+| D1 | **Personal phones:** the Guide limits external access to company-managed devices through Conditional Access. Originators use their own unmanaged phones. Can Origination's external app allow them (e.g. MFA plus a sign-in frequency), and who decides — Infrastructure or Security? | Context below | |
+| E12 | Application Insights alerts: 401/403 spikes on `api/mobile/*`, sustained 429s | KQL based on `SecurityAuditMiddleware` fields | |
 | E14 | Enable GitHub Advanced Security (code scanning) on `IT/origination` so CodeQL can run on pull requests. Interim control already in place: Roslyn security analyzers as build errors and NuGet/npm vulnerability scans in `ci.yml` | Repo name | |
+
+## Data Integrations
+
+| # | Request | We provide | Status |
+|---|---|---|---|
+| E7 | Import `openapi/mobile/specification.yaml` into APIM via APIOps in **Dev, QA and Prod** (Grain Vision's Dev external app uses `apidev.scoular.com` too). Proposed prefix `/external/origination/v1`, backend `https://app-origination{-dev,-qa,}-eus.azurewebsites.net/api/mobile/v1` (paths 1:1, no rewrite). Policies: `validate-jwt` (audience = the Origination API registration, scope `Origination.Application.{Env}`), CORS for the Static Web App origins, `rate-limit-by-key` on the user's `oid`, correlation-id pass-through | Spec + README | |
+| E8 | Confirm the user's token is **passed through unchanged** (our API re-validates audience, scope, client id and trade-unit entitlement) | — | |
 
 ## Identity / Security
 
 | # | Request | We provide | Status |
 |---|---|---|---|
-| E10 | For Origination sign-ins **from iPhone and Android** (Conditional Access by device platform, since the registration is shared with the desktop): a policy that fits **personal, unmanaged phones** (MFA plus a sign-in frequency Identity chooses) and Continuous Access Evaluation. Token lifetime stays the default unless Identity prefers 15 minutes for desktop too (documented 60-minute exception with CAE). Pilot on iOS Safari and Android Chrome | Origination SPA app ids | |
-| — | Security early read: is the Burdi-style internet access acceptable for Origination's mobile paths, and may the phone cache producer reads briefly (1 hour, notes 15 minutes) or none at all? | ADR-001 | |
+| E10 | A Conditional Access policy for Origination sign-ins **from iPhone and Android that fits personal, unmanaged phones** (MFA plus a sign-in frequency Identity chooses; ties to D1), Continuous Access Evaluation, and the token-lifetime position (the registration is shared with the desktop, so 15 minutes would apply to both; we propose a documented 60-minute exception with CAE). Pilot on iOS Safari and Android Chrome | Origination SPA app ids | |
+| — | Security early read: the exceptions in ADR-001 (shared App Service host and managed identity behind APIM; no device binding; browser storage on personal phones; no compliant-device rule) and whether the phone may cache producer reads briefly (1 hour, notes 15 minutes) or none at all | ADR-001 | |
 
-## No longer needed (Burdi hosting pattern, 2026-10-14)
+## No longer needed
 
-E9 a separate `Origination.Mobile.{Env}` scope (sign-in shared with the desktop, 2026-10-15) · E1 Static Web Apps · E2 WAF policy for an APIM prefix (replaced by H1) · E4 CORS for a separate site (the app is now same-origin) · E5 deploy permission on Static Web Apps (the existing App Service deploy ships the mobile app) · E6 APIM to App Service path · E7 and E8 APIM import and token pass-through (Data Integrations) · E13 APIM diagnostics.
+- Burdi pattern (2026-10-14, replaced 2026-10-15): **H1** "hybrid internet-accessible" App Service paths — the App Service stays private; the `/mobile` redirect URIs — the app is its own site.
+- Separate mobile sign-in: **E9** `Origination.Mobile.{Env}` scope and a separate registration — sign-in is shared with the desktop, as in Grain Vision.
+- **E4** CORS on the App Service — the phone calls APIM, which handles CORS (E7).
 
 ## Deferred (only if Security requires a separate host)
 
@@ -34,6 +43,6 @@ E9 a separate `Origination.Mobile.{Env}` scope (sign-in shared with the desktop,
 
 ## Sequence
 
-1. Now: H1 and E3 to Infrastructure in one message; the Security early read in parallel.
-2. Once E3 exists: deploy to Dev and sign in on a phone on the Scoular network (client ids and scopes are already configured).
-3. With E10: the iPhone and Android pilot in QA.
+1. Now: E1, E3, E5 and D1 to Infrastructure; E7 and E8 to Data Integrations; the Security early read in parallel.
+2. Once Dev exists (Static Web App + APIM operations + redirect URI): deploy the API, then `deploy-mobile.yml` (dev), and sign in on a phone — from anywhere, since Dev goes through APIM.
+3. With E10 and the D1 answer: the iPhone and Android pilot in QA.
