@@ -2669,7 +2669,7 @@
       "answer": "Contracts come live from CTRM, so the Workbench shows what CTRM has. Work through these checks:",
       "steps": [
         "Make sure you're on the right producer. A contract under a linked producer's account shows on that producer, not this one.",
-        "The **Open Contracts** tab lists open contracts. A closed or fully delivered contract won't be there.",
+        "The **Open Contracts** tab lists open contracts only. Closed and fully delivered contracts aren't shown there.",
         "If it was just entered in CTRM, give it up to 15 minutes. Lists and Actionable Insights refresh contract data every 15 minutes.",
         "Check CTRM. If the contract isn't in CTRM, it hasn't been entered yet — follow up with whoever enters it. If it is in CTRM but not here, use **Still need help?**: that's a data issue we need to look at."
       ],
@@ -2765,11 +2765,11 @@
         "/"
       ],
       "feature": "customers",
-      "answer": "It depends on what changed. Producer details from the customer master (name, address, phone, email, payment method) are copied into the Workbench once a night, so a change usually shows the next morning. Contract and ticket changes in CTRM show up within about 15 minutes. Anything you edit in the Workbench itself (contacts, bin sites, acres, notes) saves straight away.",
+      "answer": "It depends on what changed. Producer details from the customer master (name, address, phone, email, payment method) come into the Workbench through a nightly sync, so a change usually shows the next morning. Contract and ticket changes in CTRM show up within about 15 minutes. Anything you edit in the Workbench itself (contacts, bin sites, acres, notes) saves straight away.",
       "steps": [
-        "Wait for the next overnight refresh for producer details, or about 15 minutes for contracts and tickets.",
-        "Still not showing? Check the change actually saved in the source system (Master Data or CTRM).",
-        "If it's right in the source system but not here, use **Still need help?** so we can look into it."
+        "Wait for the nightly sync for producer details, or about 15 minutes for contracts and tickets.",
+        "Still not showing after that? Check the change actually saved in the source system (Master Data or CTRM).",
+        "If it's right in the source system but still not here, use **Still need help?** to open a help desk ticket."
       ],
       "escalate": true,
       "related": [
