@@ -14,6 +14,15 @@ import { plantingCategory, commodityPlantingCategory } from '@shared/utils/plant
 import { fdCicCropFor } from '@shared/utils/ci-illustrative';
 import { environment } from '@env/environment';
 import { CropFieldsPanelComponent } from '../field-plan/crop-fields-panel.component';
+// DEMO ONLY: the two earlier prototypes, for the A/B/C comparison switch.
+import { BesideStripComponent } from '../field-plan-demo/beside/ci-intention-strip.component';
+import { BesideFieldDialogComponent } from '../field-plan-demo/beside/ci-field-dialog.component';
+import { ByFieldViewComponent } from '../field-plan-demo/by-field/field-plan-view.component';
+import { ByFieldLineComponent } from '../field-plan-demo/by-field/field-plan-intention-line.component';
+
+type DemoOption = 'A' | 'B' | 'C';
+/** DEMO ONLY: which prototype is showing; module state so it outlives the component. */
+const demoState: { option: DemoOption } = { option: 'C' };
 
 type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'tradeUnit';
 type SortDirection = 'none' | 'asc' | 'desc';
@@ -41,7 +50,11 @@ type PlantingRow = PlantingIntention;
     DialogContentComponent,
     DialogFooterComponent,
     InputComponent,
-    CropFieldsPanelComponent
+    CropFieldsPanelComponent,
+    BesideStripComponent,
+    BesideFieldDialogComponent,
+    ByFieldViewComponent,
+    ByFieldLineComponent
   ],
   templateUrl: './planting-intentions-table.component.html'
 })
@@ -286,6 +299,36 @@ export class PlantingIntentionsTableComponent {
   // The row's acres stay the total; fields only break it down (FieldPlanMockService, in memory).
   readonly fieldPlanningEnabled = environment.fieldPlanningEnabled;
   readonly carbonIntensityEnabled = environment.carbonIntensityEnabled;
+
+  // ── DEMO ONLY (demo_FieldPlanCompare): switch between the three field-plan prototypes ──────────
+  // A = 45Z data beside the intention (separate dialog), B = plan by field (grid + simulated roll-up),
+  // C = fields under each crop row. The choice lives in module state so it survives switching
+  // producers and tabs. Remove this block, the field-plan-demo folder and the template switch together.
+  readonly demoOptions = [
+    { id: 'A', label: 'A · 45Z beside intentions' },
+    { id: 'B', label: 'B · Plan by field' },
+    { id: 'C', label: 'C · Fields under each crop' },
+  ] as const;
+  get demoOption(): DemoOption { return demoState.option; }
+  set demoOption(value: DemoOption) { demoState.option = value; }
+
+  // Option A
+  besideIntention: PlantingIntention | null = null;
+  // Option B
+  planView: 'crop' | 'field' = 'crop';
+  get fieldPlanYear(): number {
+    return this.selectedYear() || Math.max(0, ...this.plantingIntentions().map(p => p.plantingYear)) || new Date().getFullYear();
+  }
+  get fieldPlanCrops(): Commodity[] {
+    const inScope = { groupNames: this.appState.inScopeGroupNames(), tradeUnitCodes: this.appState.inScopeTradeUnitCodes() };
+    return scopeCommodities(this.plantingCommodities, inScope);
+  }
+  openFieldPlan(row: PlantingRow): void {
+    this.yearSelect.emit(row.plantingYear);
+    this.planView = 'field';
+  }
+  readonly ciNotScoredHelp = 'The USDA 45Z calculator (FD-CIC v1.0) only scores corn, soybeans, sorghum and canola, so this crop has no CI score.';
+  // ── end DEMO ONLY ───────────────────────────────────────────────────────────────────────────────
 
   /** Fields add up to more than the row: open the normal Edit dialog with the new total filled in,
    *  so the change is saved deliberately, the same way any acreage edit is. */

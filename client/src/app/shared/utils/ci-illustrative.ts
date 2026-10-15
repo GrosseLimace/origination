@@ -69,12 +69,15 @@ export function yieldUsed(expected: number, actual: number | null): number {
   return Math.min(Math.max(raw, expected * 0.8), expected * 1.2);
 }
 
-export function seasonStatus(season: FieldSeason): SeasonStatus {
+export function seasonStatus(season: ScorableSeason): SeasonStatus {
   if (season.status === 'Final') return 'Final';
   return missingInputs(season).length === 0 ? 'Projected' : 'Draft';
 }
 
 type ScoredInputs = Pick<FieldSeason, 'expectedYield' | 'actualYield' | 'syntheticN' | 'niFraction' | 'tillage' | 'coverCrop' | 'manure'>;
+
+/** Just the season fields scoring reads, so any season shape with them can be scored. */
+export type ScorableSeason = ScoredInputs & Pick<FieldSeason, 'acres' | 'status'>;
 
 function components(crop: FdCicCrop, s: ScoredInputs): CiComponent[] {
   const n = NATIONAL[crop];
@@ -100,7 +103,7 @@ function components(crop: FdCicCrop, s: ScoredInputs): CiComponent[] {
 const total = (cs: CiComponent[]) => cs.reduce((sum, c) => sum + c.value, 0);
 
 /** Illustrative CI for one field season, or null while required inputs are missing. */
-export function estimateCi(crop: FdCicCrop, season: FieldSeason): CiResult | null {
+export function estimateCi(crop: FdCicCrop, season: ScorableSeason): CiResult | null {
   if (missingInputs(season).length > 0) return null;
   const cs = components(crop, season);
   const ci = total(cs);
@@ -131,12 +134,12 @@ export function estimateCi(crop: FdCicCrop, season: FieldSeason): CiResult | nul
 export function summarizeIntention(
   crop: FdCicCrop,
   intention: { id: number; acres: number },
-  seasons: FieldSeason[],
+  seasons: ScorableSeason[],
 ): IntentionCiSummary {
   const assignedAcres = seasons.reduce((sum, s) => sum + (s.acres ?? 0), 0);
   const scored = seasons
     .map(s => ({ s, r: estimateCi(crop, s) }))
-    .filter((x): x is { s: FieldSeason; r: CiResult } => x.r !== null);
+    .filter((x): x is { s: ScorableSeason; r: CiResult } => x.r !== null);
 
   let status: IntentionCiSummary['status'] = 'NotStarted';
   if (seasons.length > 0) {
