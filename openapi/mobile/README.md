@@ -26,7 +26,7 @@ Paths in `specification.yaml` are relative to the APIM path prefix (for example 
 
 ## Authentication
 
-Entra ID, same tenant as the desktop app (`1521f999-f722-4a4f-9747-166f93e9b0d1`). Tokens carry audience = the Origination API app registration and scope `Origination.Mobile.{Env}`. APIM validates and **passes the token through unchanged**; the backend re-validates scope, client id, and trade-unit entitlement on every request. Customers outside the caller's entitlement return 404, not 403.
+Entra ID, same tenant as the desktop app (`1521f999-f722-4a4f-9747-166f93e9b0d1`). Sign-in is **shared with the desktop, as in Burdi** (decided 2026-10-15): tokens come from the Origination SPA registration with audience = the Origination API app registration and scope `Origination.Application.{Env}`. The backend validates scope, client id (only the Origination SPA registration) and trade-unit entitlement on every request. Customers outside the caller's entitlement return 404, not 403.
 
 ## Workflows and offline behaviour
 

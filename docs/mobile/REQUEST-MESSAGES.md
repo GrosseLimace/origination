@@ -18,7 +18,7 @@ Links assume the branch `docs_MobileArchitecturePlan`; update them once merged t
 - Architecture plan: https://scoular.ghe.com/IT/origination/blob/docs_MobileArchitecturePlan/docs/mobile/MOBILE-ARCHITECTURE-PLAN.md
 - ADR-001 (topology decision + exceptions): https://scoular.ghe.com/IT/origination/blob/docs_MobileArchitecturePlan/docs/adr/ADR-001-mobile-surface-topology.md
 
-> **Decided 2026-10-14: Burdi's hosting pattern.** The mobile app is served by the existing Origination App Service at `/mobile` (like Burdi's `/driver`), and Origination becomes "hybrid internet-accessible" like Burdi: from the internet, FortiGate and the Application Gateway WAF let through only `/mobile/*` and `/api/mobile/v1/*`. **No Static Web App, no APIM, no Data Integrations work.** Sign-in stays separate from the desktop (own app registration and `Origination.Mobile.{Env}` scope), so the server refuses phone sign-ins outside the mobile API even if the WAF list changes; sharing the desktop sign-in like Burdi was considered and deferred until Security confirms it. Sections below that describe a Static Web App or APIM are superseded by this note.
+> **Decided 2026-10-14: Burdi's hosting pattern.** The mobile app is served by the existing Origination App Service at `/mobile` (like Burdi's `/driver`), and Origination becomes "hybrid internet-accessible" like Burdi: from the internet, FortiGate and the Application Gateway WAF let through only `/mobile/*` and `/api/mobile/v1/*`. **No Static Web App, no APIM, no Data Integrations work.** **Sign-in is shared with the desktop, as Burdi's driver app shares Burdi's (decided 2026-10-15):** the existing Origination registration with `/mobile` added as a redirect URI, the desktop scope, and the mobile API accepting only tokens issued to that registration. Sections below that describe a Static Web App or APIM are superseded by this note.
 
 ## 1. Data Integrations — not needed
 
@@ -26,7 +26,7 @@ There is no APIM in Burdi's hosting pattern, so nothing is asked of Data Integra
 
 ---
 
-## 2. Infrastructure — Burdi-style access, plus a separate mobile sign-in
+## 2. Infrastructure — Burdi-style access and sign-in
 
 **To:** _Infrastructure (Charles)_
 **Subject:** Origination mobile – can we follow the Burdi setup?
@@ -41,8 +41,10 @@ We'd like to follow the same setup as Burdi's driver app: the mobile app served 
 
 Everything else would stay internal, as it is today.
 
-We also need:
-- A separate sign-in registration for the mobile app, with its own permission (scope) on our API, so the server can keep phone sign-ins limited to the mobile paths even if the firewall list ever changes. Redirect URI https://origination-{env}.scoular.com/mobile, the same subpath pattern Burdi uses for /driver.
+For sign-in we'd also do what Burdi does: the phone uses our existing Origination sign-in registration, so we only need /mobile added as an allowed redirect address, the way Burdi's registration lists /driver:
+- Dev (e0f25943-ae8b-4c2d-8060-c9ffbd448aff): https://origination-dev.scoular.com/mobile
+- QA (c2bb1208-063d-43aa-bad0-6b51d21437b4): https://origination-qa.scoular.com/mobile
+- Prod (958fd665-daa3-42c5-9903-3c9c00638bf1): https://origination.scoular.com/mobile
 
 A few questions:
 1. Is that the right ask, and is there a request process you'd like us to use?
@@ -54,7 +56,7 @@ Caden
 
 ---
 
-## 3. Identity / IT Security — requests E9 and E10, plus a pre-review heads-up
+## 3. Identity / IT Security — request E10, plus a pre-review heads-up
 
 **To:** asksecurity@scoular.com; _Identity team_
 **Subject:** Origination mobile: identity requests under SEC-ARCH-BURDI-001 §4, and ADR-001 for your early read
@@ -63,7 +65,7 @@ Hi,
 
 _(shared background)_
 
-**Why you are involved.** The Spec's §4 sets the token and identity rules for external clients, and §12 puts IT Security and the Solutions Architect on the architecture review. We are asking Identity for four configuration items now, and giving Security an early look at the one design decision and the four exceptions we will bring to review, so that a "no" reaches us before we build the wrong thing.
+**Why you are involved.** The Spec's §4 sets the token and identity rules for external clients, and §12 puts IT Security and the Solutions Architect on the architecture review. We are asking Identity for three configuration items now, and giving Security an early look at the one design decision and the four exceptions we will bring to review, so that a "no" reaches us before we build the wrong thing.
 
 Users are Scoular originators only; no producers or external identities. The Spec's priority order puts Entra ID second for internal users (§4.1), which is what we use; the B2C option for external users does not apply.
 
@@ -71,10 +73,9 @@ Users are Scoular originators only; no producers or external identities. The Spe
 
 | # | What to do | Why (Spec reference) |
 |---|---|---|
-| 1 | Create a delegated scope **`Origination.Mobile.{Env}`** on the existing Origination API app registrations (Dev `00078a10-3f3f-4d17-9350-fe90401125ae`, QA `f3fcab2b-98c8-4622-86bd-c874d281b22a`, Prod `e1458bcd-7212-4ea0-a836-7e08d03b5bbf`). Grant it only to the new `Origination External - {Env}` client registrations Infrastructure is creating; **not** to the desktop SPA registrations | §3.2 "Authorization: scoped claims, only the operations this client needs". The scope is how APIM and our backend tell a mobile token from a desktop token |
-| 2 | Apply a **token lifetime policy of 15 minutes** for access tokens issued to the mobile client. If the policy can only attach to the API resource (which would also shorten desktop tokens), tell us and we will document a 60-minute exception with Continuous Access Evaluation as compensation | §4.2 token table: external API JWT 15 minutes max, refresh 24 h single-use rotated. Entra SPA refresh tokens already meet the refresh line |
-| 3 | Enable **Continuous Access Evaluation** for the mobile client; our app opts in with the `CP1` client capability | Compensating control for §4.2 and §4.3 in a browser: near-real-time revocation on sign-out, password change or risk |
-| 4 | A **Conditional Access policy for the mobile client that fits personal phones.** Originators use their own phones, which are not managed (no company phones, no Company Portal), so a "compliant device" rule cannot apply. We propose MFA plus a sign-in frequency you choose, and a short **pilot on iOS Safari and Android Chrome** with us before QA wiring. Tell us if you require something else | §4.3 device binding: the Spec wants tokens bound to a device; a website on a personal phone cannot do that, so strong sign-in and short sessions are the nearest achievable control |
+| 1 | **Token lifetime.** The phone signs in with the same Origination registration as the desktop, as Burdi's driver app does, so a 15-minute access-token policy would also shorten desktop tokens. We propose documenting a 60-minute exception with Continuous Access Evaluation as compensation; tell us if you would rather apply 15 minutes to both | §4.2 token table: external API JWT 15 minutes max, refresh 24 h single-use rotated. Entra SPA refresh tokens already meet the refresh line |
+| 2 | Enable **Continuous Access Evaluation** for Origination; our app opts in with the `CP1` client capability | Compensating control for §4.2 and §4.3 in a browser: near-real-time revocation on sign-out, password change or risk |
+| 3 | A **Conditional Access policy for Origination sign-ins from iPhone and Android that fits personal phones** (targeted by device platform, since the registration is shared with the desktop). Originators use their own phones, which are not managed (no company phones, no Company Portal), so a "compliant device" rule cannot apply. We propose MFA plus a sign-in frequency you choose, and a short **pilot on iOS Safari and Android Chrome** with us before QA wiring. Tell us if you require something else | §4.3 device binding: the Spec wants tokens bound to a device; a website on a personal phone cannot do that, so strong sign-in and short sessions are the nearest achievable control |
 
 **Security pre-review (for scheduling and an early read, not sign-off yet)**
 
@@ -82,7 +83,7 @@ ADR-001 (link above) records how we meet each Core Invariant and names four Spec
 
 | Spec requirement we miss | What we do instead |
 |---|---|
-| Core Invariant 3, API tier: the mobile API shares the private App Service host with the desktop API | Mobile surface is its own assembly with its own authorization policy, own client registration and scope, and a WAF allow-list that exposes only the mobile paths (17 operations), as for Burdi; nothing else in the API accepts a mobile token. Defined exit path to a separate host (ADR-001 Option 2) |
+| Core Invariant 3, API tier: the mobile API shares the private App Service host with the desktop API | Mobile surface is its own assembly with its own routes and authorization policy (only tokens issued to the Origination registration), and a WAF allow-list that exposes only the mobile paths (17 operations) to the internet, as for Burdi. Sign-in is shared with the desktop, as Burdi's driver app shares Burdi's; a separate mobile registration is a configuration switch if you require it. Defined exit path to a separate host (ADR-001 Option 2) |
 | Core Invariant 6 / §3.5: same managed identity for both tiers | As above; the mobile surface excludes ODS producer-master search, admin, reporting and bulk operations (§3.2 "what this layer must NOT contain"), and ODS is read-only regardless |
 | §4.3 device-bound tokens, certificate pinning | MFA, sign-in frequency, Continuous Access Evaluation, client-id check on every request. The business has decided against an app-store app, so pinning is not available |
 | §4.2 token storage in Keychain/Keystore: browser storage is not app-encrypted, and the phones are personal and unmanaged | Sign-in kept per browser tab (session storage); contact phone/email and search never cached; other producer reads cached at most 1 hour (notes 15 minutes) to ride out dropped signal; changes made without signal (notes, farm details, contacts, planting) wait on the phone until they are sent, as in Burdi's driver app; everything wiped on sign-out and on authentication failure. **If you prefer, we keep no producer data on the phone at all** (offline then covers only what is on screen) |
@@ -121,5 +122,5 @@ Caden
 
 - Record the send date and the named contact per team in [PLATFORM-REQUESTS.md](PLATFORM-REQUESTS.md) `Status` column.
 - Data Integrations' answers on token pass-through and subscription keys close meeting Q6 and unblock the `MobileAccess` policy configuration.
-- Infrastructure's answer on the app-registration model closes Q8.
+- Q8 (app-registration model) decided 2026-10-15: shared with the desktop, as Burdi.
 - Identity's answers close Q7. Device posture (Q2) was answered 2026-10-14: personal, unmanaged phones, no app-store app.

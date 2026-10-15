@@ -1,40 +1,36 @@
-# Mobile app — local preview before the mobile registration exists
+# Mobile app — running it locally
 
-Until Infrastructure creates the `Origination External - Dev` registration (PLATFORM-REQUESTS.md E3)
-and Identity creates the `Origination.Mobile.Dev` scope (E9), the phone app cannot sign in with its
-own identity. This recipe borrows the **desktop Dev** registration and scope so the real screens can be
-exercised against the local API and Dev data. Nothing here is committed; it is config only.
+Sign-in is shared with the desktop, as Burdi's driver app shares Burdi's (decided 2026-10-15): the phone app
+uses the desktop **Origination - Dev** SPA registration and the `Origination.Application.Dev` scope, and the API
+accepts them on the mobile routes because `Mobile:SharedSignIn` is on in the base appsettings. So the committed
+configuration runs as-is; no borrowed sign-in and no environment-variable override any more.
 
 ## Steps
 
-1. **Ports.** Use ports the desktop Dev SPA registration already allows and local CORS already lists:
-   the app on `4201` (or `4202`), the API on `5003`. Leave `4200`/`5000` alone if another session is using them.
-2. **Temporary environment** — edit `client/projects/mobile/src/environments/environment.ts` (do NOT commit):
-   - `apiBaseUrl: 'http://localhost:5003/api/mobile/v1'`
-   - `msal.clientId: 'e0f25943-ae8b-4c2d-8060-c9ffbd448aff'` (desktop Dev SPA)
-   - `msal.redirectUri` / `postLogoutRedirectUri: 'http://localhost:4201'`
-   - `apiScopes: ['api://00078a10-3f3f-4d17-9350-fe90401125ae/Origination.Application.Dev']` (desktop scope)
-3. **API** with the desktop scope accepted on the mobile routes (env var, not appsettings):
+1. **API** (port 5000, the committed `environment.ts` default):
    ```bash
    cd api/GrainOriginatorPortal.Api
-   ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://localhost:5003 \
-   Mobile__RequiredScopes__0=Origination.Application.Dev \
-   dotnet bin/Release/net10.0/GrainOriginatorPortal.Api.dll
+   dotnet run --launch-profile http
    ```
-   Requires `az login` (local SQL auth is Azure CLI based) and Dev ODS access.
-4. **App:** `cd client && npx ng serve origination-mobile --port 4201`, then open `http://localhost:4201`
-   in Chrome, F12 → device toolbar → Pixel 7 or iPhone 14.
-5. **Finish:** stop both processes and `git checkout -- client/projects/mobile/src/environments/environment.ts`.
-   The Vitest environment guard fails while the preview edit is in place — that is the guard working.
+   Requires `az login` (local SQL auth is Azure CLI based) and Dev ODS access. Check the log for
+   `Mobile surface enabled: … sign-in shared with the desktop (Burdi model)`.
+2. **App:** `cd client && npx ng serve origination-mobile` (port 4201, already a redirect URI on the Dev
+   registration), then open `http://localhost:4201` in Chrome, F12 → device toolbar → Pixel 7 or iPhone 14.
 
-## Caveats seen on 2026-09-23
+## When 5000 is taken by another worktree
 
-- Browser device emulation only: Entra allows plain-http redirect URIs on `localhost` only, so a real
-  phone on the LAN cannot sign in against this setup. A real phone needs the Dev Static Web App (E1).
-- The preview API instance accepts the desktop scope on mobile routes, which also makes every desktop
-  token look like a mobile token to *that instance*; the desktop app must keep using its own API on 5000.
-- Starting the API locally runs the customer sync job against Dev on startup, exactly like the desktop's local run.
-- **Schema drift:** producer-details reads fail if the Dev database is ahead of or behind `main`'s
-  migrations (feature branches apply theirs to Dev). The producer header degrades gracefully
-  (customer-level contact only); the On-farm tab shows its error state.
+Run the API on another port (e.g. `ASPNETCORE_URLS=http://localhost:5003`, a port local CORS already lists) and
+point `apiBaseUrl` in `client/projects/mobile/src/environments/environment.ts` at it **without committing that
+edit** — the Vitest environment guard fails while it is in place, which is the guard working. Restore with
+`git checkout -- client/projects/mobile/src/environments/environment.ts`.
+
+## Caveats
+
+- Browser device emulation only: Entra allows plain-http redirect URIs on `localhost` only, so a real phone on
+  the LAN cannot sign in against a local run. A real phone needs the deployed Dev site at `/mobile` (on the
+  Scoular network) once `/mobile` is on the Dev registration (PLATFORM-REQUESTS.md E3).
+- Starting the API locally runs the customer sync job against Dev on startup, exactly like the desktop's local
+  run; check the log for `0 deactivated`.
+- **Schema drift:** producer-details reads fail if the Dev database is ahead of or behind this branch's
+  migrations (feature branches apply theirs to Dev). The Overview shows its error state.
 - DP contracts are empty in Dev by design (data exists only in Prod ODS).

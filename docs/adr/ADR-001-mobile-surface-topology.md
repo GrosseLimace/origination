@@ -9,6 +9,8 @@
 
 
 > **Decided 2026-10-14: Burdi's hosting pattern.** The mobile app is served by the existing Origination App Service at `/mobile` (like Burdi's `/driver`), and Origination becomes "hybrid internet-accessible" like Burdi: from the internet, FortiGate and the Application Gateway WAF let through only `/mobile/*` and `/api/mobile/v1/*`. **No Static Web App, no APIM, no Data Integrations work.** Sign-in stays separate from the desktop (own app registration and `Origination.Mobile.{Env}` scope), so the server refuses phone sign-ins outside the mobile API even if the WAF list changes; sharing the desktop sign-in like Burdi was considered and deferred until Security confirms it. Sections below that describe a Static Web App or APIM are superseded by this note.
+>
+> **Decided 2026-10-15: sign-in shared with the desktop, as in Burdi.** The phone signs in with the existing Origination SPA registration and the `Origination.Application.{Env}` scope, with `/mobile` added as a redirect URI — exactly as Burdi's PWA registration lists `/driver`. The mobile API still accepts only tokens issued to that registration (`Mobile:AllowedClientAppIds`), and the WAF allow-list is what keeps the rest of the API off the internet. `Mobile:SharedSignIn` switches back to a separate registration if Security ever requires it.
 
 ## Context
 
