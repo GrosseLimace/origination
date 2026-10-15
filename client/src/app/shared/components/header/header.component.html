@@ -26,6 +26,8 @@
             </span>
           }
       </div>
+      <div class="flex items-center gap-1 shrink-0">
+      <ng-container [ngTemplateOutlet]="helpButton" [ngTemplateOutletContext]="{ compact: true }"></ng-container>
       <!-- Profile avatar -->
       <div class="relative shrink-0" (click)="$event.stopPropagation()">
         <button type="button" (click)="toggleProfileMenu()" [title]="getAccountName()"
@@ -37,6 +39,7 @@
           }
         </button>
         <ng-container [ngTemplateOutlet]="profileMenu"></ng-container>
+      </div>
       </div>
     </div>
 
@@ -102,6 +105,7 @@
             <span class="hidden 2xl:inline">{{ isActive('/bid-sheet') ? 'Back to Producers' : 'Bid Sheet' }}</span>
           </app-button>
           }
+          <ng-container [ngTemplateOutlet]="helpButton"></ng-container>
           <!-- Profile -->
           <div class="relative" (click)="$event.stopPropagation()">
             <button type="button" (click)="toggleProfileMenu()" [title]="getAccountName()"
@@ -180,6 +184,12 @@
           <span>Bid Sheet</span>
         </button>
         }
+        <button type="button" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" (click)="openHelp('drawer'); closeMobileMenu()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>
+          </svg>
+          <span>Help</span>
+        </button>
       </nav>
 
       <!-- Footer: user info + actions -->
@@ -258,6 +268,10 @@
             <span class="ml-auto h-2 w-2 rounded-full bg-scoular-red-accessible"></span>
           }
         </button>
+        <button type="button" (click)="openHelpLibrary(); closeProfileMenu()" class="w-full flex items-center gap-3 px-5 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+          Help
+        </button>
         @if (usageDashboardEnabled) {
           <button type="button" (click)="navigate('/usage-dashboard'); closeProfileMenu()" class="w-full flex items-center gap-3 px-5 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -285,4 +299,14 @@
       }
     </div>
   }
+</ng-template>
+
+<!-- Help button, defined once and rendered by the mobile and desktop layouts. Sits left of the avatar
+     on every page and at every width (the approved design's placement: bottom-right holds the
+     Calculators button and the toasts). Pressed while the panel is open. -->
+<ng-template #helpButton let-compact="compact">
+  <button type="button" (click)="toggleHelp(); $event.stopPropagation()" aria-label="Help" title="Help"
+    [attr.aria-expanded]="helpPanel.open()" [class]="helpButtonClass(!!compact)">
+    <svg xmlns="http://www.w3.org/2000/svg" [attr.width]="compact ? 18 : 20" [attr.height]="compact ? 18 : 20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+  </button>
 </ng-template>

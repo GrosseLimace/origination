@@ -1,0 +1,122 @@
+<section class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-4 flex flex-col gap-3" aria-label="Check where a producer is listed">
+  <div>
+    <h3 class="text-[15px] font-semibold text-gray-900 dark:text-white">Check where a producer is listed</h3>
+    <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">I'll look the producer up and tell you why they aren't in your list, and how to fix it. It takes three short steps.</p>
+  </div>
+
+  <!-- Step 1: answered by the app -->
+  <div>
+    <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Step 1 · Your trade units (checked for you)</p>
+    <div class="mt-1 flex items-start gap-2 rounded-md px-3 py-2 text-sm bg-scoular-green/5 dark:bg-scoular-green/15 border border-scoular-green/25 text-gray-800 dark:text-gray-200">
+      <span class="mt-0.5 text-scoular-green-accessible dark:text-scoular-green"><app-help-icon name="check-circle" /></span>
+      <div>
+        @switch (selection().kind) {
+          @case ('none-assigned') {
+            You don't have any trade units assigned yet, so your producer list is empty. Set them up first.
+            <button type="button" (click)="openPreferences()" class="mt-1 block font-medium text-scoular-blue-medium dark:text-[#7CC4EC] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue rounded">
+              Open Trade Unit Preferences <span class="sr-only">(opens in a new window)</span>
+            </button>
+          }
+          @case ('all-producers') { You're in <strong>All Producers</strong> mode, which searches every producer. }
+          @case ('unknown') { Your trade units haven't loaded, so I'll search everywhere. }
+          @default {
+            @if (selection(); as s) {
+              @if (s.kind === 'selected') {
+                You have <strong>{{ s.label }}</strong> selected. Your producer list only shows producers in the trade units chosen in the selector at the top of the Producers page.
+                <button type="button" (click)="showSelector()" class="mt-1 block font-medium text-scoular-blue-medium dark:text-[#7CC4EC] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue rounded">
+                  Show me the selector
+                </button>
+              }
+            }
+          }
+        }
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: the name -->
+  <div>
+    <label [for]="inputId()" class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Step 2 · Type the producer's name, then select Check</label>
+    <div class="mt-1 flex gap-2">
+      <input [id]="inputId()" type="text" autocomplete="off" [value]="name()" (input)="onInput($event)" (keydown.enter)="check()"
+        [attr.aria-invalid]="tooShort()" [attr.aria-describedby]="tooShort() ? inputId() + '-hint' : null"
+        class="flex-1 min-w-0 h-9 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-blue"
+        placeholder="e.g. Smith Farms" />
+      <button type="button" (click)="check()" [disabled]="checking()"
+        class="h-9 px-3 rounded-md text-sm font-medium text-white bg-scoular-blue-medium hover:bg-scoular-blue-dark dark:bg-[#006BA6] dark:hover:bg-scoular-blue-medium disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue focus-visible:ring-offset-1">
+        {{ checking() ? 'Checking…' : 'Check' }}
+      </button>
+    </div>
+    @if (tooShort()) {
+      <p [id]="inputId() + '-hint'" class="mt-1 text-xs text-scoular-red-accessible dark:text-red-400">Type at least 3 letters.</p>
+    } @else {
+      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Part of the name is fine — at least 3 letters.</p>
+    }
+  </div>
+
+  <!-- Step 3: what we found -->
+  <div aria-live="polite">
+    <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Step 3 · What I found</p>
+    @if (!result() && !checking()) {
+      <p class="text-sm text-gray-500 dark:text-gray-400">The answer will appear here.</p>
+    }
+    @if (result(); as r) {
+      @switch (r.kind) {
+        @case ('in-selection') {
+          @if (r.kind === 'in-selection') {
+            <div class="rounded-md px-3 py-2 text-sm border border-scoular-green/25 bg-scoular-green/5 dark:bg-scoular-green/15 text-gray-800 dark:text-gray-200">
+              <p><strong>{{ r.customer.name }}</strong> is in trade unit <strong>{{ describe(r.tradeUnit) }}</strong>, which you have selected. Check that the search box and saved-list filter on the Producers page are cleared.</p>
+              <button type="button" (click)="openProducer(r.customer)" class="mt-2 h-8 px-3 rounded-md text-sm font-medium border border-scoular-blue/40 text-scoular-blue-medium dark:text-[#7CC4EC] hover:bg-scoular-blue/5 dark:hover:bg-scoular-blue/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue">Open producer</button>
+            </div>
+          }
+        }
+        @case ('other-trade-unit') {
+          @if (r.kind === 'other-trade-unit') {
+            <div class="rounded-md px-3 py-2 text-sm border"
+              [class]="switched() ? 'border-scoular-green/25 bg-scoular-green/5 dark:bg-scoular-green/15 text-gray-800 dark:text-gray-200' : 'border-scoular-blue/40 bg-scoular-blue/5 dark:bg-scoular-blue/20 text-gray-800 dark:text-gray-200'">
+              @if (switched()) {
+                <p>Switched to trade unit <strong>{{ describe(r.tradeUnit) }}</strong>. <strong>{{ r.customer.name }}</strong> is now in your producer list — select <strong>Open producer</strong> to see their profile. You can change the selector back any time.</p>
+              } @else if (r.canSwitch) {
+                <p>Found <strong>{{ r.customer.name }}</strong> in trade unit <strong>{{ describe(r.tradeUnit) }}</strong>, which isn't selected. <strong>Switch to {{ r.tradeUnit }}</strong> changes the selector at the top of the Producers page so they appear.</p>
+              } @else {
+                <p>Found <strong>{{ r.customer.name }}</strong> in trade unit <strong>{{ describe(r.tradeUnit) || 'one you don\'t have' }}</strong>, which isn't one of yours. To see them in your list, add that trade unit in Trade Unit Preferences, or ask for the producer to be added to one of yours.</p>
+              }
+              <div class="mt-2 flex flex-wrap gap-2">
+                @if (r.canSwitch && !switched()) {
+                  <button type="button" (click)="switchTo(r.tradeUnit)" class="h-8 px-3 rounded-md text-sm font-medium text-white bg-scoular-blue-medium hover:bg-scoular-blue-dark dark:bg-[#006BA6] dark:hover:bg-scoular-blue-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue focus-visible:ring-offset-1">Switch to {{ r.tradeUnit }}</button>
+                }
+                @if (switched()) {
+                  <button type="button" (click)="openProducer(r.customer)" class="h-8 px-3 rounded-md text-sm font-medium border border-scoular-blue/40 text-scoular-blue-medium dark:text-[#7CC4EC] hover:bg-scoular-blue/5 dark:hover:bg-scoular-blue/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue">Open producer</button>
+                }
+                @if (!r.canSwitch) {
+                  <button type="button" (click)="openPreferences()" class="h-8 px-3 rounded-md text-sm font-medium border border-scoular-blue/40 text-scoular-blue-medium dark:text-[#7CC4EC] hover:bg-scoular-blue/5 dark:hover:bg-scoular-blue/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue">Open Trade Unit Preferences <span class="sr-only">(opens in a new window)</span></button>
+                }
+              </div>
+            </div>
+          }
+        }
+        @case ('not-added') {
+          @if (r.kind === 'not-added') {
+            <div class="rounded-md px-3 py-2 text-sm border border-scoular-blue/40 bg-scoular-blue/5 dark:bg-scoular-blue/20 text-gray-800 dark:text-gray-200">
+              <p><strong>{{ r.name }}</strong> is in Scoular's customer list but hasn't been added to a trade unit in the Workbench yet. <strong>Open and add</strong> switches the Producers page to <strong>All Producers</strong> and highlights the search box. Then: search for the name, open the result marked <strong>Not added</strong>, select <strong>Edit</strong>, and add a trade unit.</p>
+              <button type="button" (click)="openAndAdd()" class="mt-2 h-8 px-3 rounded-md text-sm font-medium text-white bg-scoular-blue-medium hover:bg-scoular-blue-dark dark:bg-[#006BA6] dark:hover:bg-scoular-blue-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue focus-visible:ring-offset-1">Open and add</button>
+            </div>
+          }
+        }
+        @case ('not-found') {
+          @if (r.kind === 'not-found') {
+            <div class="rounded-md px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 text-gray-800 dark:text-gray-200">
+              <p>I couldn't find a producer called <strong>{{ r.name }}</strong> anywhere. Check the spelling, or try part of the name. If they're new to Scoular, they need adding to the customer master first.</p>
+              <button type="button" (click)="escalate()" class="mt-2 text-sm font-medium text-scoular-blue-medium dark:text-[#7CC4EC] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue rounded">Still need help?</button>
+            </div>
+          }
+        }
+        @case ('error') {
+          <div class="rounded-md px-3 py-2 text-sm border border-scoular-red/25 bg-scoular-red/5 dark:bg-scoular-red/15 text-gray-800 dark:text-gray-200" role="alert">
+            The search didn't work just now. Try <strong>Check</strong> again in a moment.
+          </div>
+        }
+      }
+    }
+  </div>
+</section>
