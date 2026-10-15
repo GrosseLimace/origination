@@ -745,4 +745,176 @@ public class OrganicCertificationIngestServiceTests
         Assert.Null(missedByTheLatestRun.DeactivatedOn);
         Assert.Equal("run-003", missedByTheLatestRun.LastFeedRunId);
     }
+
+    // ── Skip notices ─────────────────────────────────────────────────────────────────────────
+    //
+    // A producer the sender considered but deliberately did not send a certification for. The run
+    // total counts producers CONSIDERED, so without a notice a deliberate skip and a message lost
+    // in transit are the same thing — a missing position — and that ambiguity is what stops us ever
+    // acting on absence.
+
+    private static OrganicCertificationSkipRequest Skip(
+        string scoularId = KnownScoularId,
+        string? nopid = "1234567890",
+        string reason = "NOT_IN_USDA",
+        string? feedRunId = "run-100",
+        int? position = 7,
+        int? total = 839) => new()
+        {
+            ScoularId = scoularId,
+            NopOperationId = nopid,
+            Reason = reason,
+            FeedRunId = feedRunId,
+            RunPosition = position,
+            RunTotal = total,
+        };
+
+    [Fact]
+    public async Task ASkipWritesOneAuditRowAndNoCertification()
+    {
+        using var db = NewContext();
+
+        var result = await Service(db).RecordSkipAsync(Skip());
+
+        Assert.True(result.Recorded);
+        Assert.Empty(await db.OrganicCertifications.ToListAsync());
+
+        var audit = Assert.Single(await db.OrganicCertificationLoads.ToListAsync());
+        Assert.Equal("Skipped", audit.Status);
+        Assert.Equal("NOT_IN_USDA", audit.SkipReason);
+        Assert.Equal(KnownScoularId, audit.ScoularId);
+        Assert.Equal("1234567890", audit.Nopid);
+        Assert.Equal("run-100", audit.FeedRunId);
+        Assert.Equal(7, audit.RunPosition);
+        Assert.Equal(839, audit.RunTotal);
+    }
+
+    [Fact]
+    public async Task ASkipIsAcceptedWithNoNopIdAtAll()
+    {
+        // The case that forced a separate endpoint. INELIGIBLE_NOP means the NOP id is blank or a
+        // placeholder in master data — exactly what IngestAsync rejects with
+        // MISSING_NOP_OPERATION_ID, the one failure that loses a whole message. If skips went
+        // through ingest, the producers most in need of an explanation would be the ones we could
+        // not record.
+        using var db = NewContext();
+
+        var result = await Service(db).RecordSkipAsync(
+            Skip(nopid: null, reason: "INELIGIBLE_NOP"));
+
+        Assert.True(result.Recorded);
+        var audit = Assert.Single(await db.OrganicCertificationLoads.ToListAsync());
+        Assert.Null(audit.Nopid);
+        Assert.Equal(KnownScoularId, audit.ScoularId);
+        Assert.Equal("INELIGIBLE_NOP", audit.SkipReason);
+    }
+
+    [Fact]
+    public async Task ASkipNeverTouchesACertificationWeAlreadyHold()
+    {
+        // A producer we hold a certification for can be skipped tomorrow as NOT_IN_USDA, and
+        // whether that means "the USDA record went away" or "a lookup failed upstream" cannot be
+        // told apart from here. Deactivating on it would be guessing with compliance data.
+        using var db = NewContext();
+        var service = Service(db);
+        await service.IngestAsync(Request(scopes: [Scope("Crops")], items: [Item(1)]));
+
+        await service.RecordSkipAsync(Skip());
+
+        var certification = Assert.Single(await db.OrganicCertifications.ToListAsync());
+        Assert.True(certification.IsActive);
+        Assert.Null(certification.DeactivatedOn);
+        Assert.Equal("Certified", certification.OperationStatus);
+        Assert.Single(certification.Items);
+    }
+
+    [Fact]
+    public async Task AnUnrecognisedReasonIsRecordedRatherThanRejected()
+    {
+        // Sender vocabulary. Rejecting a reason code we have not seen would turn a new one into a
+        // permanent gap in the run — the exact failure this endpoint exists to prevent.
+        using var db = NewContext();
+
+        var result = await Service(db).RecordSkipAsync(Skip(reason: "SOMETHING_NEW"));
+
+        Assert.True(result.Recorded);
+        Assert.Equal("SOMETHING_NEW",
+            Assert.Single(await db.OrganicCertificationLoads.ToListAsync()).SkipReason);
+    }
+
+    [Fact]
+    public async Task ASkipOutsideARunIsAccepted()
+    {
+        // One-off intraday notices carry no run context. Null run fields are how they are told
+        // apart from a nightly run, so they must not be a validation failure.
+        using var db = NewContext();
+
+        var result = await Service(db).RecordSkipAsync(
+            Skip(feedRunId: null, position: null, total: null));
+
+        Assert.True(result.Recorded);
+        var audit = Assert.Single(await db.OrganicCertificationLoads.ToListAsync());
+        Assert.Null(audit.FeedRunId);
+        Assert.Null(audit.RunPosition);
+        Assert.Null(audit.RunTotal);
+    }
+
+    [Fact]
+    public async Task ARepeatedSkipIsSafeAndTheRunStillCountsOnePosition()
+    {
+        // Retry-safety here is by DISTINCT POSITION, not by row: the sender may re-send, and a
+        // completeness check that counted rows would read a retry as progress.
+        using var db = NewContext();
+        var service = Service(db);
+
+        await service.RecordSkipAsync(Skip(position: 7));
+        await service.RecordSkipAsync(Skip(position: 7));
+
+        var rows = await db.OrganicCertificationLoads.ToListAsync();
+        Assert.Equal(2, rows.Count);
+        Assert.Single(rows.Select(r => r.RunPosition).Distinct());
+        Assert.Empty(await db.OrganicCertifications.ToListAsync());
+    }
+
+    [Fact]
+    public async Task SkipFieldsAreTrimmedRatherThanStoredWithPadding()
+    {
+        using var db = NewContext();
+
+        await Service(db).RecordSkipAsync(
+            Skip(scoularId: "  ABCFARM  ", nopid: "  1234567890  ", reason: "  NOT_IN_USDA  "));
+
+        var audit = Assert.Single(await db.OrganicCertificationLoads.ToListAsync());
+        Assert.Equal("ABCFARM", audit.ScoularId);
+        Assert.Equal("1234567890", audit.Nopid);
+        Assert.Equal("NOT_IN_USDA", audit.SkipReason);
+    }
+
+    [Fact]
+    public async Task ASkipAndAnIngestShareARunAndFillDifferentPositions()
+    {
+        // The whole point, end to end: both paths write to the same audit table under the same run
+        // id, so "distinct positions received" spans them. A run of two where one producer was
+        // skipped is COMPLETE, not one short.
+        using var db = NewContext();
+        var service = Service(db);
+
+        await service.IngestAsync(
+            Request() with { FeedRunId = "run-200", RunPosition = 1, RunTotal = 2 });
+        await service.RecordSkipAsync(Skip(feedRunId: "run-200", position: 2, total: 2));
+
+        var positions = (await db.OrganicCertificationLoads
+                .Where(l => l.FeedRunId == "run-200" && l.RunPosition != null)
+                .ToListAsync())
+            .Select(l => l.RunPosition!.Value)
+            .Distinct()
+            .OrderBy(p => p)
+            .ToList();
+
+        // Two distinct positions out of a stated total of two: this run is COMPLETE, even though
+        // only one certification was actually sent.
+        Assert.Equal([1, 2], positions);
+        Assert.Equal(2, (await db.OrganicCertificationLoads.ToListAsync())
+            .Where(l => l.FeedRunId == "run-200").Max(l => l.RunTotal));
+    }
 }

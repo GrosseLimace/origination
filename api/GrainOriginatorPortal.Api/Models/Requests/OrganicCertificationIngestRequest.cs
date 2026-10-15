@@ -62,6 +62,27 @@ public record OrganicCertificationIngestRequest
     [StringLength(100)]
     public string? FeedRunId { get; init; }
 
+    /// <summary>
+    /// This producer's position in the run, 1..<see cref="RunTotal"/>, and how many producers the
+    /// run considered.
+    ///
+    /// Both paths carry these — a normal ingest and a skip notice — because completeness is counted
+    /// across the two together. A run of 839 where 23 producers were skipped is complete when we
+    /// hold 839 distinct positions, whichever endpoint each arrived at.
+    ///
+    /// ⚠️ The total counts producers CONSIDERED, not sent. The sender only learns mid-run that a
+    /// producer has no USDA record, so a send-count cannot be known up front.
+    ///
+    /// Null outside a nightly run: one-off intraday edits carry no run context, and that absence is
+    /// how they are recognised.
+    /// </summary>
+    [Range(1, int.MaxValue)]
+    public int? RunPosition { get; init; }
+
+    /// <summary>See <see cref="RunPosition"/>. Constant for the whole run.</summary>
+    [Range(1, int.MaxValue)]
+    public int? RunTotal { get; init; }
+
     [StringLength(255)]
     public string? OperationName { get; init; }
 
