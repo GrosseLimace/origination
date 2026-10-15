@@ -1,9 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { signal } from '@angular/core';
-import { render, screen, fireEvent } from '@testing-library/angular';
+import { render, screen, fireEvent, within } from '@testing-library/angular';
+import { TestBed } from '@angular/core/testing';
 import type { AppVersionInfo, Customer } from '@models';
 import { HelpEscalationComponent } from './help-escalation.component';
 import { AppStateService } from '@core/services/app-state.service';
+import { HelpPanelService } from '@core/services/help-panel.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
 import { provideTestEnvironment } from '@testing/test-providers';
@@ -17,7 +19,7 @@ async function renderCard(helpDeskUrl = environment.helpDeskUrl) {
     providers: provideTestEnvironment({
       extraProviders: [
         { provide: WhatsNewService, useValue: { version: signal(version) } },
-        { provide: UsageTrackingService, useValue: tracking }
+        { provide: UsageTrackingService, useValue: { ...tracking, trackHelpNoMatch: vi.fn() } }
       ]
     })
   });
@@ -70,7 +72,10 @@ describe('HelpEscalationComponent', () => {
     it('records that a ticket was opened', async () => {
       const { tracking } = await renderCard();
 
-      fireEvent.click(screen.getByRole('link', { name: /Open ServiceNow/ }));
+      const link = screen.getByRole('link', { name: /Open ServiceNow/ });
+      // Stop the test browser actually following the link out to ServiceNow.
+      link.addEventListener('click', e => e.preventDefault());
+      fireEvent.click(link);
 
       expect(tracking.trackHelpTicketOpened).toHaveBeenCalled();
     });
@@ -106,6 +111,22 @@ describe('HelpEscalationComponent', () => {
       expect(text).toContain('What I was doing / what went wrong:');
       expect(text).not.toContain('PRRIDGE');
     });
+  });
+
+  it('starts the ticket from what the user asked Help', async () => {
+    const writeText = clipboardSpy();
+    const { fixture } = await renderCard();
+    // In the app the question comes first and the card is opened from its answer, so ask, then open a
+    // fresh card.
+    fixture.debugElement.injector.get(HelpPanelService).ask('Contract 44102 is missing');
+    const card = TestBed.createComponent(HelpEscalationComponent);
+    card.detectChanges();
+    const view = within(card.nativeElement as HTMLElement);
+
+    expect((view.getByLabelText(/Short Description/) as HTMLInputElement).value).toBe('Contract 44102 is missing');
+    fireEvent.click(view.getByRole('button', { name: 'Copy additional information' }));
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalled());
+    expect(writeText.mock.calls[0][0]).toContain('What I asked Help: Contract 44102 is missing');
   });
 
   it('without a help desk, offers the details to send to the Origination team', async () => {
