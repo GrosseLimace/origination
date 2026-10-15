@@ -69,6 +69,8 @@ describe('AppInsightsService', () => {
     expect(config['disableFetchTracking']).toBe(true);
     // No config fetch from js.monitor.azure.com: the CSP would block it and log a violation.
     expect(config['extensionConfig']).toEqual({ AppInsightsCfgSyncPlugin: { blkCdnCfg: true } });
+    // No unload listener: the browser blocks it and logs a Permissions-Policy violation.
+    expect(config['disablePageUnloadEvents']).toEqual(['unload']);
     expect(sdk.instance.loadAppInsights).toHaveBeenCalled();
     expect(sdk.instance.setAuthenticatedUserContext).toHaveBeenCalledWith('CEgr', undefined, true);
   });

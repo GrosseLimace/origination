@@ -91,6 +91,9 @@ export class AppInsightsService {
           // connect-src allows only the ingestion host, so that fetch would log a CSP violation in
           // every session. blkCdnCfg is the SDK's switch for that fetch; the config above is complete.
           extensionConfig: { AppInsightsCfgSyncPlugin: { blkCdnCfg: true } },
+          // Chrome blocks the unload event here (Permissions-Policy) and logs a violation each time
+          // the SDK subscribes to it. The SDK still flushes on pagehide and visibilitychange.
+          disablePageUnloadEvents: ['unload'],
         },
       });
       ai.loadAppInsights();
