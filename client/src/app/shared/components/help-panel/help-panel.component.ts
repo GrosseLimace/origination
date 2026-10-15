@@ -89,19 +89,30 @@ export class HelpPanelComponent {
 
     // Focus the question box when the panel opens, and bring the newest question into view — scrolled
     // to the question rather than the bottom, so a long answer reads from its start.
+    // A new question replaces the conversation, so start it from the top. A follow-on step for the same
+    // question (troubleshooter, Still need help?) is added below — bring that into view instead. Reads
+    // the turn and the length, not the thread: a thumbs up changes the thread but mustn't scroll.
+    let lastTurn = -1;
+    let lastLength = 0;
     afterRenderEffect(() => {
-      // Length, not the thread itself: a thumbs up on an older answer changes the thread but
-      // mustn't scroll the panel away from it.
+      const turn = this.panel.turn();
       const length = this.threadLength();
       if (!this.visible()) return;
       const body = this.body()?.nativeElement;
+      const newQuestion = turn !== lastTurn;
+      const grew = length > lastLength;
+      lastTurn = turn;
+      lastLength = length;
+      if (!body) return;
       if (length === 0) {
         this.input()?.nativeElement.focus();
-        return;
+      } else if (newQuestion) {
+        body.scrollTop = 0;
+      } else if (grew) {
+        const items = body.querySelectorAll<HTMLElement>('[data-help-item]');
+        const added = items[items.length - 1];
+        if (added) body.scrollTop = Math.max(0, added.offsetTop - 16);
       }
-      const users = body?.querySelectorAll<HTMLElement>('[data-help-user]');
-      const last = users?.[users.length - 1];
-      if (body && last) body.scrollTop = Math.max(0, last.offsetTop - 16);
     });
   }
 

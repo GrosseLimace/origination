@@ -3,6 +3,7 @@ import { DatePipe } from '@angular/common';
 
 import { AppStateService } from '@core/services/app-state.service';
 import { HelpPanelService } from '@core/services/help-panel.service';
+import { HelpService } from '@core/services/help.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
 import { HelpIconComponent } from '@shared/components/help-icon/help-icon.component';
@@ -47,6 +48,7 @@ type CopyTarget = 'short' | 'details';
 export class HelpEscalationComponent {
   private readonly appState = inject(AppStateService);
   private readonly panel = inject(HelpPanelService);
+  private readonly help = inject(HelpService);
   private readonly usageTracking = inject(UsageTrackingService);
   private readonly whatsNew = inject(WhatsNewService);
   private readonly datePipe = inject(DatePipe);
@@ -55,7 +57,11 @@ export class HelpEscalationComponent {
   readonly helpDeskTopic = environment.helpDeskTopic;
 
   readonly includeProducer = signal(false);
-  readonly summary = signal('');
+  /**
+   * The short description, started from what the user asked Help so they don't retype it. Editable,
+   * and it goes nowhere but their clipboard.
+   */
+  readonly summary = signal(this.panel.lastQuestion() ?? '');
   /** Which field was copied last; the clipboard holds one thing at a time. */
   readonly copied = signal<CopyTarget | null>(null);
   readonly copyFailed = signal(false);
@@ -73,7 +79,8 @@ export class HelpEscalationComponent {
     const route = this.panel.route();
     const error = this.panel.lastError();
     const units = this.appState.allProducersMode() ? 'All Producers' : [...this.appState.inScopeTradeUnitCodes()].join(', ') || 'None selected';
-    const viewed = [...new Set(this.panel.thread().flatMap(t => (t.kind === 'answer' ? [t.faqId] : [])))];
+    // The last few answers they read, by title: what support needs to know they've already tried.
+    const viewed = this.panel.viewedFaqIds().slice(-3).map(id => this.help.faq(id)?.question ?? id);
 
     const rows = [
       { label: 'Release', value: v ? `${v.releaseVersion ? 'Release ' + v.releaseVersion : 'Unreleased'} · Build ${v.shortSha}` : 'Unknown' },
@@ -83,7 +90,7 @@ export class HelpEscalationComponent {
       { label: 'Last error', value: error ? `${error.message} · ${this.datePipe.transform(error.at, 'shortTime')}` : 'None' },
       { label: 'Browser', value: browserName() }
     ];
-    if (viewed.length) rows.push({ label: 'Help topics viewed', value: viewed.join(', ') });
+    if (viewed.length) rows.push({ label: 'Help answers read', value: viewed.join(' / ') });
     const pid = this.producerId();
     if (this.includeProducer() && pid) rows.push({ label: 'Producer ID', value: pid });
     return rows;
@@ -96,9 +103,17 @@ export class HelpEscalationComponent {
   });
 
   /** For ServiceNow's "Additional information": the details, then room for the user's own account. */
-  readonly additionalInformation = computed(() =>
-    ['Origination Workbench support details', ...this.rows().map(r => `${r.label}: ${r.value}`), '', 'What I was doing / what went wrong:', ''].join('\n')
-  );
+  readonly additionalInformation = computed(() => {
+    const asked = this.panel.lastQuestion();
+    return [
+      ...(asked ? [`What I asked Help: ${asked}`, ''] : []),
+      'Origination Workbench support details',
+      ...this.rows().map(r => `${r.label}: ${r.value}`),
+      '',
+      'What I was doing / what went wrong:',
+      ''
+    ].join('\n');
+  });
 
   onSummary(event: Event): void {
     this.summary.set((event.target as HTMLInputElement).value);
