@@ -1,4 +1,4 @@
-import { Component, input, effect, inject, signal, computed, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import { Component, input, effect, inject, signal, computed, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, HarvestWindow } from '@models';
 import { AppStateService } from '@core/services/app-state.service';
@@ -9,8 +9,9 @@ import { parseServerTime } from '@shared/utils/server-time';
 @Component({
   selector: 'app-activity-summary',
   standalone: true,
-  // Inputs and signals only, except summaryText, which the effect below writes and then marks the
-  // view for. An input change already marks an OnPush view; the explicit call removes the dependency.
+  // Inputs and signals only. summaryText is a signal written by the effect below; it was a plain
+  // field marked with markForCheck() inside that effect, and marking the view dirty from an effect
+  // that runs during its own refresh made change detection loop (NG0103) when a producer was picked.
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule],
   host: { class: 'block' },
@@ -18,7 +19,6 @@ import { parseServerTime } from '@shared/utils/server-time';
 })
 export class ActivitySummaryComponent {
   private readonly appState = inject(AppStateService);
-  private readonly cdr = inject(ChangeDetectorRef);
 
   /** Commodity code → lbs per bushel. Derived from the signal, so any replacement of the conversion
    *  list rebuilds it (it used to be cached until the list's length changed). */
@@ -39,7 +39,7 @@ export class ActivitySummaryComponent {
    *  card; we receive it here as input to avoid a duplicate API fetch. */
   public historicalContracts = input<Contract[]>([]);
 
-  summaryText = '';
+  readonly summaryText = signal('');
 
   /** The harvest windows failed to load, so the pace sentence is missing for that reason rather
    *  than because there was nothing to compare. Only said when there are contracts to pace. */
@@ -97,8 +97,7 @@ export class ActivitySummaryComponent {
       const _conv = this.appState.commodityConversions();
       // Harvest windows drive _generateHarvestPaceSummary's year-over-year comparison.
       const _hw = this.appState.harvestWindows();
-      this.summaryText = this._generateSummaryParagraph();
-      this.cdr.markForCheck();
+      this.summaryText.set(this._generateSummaryParagraph());
     });
   }
 
