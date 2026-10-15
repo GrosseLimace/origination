@@ -188,10 +188,10 @@ export class ContractsTableComponent {
         // Defer scroll so contracts render before we try to find the row.
         this._scrollToContract(openId);
       }
-      // The expansion Sets are plain objects, not signals. An input change already marks an OnPush
-      // view for check, so this is belt and braces; it costs nothing and removes the dependency on
-      // that detail.
-      this.cdr.markForCheck();
+      // No markForCheck() here. The expansion Sets are plain objects, but this effect runs only on an
+      // input change, which already marks this OnPush view, and it runs during that view's refresh,
+      // before the template reads the Sets. Marking the view dirty from inside the refresh is what
+      // made activity-summary loop (NG0103).
     });
   }
 
