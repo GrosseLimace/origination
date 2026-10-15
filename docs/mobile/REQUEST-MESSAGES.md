@@ -9,13 +9,13 @@ Every message can point to the same documents so each team can see which require
 | **the Spec** | `SEC-ARCH-BURDI-001` v1.0, *Security Architecture Specification: Burdi Design Pattern* (IT Security / Architecture, 2026-03-25). Repo copy: [reference/SEC-ARCH-BURDI-001-mobile-security-architecture.md](reference/SEC-ARCH-BURDI-001-mobile-security-architecture.md). Section numbers below (§3.3, §4.2, etc.) refer to it |
 | **the Guide** | [EXTERNAL-SPA-GUIDE.md](reference/EXTERNAL-SPA-GUIDE.md) v1.7 (repo copy), Infrastructure's implementation of the Spec for Scoular: Static Web App → APIM (App Gateway + WAF in front) → private App Service. Grain Vision's external app is built on it |
 
-Links assume the branch `docs_MobileArchitecturePlan`; update them once merged to `main`.
+Links assume the branch `feature_MobileForMain` (the one mobile branch since 2026-10-15); update them once merged to `main`.
 
-- OpenAPI contract: https://scoular.ghe.com/IT/origination/blob/docs_MobileArchitecturePlan/openapi/mobile/specification.yaml
-- Workflow/offline summary: https://scoular.ghe.com/IT/origination/blob/docs_MobileArchitecturePlan/openapi/mobile/README.md
-- ADR-001 (topology decision + exceptions): https://scoular.ghe.com/IT/origination/blob/docs_MobileArchitecturePlan/docs/adr/ADR-001-mobile-surface-topology.md
-- Spec (repo copy): https://scoular.ghe.com/IT/origination/blob/docs_MobileArchitecturePlan/docs/mobile/reference/SEC-ARCH-BURDI-001-mobile-security-architecture.md
-- Guide: https://scoular.ghe.com/IT/origination/blob/docs_MobileArchitecturePlan/docs/mobile/reference/EXTERNAL-SPA-GUIDE.md
+- OpenAPI contract: https://scoular.ghe.com/IT/origination/blob/feature_MobileForMain/openapi/mobile/specification.yaml
+- Workflow/offline summary: https://scoular.ghe.com/IT/origination/blob/feature_MobileForMain/openapi/mobile/README.md
+- ADR-001 (topology decision + exceptions): https://scoular.ghe.com/IT/origination/blob/feature_MobileForMain/docs/adr/ADR-001-mobile-surface-topology.md
+- Spec (repo copy): https://scoular.ghe.com/IT/origination/blob/feature_MobileForMain/docs/mobile/reference/SEC-ARCH-BURDI-001-mobile-security-architecture.md
+- Guide: https://scoular.ghe.com/IT/origination/blob/feature_MobileForMain/docs/mobile/reference/EXTERNAL-SPA-GUIDE.md
 
 > **Decided 2026-10-15: follow Grain Vision's external app** (replaces the 2026-10-14 Burdi decision). Own Static Web App (Dev `ext-origination-dev.scoular.com`; QA/Prod on the desktop's address via split-horizon DNS), API through APIM at `/external/origination/v1` in Dev, QA and Prod, App Service fully private, sign-in shared with the desktop. The only thing Grain Vision does not cover is **personal, unmanaged phones**; it is asked first in messages 1 and 3. Request numbers refer to [PLATFORM-REQUESTS.md](PLATFORM-REQUESTS.md).
 

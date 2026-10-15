@@ -198,6 +198,14 @@ Roughly 10–14 calendar weeks for a modest feature set. Platform waits dominate
 | **5 Security review** | 2 | IT Security and Solutions Architect review against the spec's developer checklist; penetration test of the APIM surface; AR-01/02 narrowed for the mobile subset; exceptions filed; ServiceNow risk acceptance | Sign-offs; `ACCEPTED-RISKS.md` updated |
 | **6 Prod** | 1 | `deploy-mobile-prod.yml`, Prod APIM operations, alerts live, pilot originators | Clean dashboards for a week |
 
+### Branches (one mobile branch since 2026-10-15)
+
+All mobile work is on **`feature_MobileForMain`**: main + the `Application` extraction (`feature_MobileApplicationLayer`) + these docs + the mobile API and app. It was rebuilt on 2026-10-15 without the Dev BarChart merge that `feature_MobileSurface` carries (that merge also brought the organic certification feed, which is not ready for main).
+
+- **Into main, two PRs:** `feature_MobileApplicationLayer` first (a pure move of the business logic into its own project, no behaviour change), then `feature_MobileForMain`, whose diff is then only the mobile work. No separate docs PR.
+- **Into Dev/QA:** merge `feature_MobileForMain` into the Dev or QA release branch, which already carries the BarChart.
+- `docs_MobileArchitecturePlan` and `feature_MobileSurface` are no longer updated; they stay until the work is merged. **Never open a PR from `feature_MobileSurface`.**
+
 ## 7. Risks (ranked)
 
 1. **APIM token model unknown.** If APIM expects an APIM-owned audience or exchanges tokens, the backend rejects everything or loses user identity. Resolve with Data Integrations in Phase 1; `Mobile:AdditionalAudiences` is the configuration escape hatch.
