@@ -32,7 +32,8 @@ export class ByFieldMockService {
   readonly totals = signal<Record<string, SimulatedTotal>>({});
   private _intentions: PlantingIntention[] = [];
   private readonly _seeded = new Set<number>();
-  private _samplesDisabled = false;
+  // DEMO: no sample fields — every producer starts empty.
+  private _samplesDisabled = true;
   private _nextId = 1;
 
   /** A short county list per state; the real list comes from the FD-CIC county table. */

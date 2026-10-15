@@ -40,7 +40,6 @@ export class CropFieldsPanelComponent {
   });
 
   toggle(): void {
-    this.plan.ensureLoaded(this.customer().id, this.customer().stateProvince);
     this.expanded.update(e => !e);
   }
 
@@ -51,10 +50,6 @@ export class CropFieldsPanelComponent {
   fieldPlace(s: FieldSeason): string {
     const f = this.plan.field(s.fieldKey);
     return f ? `${f.county}, ${f.state}` : '';
-  }
-
-  isSample(s: FieldSeason): boolean {
-    return !!this.plan.field(s.fieldKey)?.isSample;
   }
 
   ci(s: FieldSeason) {

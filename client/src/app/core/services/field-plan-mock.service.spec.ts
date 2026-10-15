@@ -9,7 +9,6 @@ describe('FieldPlanMockService (prototype)', () => {
 
   beforeEach(() => {
     plan = TestBed.inject(FieldPlanMockService);
-    plan.clearAll(); // no sample fields: each test builds exactly what it needs
   });
 
   function field(name: string) {

@@ -25,8 +25,6 @@ export interface ProducerField {
   fsaFarmNo?: string;
   fsaTractNo?: string;
   fsaFieldNo?: string;
-  /** PROTOTYPE ONLY: seeded demo field, labelled "Sample" so it isn't mistaken for real data. */
-  isSample?: boolean;
 }
 
 export interface ManureApplication {

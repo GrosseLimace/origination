@@ -39,7 +39,8 @@ export class BesideMockService {
   get states(): string[] { return Object.keys(this.countiesByState); }
 
   /** Set by clearAll(): skip the sample fields for the rest of the session (a reload brings them back). */
-  private _samplesDisabled = false;
+  // DEMO: no sample fields — every producer starts empty.
+  private _samplesDisabled = true;
 
   /** Wipes every field, season and prior practice, and stops sample fields from being re-seeded. */
   clearAll(): void {

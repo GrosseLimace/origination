@@ -5,16 +5,12 @@ import { missingInputs } from '@shared/utils/ci-illustrative';
 /**
  * PROTOTYPE ONLY: in-memory stand-in for the fields API, so "fields under each crop row" can be
  * walked through with originators before any table or endpoint exists. Nothing is persisted and no
- * planting intention is ever written: a reload starts over. Each producer gets three sample fields
- * (isSample, labelled "Sample") with last year's practices, so picking an existing field and
- * copy-forward can be tried.
+ * planting intention is ever written: a reload starts over. Every producer starts with no fields.
  */
 @Injectable({ providedIn: 'root' })
 export class FieldPlanMockService {
   readonly fields = signal<ProducerField[]>([]);
   readonly seasons = signal<FieldSeason[]>([]);
-  private readonly _seeded = new Set<number>();
-  private _samplesDisabled = false;
   private _nextId = 1;
 
   /** A short county list per state; the real list comes from the FD-CIC county table. */
@@ -28,35 +24,6 @@ export class FieldPlanMockService {
     SD: ['Brown', 'Spink', 'Beadle', 'Minnehaha'],
   };
   get states(): string[] { return Object.keys(this.countiesByState); }
-
-  /** Seeds a producer's sample fields once per session. */
-  ensureLoaded(customerId: number, defaultState?: string): void {
-    if (this._samplesDisabled || this._seeded.has(customerId)) return;
-    this._seeded.add(customerId);
-    const state = defaultState && this.countiesByState[defaultState] ? defaultState : 'KS';
-    const county = this.countiesByState[state][0];
-    const lastYear = new Date().getFullYear() - 1;
-    const seeds = [
-      { name: 'North 80', acres: 80, cropLabel: 'Soybeans', tillage: 'NoTill' as const, cover: 'CoverCrop' as const },
-      { name: 'River Bottom', acres: 320, cropLabel: 'Corn', tillage: 'ReducedTill' as const, cover: 'None' as const },
-      { name: 'Home Place', acres: 200, cropLabel: 'Corn', tillage: 'Conventional' as const, cover: 'None' as const },
-    ];
-    const fields: ProducerField[] = [];
-    const history: FieldSeason[] = [];
-    for (const s of seeds) {
-      const field: ProducerField = { fieldKey: crypto.randomUUID(), customerId, name: s.name, state, county, isSample: true };
-      fields.push(field);
-      const isCorn = s.cropLabel === 'Corn';
-      // Last year's record only (intention id 0 = not on any row shown): feeds acres defaults and copy-forward.
-      history.push({
-        ...this._blank(field.fieldKey, 0, lastYear, s.cropLabel, s.acres),
-        expectedYield: isCorn ? 205 : 58, syntheticN: isCorn ? 175 : 0, niFraction: isCorn ? 0.5 : 0,
-        tillage: s.tillage, coverCrop: s.cover, status: 'Projected',
-      });
-    }
-    this.fields.update(fs => [...fs, ...fields]);
-    this.seasons.update(ss => [...ss, ...history]);
-  }
 
   // ── Reads ─────────────────────────────────────────────────────────────────
 
@@ -125,13 +92,6 @@ export class FieldPlanMockService {
       reopened.status = missingInputs(reopened).length === 0 ? 'Projected' : 'Draft';
       return reopened;
     }));
-  }
-
-  /** Wipes every field and season and stops sample fields from being re-seeded until a reload. */
-  clearAll(): void {
-    this.fields.set([]);
-    this.seasons.set([]);
-    this._samplesDisabled = true;
   }
 
   private _blank(fieldKey: string, intentionId: number, year: number, cropLabel: string, acres: number): FieldSeason {
