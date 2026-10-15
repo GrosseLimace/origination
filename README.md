@@ -28,7 +28,6 @@ GrainOriginatorPortal/
         │   ├── build-list/
         │   ├── bid-sheet/
         │   ├── calculators/
-        │   ├── unshipped-bushels/
         │   ├── daily-digest/
         │   └── usage-dashboard/
         ├── shared/
