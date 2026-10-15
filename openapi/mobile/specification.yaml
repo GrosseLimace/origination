@@ -197,9 +197,10 @@ paths:
       operationId: updateProducerDetails
       summary: Update on-farm details
       description: >
-        Card #643. Updates total acres and, when sent, the bin sites and grain on farm. A list that is
-        present replaces the stored set (array order is the display order); a list that is absent is
-        preserved. Contacts and linked producers are never edited from mobile. Send expectedModifiedAt
+        Card #643. Updates total acres and, when sent, the bin sites, grain on farm and contacts. A list
+        that is present replaces the stored set (array order is the display order); a list that is absent
+        is preserved. Total acres is always written, so send the current value when not changing it.
+        Linked producers are never edited from mobile. Send expectedModifiedAt
         so a desktop edit made in between returns 409 instead of being overwritten. Audited with
         before/after values.
       requestBody:
@@ -463,7 +464,7 @@ paths:
       operationId: getDpContractCards
       summary: Deferred-payment contract balances as cards
       description: >
-        Card #648. Total count and bushels are sufficient; ticket-level detail is not required.
+        Card #648. One card per DP contract; total count and bushels are sufficient, ticket-level detail is not required.
         DP data exists only in production ODS; Dev and QA return an empty array by design.
       responses:
         '200':
@@ -590,9 +591,11 @@ components:
         postalCode: { type: string, nullable: true }
         tradeUnit: { type: string, nullable: true }
         eSignEnabled: { type: boolean }
+        phone: { type: string, nullable: true, description: "The producer's own phone from the master data (phone, else extended primary phone), shown alongside any entered contacts. PII; never cache." }
+        email: { type: string, nullable: true, description: "The producer's own email from the master data (email, else supplemental email). PII; never cache." }
         contacts:
           type: array
-          description: Primary first. Phone/email are PII; never cache.
+          description: Contacts entered on the desktop, primary first (else the legacy primary-contact fields). Phone/email are PII; never cache.
           items: { $ref: '#/components/schemas/Contact' }
 
     Contact:
@@ -603,6 +606,16 @@ components:
         phone: { type: string, nullable: true, description: "As stored (national or E.164); the client normalises it for tel: links" }
         email: { type: string, nullable: true, format: email }
         isPrimary: { type: boolean }
+
+    ContactUpdate:
+      type: object
+      description: One entered contact (the desktop rules). PII.
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        phone: { type: string, nullable: true, maxLength: 50 }
+        email: { type: string, nullable: true, maxLength: 255, format: email }
+        isPrimary: { type: boolean, description: "At most one; the server keeps exactly one." }
 
     ProducerDetails:
       type: object
@@ -673,6 +686,11 @@ components:
           type: array
           maxItems: 2000
           items: { $ref: '#/components/schemas/GrainOnFarmItem' }
+        contacts:
+          type: array
+          maxItems: 50
+          description: Entered contacts, primary first. Absent keeps the stored ones.
+          items: { $ref: '#/components/schemas/ContactUpdate' }
         expectedModifiedAt:
           type: string
           format: date-time
@@ -715,35 +733,49 @@ components:
 
     ContractCard:
       type: object
-      required: [id, contractNumber]
+      description: >
+        Card #645, collapsed. No dollar value. Carries what the desktop contracts table derives its row from, so
+        the phone shows the same status, delivery and price: the client derives Filled / Past Due / Active /
+        To Arrive from openBalanceQuantity and the delivery dates, as the desktop does.
+      required: [id, contractNumber, status, pricingStatus]
       properties:
         id: { type: integer, format: int64 }
         contractNumber: { type: string }
+        sourceContractId: { type: string, nullable: true, description: "CTRM contract id; shown as the contract number when present, as on the desktop" }
         commodityCode: { type: string, nullable: true }
         commodityDescription: { type: string, nullable: true }
         quantity: { type: number, nullable: true }
         unit: { type: string, nullable: true }
         price: { type: number, nullable: true }
         priceTypeCode: { type: string, nullable: true, description: "P = priced, U = unpriced, D = deferred" }
+        contractDate: { type: string, format: date-time, nullable: true }
         deliveryStart: { type: string, format: date-time, nullable: true }
         deliveryEnd: { type: string, format: date-time, nullable: true }
         specialType: { type: string, nullable: true }
-        status: { type: string }
+        status: { type: string, description: "Source status, e.g. Cancelled" }
+        openBalanceQuantity: { type: number, nullable: true, description: "Still to deliver" }
+        settledQuantity: { type: number, nullable: true }
+        signed: { type: boolean }
+        customerConfirmStatus: { type: string, nullable: true }
+        pricingStatus:
+          type: string
+          enum: [Flat, Priced, Partial, Unpriced, Deferred]
+          description: "The desktop's pricing badge (from the price type and the pricing lines)"
+        cashPrice: { type: number, nullable: true, description: "With Flat: the cash price per unit" }
+        basisPrice: { type: number, nullable: true, description: "With Unpriced: the locked-in basis, when one line carries a real basis" }
 
     ContractDetail:
       allOf:
         - $ref: '#/components/schemas/ContractCard'
         - type: object
+          required: [pricingLines]
           properties:
             cropYear: { type: integer, nullable: true }
-            openBalanceQuantity: { type: number, nullable: true }
-            settledQuantity: { type: number, nullable: true }
             pricedQuantity: { type: number, nullable: true }
-            signed: { type: boolean }
-            customerConfirmStatus: { type: string, nullable: true }
+            unpricedQuantity: { type: number, nullable: true, description: "Unpriced contracts only: still to price (the desktop's rule)" }
             basisLocation: { type: string, nullable: true }
             marketZone: { type: string, nullable: true }
-            contractDate: { type: string, format: date-time, nullable: true }
+            hedgeMarketMonth: { type: string, nullable: true }
             pricingLines:
               type: array
               items: { $ref: '#/components/schemas/PricingLine' }
@@ -751,30 +783,36 @@ components:
     PricingLine:
       type: object
       properties:
-        quantity: { type: number, nullable: true }
-        price: { type: number, nullable: true }
-        status: { type: string, nullable: true }
+        sequence: { type: integer, nullable: true }
+        quantity: { type: number, nullable: true, description: "As the desktop shows it: a zero-quantity placeholder is the contract quantity or the unpriced remainder" }
+        price: { type: number, nullable: true, description: "Flat price, else cash price" }
+        flatPrice: { type: number, nullable: true }
+        basisPrice: { type: number, nullable: true }
+        hedgePrice: { type: number, nullable: true }
+        freightAdjustment: { type: number, nullable: true }
+        priceDate: { type: string, format: date-time, nullable: true }
+        status: { type: string, nullable: true, description: "The producer's confirm status for this line" }
         marketMonth: { type: string, nullable: true }
 
     TicketSummary:
       type: object
-      required: [groups, totalTickets, totalBushels]
+      required: [groups, totalTickets]
       properties:
         totalTickets: { type: integer }
-        totalBushels: { type: number }
+        totalBushels: { type: number, nullable: true, description: "Each ticket's net weight (lb) ÷ its commodity's lb per bushel, as on the desktop; null when a commodity has no conversion factor" }
         groups:
           type: array
           items: { $ref: '#/components/schemas/TicketGroup' }
 
     TicketGroup:
       type: object
-      required: [key, ticketCount, bushels]
+      required: [key, ticketCount]
       properties:
         key: { type: string, description: "Contract number, or the literal 'unapplied'" }
         contractId: { type: integer, format: int64, nullable: true }
         commodityCode: { type: string, nullable: true }
         ticketCount: { type: integer }
-        bushels: { type: number }
+        bushels: { type: number, nullable: true, description: "Same conversion as totalBushels; null when not convertible" }
         lastTicketDate: { type: string, format: date-time, nullable: true }
 
     PlantingIntention:
@@ -785,6 +823,7 @@ components:
         customerId: { type: integer, format: int64 }
         plantingYear: { type: integer }
         crop: { type: string }
+        type: { type: string, nullable: true, description: "Irrigated, Dryland or Double Crop; null when none" }
         acres: { type: integer }
         tradeUnit: { type: string }
         modifiedAt: { type: string, format: date-time, nullable: true }
@@ -797,6 +836,8 @@ components:
         plantingYear: { type: integer, minimum: 2000, maximum: 2100 }
         crop: { type: string, maxLength: 20, description: Commodity code from /reference/commodities }
         acres: { type: integer, minimum: 0, maximum: 10000000 }
+        type: { type: string, maxLength: 20, nullable: true, description: "Irrigated, Dryland or Double Crop; absent or empty = none" }
+        tradeUnit: { type: string, maxLength: 10, nullable: true, description: "One of the caller's trade units; absent = the producer's first entitled trade unit" }
 
     PlantingIntentionUpdate:
       type: object
@@ -805,6 +846,8 @@ components:
         clientRequestId: { type: string, format: uuid }
         crop: { type: string, maxLength: 20, nullable: true }
         acres: { type: integer, minimum: 0, maximum: 10000000 }
+        plantingYear: { type: integer, minimum: 2000, maximum: 2100, nullable: true, description: "Crop year; absent keeps the current year" }
+        type: { type: string, maxLength: 20, nullable: true, description: "Irrigated, Dryland or Double Crop; empty clears; absent keeps" }
         expectedModifiedAt: { type: string, format: date-time, nullable: true }
 
     StorageCard:
@@ -820,21 +863,39 @@ components:
         storageStartDate: { type: string, format: date-time, nullable: true }
         storageRate: { type: number, nullable: true }
         receivableAmount: { type: number, nullable: true }
+        storageDays: { type: number, nullable: true }
+        chargedFromDate: { type: string, format: date-time, nullable: true }
+        chargedThruDate: { type: string, format: date-time, nullable: true }
 
     DpContractCard:
       type: object
-      required: [id, contractNumber, crop]
+      description: >
+        One DP contract rolled up from its delivery charge rows the desktop's way: ticketCount = distinct
+        deliveries, bushels counted once per delivery (null when none converts), charges summed across rows.
+      required: [id, contractNumber, crop, ticketCount, unconvertedCount, charges, chargeBreakdown]
       properties:
         id: { type: string }
-        contractNumber: { type: string }
+        contractNumber: { type: string, description: "\"No contract\" when the rows carry none" }
         crop: { type: string }
+        ticketCount: { type: integer }
         bushels: { type: number, nullable: true }
-        quantity: { type: number }
-        quantityUom: { type: string }
-        statusDescription: { type: string }
-        storageStartDate: { type: string, format: date-time, nullable: true }
+        unconvertedCount: { type: integer, description: Deliveries missing from bushels (no bushel conversion) }
+        charges: { type: number }
+        chargesPerBushel: { type: number, nullable: true, description: Dollars per bushel (desktop shows cents) }
+        since: { type: string, format: date-time, nullable: true }
+        chargedThruDate: { type: string, format: date-time, nullable: true }
         paidThruDate: { type: string, format: date-time, nullable: true }
-        receivableAmount: { type: number }
+        chargeBreakdown:
+          type: array
+          items: { $ref: '#/components/schemas/DpCharge' }
+
+    DpCharge:
+      type: object
+      required: [description, amount]
+      properties:
+        description: { type: string }
+        amount: { type: number }
+        rate: { type: number, nullable: true, description: Set when every delivery shares the rate }
 
     Commodity:
       type: object

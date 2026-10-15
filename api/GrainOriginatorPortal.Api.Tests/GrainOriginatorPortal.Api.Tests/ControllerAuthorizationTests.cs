@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 // Project namespaces
 using GrainOriginatorPortal.Api.Authorization;
 using GrainOriginatorPortal.Api.Controllers;
+using GrainOriginatorPortal.Mobile;
 
 namespace GrainOriginatorPortal.Api.Tests;
 
@@ -15,38 +16,34 @@ namespace GrainOriginatorPortal.Api.Tests;
 /// Verifies every controller in the API is protected with [Authorize].
 /// This acts as a security regression test — a failing test here means
 /// an endpoint was accidentally left unauthenticated.
+/// Controllers are discovered by reflection over BOTH the web host and the mobile assembly, so a
+/// new controller in either is covered the moment it exists — the previous hand-maintained list
+/// would have silently missed one.
 /// </summary>
 public class ControllerAuthorizationTests
 {
-    public static IEnumerable<object[]> AllControllerTypes()
+    private static readonly Assembly[] ControllerAssemblies =
+    [
+        typeof(NotesController).Assembly,        // GrainOriginatorPortal.Api
+        typeof(MobileAssemblyMarker).Assembly,   // GrainOriginatorPortal.Mobile
+    ];
+
+    public static IEnumerable<object[]> AllControllerTypes() =>
+        ControllerAssemblies
+            .SelectMany(a => a.GetTypes())
+            .Where(t => t.IsClass && !t.IsAbstract && typeof(ControllerBase).IsAssignableFrom(t))
+            .OrderBy(t => t.FullName)
+            .Select(t => new object[] { t });
+
+    [Fact]
+    public void Discovery_FindsBothTheDesktopAndMobileSurfaces()
     {
-        yield return new object[] { typeof(BarchartIngestController) };
-        yield return new object[] { typeof(BidSheetController) };
-        yield return new object[] { typeof(CommoditiesController) };
-        yield return new object[] { typeof(ContractsController) };
-        yield return new object[] { typeof(CustomersController) };
-        yield return new object[] { typeof(DailyRecapGroupsController) };
-        yield return new object[] { typeof(DashboardPlantingEstimatesController) };
-        yield return new object[] { typeof(DiagnosticsController) };
-        yield return new object[] { typeof(DpContractsController) };
-        yield return new object[] { typeof(EntitlementsController) };
-        yield return new object[] { typeof(FarmsController) };
-        yield return new object[] { typeof(GeocodeController) };
-        yield return new object[] { typeof(MeController) };
-        yield return new object[] { typeof(NotesController) };
-        yield return new object[] { typeof(PlantingIntentionsController) };
-        yield return new object[] { typeof(ProducerDetailsController) };
-        yield return new object[] { typeof(QueryLibraryController) };
-        yield return new object[] { typeof(RemindersController) };
-        yield return new object[] { typeof(SavedListsController) };
-        yield return new object[] { typeof(StoredGrainController) };
-        yield return new object[] { typeof(TicketsController) };
-        yield return new object[] { typeof(TradeUnitsController) };
-        yield return new object[] { typeof(UsageDashboardController) };
-        yield return new object[] { typeof(UserPreferencesController) };
-        yield return new object[] { typeof(UserTradeUnitsController) };
-        yield return new object[] { typeof(VersionController) };
-        yield return new object[] { typeof(WhatsNewController) };
+        var types = AllControllerTypes().Select(o => (Type)o[0]).ToList();
+
+        // Guard against the reflection sweep silently returning too little (e.g. an assembly not loaded).
+        Assert.True(types.Count >= 30, $"Expected the desktop (25+) and mobile (9) controllers; found {types.Count}.");
+        Assert.Contains(types, t => t == typeof(NotesController));
+        Assert.Contains(types, t => t.Assembly == typeof(MobileAssemblyMarker).Assembly);
     }
 
     [Theory]

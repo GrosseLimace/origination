@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The mobile surface (SEC-ARCH-BURDI-001 Layer 2 as realised through APIM): the ONLY controllers a
+    mobile-scoped token may reach, under api/mobile/v1. Hosted inside the existing private App Service
+    behind APIM (ADR-001, Option 3) via AddApplicationPart; a later host split needs no changes here.
+
+    Boundary rules, each enforced by a test in GrainOriginatorPortal.Api.Tests/Mobile:
+      - references GrainOriginatorPortal.Application ONLY — never Infrastructure (no DbContext access);
+      - every controller derives from MobileControllerBase (MobileAccess policy, audit filter, mobile
+        rate limit, request size limit);
+      - every route template starts with api/mobile/v1 and matches openapi/mobile/specification.yaml.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="GrainOriginatorPortal.Api.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GrainOriginatorPortal.Application\GrainOriginatorPortal.Application.csproj" />
+  </ItemGroup>
+
+</Project>

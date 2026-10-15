@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Placeholder app icon: Scoular green (#00875F accessible) with the product initial.
+       Replace with brand-approved PNG/SVG icons from Marketing before the QA pilot. -->
+  <rect width="512" height="512" rx="96" fill="#00875F"/>
+  <text x="256" y="330" text-anchor="middle" font-family="'Open Sans', Arial, sans-serif" font-size="280" font-weight="700" fill="#FBF7E2">O</text>
+</svg>

@@ -893,7 +893,14 @@ SELECT CAST(@removed AS int);";
         try
         {
             await using var command = connection.CreateCommand();
+            // CA2100 (enforced as an error by api/.editorconfig): reviewed 2026-10-13. This helper is
+            // private, and every caller passes a compile-time `const string` batch (the seven `const
+            // string sql` declarations in this file); ExecuteScalarIntAsync only forwards its own
+            // argument. All values reach SQL as bound parameters below. A caller that builds SQL from
+            // runtime text would need its own review before touching this line.
+#pragma warning disable CA2100
             command.CommandText = sql;
+#pragma warning restore CA2100
 
             var transaction = _appContext.Database.CurrentTransaction?.GetDbTransaction();
             if (transaction is not null)

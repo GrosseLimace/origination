@@ -1,0 +1,18 @@
+{
+  "$comment": "Azure Static Web App configuration for the mobile app (Grain Vision's external SPA pattern, EXTERNAL-SPA-GUIDE). SPA fallback for client routes, like Grain Vision's; security headers per SEC-ARCH-BURDI-001 3.4. connect-src lists the APIM gateways the app calls in Dev, QA and Prod (apidev/apiqa/api.scoular.com) plus Entra sign-in.",
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": ["/icons/*", "/*.js", "/*.css", "/manifest.webmanifest", "/ngsw.json", "/ngsw-worker.js"]
+  },
+  "globalHeaders": {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(self), geolocation=(self)",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://login.microsoftonline.com https://apidev.scoular.com https://apiqa.scoular.com https://api.scoular.com; frame-src https://login.microsoftonline.com; object-src 'none'; base-uri 'self'; form-action 'self' https://login.microsoftonline.com; frame-ancestors 'none'; manifest-src 'self'; worker-src 'self'"
+  },
+  "mimeTypes": {
+    ".webmanifest": "application/manifest+json"
+  }
+}

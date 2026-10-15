@@ -1,0 +1,19 @@
+/* Scoular brand tokens shared by BOTH Angular apps (desktop src/styles.css and the mobile app
+   projects/mobile/src/styles.css). Tailwind v4 @theme: each --color-* becomes bg-/text-/border-
+   utilities (e.g. bg-scoular-green). Keep this file free of layout — chrome metrics, fluid scales
+   and z-index tiers are app-specific and live in each app's own styles.css. */
+@theme {
+  --color-scoular-blue: #007CC0;
+  --color-scoular-blue-medium: #00588E;
+  --color-scoular-blue-dark: #00395D;
+  --color-scoular-yellow: #E8B30D;
+  --color-scoular-yellow-bright: #FFD400;
+  --color-scoular-gray: #576269;
+  --color-scoular-teal: #1CB3B4;
+  --color-scoular-red: #EF4623;
+  --color-scoular-red-accessible: #DF3410;
+  --color-scoular-green: #00A36F;
+  --color-scoular-green-accessible: #00875F;
+  --color-scoular-cream: #FBF7E2;
+  --font-sans: 'Open Sans', ui-sans-serif, system-ui, sans-serif;
+}

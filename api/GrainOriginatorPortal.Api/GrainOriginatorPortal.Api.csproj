@@ -44,6 +44,8 @@
   <ItemGroup>
     <ProjectReference Include="..\GrainOriginatorPortal.Application\GrainOriginatorPortal.Application.csproj" />
     <ProjectReference Include="..\GrainOriginatorPortal.Infrastructure\GrainOriginatorPortal.Infrastructure.csproj" />
+    <!-- Mobile surface (api/mobile/v1) hosted in this process behind APIM — ADR-001 Option 3 -->
+    <ProjectReference Include="..\GrainOriginatorPortal.Mobile\GrainOriginatorPortal.Mobile.csproj" />
   </ItemGroup>
 
 </Project>

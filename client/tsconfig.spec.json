@@ -2,11 +2,16 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "./out-tsc/spec",
-    "types": ["vitest/globals", "@testing-library/jest-dom"]
+    "types": [
+      "vitest/globals",
+      "@testing-library/jest-dom"
+    ]
   },
   "include": [
     "src/**/*.spec.ts",
     "src/**/*.d.ts",
-    "src/testing/**/*.ts"
+    "src/testing/**/*.ts",
+    "projects/mobile/src/**/*.spec.ts",
+    "projects/mobile/src/**/*.d.ts"
   ]
 }

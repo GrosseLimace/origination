@@ -52,6 +52,20 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      # ---- Supply-chain and contract gates (SEC-ARCH-BURDI-001 §9.3) -------------------------
+      # Dependabot alerts on GHE are the system of record (docs/security); this step fails the PR
+      # fast on a HIGH/CRITICAL advisory in the PRODUCTION dependency tree. Dev-only tooling is
+      # excluded here and handled through Dependabot triage.
+      - name: Dependency vulnerability scan (npm, production tree)
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: client
+
+      # openapi/mobile/specification.yaml is the APIM allow-list for the mobile surface. Lint it here so a
+      # malformed contract never reaches Data Integrations; the backend drift test (xUnit, below)
+      # proves it matches the api/mobile/v1 controllers.
+      - name: OpenAPI contract lint (mobile surface)
+        run: npx --yes @redocly/cli@2.54.2 lint openapi/mobile/specification.yaml
+
       - name: Frontend unit + component tests (Vitest)
         run: npm run test:coverage
         working-directory: client
@@ -66,10 +80,40 @@ jobs:
         run: npx ng build --configuration production
         working-directory: client
 
+      # The mobile PWA is typed against openapi/mobile/specification.yaml through a generated file. Regenerate
+      # and fail if the committed copy is stale, then build the mobile project (its own budgets).
+      - name: Mobile client — contract types are current
+        shell: bash
+        run: |
+          npx openapi-typescript ../openapi/mobile/specification.yaml -o projects/mobile/src/app/core/api/api-types.ts
+          git diff --exit-code -- projects/mobile/src/app/core/api/api-types.ts \
+            || { echo "::error::projects/mobile/src/app/core/api/api-types.ts is stale — regenerate from openapi/mobile/specification.yaml and commit."; exit 1; }
+        working-directory: client
+
+      - name: Mobile client build (production — enforces its bundle budgets)
+        run: npx ng build origination-mobile --configuration production
+        working-directory: client
+
       - name: Restore .NET solution
         run: dotnet restore GrainOriginatorPortal.sln --locked-mode
 
-      - name: Build .NET solution
+      # Transitive NuGet advisories. `dotnet list package --vulnerable` exits 0 even when it finds
+      # something, so the output is inspected explicitly.
+      - name: Dependency vulnerability scan (NuGet, incl. transitive)
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet list GrainOriginatorPortal.sln package --vulnerable --include-transitive | tee nuget-vulnerable.txt
+          if grep -q "has the following vulnerable packages" nuget-vulnerable.txt; then
+            echo "::error::Vulnerable NuGet packages found — see the list above."
+            exit 1
+          fi
+
+      # SAST: the Roslyn security analyzers (CA2100, CA3xxx injection, CA23xx deserialization,
+      # CA53xx/CA54xx crypto + TLS + token validation) are promoted to build ERRORS in
+      # api/.editorconfig, so this build step is also the static security gate. CodeQL is not
+      # available on this GHE until Advanced Security is enabled (PLATFORM-REQUESTS.md E14).
+      - name: Build .NET solution (Roslyn security analyzers enforced as errors)
         run: dotnet build GrainOriginatorPortal.sln -c Release --no-restore
 
       - name: Backend unit tests (xUnit)

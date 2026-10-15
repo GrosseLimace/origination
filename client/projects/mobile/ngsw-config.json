@@ -1,0 +1,87 @@
+{
+  "$schema": "../../node_modules/@angular/service-worker/config/schema.json",
+  "index": "/index.html",
+  "assetGroups": [
+    {
+      "name": "app",
+      "installMode": "prefetch",
+      "resources": {
+        "files": [
+          "/favicon.ico",
+          "/index.html",
+          "/manifest.webmanifest",
+          "/*.css",
+          "/*.js"
+        ]
+      }
+    },
+    {
+      "name": "assets",
+      "installMode": "lazy",
+      "updateMode": "prefetch",
+      "resources": {
+        "files": [
+          "/icons/**",
+          "/**/*.(svg|cur|jpg|jpeg|png|apng|webp|avif|gif|otf|ttf|woff|woff2)"
+        ],
+        "urls": [
+          "https://fonts.googleapis.com/**",
+          "https://fonts.gstatic.com/**"
+        ]
+      }
+    }
+  ],
+  "dataGroups": [
+    {
+      "name": "reference",
+      "urls": [
+        "**/api/mobile/v1/reference/**",
+        "**/api/mobile/v1/me",
+        "**/external/origination/v1/reference/**",
+        "**/external/origination/v1/me"
+      ],
+      "cacheConfig": {
+        "strategy": "freshness",
+        "maxSize": 20,
+        "maxAge": "1d",
+        "timeout": "3s"
+      }
+    },
+    {
+      "name": "producer-reads",
+      "urls": [
+        "**/api/mobile/v1/customers/*/contracts**",
+        "**/api/mobile/v1/customers/*/tickets/**",
+        "**/api/mobile/v1/customers/*/planting-intentions",
+        "**/api/mobile/v1/customers/*/storage",
+        "**/api/mobile/v1/customers/*/dp-contracts",
+        "**/api/mobile/v1/customers/*/details",
+        "**/external/origination/v1/customers/*/contracts**",
+        "**/external/origination/v1/customers/*/tickets/**",
+        "**/external/origination/v1/customers/*/planting-intentions",
+        "**/external/origination/v1/customers/*/storage",
+        "**/external/origination/v1/customers/*/dp-contracts",
+        "**/external/origination/v1/customers/*/details"
+      ],
+      "cacheConfig": {
+        "strategy": "freshness",
+        "maxSize": 200,
+        "maxAge": "1h",
+        "timeout": "3s"
+      }
+    },
+    {
+      "name": "notes",
+      "urls": [
+        "**/api/mobile/v1/customers/*/notes**",
+        "**/external/origination/v1/customers/*/notes**"
+      ],
+      "cacheConfig": {
+        "strategy": "freshness",
+        "maxSize": 100,
+        "maxAge": "15m",
+        "timeout": "3s"
+      }
+    }
+  ]
+}

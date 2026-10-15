@@ -1,0 +1,50 @@
+@import '@it/design-system';
+@import "tailwindcss";
+
+/* Brand tokens shared with the desktop app. */
+@import '../../../libs/styles/tokens.css';
+
+/* Dark mode is class-driven (ThemeService toggles .dark on <html>), same convention as the desktop. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Phone-first chrome. 16px root on every device; touch targets are 44px minimum (h-11). */
+:root {
+  --mob-header-h: 3.5rem;
+  --mob-tabbar-h: 3rem;
+  /* Respect notches / home indicators on installed PWAs. */
+  --mob-safe-top: env(safe-area-inset-top, 0px);
+  --mob-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html, body {
+  height: 100%;
+  overscroll-behavior-y: none; /* no pull-to-refresh fighting the list */
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.5;
+  -webkit-tap-highlight-color: transparent;
+  @apply bg-gray-50 text-gray-900;
+}
+
+.dark body {
+  @apply bg-gray-900 text-gray-100;
+}
+
+/* Cards are the primary surface on mobile (cards #645-#648). One definition, both themes. */
+@layer components {
+  .mob-card {
+    @apply rounded-xl bg-white shadow-sm border border-gray-200 p-4 dark:bg-gray-800 dark:border-gray-700;
+  }
+  .mob-label {
+    @apply text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400;
+  }
+  .mob-value {
+    @apply text-base font-semibold text-gray-900 dark:text-gray-100;
+  }
+  .mob-tap {
+    @apply min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg;
+  }
+}

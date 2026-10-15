@@ -212,7 +212,7 @@ Azure AD bearer tokens via `Microsoft.Identity.Web`. All API endpoints require a
 
 ## Software Bill of Materials (SBOM)
 
-Last Updated: 2026-10-13
+Last Updated: 2026-10-15
 
 ### Backend Dependencies (C# / .NET 10)
 
@@ -238,8 +238,10 @@ Last Updated: 2026-10-13
 | @angular/router | 21.2.25 | MIT | Client-side routing (security fix: SSR denial of service via numeric URL matrix parameters, CVE-2026-101896 — the 21.x fix is "avoid dense elements allocation for numeric URL keys" in 21.2.24, so the ≥22.2.0 the scanner quotes is not required; not exploitable here in any case, the app has no server-side rendering, so the allocation could only run in the requesting user's own browser) |
 | @angular/forms | 21.2.25 | MIT | Reactive forms |
 | @angular/animations | 21.2.25 | MIT | Animation support |
+| @angular/service-worker | 21.2.25 | MIT | Service worker for the mobile PWA (`origination-mobile`): app-shell caching and read-cache data groups per `projects/mobile/ngsw-config.json` |
 | @azure/msal-angular | 5.1.1 | MIT | Azure AD authentication (Angular) |
 | @azure/msal-browser | 5.4.0 | MIT | MSAL browser runtime |
+| openapi-typescript | 7.13.0 | MIT | Dev only — generates `projects/mobile/src/app/core/api/api-types.ts` from `openapi/mobile/specification.yaml`, so the mobile client is typed against the APIM contract and CI fails on drift |
 | @it/design-system | 0.1.1 | Internal | Scoular IT design system components |
 | leaflet | 1.9.4 | BSD-2-Clause | Interactive map rendering |
 | leaflet.markercluster | ~1.5.3 | MIT | Leaflet marker clustering |

@@ -1,0 +1,84 @@
+name: Origination Mobile Deploy
+
+# Deploys the mobile app (Angular project `origination-mobile`) to the environment's Azure Static Web App,
+# following Grain Vision's `deploy-external.yml` and developer-docs/EXTERNAL-SPA-GUIDE.md: one workflow with an
+# environment choice, OIDC login + the SWA CLI (NOT azure/static-web-apps-deploy, which is Docker-based and does not
+# run on the self-hosted runners).
+#
+# ORDER: deploy the API ("Originations Deploy to {ENV}") for the same commit FIRST. The phone app calls
+# api/mobile/v1 through APIM, and those operations must exist before a client that uses them is published.
+#
+# PREREQUISITES (docs/mobile/PLATFORM-REQUESTS.md): Infrastructure has created swa-origination-{env}-eus with the
+# GitHub Actions service principal allowed to deploy to it; Data Integrations has created the APIM operations.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options: [dev, qa, prod]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    environment: ${{ github.event.inputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      # Angular build configuration, resource group and Static Web App per environment.
+      NG_CONFIG: ${{ github.event.inputs.environment == 'prod' && 'production' || github.event.inputs.environment }}
+      RESOURCE_GROUP: ${{ github.event.inputs.environment == 'prod' && 'rg-origination-eus' || format('rg-origination-{0}-eus', github.event.inputs.environment) }}
+      SWA_NAME: ${{ github.event.inputs.environment == 'prod' && 'swa-origination-eus' || format('swa-origination-{0}-eus', github.event.inputs.environment) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version: '24.x'
+
+      - name: Install Angular dependencies
+        # --ignore-scripts + NPM_TOKEN scoped to this step, mirroring ci.yml / deploy-dev.yml.
+        run: npm ci --ignore-scripts
+        working-directory: client
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Build mobile app
+        run: npx ng build origination-mobile --configuration ${{ env.NG_CONFIG }}
+        working-directory: client
+
+      - name: Azure Login (OIDC)
+        id: azlogin
+        continue-on-error: true
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6  # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ github.event.inputs.environment == 'prod' && secrets.AZURE_SUBSCRIPTION_ID_PROD || secrets.AZURE_SUBSCRIPTION_ID_NONPROD }}
+
+      - name: Wait before Azure login retry
+        if: steps.azlogin.outcome == 'failure'
+        run: sleep 15
+
+      - name: Azure Login (OIDC) — retry
+        if: steps.azlogin.outcome == 'failure'
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6  # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ github.event.inputs.environment == 'prod' && secrets.AZURE_SUBSCRIPTION_ID_PROD || secrets.AZURE_SUBSCRIPTION_ID_NONPROD }}
+
+      - name: Install Static Web Apps CLI
+        run: npm install -g @azure/static-web-apps-cli@2
+
+      - name: Deploy to Static Web App
+        # `--env production` is the SWA *slot* name (the live slot), not our environment.
+        run: >
+          swa deploy ./client/dist/mobile
+          --resource-group ${{ env.RESOURCE_GROUP }}
+          --app-name ${{ env.SWA_NAME }}
+          --env production

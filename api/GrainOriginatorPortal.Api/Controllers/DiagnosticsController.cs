@@ -97,7 +97,12 @@ public class DiagnosticsController : ControllerBase
                 var dbName = conn.Database;
                 string? result = null;
                 using var cmd = conn.CreateCommand();
+                // CA2100: every caller below passes a compile-time string literal (no user input can
+                // reach testSql), and the endpoint is AdminOnly + Development-only. Adding a new call
+                // with a non-literal query here would need its own review.
+#pragma warning disable CA2100
                 cmd.CommandText = testSql;
+#pragma warning restore CA2100
                 var raw = await cmd.ExecuteScalarAsync();
                 result = raw?.ToString();
                 return new { name, status = "OK", database = dbName, result };
