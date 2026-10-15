@@ -26,6 +26,9 @@ public static partial class TelemetrySanitizer
         "search-customer",
         "search-commodity",
         "search-contract",
+        // Help panel questions it could not answer — kept so the FAQ can be extended from what
+        // users actually ask.
+        "help-no-match",
     };
 
     [GeneratedRegex(@"[^\s@]+@[^\s@]+\.[^\s@]+", RegexOptions.Compiled)]

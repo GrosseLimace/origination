@@ -1,5 +1,8 @@
 <!-- Floating launcher FAB -->
-<div class="fixed bottom-6 right-6 z-[55] flex flex-col items-end gap-2">
+<!-- Moves left by the Help panel's width while it's open on desktop, so the two never overlap; hidden
+     while the full-screen panel is open on a phone, where it would sit on the panel's Send button. -->
+<div class="fixed bottom-6 right-6 z-[55] flex flex-col items-end gap-2" [style.right.px]="helpPanel.pushesPage() ? 424 : null"
+  [style.display]="helpPanel.open() && !helpPanel.desktop() ? 'none' : null">
   <!-- Type picker popover -->
   @if (pickerOpen()) {
     <div class="mb-1 w-56 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl overflow-hidden"
