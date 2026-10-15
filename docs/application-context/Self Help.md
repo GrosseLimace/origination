@@ -5,7 +5,7 @@
 | | |
 | --- | --- |
 | **Route** | `/help` (full page), plus the Help panel, which opens over any page |
-| **Entry points** | The "?" button in the header (left of the avatar), **Help** in the profile menu, **Help** in the mobile drawer |
+| **Entry points** | The "?" button in the header (left of the avatar) and **Help** in the mobile drawer open the chat; **Help** in the profile menu opens the Help library page |
 | **Who sees it** | Every authenticated user. No role gating, no environment flag. |
 | **Content source** | `api/GrainOriginatorPortal.Api/Content/help-faq.json`, hand-curated |
 | **API** | `GET /api/help` — `[Authorize]`, embedded resource, same delivery as What's New |
@@ -15,7 +15,9 @@
 ## How users reach it
 
 - **"?" in the header**: opens and closes the panel. Pressed while open.
-- **Profile menu → Help** and **mobile drawer → Help**: open the panel.
+- **Profile menu → Help**: the full Help library page (`/help`).
+- **Mobile drawer → Help**: opens the panel. It stays on the chat because on narrow Dev/QA phones the "?" is hidden to make room for the environment pill.
+- **One question at a time**: asking a new question, or picking a suggestion or related question, *replaces* the conversation and scrolls to the top. Follow-on steps for the same question (Troubleshoot, Still need help?) are added below it, once each. On phones the panel sits above the app header, so its Close and New question buttons are always reachable.
 - **Panel → book icon / "Browse all help topics"**: the `/help` page.
 - **Deep link**: `/help#<faq-id>` opens the page on one question, e.g. `/help#missing-producer`. Handy to paste into a Teams reply.
 
@@ -56,8 +58,8 @@ With `environment.helpDeskUrl` set (ServiceNow, since 2026-10-14), the card walk
 
 1. **Open ServiceNow**: a plain link to the catalog item in a new tab. It uses Scoular SSO. If sign-in lands on the portal home instead of the form, the user clicks the button again.
 2. **Please choose a topic**: pick `environment.helpDeskTopic` ("Something Else" until the Help Desk adds an Origination Workbench topic).
-3. **Short Description**: an optional one-line box, then **Copy short description**, which copies `Origination Workbench: <their text>`, or `… help needed on <page>` if they typed nothing.
-4. **Additional information**: **Copy additional information** copies the details plus a "What I was doing / what went wrong:" line for the user to finish.
+3. **Short Description**: a one-line box pre-filled with what the user asked Help (editable), then **Copy short description**, which copies `Origination Workbench: <text>`, or `… help needed on <page>` if it's empty.
+4. **Additional information**: **Copy additional information** copies "What I asked Help: …", the details (including the titles of the last few answers read), and a "What I was doing / what went wrong:" line for the user to finish.
 5. Attach a screenshot and submit.
 
 The form is never prefilled. Nothing is added to the URL (no PII in query strings), and the copies survive a sign-in redirect. There are two copy buttons because the clipboard holds one thing at a time. Clicking **Open ServiceNow** records a `help-ticket-opened` usage event. With an empty `helpDeskUrl`, the card offers **Copy details** and "Send these details to the Origination team."
