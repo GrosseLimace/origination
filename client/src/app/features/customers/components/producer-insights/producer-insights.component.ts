@@ -1,4 +1,4 @@
-import { Component, inject, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ThemeService } from '@core/services/theme.service';
 import { AppStateService } from '@core/services/app-state.service';
@@ -10,7 +10,11 @@ import { buildLbsPerBushelMap, sumInBushels } from '@shared/utils/production-cov
   standalone: true,
   imports: [CommonModule],
   host: { class: 'block' },
-  templateUrl: './producer-insights.component.html'
+  templateUrl: './producer-insights.component.html',
+  // Every getter the template reads is computed from signals: the inputs, the theme's isDarkMode and
+  // the app state's commodityConversions. Reading them during render tracks them, so a theme switch
+  // or late-arriving conversion factors re-render the card without an input change.
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ProducerInsightsComponent {
   public customer = input.required<Customer>();
@@ -137,16 +141,31 @@ export class ProducerInsightsComponent {
    *  meal in short tons and popcorn by the pound to it, under a label that says bushels, sitting
    *  directly above the Growth Opportunity panel that excludes them. */
   get totalContracted(): number {
+    return this.currentYearBushels.contracted;
+  }
+
+  /** Bushels per contract, over the contracts that made it into Total Volume. A contract whose unit
+   *  can't be shown in bushels (rail cars, gallons, no lb/bu factor) is left out of the divisor too —
+   *  counting it there but not in the total made the average read low. */
+  get averageContractSize(): number {
+    const { contracted, excludedContracts } = this.currentYearBushels;
+    const counted = this.currentYearContracts.length - excludedContracts;
+    if (counted <= 0) return 0;
+    return contracted / counted;
+  }
+
+  private get currentYearBushels(): { contracted: number; excludedContracts: number } {
     return sumInBushels(
       this.currentYearContracts,
       buildLbsPerBushelMap(this.appState.commodityConversions()),
-    ).contracted;
+    );
   }
 
-  get averageContractSize(): number {
-    const list = this.currentYearContracts;
-    if (list.length === 0) return 0;
-    return this.totalContracted / list.length;
+  /** Contracts left out of Total Volume and Avg Contract because the conversions failed to load —
+   *  not because of their unit. Zero unless the load failed. */
+  get contractsMissingConversions(): number {
+    if (!this.appState.commodityConversionsLoadFailed() || this.appState.commodityConversions().length > 0) return 0;
+    return this.currentYearBushels.excludedContracts;
   }
 
   get totalInteractions(): number {

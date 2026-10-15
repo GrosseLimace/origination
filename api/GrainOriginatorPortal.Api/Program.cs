@@ -162,6 +162,9 @@ builder.Services.AddHostedService<CustomerSyncBackgroundService>();
 
 // Keeps the trade-unit-wide CTRM caches warm for recently-used producer sets, so Build-a-List prompts
 // never pay for a cache that expired between uses. No-op unless Ctrm:Source is 'ctrm'.
+// The keep-warm cycle reads CTRM through a small seam so its per-set failure isolation is testable;
+// production wires the one adapter over the real readers.
+builder.Services.AddSingleton<ICtrmWarmReads, CtrmWarmReads>();
 builder.Services.AddHostedService<CtrmKeepWarmService>();
 
 // Hook JWT bearer events to log token validation failures per security-guide.md §8.1.
@@ -320,10 +323,12 @@ builder.Services.AddScoped<ISavedListService, SavedListService>();
 builder.Services.AddScoped<IProducerDetailsService, ProducerDetailsService>();
 builder.Services.AddScoped<IOrganicCertificationIngestService, OrganicCertificationIngestService>();
 builder.Services.AddScoped<IOrganicCertificationService, OrganicCertificationService>();
-builder.Services.AddScoped<IFarmService, FarmService>();
 builder.Services.AddScoped<IPlantingIntentionService, PlantingIntentionService>();
 builder.Services.AddScoped<INoteService, NoteService>();
 builder.Services.AddScoped<IReminderService, ReminderService>();
+// Admin diagnostics: six services the DiagnosticsController delegates to (schema, CTRM probes, commodity
+// seed, elevator cache, usage-rollup backfill, app-access members). Registered together in one place.
+builder.Services.AddDiagnosticsServices();
 builder.Services.AddScoped<IOutlookCalendarService, OutlookCalendarService>();
 builder.Services.AddScoped<ITicketService, TicketService>();
 builder.Services.AddScoped<IContractService, ContractService>();
@@ -346,6 +351,9 @@ builder.Services.AddScoped<IManagerDirectoryService, ManagerDirectoryService>();
 builder.Services.AddSingleton<UsageUniverseCacheState>();
 builder.Services.AddScoped<IDailyRecapGroupService, DailyRecapGroupService>();
 builder.Services.AddScoped<ITeamsChannelService, TeamsChannelService>();
+builder.Services.AddScoped<IEntitlementsDirectoryService, EntitlementsDirectoryService>();
+// Read once: the connection string and the switch are app settings, which restart the app when changed.
+builder.Services.AddSingleton(ClientTelemetrySettings.From(builder.Configuration));
 builder.Services.AddScoped<ITeamsDirectoryService, TeamsDirectoryService>();
 
 // Graph directory client (app-access spike) — singleton so the cached Graph token is shared.

@@ -1,3 +1,4 @@
+import { EntitlementsCatalog } from '@features/daily-digest/models/entitlements-catalog.model';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { MsalService } from '@azure/msal-angular';
@@ -44,6 +45,7 @@ interface Internals {
   isChannelRouted: () => boolean;
   canEnableRecap: () => boolean;
   canSubmit: () => boolean;
+  catalogDegraded: () => boolean;
   canToggleRecap(group: RecapGroup): boolean;
   openCreateDialog(): void;
   openEditDialog(group: RecapGroup): void;
@@ -355,5 +357,35 @@ describe('DailyDigestComponent — shared editing', () => {
 
     expect(c.formTeamsEmail()).toBe(CHANNEL);
     expect(c.isChannelRouted()).toBe(true);
+  });
+});
+
+describe('DailyDigestComponent — degraded entitlements catalog', () => {
+  function buildWithCatalog(catalog: Partial<EntitlementsCatalog>): Internals {
+    const api = makeApiStub([]);
+    api.getEntitlementsCatalog = () => of({ ...CATALOG, ...catalog });
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {} } },
+        { provide: MsalService, useValue: { instance: { getActiveAccount: () => ({ username: CALLER }), getAllAccounts: () => [] } } },
+      ],
+    });
+    TestBed.overrideComponent(DailyDigestComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    const fixture = TestBed.createComponent(DailyDigestComponent);
+    fixture.detectChanges();
+    return fixture.componentInstance as unknown as Internals;
+  }
+
+  beforeEach(() => TestBed.resetTestingModule());
+
+  it('is not degraded when the directory answered in full', () => {
+    expect(buildWithCatalog({}).catalogDegraded()).toBe(false);
+  });
+
+  it('is degraded when the API says the directory could not be read, so the editor can say so', () => {
+    // The API still answers 200 with empty lists; without the flag an outage looks like a caller
+    // with no entitlements at all.
+    expect(buildWithCatalog({ degraded: true }).catalogDegraded()).toBe(true);
   });
 });

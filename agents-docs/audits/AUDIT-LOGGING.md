@@ -3,8 +3,18 @@
 Style guide: `style-guides/logging.md`
 Scope: structured logging/correlation across `api/GrainOriginatorPortal.Api`, App Insights/Log Analytics posture, and `client/` error/telemetry handling. This pass also reviewed the new CTRM GraphQL integration (`Services/Ctrm`, `Infrastructure/Ctrm`) merged since the last pass.
 
-**Findings:** 10 total — 2 resolved, 3 accepted, 5 open (1 critical, 1 high, 2 medium, 1 low)
-**Opened:** 2026-09-19 | **Last verified:** 2026-09-28 (reconciliation pass)
+**Findings:** 10 total — 4 resolved, 3 accepted, 3 open (1 critical, 1 high, 1 medium)
+**Opened:** 2026-09-19 | **Last verified:** 2026-10-13 (reconciliation pass)
+
+## Reconciliation notes (2026-10-13)
+
+Re-verified all 6 open/accepted findings against current repo state (the 4 resolved findings are frozen and not re-checked). All 6 are unchanged since 2026-09-28: `client/package.json` still has no `@microsoft/applicationinsights-*` dependency and no `app-insights.service.ts` exists; `main.ts`'s bootstrap `.catch` still gates `console.error` behind `if (!environment.production)`; `developer-docs/START-HERE.md` still documents only generic platform-level Smart Detection with no app-specific sampling/KQL/dashboard/alert content; the API still has no App Insights/OpenTelemetry/Serilog package reference; `UsageTrackingBackgroundService` is still the one accepted exception to per-run correlation scoping; and `RequestContextMiddleware` still logs the UPN as `UserId` under the existing accepted risk AR-09.
+
+This pass covered the `release_2026-10-13` merge train: Bin Sites & Grain on Farm, Usage Dashboard manager-for-all, Build-a-List prompt-library fixes, and the CTRM trade-unit contract read being flipped to the default strategy (`feature_TradeUnitContractRead`, decided 2026-10-12). Notable new surface reviewed, with no new findings:
+
+- **`BarchartIngestController`/`BarchartIngestService`/`BarchartIngestRepository`** (new vendor feed ingestion pipeline, migration `20260811142608_AddBarchartFeed` onward): well-instrumented per the guide — structured message templates with an elapsed-ms field (`{Ms}`), payload size logged instead of payload body (with an explicit code comment citing `style-guides/logging.md`'s no-body-logging rule), a dedicated `BarchartApiCallAudit` table for vendor-call accounting, and warnings (not silent drops) when quotes reference symbols missing from the catalog.
+- **`LogSanitizer` middleware** (new): strips control characters (CR/LF/TAB/ESC) and caps length on request-supplied strings before they reach `RequestContextMiddleware` and `SecurityAuditMiddleware`. The code comment states this closes a QA-flagged CWE-117 log-forging finding (2026-09-30) where a URL-encoded CRLF in the request path could forge a second log line in the local console sink. Confirmed applied at the two call sites that take raw request/claim data (`Operation`, `UserId`, method, path). This is a genuine fix for a class of issue the style guide's §4 (structured fields) and §12 (data hygiene) care about; no corresponding finding existed in this audit previously, so nothing to close out, but it's worth noting since it directly improves the log-forging posture Section 12 implies.
+- **CTRM trade-unit contract read** (`CtrmContractReader.cs`, now the default `TradeUnitContractStrategy`): the new code path logs elapsed time as a structured parameter (`{Seconds}`) alongside counts of contracts/units/producers/pages, consistent with the existing CTRM logging discipline already credited in the "Overall health" section below. `GlobalExceptionHandler`'s `{TraceId}` interpolation was re-checked given the new `CtrmSourceChoiceMiddleware`/toggle-user code referenced in commit history — that code path was a 2026-10-01 spike that was fully reverted by migration `20261005131626_DropCtrmSourceToggleUsers`; it is not present in the current tree and was not reviewed further.
 
 ## Reconciliation notes (2026-09-28)
 

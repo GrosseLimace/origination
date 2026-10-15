@@ -56,6 +56,9 @@ export interface MentionCatalogTeamsChannel {
 }
 
 export interface MentionCatalog {
+  /** True when at least one source could not be read, so a section is empty because of an outage
+   *  rather than because there is nothing to offer. The picker still opens; tell the user. */
+  degraded?: boolean;
   people: MentionCatalogPerson[];
   tradeUnits: MentionCatalogTradeUnit[];
   tradeUnitGroups: MentionCatalogGroup[];

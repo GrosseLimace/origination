@@ -728,11 +728,14 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
             entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
 
-            // FK to Customer.Id (the ODS CustomerId surrogate).
+            // FK to Customer.Id (the ODS CustomerId surrogate). NoAction like every other FK into Customer:
+            // these rows are hand-curated trade-unit assignments, and a customer delete must be blocked
+            // by them, not silently take them along. Was Cascade until 2026-10-13; production held 22,491
+            // rows behind it at the time (nothing deletes customers today, so none were ever lost).
             entity.HasOne(e => e.Customer)
                   .WithMany()
                   .HasForeignKey(e => e.CustomerId)
-                  .OnDelete(DeleteBehavior.Cascade);
+                  .OnDelete(DeleteBehavior.NoAction);
 
             // One row per (customer, trade-unit) pair.
             entity.HasIndex(e => new { e.CustomerId, e.TradeUnit })

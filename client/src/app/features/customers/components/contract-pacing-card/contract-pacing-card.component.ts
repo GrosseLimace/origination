@@ -1,4 +1,4 @@
-import { Component, DestroyRef, computed, effect, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ThemeService } from '@core/services/theme.service';
@@ -22,7 +22,11 @@ interface CommodityPacingRow {
   standalone: true,
   imports: [CommonModule],
   host: { class: 'block' },
-  templateUrl: './contract-pacing-card.component.html'
+  templateUrl: './contract-pacing-card.component.html',
+  // The template reads inputs, signals, computeds, and style getters over the theme's isDarkMode
+  // signal. The self-fetch's subscribe callbacks write signals, so a history that arrives (or fails)
+  // after the first render still marks the view.
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ContractPacingCardComponent {
   // Open contracts from parent (pre-filtered to !closedDate)
@@ -52,6 +56,11 @@ export class ContractPacingCardComponent {
 
   /** Either source failing means the comparison is understated. */
   readonly historyUnavailable = computed(() => this.historyLoadFailed() || this.parentHistoryLoadFailed());
+
+  /** The harvest windows failed to load. Every figure here is measured inside them, so without them
+   *  both years read "—" — as if the producer had contracted nothing. */
+  readonly harvestWindowsUnavailable = computed(() =>
+    this.appState.harvestWindowsLoadFailed() && this.harvestWindows().length === 0);
   private readonly destroyRef = inject(DestroyRef);
 
   /** Closed historical contracts — supplied by parent OR self-fetched if parent doesn't pass them. */
