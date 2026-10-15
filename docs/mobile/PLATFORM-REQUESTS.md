@@ -6,6 +6,8 @@ Requests the Origination app team makes to other teams, grouped by owner. Source
 
 > **Personal phones (D1), heard 2026-10-15, not yet confirmed in writing:** Security's position is reported as MFA **and Microsoft Edge** on personal phones — most likely Intune app protection (MAM without enrollment) with Conditional Access requiring Edge. No code change: the mobile app is a website and runs in Edge. To test in Edge with app protection on, because MAM can block them: tap-to-call (tel:), email (mailto:), Maps links, "Use my location", Add to Home Screen, offline saving.
 
+> **Dev verified end to end, 2026-10-15:** mobile API deployed to Dev from `release_DEV_2026-10-14` `c9dfd2b1` (merge of this branch; nothing to main). With a Dev desktop sign-in token (v1 token: aud `api://00078a10-…`, scp `Origination.Application.Dev`), `/me`, `/reference/commodities` and `/customers` (browse and `q` search, scoped to trade unit 2190) all return data **through APIM** (`apidev.scoular.com/external/origination/v1`) and directly. `q` shorter than 2 characters is a 400 by design. Not yet tested: the Static Web App and a real phone in Edge (waiting on E1/E3/E5).
+
 ## Infrastructure
 
 | # | Request | We provide | Status |
