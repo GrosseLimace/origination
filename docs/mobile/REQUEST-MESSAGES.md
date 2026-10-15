@@ -85,7 +85,7 @@ ADR-001 (link above) records how we meet each Core Invariant and names four Spec
 | Core Invariant 3, API tier: the mobile API shares the private App Service host with the desktop API | Mobile surface is its own assembly with its own authorization policy, own client registration and scope, and a WAF allow-list that exposes only the mobile paths (17 operations), as for Burdi; nothing else in the API accepts a mobile token. Defined exit path to a separate host (ADR-001 Option 2) |
 | Core Invariant 6 / §3.5: same managed identity for both tiers | As above; the mobile surface excludes ODS producer-master search, admin, reporting and bulk operations (§3.2 "what this layer must NOT contain"), and ODS is read-only regardless |
 | §4.3 device-bound tokens, certificate pinning | MFA, sign-in frequency, Continuous Access Evaluation, client-id check on every request. The business has decided against an app-store app, so pinning is not available |
-| §4.2 token storage in Keychain/Keystore: browser storage is not app-encrypted, and the phones are personal and unmanaged | Sign-in kept per browser tab (session storage); contact phone/email and search never cached; other producer reads cached at most 1 hour (notes 15 minutes) to ride out dropped signal; everything wiped on sign-out and on authentication failure. **If you prefer, we keep no producer data on the phone at all** (offline then covers only what is on screen) |
+| §4.2 token storage in Keychain/Keystore: browser storage is not app-encrypted, and the phones are personal and unmanaged | Sign-in kept per browser tab (session storage); contact phone/email and search never cached; other producer reads cached at most 1 hour (notes 15 minutes) to ride out dropped signal; changes made without signal (notes, farm details, contacts, planting) wait on the phone until they are sent, as in Burdi's driver app; everything wiped on sign-out and on authentication failure. **If you prefer, we keep no producer data on the phone at all** (offline then covers only what is on screen) |
 
 Two things we would value from you now:
 
@@ -110,7 +110,7 @@ Hi Hope, Travis,
 
 The mobile cards gave us almost everything we need. One answer would settle the rest:
 
-Offline: Is it enough that the app keeps working through a dropped signal during a visit, with notes sent once signal returns? Or do originators need to work for hours with no signal at all?
+Offline: Changes made without signal (notes, farm details, planting) are already kept on the phone and sent once signal returns, like Burdi's driver app. Is it enough that producers already opened stay viewable through a dropped signal during a visit? Or do originators need to open producers they haven't looked at yet, for hours with no signal at all?
 
 Thanks,
 Caden
