@@ -23,6 +23,8 @@ export const environment = {
   remindersEnabled: true,
   // 45Z field data + carbon intensity: prototype only, not released here.
   carbonIntensityEnabled: false,
+  // Plan by field: prototype only, not released here.
+  fieldPlanningEnabled: false,
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.
   tradeUnitPreferencesUrl: 'https://tradeunitprefs-qa.scoular.com/my-preferences',

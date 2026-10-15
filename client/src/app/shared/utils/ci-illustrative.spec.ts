@@ -4,7 +4,8 @@ import { estimateCi, fdCicCropFor, missingInputs, nationalAverage, summarizeInte
 
 function season(overrides: Partial<FieldSeason> = {}): FieldSeason {
   return {
-    id: 's1', fieldKey: 'f1', plantingIntentionId: 1, acres: 100,
+    id: 's1', fieldKey: 'f1', year: 2026, crop: 'YC', cropLabel: 'Corn', type: 'Dryland', tradeUnit: '2190',
+    sortOrder: 1, acres: 100,
     expectedYield: 200, actualYield: null, syntheticN: 195.48, niFraction: 0,
     tillage: 'Conventional', coverCrop: 'None', manure: [], status: 'Draft',
     ...overrides,

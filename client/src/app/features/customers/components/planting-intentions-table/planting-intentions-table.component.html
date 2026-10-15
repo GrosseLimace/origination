@@ -1,6 +1,35 @@
 
     <div class="w-full">
-      @if (isLoading()) {
+      <!-- Plan by field (prototype, behind fieldPlanningEnabled). "By crop" is today's table, unchanged. -->
+      @if (fieldPlanningEnabled) {
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div class="inline-flex rounded-lg border border-gray-200 dark:border-gray-700 p-0.5 text-sm">
+            <button type="button" class="rounded-md px-3 py-1 border-0 transition-colors"
+                    [class]="planView === 'crop' ? 'bg-scoular-green-accessible text-white' : 'bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'"
+                    (click)="planView = 'crop'">By crop</button>
+            <button type="button" class="rounded-md px-3 py-1 border-0 transition-colors"
+                    [class]="planView === 'field' ? 'bg-scoular-green-accessible text-white' : 'bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'"
+                    (click)="planView = 'field'">By field</button>
+          </div>
+          @if (planView === 'field') {
+            <div class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+              <button type="button" class="h-7 w-7 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent" (click)="yearSelect.emit(fieldPlanYear - 1)" aria-label="Previous year">‹</button>
+              <span class="font-semibold text-gray-900 dark:text-white">{{ fieldPlanYear }} plan</span>
+              <button type="button" class="h-7 w-7 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent" (click)="yearSelect.emit(fieldPlanYear + 1)" aria-label="Next year">›</button>
+            </div>
+          }
+        </div>
+      }
+
+      @if (fieldPlanningEnabled && planView === 'field') {
+        <app-field-plan-view
+          [customer]="customer()"
+          [intentions]="plantingIntentions()"
+          [year]="fieldPlanYear"
+          [plantingCommodities]="fieldPlanCrops"
+          [allCommodities]="allCommodities"
+          [tradeUnitOptions]="tradeUnitOptions" />
+      } @else if (isLoading()) {
         <div class="text-center py-8 text-gray-500 dark:text-gray-400">
           <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green"></div>
           <p class="mt-3 text-sm">Loading planting intentions...</p>
@@ -71,13 +100,12 @@
                   <div class="text-sm text-gray-900 dark:text-white">{{ intention.tradeUnit || '—' }}</div>
                 </div>
               </div>
-              @if (ciCropFor(intention); as ciCrop) {
+              @if (fieldPlanningEnabled) {
                 <div class="mt-3 -mx-1 border-t border-gray-100 dark:border-gray-700 pt-2">
-                  <app-ci-intention-strip [intention]="intention" [crop]="ciCrop" (open)="ciIntention = intention" />
-                </div>
-              } @else if (carbonIntensityEnabled) {
-                <div class="mt-3 border-t border-gray-100 dark:border-gray-700 pt-2 text-sm text-gray-400 dark:text-gray-500" [title]="ciNotScoredHelp">
-                  🌱 45Z · not a scored crop
+                  <app-field-plan-intention-line [intention]="intention" [crop]="ciCropFor(intention)" (open)="openFieldPlan(intention)" />
+                  @if (carbonIntensityEnabled && !ciCropFor(intention)) {
+                    <div class="px-3 text-xs text-gray-400 dark:text-gray-500" [title]="ciNotScoredHelp">🌱 45Z · not a scored crop</div>
+                  }
                 </div>
               }
             </div>
@@ -203,7 +231,7 @@
                 }
 
                 <!-- Data Row (with 45Z on, it shares its bottom border with the 45Z line below) -->
-                <app-table-row [class]="carbonIntensityEnabled ? '!border-b-0 even:!bg-transparent' : ''">
+                <app-table-row [class]="fieldPlanningEnabled ? '!border-b-0 even:!bg-transparent' : ''">
                   <app-table-cell class="text-center">{{ rowCropLabel(intention) }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.acres | number }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.plantingYear }}</app-table-cell>
@@ -230,16 +258,13 @@
                 </app-table-row>
                 <!-- 45Z line: indented under the crop with a left rule, no divider above, so it reads as
                      part of the row it belongs to rather than a row of its own. -->
-                @if (carbonIntensityEnabled) {
+                @if (fieldPlanningEnabled) {
                   <app-table-row class="even:!bg-transparent">
                     <app-table-cell [colspan]="5" tdClass="!pt-0 !pb-3 !pl-10">
-                      <div class="border-l-2 pl-2" [class]="ciCropFor(intention) ? 'border-scoular-green-accessible/50 dark:border-scoular-green/50' : 'border-gray-200 dark:border-gray-700'">
-                        @if (ciCropFor(intention); as ciCrop) {
-                          <app-ci-intention-strip [intention]="intention" [crop]="ciCrop" (open)="ciIntention = intention" />
-                        } @else {
-                          <div class="px-3 py-1 text-sm text-gray-400 dark:text-gray-500" [title]="ciNotScoredHelp">
-                            🌱 45Z · not a scored crop
-                          </div>
+                      <div class="border-l-2 pl-2 border-scoular-green-accessible/50 dark:border-scoular-green/50">
+                        <app-field-plan-intention-line [intention]="intention" [crop]="ciCropFor(intention)" (open)="openFieldPlan(intention)" />
+                        @if (carbonIntensityEnabled && !ciCropFor(intention)) {
+                          <div class="px-3 text-xs text-gray-400 dark:text-gray-500" [title]="ciNotScoredHelp">🌱 45Z · not a scored crop</div>
                         }
                       </div>
                     </app-table-cell>
@@ -581,16 +606,5 @@
             </div>
           </div>
         </div>
-      }
-
-      <!-- 45Z field data (prototype, behind carbonIntensityEnabled) -->
-      @if (ciIntention && ciCropFor(ciIntention); as ciCrop) {
-        <app-ci-field-dialog
-          [isOpen]="true"
-          [customer]="customer()"
-          [intention]="ciIntention"
-          [cropLabel]="rowCropLabel(ciIntention)"
-          [crop]="ciCrop"
-          (close)="ciIntention = null" />
       }
     </div>

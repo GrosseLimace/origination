@@ -22,6 +22,9 @@ export const environment = {
   // 45Z field data + carbon intensity. PROTOTYPE: in-memory mock data and an illustrative score,
   // for originator walkthroughs only. Must stay false in QA and PROD until the real API ships.
   carbonIntensityEnabled: true,
+  // Plan by field: durable producer fields roll up into planting intentions. PROTOTYPE: in-memory
+  // mock data; the roll-up is simulated and never writes an intention. False in QA and PROD.
+  fieldPlanningEnabled: true,
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.
   tradeUnitPreferencesUrl: 'https://tradeunitprefs-dev.scoular.com/my-preferences',

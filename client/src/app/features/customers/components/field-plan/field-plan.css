@@ -1,0 +1,21 @@
+/* Shared by the field-plan components. Plain CSS: component styles can't @apply the app's Tailwind theme. */
+.ci-input {
+  display: block; width: 100%; margin-top: 0.25rem; padding: 0.5rem 0.75rem;
+  border: 1px solid #d1d5db; border-radius: 0.375rem; background: #fff; color: #111827; font-size: 0.875rem;
+}
+.ci-input.ci-compact { margin-top: 0; padding: 0.3rem 0.5rem; }
+.ci-input:focus { outline: 2px solid var(--color-scoular-green-accessible, #2e7d32); outline-offset: 0; }
+.ci-input:disabled { background: #f3f4f6; color: #6b7280; }
+.ci-input.ci-missing { border-color: #f59e0b; background: #fffbeb; }
+.ci-input.ci-suggested { border-style: dashed; color: #6b7280; font-style: italic; }
+:host-context(.dark) .ci-input { border-color: #4b5563; background: #1f2937; color: #f9fafb; }
+:host-context(.dark) .ci-input:disabled { background: #111827; color: #9ca3af; }
+:host-context(.dark) .ci-input.ci-missing { border-color: #b45309; background: rgba(120, 53, 15, 0.25); }
+:host-context(.dark) .ci-input.ci-suggested { color: #9ca3af; }
+
+.ci-sample {
+  display: inline-block; margin-left: 0.375rem; padding: 0 0.375rem; border-radius: 9999px; vertical-align: middle;
+  font-size: 0.625rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+  background: #ede9fe; color: #5b21b6;
+}
+:host-context(.dark) .ci-sample { background: rgba(91, 33, 182, 0.35); color: #ddd6fe; }

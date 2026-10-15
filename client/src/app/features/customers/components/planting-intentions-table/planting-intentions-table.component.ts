@@ -13,8 +13,8 @@ import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
 import { fdCicCropFor } from '@shared/utils/ci-illustrative';
 import { environment } from '@env/environment';
-import { CiIntentionStripComponent } from '../carbon-intensity/ci-intention-strip.component';
-import { CiFieldDialogComponent } from '../carbon-intensity/ci-field-dialog.component';
+import { FieldPlanViewComponent } from '../field-plan/field-plan-view.component';
+import { FieldPlanIntentionLineComponent } from '../field-plan/field-plan-intention-line.component';
 
 type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'tradeUnit';
 type SortDirection = 'none' | 'asc' | 'desc';
@@ -42,8 +42,8 @@ type PlantingRow = PlantingIntention;
     DialogContentComponent,
     DialogFooterComponent,
     InputComponent,
-    CiIntentionStripComponent,
-    CiFieldDialogComponent
+    FieldPlanViewComponent,
+    FieldPlanIntentionLineComponent
   ],
   templateUrl: './planting-intentions-table.component.html'
 })
@@ -284,10 +284,28 @@ export class PlantingIntentionsTableComponent {
     return `${row.type ? row.type + ' ' : ''}${this.cropCategoryFor(row.crop, row.category)}`;
   }
 
-  // ── 45Z field data (prototype, behind carbonIntensityEnabled) ─────────────
-  // Read-only beside the row: nothing here changes an intention or its acres.
+  // ── Plan by field + 45Z (prototype, behind fieldPlanningEnabled / carbonIntensityEnabled) ─────
+  // The prototype never writes an intention: the "By field" roll-up is simulated (FieldPlanMockService).
+  readonly fieldPlanningEnabled = environment.fieldPlanningEnabled;
   readonly carbonIntensityEnabled = environment.carbonIntensityEnabled;
-  ciIntention: PlantingIntention | null = null;
+  planView: 'crop' | 'field' = 'crop';
+
+  /** The year "By field" plans: the selected year, else the newest year on the table, else this year. */
+  get fieldPlanYear(): number {
+    return this.selectedYear() || Math.max(0, ...this.plantingIntentions().map(p => p.plantingYear)) || new Date().getFullYear();
+  }
+
+  /** Crops offered in "By field": the curated planting list, scoped like the Add dialog's. */
+  get fieldPlanCrops(): Commodity[] {
+    const inScope = { groupNames: this.appState.inScopeGroupNames(), tradeUnitCodes: this.appState.inScopeTradeUnitCodes() };
+    return scopeCommodities(this.plantingCommodities, inScope);
+  }
+
+  /** Opens "By field" for a row's year. */
+  openFieldPlan(row: PlantingRow): void {
+    this.yearSelect.emit(row.plantingYear);
+    this.planView = 'field';
+  }
   /** Hover text on the "not a scored crop" note, so a missing 45Z link doesn't read as a fault. */
   readonly ciNotScoredHelp = 'The USDA 45Z calculator (FD-CIC v1.0) only scores corn, soybeans, sorghum and canola, so this crop has no CI score.';
 
