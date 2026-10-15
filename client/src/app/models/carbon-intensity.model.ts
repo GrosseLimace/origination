@@ -1,40 +1,30 @@
 /**
- * Field-level planting plans, with the 45Z (USDA FD-CIC carbon intensity) layer on top.
+ * Fields under planting intentions, with the 45Z (USDA FD-CIC carbon intensity) layer on top.
  *
- * A ProducerField is durable: entered once and reused every crop year. A FieldSeason is one field
- * planted to one crop in one year; seasons roll up into the producer's planting intentions, grouped
- * the same way the add dialog groups them (crop, type, year, trade unit). The intention keeps its
- * Acres column as the total — field acres plus "other acres" not yet placed in a field — so the
- * dashboard and everything else that sums PlantingIntention.acres reads the same column as today.
+ * A ProducerField is durable: a name and a location, entered once and offered again in later years.
+ * A FieldSeason is that field's share of one planting intention (one crop row): its acres and, for a
+ * scored crop, its practices. Crop, year, type and trade unit all come from the intention row, so
+ * they are never entered twice. The intention's Acres stays the total the dashboard counts; fields
+ * only break it down.
  */
 
 export type FdCicCrop = 'Corn' | 'Soybean' | 'Sorghum' | 'Canola';
 
-export type IrrigationType = 'Irrigated' | 'Dryland';
 export type Tillage = 'NoTill' | 'ReducedTill' | 'Conventional';
 export type CoverCrop = 'None' | 'CoverCrop' | 'CoverCropGrazed';
 export type ManureType = 'Beef' | 'Dairy' | 'Swine' | 'Poultry';
 export type ManureForm = 'Solid' | 'Liquid';
 export type SeasonStatus = 'Draft' | 'Projected' | 'Final';
 
-/** Crop code for a field left unplanted for the year. */
-export const FALLOW = 'FALLOW';
-
 export interface ProducerField {
   fieldKey: string;
   customerId: number;
   name: string;
-  acres: number;
-  irrigation: IrrigationType;
   state: string;
   county: string;
-  /** Trade unit the field's acres count under; defaults from the producer. */
-  tradeUnit: string;
   fsaFarmNo?: string;
   fsaTractNo?: string;
   fsaFieldNo?: string;
-  latitude?: number;
-  longitude?: number;
   /** PROTOTYPE ONLY: seeded demo field, labelled "Sample" so it isn't mistaken for real data. */
   isSample?: boolean;
 }
@@ -48,19 +38,15 @@ export interface ManureApplication {
   nContent: number | null;
 }
 
-/** One field planted to one crop in one year (a double crop is a second season with sortOrder 2). */
+/** One field's share of one planting intention (crop row). */
 export interface FieldSeason {
   id: string;
   fieldKey: string;
+  plantingIntentionId: number;
+  /** Copied from the intention when the field is added, for history and copy-forward. */
   year: number;
-  /** Commodity code, or FALLOW. */
-  crop: string;
   cropLabel: string;
-  /** Planting-intention type: the field's irrigation, or 'Double Crop' for a second crop. */
-  type: string;
-  tradeUnit: string;
   acres: number | null;
-  sortOrder: number;
   expectedYield: number | null;
   actualYield: number | null;
   syntheticN: number | null;
@@ -102,7 +88,7 @@ export interface IntentionCiSummary {
   fieldCount: number;
   assignedAcres: number;
   intentionAcres: number;
-  /** Producer crop-year CI: bushel-weighted, other acres at the national average. Null with no scored fields. */
+  /** Producer crop-year CI: bushel-weighted, acres not in a field at the national average. Null with no scored fields. */
   ciGPerBu: number | null;
   vsNational: number | null;
   status: SeasonStatus | 'NotStarted';

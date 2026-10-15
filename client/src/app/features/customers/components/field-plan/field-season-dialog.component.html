@@ -7,8 +7,7 @@
       · {{ draft.year }}
     </app-dialog-title>
     <app-dialog-description>
-      {{ draft.crop === 'FALLOW' ? 'Not planted' : draft.cropLabel }}{{ draft.sortOrder === 2 ? ' (double crop)' : '' }}
-      · {{ draftField.county }} County, {{ draftField.state }} · Changes save as you go.
+      {{ draft.cropLabel }} · {{ draftField.county }} County, {{ draftField.state }} · Changes save as you go.
     </app-dialog-description>
   </app-dialog-header>
 
@@ -28,12 +27,6 @@
           <div class="mt-2 grid gap-3 sm:grid-cols-3">
             <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">Name</span>
               <input class="ci-input" [(ngModel)]="draftField.name" (ngModelChange)="saveField()" /></label>
-            <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">Field acres</span>
-              <input type="number" min="0" class="ci-input" [(ngModel)]="draftField.acres" (ngModelChange)="saveField()" /></label>
-            <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">Irrigation</span>
-              <select class="ci-input" [(ngModel)]="draftField.irrigation" (ngModelChange)="saveField()">
-                <option value="Irrigated">Irrigated</option><option value="Dryland">Dryland</option>
-              </select></label>
             <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">State</span>
               <select class="ci-input" [(ngModel)]="draftField.state" (ngModelChange)="draftField.county = countiesFor($event)[0] || ''; saveField()">
                 @for (st of plan.states; track st) { <option [value]="st">{{ st }}</option> }
@@ -41,10 +34,6 @@
             <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">County</span>
               <select class="ci-input" [(ngModel)]="draftField.county" (ngModelChange)="saveField()">
                 @for (c of countiesFor(draftField.state); track c) { <option [value]="c">{{ c }}</option> }
-              </select></label>
-            <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">Trade unit</span>
-              <select class="ci-input" [(ngModel)]="draftField.tradeUnit" (ngModelChange)="saveField()">
-                @for (tu of tradeUnitOptions(); track tu) { <option [value]="tu">{{ tu }}</option> }
               </select></label>
           </div>
           <button type="button" class="mt-2 text-sm text-scoular-green-accessible dark:text-scoular-green hover:underline bg-transparent border-0 p-0"
@@ -63,7 +52,6 @@
           }
         </div>
 
-        @if (draft.crop !== 'FALLOW') {
           <fieldset [disabled]="isFinal()" class="space-y-6">
             <!-- This year -->
             <div>
@@ -182,7 +170,6 @@
               <div class="text-sm text-gray-400 dark:text-gray-500">🌱 45Z · {{ draft.cropLabel }} is not a scored crop, so there are no practices to record.</div>
             }
           </fieldset>
-        }
       </section>
 
       @if (ciCrop()) {

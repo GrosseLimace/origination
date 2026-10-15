@@ -13,8 +13,7 @@ import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
 import { fdCicCropFor } from '@shared/utils/ci-illustrative';
 import { environment } from '@env/environment';
-import { FieldPlanViewComponent } from '../field-plan/field-plan-view.component';
-import { FieldPlanIntentionLineComponent } from '../field-plan/field-plan-intention-line.component';
+import { CropFieldsPanelComponent } from '../field-plan/crop-fields-panel.component';
 
 type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'tradeUnit';
 type SortDirection = 'none' | 'asc' | 'desc';
@@ -42,8 +41,7 @@ type PlantingRow = PlantingIntention;
     DialogContentComponent,
     DialogFooterComponent,
     InputComponent,
-    FieldPlanViewComponent,
-    FieldPlanIntentionLineComponent
+    CropFieldsPanelComponent
   ],
   templateUrl: './planting-intentions-table.component.html'
 })
@@ -284,32 +282,19 @@ export class PlantingIntentionsTableComponent {
     return `${row.type ? row.type + ' ' : ''}${this.cropCategoryFor(row.crop, row.category)}`;
   }
 
-  // ── Plan by field + 45Z (prototype, behind fieldPlanningEnabled / carbonIntensityEnabled) ─────
-  // The prototype never writes an intention: the "By field" roll-up is simulated (FieldPlanMockService).
+  // ── Fields under each crop row + 45Z (prototype, behind fieldPlanningEnabled / carbonIntensityEnabled) ──
+  // The row's acres stay the total; fields only break it down (FieldPlanMockService, in memory).
   readonly fieldPlanningEnabled = environment.fieldPlanningEnabled;
   readonly carbonIntensityEnabled = environment.carbonIntensityEnabled;
-  planView: 'crop' | 'field' = 'crop';
 
-  /** The year "By field" plans: the selected year, else the newest year on the table, else this year. */
-  get fieldPlanYear(): number {
-    return this.selectedYear() || Math.max(0, ...this.plantingIntentions().map(p => p.plantingYear)) || new Date().getFullYear();
+  /** Fields add up to more than the row: open the normal Edit dialog with the new total filled in,
+   *  so the change is saved deliberately, the same way any acreage edit is. */
+  updateTotalFromFields(row: PlantingRow, acres: number): void {
+    this.openEditDialog(row);
+    this.editForm.acres = acres.toString();
   }
 
-  /** Crops offered in "By field": the curated planting list, scoped like the Add dialog's. */
-  get fieldPlanCrops(): Commodity[] {
-    const inScope = { groupNames: this.appState.inScopeGroupNames(), tradeUnitCodes: this.appState.inScopeTradeUnitCodes() };
-    return scopeCommodities(this.plantingCommodities, inScope);
-  }
-
-  /** Opens "By field" for a row's year. */
-  openFieldPlan(row: PlantingRow): void {
-    this.yearSelect.emit(row.plantingYear);
-    this.planView = 'field';
-  }
-  /** Hover text on the "not a scored crop" note, so a missing 45Z link doesn't read as a fault. */
-  readonly ciNotScoredHelp = 'The USDA 45Z calculator (FD-CIC v1.0) only scores corn, soybeans, sorghum and canola, so this crop has no CI score.';
-
-  /** The FD-CIC crop for a row, or null when the crop isn't scored (no 45Z strip is shown). */
+  /** The FD-CIC crop for a row, or null when the crop isn't scored. */
   ciCropFor(row: PlantingRow): FdCicCrop | null {
     return this.carbonIntensityEnabled ? fdCicCropFor(this.cropCategoryFor(row.crop, row.category)) : null;
   }

@@ -1,0 +1,118 @@
+<!-- Summary line: always shown under the crop row -->
+<button type="button" (click)="toggle(); expanded() && openAdd()"
+        class="group flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-3 py-1 text-left text-sm bg-transparent border border-transparent hover:border-scoular-green-accessible/40 hover:bg-scoular-green-accessible/5 dark:hover:bg-scoular-green/10 transition-colors">
+  <span class="text-gray-400 w-3">{{ expanded() ? '▾' : '▸' }}</span>
+  <span class="font-medium text-gray-700 dark:text-gray-200">Fields</span>
+  @if (seasons().length === 0) {
+    <span class="text-gray-500 dark:text-gray-400">none yet</span>
+  } @else {
+    <span class="text-gray-700 dark:text-gray-200">{{ inFields() | number }} of {{ intention().acres | number }} ac</span>
+  }
+  @if (summary(); as s) {
+    @if (s.ciGPerBu !== null) {
+      <span class="text-gray-700 dark:text-gray-200">· <span class="font-semibold text-scoular-green-accessible dark:text-scoular-green">🌱 45Z</span> CI <span class="font-semibold">{{ s.ciGPerBu | number:'1.0-0' }}</span> g/bu</span>
+      <span class="font-medium" [class]="(s.vsNational ?? 0) <= 0 ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'">
+        {{ (s.vsNational ?? 0) <= 0 ? '▼' : '▲' }}{{ absPct(s.vsNational) }}% vs national
+      </span>
+    }
+  }
+  @if (remaining() < 0) {
+    <span class="text-amber-700 dark:text-amber-400">· {{ -remaining() | number }} ac over the total</span>
+  }
+</button>
+
+@if (expanded()) {
+  <div class="mt-1 ml-5 space-y-2">
+    @if (seasons().length > 0) {
+      <table class="w-full max-w-3xl text-sm">
+        <tbody>
+          @for (s of seasons(); track s.id) {
+            <tr class="border-b border-gray-100 dark:border-gray-800">
+              <td class="py-1.5 pr-3">
+                <span class="font-medium text-gray-900 dark:text-white">{{ fieldName(s) }}</span>
+                @if (isSample(s)) { <span class="ci-sample" title="Demo data seeded by the prototype, not a real field">Sample</span> }
+                <div class="text-xs text-gray-500 dark:text-gray-400">{{ fieldPlace(s) }}</div>
+              </td>
+              <td class="py-1.5 pr-3 w-32">
+                <div class="flex items-center gap-1">
+                  <input type="number" min="0" class="ci-input ci-compact !w-24 text-right" [disabled]="s.status === 'Final'"
+                         [ngModel]="s.acres" (ngModelChange)="setAcres(s, $event)" aria-label="Acres" />
+                  <span class="text-xs text-gray-500">ac</span>
+                </div>
+              </td>
+              <td class="py-1.5 pr-3">
+                @if (ci(s); as c) {
+                  <button type="button" class="text-left text-sm bg-transparent border-0 p-0 hover:underline" (click)="openSeasonId = s.id">
+                    @if (c.result) {
+                      🌱 CI <span class="font-semibold tabular-nums text-gray-900 dark:text-white">{{ c.result.ciGPerBu | number:'1.0-0' }}</span>
+                      <span [class]="c.result.vsNational <= 0 ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'">
+                        {{ c.result.vsNational <= 0 ? '▼' : '▲' }}{{ absPct(c.result.vsNational) }}%
+                      </span>
+                      @if (c.status === 'Final') { <span title="Finalized">🔒</span> } @else { <span class="text-gray-400">›</span> }
+                    } @else {
+                      <span class="text-amber-700 dark:text-amber-400">🌱 Add 45Z practices ›</span>
+                    }
+                  </button>
+                } @else {
+                  <button type="button" class="text-xs text-gray-500 dark:text-gray-400 bg-transparent border-0 p-0 hover:underline" (click)="openSeasonId = s.id">Details ›</button>
+                }
+              </td>
+              <td class="py-1.5 w-8 text-right">
+                @if (s.status !== 'Final') {
+                  <button type="button" class="text-gray-400 hover:text-red-600 bg-transparent border-0 p-0" (click)="remove(s)" [attr.aria-label]="'Remove ' + fieldName(s)">✕</button>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+
+    @if (remaining() < 0) {
+      <div class="max-w-3xl rounded-md bg-amber-50 dark:bg-amber-900/30 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+        Fields add up to {{ inFields() | number }} ac, {{ -remaining() | number }} more than the {{ intention().acres | number }} ac on this row.
+        <button type="button" class="ml-1 font-medium underline bg-transparent border-0 p-0 text-inherit" (click)="updateTotal.emit(inFields())">
+          Update total to {{ inFields() | number }}
+        </button>
+      </div>
+    }
+
+    <!-- Add a field: type a name (existing fields are suggested); location only for a new one -->
+    <div class="flex max-w-3xl flex-wrap items-end gap-2">
+      <label class="block text-xs text-gray-600 dark:text-gray-300">Field
+        <input class="ci-input ci-compact !w-48" [attr.list]="'fields-' + intention().id" placeholder="Name or pick one"
+               [(ngModel)]="newName" (ngModelChange)="onNameChange()" />
+        <datalist [id]="'fields-' + intention().id">
+          @for (f of pickable(); track f.fieldKey) { <option [value]="f.name">{{ f.county }}, {{ f.state }}</option> }
+        </datalist>
+      </label>
+      @if (isNewField) {
+        <label class="block text-xs text-gray-600 dark:text-gray-300">State
+          <select class="ci-input ci-compact !w-20" [(ngModel)]="newState" (ngModelChange)="newCounty = countiesFor($event)[0] || ''">
+            @for (st of plan.states; track st) { <option [value]="st">{{ st }}</option> }
+          </select>
+        </label>
+        <label class="block text-xs text-gray-600 dark:text-gray-300">County
+          <select class="ci-input ci-compact !w-36" [(ngModel)]="newCounty">
+            @for (c of countiesFor(newState); track c) { <option [value]="c">{{ c }}</option> }
+          </select>
+        </label>
+      }
+      <label class="block text-xs text-gray-600 dark:text-gray-300">Acres
+        <input type="number" min="0" class="ci-input ci-compact !w-24 text-right" [(ngModel)]="newAcres" (keydown.enter)="add()" />
+      </label>
+      <button type="button" class="h-8 rounded-md px-3 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-50 border-0"
+              [disabled]="!canAdd" (click)="add()">Add field</button>
+    </div>
+    @if (!ciCrop()) {
+      <div class="text-xs text-gray-400 dark:text-gray-500" title="The USDA 45Z calculator (FD-CIC v1.0) only scores corn, soybeans, sorghum and canola.">
+        🌱 45Z · {{ cropLabel() }} is not a scored crop
+      </div>
+    }
+    <div class="text-[11px] text-amber-700 dark:text-amber-400">Prototype: fields are kept in this browser tab only.</div>
+  </div>
+}
+
+@if (openSeasonId) {
+  <app-field-season-dialog [seasonId]="openSeasonId" (close)="openSeasonId = null" />
+}

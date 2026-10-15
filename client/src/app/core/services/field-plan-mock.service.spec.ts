@@ -1,65 +1,45 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
-import { PlantingIntention } from '@models';
 import { FieldPlanMockService } from './field-plan-mock.service';
 
 const CUSTOMER = 9;
 
-function intention(overrides: Partial<PlantingIntention>): PlantingIntention {
-  return {
-    id: 1, customerId: CUSTOMER, customerName: '', customerCode: '', tradeUnit: '2190', plantingYear: 2026,
-    crop: 'YC', type: 'Irrigated', acres: 220, createdAt: '', createdBy: '', ...overrides,
-  };
-}
-
-describe('FieldPlanMockService (prototype roll-up)', () => {
+describe('FieldPlanMockService (prototype)', () => {
   let plan: FieldPlanMockService;
 
   beforeEach(() => {
     plan = TestBed.inject(FieldPlanMockService);
     plan.clearAll(); // no sample fields: each test builds exactly what it needs
-    plan.load(CUSTOMER, [intention({})], 2026, 'KS', '2190', () => null);
   });
 
-  function field(name: string, acres: number, irrigation: 'Irrigated' | 'Dryland' = 'Irrigated') {
-    return plan.createField({ customerId: CUSTOMER, name, acres, irrigation, state: 'KS', county: 'Pratt', tradeUnit: '2190' });
+  function field(name: string) {
+    return plan.createField({ customerId: CUSTOMER, name, state: 'KS', county: 'Pratt' });
   }
-  const totalFor = (crop: string, type = 'Irrigated') =>
-    plan.totalsFor(CUSTOMER, 2026).find(t => t.key.crop === crop && t.key.type === type)?.total;
 
-  it('should start each total at the real intention acres', () => {
-    expect(totalFor('YC')).toBe(220);
+  it('should keep a field once and reuse it on another crop row', () => {
+    const north = field('North 80');
+    plan.addSeason(north.fieldKey, 1, 2025, 'Soybeans', 80);
+    plan.addSeason(north.fieldKey, 2, 2026, 'Corn', 80);
+    expect(plan.fieldsFor(CUSTOMER)).toHaveLength(1);
+    expect(plan.seasonsForIntention(2)).toHaveLength(1);
   });
 
-  it('should move existing acres into a field without changing the total', () => {
-    plan.setCrop(field('North 80', 80), 2026, 1, 'YC', 'Corn');
-    expect(totalFor('YC')).toBe(220);
+  it('should find the field\'s most recent earlier season for acres and copy-forward', () => {
+    const north = field('North 80');
+    plan.addSeason(north.fieldKey, 1, 2024, 'Corn', 70);
+    plan.addSeason(north.fieldKey, 2, 2025, 'Soybeans', 80);
+    expect(plan.lastSeason(north.fieldKey, 2026)?.cropLabel).toBe('Soybeans');
+    expect(plan.lastSeason(north.fieldKey, 2025)?.acres).toBe(70);
   });
 
-  it('should raise the total only by the acres the existing plan cannot cover', () => {
-    plan.setCrop(field('North 80', 80), 2026, 1, 'YC', 'Corn');
-    plan.setCrop(field('River Bottom', 320), 2026, 1, 'YC', 'Corn');
-    expect(totalFor('YC')).toBe(400);
-  });
+  it('should mark a season Projected once its practices are complete, and keep it locked once final', () => {
+    const s = plan.addSeason(field('North 80').fieldKey, 1, 2026, 'Corn', 80);
+    plan.updateSeason({ ...s, expectedYield: 210, syntheticN: 180, tillage: 'NoTill', coverCrop: 'None' });
+    expect(plan.season(s.id)?.status).toBe('Projected');
 
-  it('should move a field\'s acres from one crop to the other when its crop changes', () => {
-    const north = field('North 80', 80);
-    plan.setCrop(north, 2026, 1, 'YC', 'Corn');
-    plan.setCrop(north, 2026, 1, 'SB', 'Soybeans');
-    expect(totalFor('YC')).toBe(140);
-    expect(totalFor('SB')).toBe(80);
-  });
-
-  it('should roll a dryland field into an untyped intention instead of starting a second row', () => {
-    plan.clearAll();
-    plan.load(CUSTOMER, [intention({ id: 2, crop: 'SB', type: undefined, acres: 175 })], 2026, 'KS', '2190', () => null);
-    plan.setCrop(field('Home Place', 100, 'Dryland'), 2026, 1, 'SB', 'Soybeans');
-    expect(totalFor('SB', '')).toBe(175);
-    expect(totalFor('SB', 'Dryland')).toBeUndefined();
-  });
-
-  it('should leave the total alone for a fallow field', () => {
-    plan.setCrop(field('North 80', 80), 2026, 1, 'FALLOW', 'Not planted');
-    expect(totalFor('YC')).toBe(220);
+    plan.finalizeSeason(s.id, 205);
+    plan.updateSeason({ ...plan.season(s.id)!, acres: 1 });
+    plan.removeSeason(s.id);
+    expect(plan.season(s.id)?.acres).toBe(80);
   });
 });

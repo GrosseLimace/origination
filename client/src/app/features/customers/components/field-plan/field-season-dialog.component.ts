@@ -4,16 +4,16 @@ import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { DialogComponent, DialogContentComponent, DialogDescriptionComponent, DialogFooterComponent, DialogHeaderComponent, DialogTitleComponent } from '@shared/components/dialog/dialog.component';
 import { FieldPlanMockService } from '@core/services/field-plan-mock.service';
-import { CoverCrop, FALLOW, FieldSeason, ManureApplication, ProducerField, Tillage } from '@models';
+import { CoverCrop, FieldSeason, ManureApplication, ProducerField, Tillage } from '@models';
 import { COVER_LABELS, TILLAGE_LABELS, estimateCi, fdCicCropFor, missingInputs } from '@shared/utils/ci-illustrative';
 import { copiesAllPractices, practicesToCopy } from '@shared/utils/ci-copy-forward';
 import { CiPreviewPanelComponent } from './ci-preview-panel.component';
 import { environment } from '@env/environment';
 
 /**
- * One field in one crop year: the field's lasting details, this year's acres, and — for a crop the
- * USDA 45Z calculator scores — the practices and CI. Edits save as they are made; Finalize is the
- * only deliberate commit.
+ * One field on one crop row: the field's lasting details (name, location), its acres, and — for a
+ * crop the USDA 45Z calculator scores — the practices and CI. Edits save as they are made; Finalize
+ * is the only deliberate commit.
  */
 @Component({
   selector: 'app-field-season-dialog',
@@ -30,7 +30,6 @@ export class FieldSeasonDialogComponent {
   readonly carbonIntensityEnabled = environment.carbonIntensityEnabled;
 
   readonly seasonId = input.required<string>();
-  readonly tradeUnitOptions = input<string[]>([]);
   readonly close = output<void>();
 
   readonly tillageOptions: { value: Tillage; label: string; help: string }[] = [
@@ -50,7 +49,7 @@ export class FieldSeasonDialogComponent {
   /** The FD-CIC crop when this season is scored for 45Z, else null (fallow, wheat, flag off…). */
   readonly ciCrop = computed(() => {
     const s = this.season();
-    if (!this.carbonIntensityEnabled || !s || s.crop === FALLOW) return null;
+    if (!this.carbonIntensityEnabled || !s) return null;
     return fdCicCropFor(s.cropLabel);
   });
   readonly result = computed(() => {
@@ -61,7 +60,7 @@ export class FieldSeasonDialogComponent {
   readonly isFinal = computed(() => this.season()?.status === 'Final');
   readonly prior = computed(() => {
     const s = this.season();
-    return s ? this.plan.priorSeason(s.fieldKey, s.year) : undefined;
+    return s ? this.plan.lastSeason(s.fieldKey, s.year) : undefined;
   });
 
   /** Editable copies; every change is written straight back. */
@@ -89,7 +88,7 @@ export class FieldSeasonDialogComponent {
   }
 
   saveField(): void {
-    if (this.draftField && this.draft) this.plan.updateField(this.draftField, this.draft.year);
+    if (this.draftField) this.plan.updateField(this.draftField);
   }
 
   get niPercent(): number {
