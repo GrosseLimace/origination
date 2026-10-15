@@ -85,7 +85,7 @@ describe('NG0103 probe', () => {
     expect(ng0103.length).toBe(0);
   }, 60000);
 
-  for (const url of ['/', '/build-list', '/insights', '/dashboard', '/bid-sheet', '/unshipped-bushels', '/daily-digest', '/usage-dashboard', '/whats-new']) {
+  for (const url of ['/', '/build-list', '/insights', '/dashboard', '/bid-sheet', '/daily-digest', '/usage-dashboard', '/whats-new']) {
     it(`renders ${url} without infinite change detection`, async () => {
       errors.length = 0;
       TestBed.configureTestingModule({

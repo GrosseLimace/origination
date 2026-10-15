@@ -20,7 +20,7 @@ export interface ContractDeliveryStats {
 
 /** Single source of truth for contract Delivered / Remaining / Progress numbers across
  *  the app — contracts-table, activity-summary, customer-print-report, insights, the
- *  past-due util, the unshipped-bushels page, and anywhere else that needs to know how
+ *  past-due util, and anywhere else that needs to know how
  *  much of a contract is left.
  *
  *  Drives off CTRM's `openBalanceQuantity` aggregate (already in the contract's native
