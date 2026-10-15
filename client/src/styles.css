@@ -1,21 +1,8 @@
 @import '@it/design-system';
 @import "tailwindcss";
 
-@theme {
-  --color-scoular-blue: #007CC0;
-  --color-scoular-blue-medium: #00588E;
-  --color-scoular-blue-dark: #00395D;
-  --color-scoular-yellow: #E8B30D;
-  --color-scoular-yellow-bright: #FFD400;
-  --color-scoular-gray: #576269;
-  --color-scoular-teal: #1CB3B4;
-  --color-scoular-red: #EF4623;
-  --color-scoular-red-accessible: #DF3410;
-  --color-scoular-green: #00A36F;
-  --color-scoular-green-accessible: #00875F;
-  --color-scoular-cream: #FBF7E2;
-  --font-sans: 'Open Sans', ui-sans-serif, system-ui, sans-serif;
-}
+/* Brand tokens are shared with the mobile app — edit them in libs/styles/tokens.css. */
+@import '../libs/styles/tokens.css';
 
 /* App chrome metrics.
    --app-header-h must match the rendered height of app-header (see

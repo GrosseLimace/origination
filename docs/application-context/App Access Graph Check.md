@@ -18,7 +18,7 @@ the raw Entitlements tables directly). Future phase — likely a synced SQL tabl
 
 ## How it works
 
-- `GraphDirectoryClient` (`api/GrainOriginatorPortal.Api/Services/`) — minimal Graph reader, no SDK:
+- `GraphDirectoryClient` (`api/GrainOriginatorPortal.Application/Services/`) — minimal Graph reader, no SDK:
   resolve group by display name, page `transitiveMembers/microsoft.graph.user`. Token from
   `ManagedIdentityCredential` on App Service / `DefaultAzureCredential` locally (the Key Vault
   bootstrap split in Program.cs), cached until ~5 min before expiry. Named HttpClient `"graph"`

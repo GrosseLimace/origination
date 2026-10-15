@@ -188,7 +188,7 @@ The application currently uses `originations.vw_CustomerTradeUnits` directly. Th
 | File | Role |
 |------|------|
 | `api/GrainOriginatorPortal.Api/Data/OriginationDbContext.cs` | Maps `CustomerTradeUnits` DbSet — needs 1-line update after table is created |
-| `api/GrainOriginatorPortal.Api/Models/CustomerTradeUnit.cs` | Entity model — no changes needed |
+| `api/GrainOriginatorPortal.Application/Models/CustomerTradeUnit.cs` | Entity model — no changes needed |
 | `api/GrainOriginatorPortal.Api/Services/SqlDataService.cs` | Queries `_context.CustomerTradeUnits` — no changes needed |
 
 ---

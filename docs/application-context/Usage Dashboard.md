@@ -47,8 +47,8 @@ sent, for every caller who passes the read policy.
 
 | Piece | Path |
 | --- | --- |
-| Access rules | `api/GrainOriginatorPortal.Api/Authorization/UsageDashboardAccess.cs` |
-| Manager roster + subtree | `api/GrainOriginatorPortal.Api/Services/ManagerDirectoryService.cs` |
+| Access rules | `api/GrainOriginatorPortal.Application/Authorization/UsageDashboardAccess.cs` |
+| Manager roster + subtree | `api/GrainOriginatorPortal.Application/Services/ManagerDirectoryService.cs` |
 | Manager filter (presentational) | `client/src/app/features/usage-dashboard/components/manager-filter/` |
 | Default-to-self + roster load | `usage-dashboard.component.ts` (`loadManagers`, `applyDefaultManager`) |
 
@@ -175,15 +175,15 @@ reconstruct), `query-library-usage`, `query-search-gaps`, and `users/{id}/detail
 | Frontend tracking service | `client/src/app/core/services/usage-tracking.service.ts` |
 | Admin guard | `client/src/app/guards/admin.guard.ts` |
 | Controller | `api/GrainOriginatorPortal.Api/Controllers/UsageDashboardController.cs` |
-| Service | `api/GrainOriginatorPortal.Api/Services/UsageDashboardService.cs` |
+| Service | `api/GrainOriginatorPortal.Application/Services/UsageDashboardService.cs` |
 | Repository | `api/GrainOriginatorPortal.Infrastructure/Repositories/UsageRepository.cs` |
-| Request → feature mapping | `api/GrainOriginatorPortal.Api/Services/FeatureNameMapper.cs` |
+| Request → feature mapping | `api/GrainOriginatorPortal.Application/Services/FeatureNameMapper.cs` |
 | Request logging middleware | `api/GrainOriginatorPortal.Api/Middleware/UsageTrackingMiddleware.cs` |
 | Ingest worker | `api/GrainOriginatorPortal.Api/Services/UsageTrackingBackgroundService.cs` |
 | Rollup / retention worker | `api/GrainOriginatorPortal.Api/Services/UsageAggregationBackgroundService.cs` |
 | Screen-time inference | `api/GrainOriginatorPortal.Infrastructure/Abstractions/ScreenTimeCalculator.cs` |
-| PII redaction | `api/GrainOriginatorPortal.Api/Services/TelemetrySanitizer.cs` |
-| Entra app-access set | `api/GrainOriginatorPortal.Api/Services/AppAccessService.cs` |
+| PII redaction | `api/GrainOriginatorPortal.Application/Services/TelemetrySanitizer.cs` |
+| Entra app-access set | `api/GrainOriginatorPortal.Application/Services/AppAccessService.cs` |
 
 ### Controller endpoints
 

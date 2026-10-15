@@ -163,9 +163,9 @@ The same values are logged once at startup, so App Insights shows which build is
 | `api/GrainOriginatorPortal.Api/GrainOriginatorPortal.Api.csproj` | `<Content Remove>` + `<EmbeddedResource>` |
 | `api/GrainOriginatorPortal.Api/Controllers/WhatsNewController.cs` | `GET /api/whats-new`, `Lazy<>` cached |
 | `api/GrainOriginatorPortal.Api/Controllers/VersionController.cs` | `GET /api/version` |
-| `api/GrainOriginatorPortal.Api/Services/BuildInfo.cs` | Reads the CI build stamp from assembly attributes |
-| `api/GrainOriginatorPortal.Api/Models/Responses/WhatsNewReleaseResponse.cs` | Release + item DTOs |
-| `api/GrainOriginatorPortal.Api/Models/Responses/VersionResponse.cs` | Version DTO |
+| `api/GrainOriginatorPortal.Application/Services/BuildInfo.cs` | Reads the CI build stamp from assembly attributes |
+| `api/GrainOriginatorPortal.Application/Models/Responses/WhatsNewReleaseResponse.cs` | Release + item DTOs |
+| `api/GrainOriginatorPortal.Application/Models/Responses/VersionResponse.cs` | Version DTO |
 | `Directory.Build.props` | Stamps `SourceRevisionId` / `BuildNumber` in CI |
 | `client/src/app/core/services/whats-new.service.ts` | Signals, localStorage, the unseen decision |
 | `client/src/app/features/whats-new/whats-new-groups.ts` | Consecutive-run grouping |

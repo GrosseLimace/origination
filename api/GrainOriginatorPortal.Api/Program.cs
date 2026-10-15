@@ -25,6 +25,7 @@ using GrainOriginatorPortal.Infrastructure.Json;
 using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Mobile;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -220,9 +221,15 @@ builder.Services.PostConfigure<Microsoft.AspNetCore.Authentication.JwtBearer.Jwt
 // Required for IHttpContextAccessor in SqlDataService (traceId propagation to service-layer logs)
 builder.Services.AddHttpContextAccessor();
 
+// Mobile surface (api/mobile/v1): options, MobileAccess/DesktopAccess policies, the desktop-access
+// convention, the per-user "mobile" rate-limit partition, audit filter and idempotency store.
+// The controllers themselves are registered via AddApplicationPart below. See ADR-001.
+builder.Services.AddMobileSurface(builder.Configuration);
+
 // Add MVC controllers for REST API endpoints
 // Configure JSON to serialize enums as strings instead of numbers
 builder.Services.AddControllers()
+    .AddApplicationPart(typeof(MobileAssemblyMarker).Assembly)
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());

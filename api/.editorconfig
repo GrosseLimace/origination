@@ -1,0 +1,99 @@
+# Security analyzers for the .NET projects (SEC-ARCH-BURDI-001 §9.3 "SAST scanning on every pull
+# request"). GitHub Advanced Security / CodeQL is not enabled on this GHE (PLATFORM-REQUESTS.md E14),
+# so the Roslyn security analyzers that ship with the SDK are promoted to build ERRORS here. They run
+# inside `dotnet build` on every PR (ci.yml) and locally. Baseline 2026-09-23: none of these fire.
+#
+# Inherits the repo-root .editorconfig; this file only adds analyzer severities.
+
+[*.cs]
+
+# --- Injection --------------------------------------------------------------------------------
+dotnet_diagnostic.CA2100.severity = error   # Review SQL queries for security vulnerabilities
+dotnet_diagnostic.CA3001.severity = error   # SQL injection
+dotnet_diagnostic.CA3002.severity = error   # XSS
+dotnet_diagnostic.CA3003.severity = error   # File path injection
+dotnet_diagnostic.CA3004.severity = error   # Information disclosure (exception details)
+dotnet_diagnostic.CA3005.severity = error   # LDAP injection
+dotnet_diagnostic.CA3006.severity = error   # Process command injection
+dotnet_diagnostic.CA3007.severity = error   # Open redirect
+dotnet_diagnostic.CA3008.severity = error   # XPath injection
+dotnet_diagnostic.CA3009.severity = error   # XML injection
+dotnet_diagnostic.CA3010.severity = error   # XAML injection
+dotnet_diagnostic.CA3011.severity = error   # DLL injection
+dotnet_diagnostic.CA3012.severity = error   # Regex injection
+
+# --- Deserialization / XML ----------------------------------------------------------------------
+dotnet_diagnostic.CA2300.severity = error
+dotnet_diagnostic.CA2301.severity = error
+dotnet_diagnostic.CA2302.severity = error
+dotnet_diagnostic.CA2305.severity = error
+dotnet_diagnostic.CA2310.severity = error
+dotnet_diagnostic.CA2311.severity = error
+dotnet_diagnostic.CA2312.severity = error
+dotnet_diagnostic.CA2315.severity = error
+dotnet_diagnostic.CA2321.severity = error
+dotnet_diagnostic.CA2322.severity = error
+dotnet_diagnostic.CA2326.severity = error
+dotnet_diagnostic.CA2327.severity = error
+dotnet_diagnostic.CA2328.severity = error
+dotnet_diagnostic.CA2329.severity = error
+dotnet_diagnostic.CA2330.severity = error
+dotnet_diagnostic.CA3061.severity = error   # XML schema without secure resolver
+dotnet_diagnostic.CA3075.severity = error   # Insecure DTD processing
+dotnet_diagnostic.CA3076.severity = error   # Insecure XSLT
+dotnet_diagnostic.CA3077.severity = error   # Insecure XmlDocument/XmlTextReader
+
+# --- Cryptography (SECURITY_STANDARDS: no DES/3DES/RC4/MD5/SHA-1, TLS 1.2+) ---------------------
+dotnet_diagnostic.CA5350.severity = error   # Weak cryptographic algorithms
+dotnet_diagnostic.CA5351.severity = error   # Broken cryptographic algorithms
+dotnet_diagnostic.CA5358.severity = error   # Unsafe cipher modes
+dotnet_diagnostic.CA5359.severity = error   # Do not disable certificate validation
+dotnet_diagnostic.CA5360.severity = error   # Do not call dangerous methods in deserialization
+dotnet_diagnostic.CA5361.severity = error   # Do not disable SChannel strong crypto
+dotnet_diagnostic.CA5362.severity = error   # Reference cycle in deserialized graph
+dotnet_diagnostic.CA5363.severity = error   # Do not disable request validation
+dotnet_diagnostic.CA5364.severity = error   # Deprecated security protocols
+dotnet_diagnostic.CA5365.severity = error   # Do not disable HTTP header checking
+dotnet_diagnostic.CA5366.severity = error   # XmlReader for DataSet.ReadXml
+dotnet_diagnostic.CA5368.severity = error   # Set ViewStateUserKey
+dotnet_diagnostic.CA5369.severity = error   # XmlReader for Deserialize
+dotnet_diagnostic.CA5370.severity = error   # XmlReader for Validating Reader
+dotnet_diagnostic.CA5371.severity = error   # XmlReader for Schema Read
+dotnet_diagnostic.CA5372.severity = error   # XmlReader for XPathDocument
+dotnet_diagnostic.CA5373.severity = error   # Obsolete key derivation
+dotnet_diagnostic.CA5374.severity = error   # Do not use XslTransform
+dotnet_diagnostic.CA5375.severity = error   # Do not use account SAS
+dotnet_diagnostic.CA5376.severity = error   # SharedAccessProtocol HttpsOnly
+dotnet_diagnostic.CA5377.severity = error   # Container-level access policy
+dotnet_diagnostic.CA5378.severity = error   # Do not disable ServicePointManagerSecurityProtocols
+dotnet_diagnostic.CA5379.severity = error   # Weak key derivation hash
+dotnet_diagnostic.CA5380.severity = error   # Do not add certificates to root store
+dotnet_diagnostic.CA5381.severity = error   # Ensure certificates are not added to root store
+dotnet_diagnostic.CA5382.severity = error   # Secure cookies
+dotnet_diagnostic.CA5383.severity = error   # Ensure secure cookies
+dotnet_diagnostic.CA5384.severity = error   # Do not use DSA
+dotnet_diagnostic.CA5385.severity = error   # RSA key size >= 2048
+dotnet_diagnostic.CA5386.severity = error   # Avoid hardcoding SecurityProtocolType
+dotnet_diagnostic.CA5387.severity = error   # Weak key derivation iteration count
+dotnet_diagnostic.CA5388.severity = error   # Ensure sufficient iteration count
+dotnet_diagnostic.CA5389.severity = error   # Archive path traversal
+dotnet_diagnostic.CA5390.severity = error   # Do not hard-code encryption key
+dotnet_diagnostic.CA5391.severity = error   # Antiforgery tokens on MVC controllers (see note)
+dotnet_diagnostic.CA5392.severity = error   # DefaultDllImportSearchPaths
+dotnet_diagnostic.CA5393.severity = error   # Unsafe DllImportSearchPath
+dotnet_diagnostic.CA5394.severity = error   # Insecure randomness
+dotnet_diagnostic.CA5395.severity = error   # HttpVerb attribute on action methods
+dotnet_diagnostic.CA5396.severity = error   # HttpOnly cookies
+dotnet_diagnostic.CA5397.severity = error   # Deprecated SslProtocols
+dotnet_diagnostic.CA5398.severity = error   # Hardcoded SslProtocols
+dotnet_diagnostic.CA5399.severity = error   # HttpClient certificate revocation check
+dotnet_diagnostic.CA5400.severity = error   # Ensure revocation check enabled
+dotnet_diagnostic.CA5401.severity = error   # Non-default IV
+dotnet_diagnostic.CA5402.severity = error   # Use CreateEncryptor with default IV
+dotnet_diagnostic.CA5403.severity = error   # Do not hard-code certificate
+dotnet_diagnostic.CA5404.severity = error   # Do not disable token validation checks
+dotnet_diagnostic.CA5405.severity = error   # Do not always skip token validation
+
+# CA5391 (antiforgery) is written for cookie-authenticated MVC; this API is bearer-token only
+# (no cookies, so no CSRF surface) and the spec's [ValidateAntiForgeryToken] item applies to the
+# cookie-based internal web app pattern. Kept at error so any future cookie-auth controller is caught.

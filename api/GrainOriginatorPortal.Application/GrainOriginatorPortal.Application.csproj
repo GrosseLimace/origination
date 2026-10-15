@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Business-logic layer (SEC-ARCH-BURDI-001 Layer 5): application services, request/response
+    models, mappers, domain exceptions and pure authorization helpers, extracted from the Web
+    host so that more than one host (the desktop API today, the mobile surface next) can call
+    them without referencing each other. See docs/adr/ADR-001-mobile-surface-topology.md.
+
+    Namespaces are deliberately kept as GrainOriginatorPortal.Api.* so the extraction is a pure
+    file move; RootNamespace matches to keep analyzers quiet.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>GrainOriginatorPortal.Api</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- IHttpContextAccessor, StatusCodes, IMemoryCache, IHttpClientFactory, ILogger -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- GraphDirectoryClientTests reaches internal GraphDirectoryClient.EscapeODataLiteral -->
+    <InternalsVisibleTo Include="GrainOriginatorPortal.Api.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- GraphDirectoryClient: TokenCredential / AccessToken / credential exceptions -->
+    <PackageReference Include="Azure.Identity" Version="1.18.0" />
+    <!-- Seven services catch Microsoft.Data.SqlClient.SqlException -->
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.4" />
+    <!-- GraphDirectoryClient: Polly.CircuitBreaker.BrokenCircuitException (same package the host uses) -->
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.3.0" />
+    <!-- OutlookCalendarService / TeamsDirectoryService: ITokenAcquisition, MicrosoftIdentityWebChallengeUserException -->
+    <PackageReference Include="Microsoft.Identity.Web" Version="3.8.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GrainOriginatorPortal.Infrastructure\GrainOriginatorPortal.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

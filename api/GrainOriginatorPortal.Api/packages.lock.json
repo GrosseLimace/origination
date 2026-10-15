@@ -688,11 +688,27 @@
         "resolved": "9.0.0",
         "contentHash": "U9msthvnH2Fsw7xwAvIhNHOdnIjOQTwOc8Vd0oGOsiRcGMGoBFlUD6qtYawRUoQdKH9ysxesZ9juFElt1Jw/7A=="
       },
+      "grainoriginatorportal.application": {
+        "type": "Project",
+        "dependencies": {
+          "Azure.Identity": "[1.18.0, )",
+          "GrainOriginatorPortal.Infrastructure": "[1.0.0, )",
+          "Microsoft.Data.SqlClient": "[6.1.4, )",
+          "Microsoft.Extensions.Http.Resilience": "[10.3.0, )",
+          "Microsoft.Identity.Web": "[3.8.4, )"
+        }
+      },
       "grainoriginatorportal.infrastructure": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Data.SqlClient": "[6.1.4, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.1, )"
+        }
+      },
+      "grainoriginatorportal.mobile": {
+        "type": "Project",
+        "dependencies": {
+          "GrainOriginatorPortal.Application": "[1.0.0, )"
         }
       }
     }

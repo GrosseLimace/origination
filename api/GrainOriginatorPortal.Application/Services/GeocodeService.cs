@@ -161,7 +161,11 @@ public class GeocodeService : IGeocodeService
                 if (response.StatusCode == HttpStatusCode.TooManyRequests)
                 {
                     // Exponential backoff with jitter per §6.2: min(baseDelay × 2^attempt + jitter, maxDelay)
+                    // CA5394: the jitter only spreads retries in time; it is not used for anything
+                    // security-relevant, so a cryptographic RNG would add cost for no benefit.
+#pragma warning disable CA5394
                     var backoffMs = (int)Math.Min(500 * Math.Pow(2, rateLimitAttempt) + Random.Shared.Next(0, 200), 30_000);
+#pragma warning restore CA5394
                     _logger.LogError(
                         "Nominatim rate limit on batch item {KeyHash}. Backing off {BackoffMs}ms (attempt {Attempt}) [{ErrorCode}] [{ErrorCategory}]",
                         Fingerprint(cacheKey), backoffMs, rateLimitAttempt + 1, "INFRASTRUCTURE_GEOCODE_RATE_LIMITED", "Infrastructure");

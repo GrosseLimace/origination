@@ -191,7 +191,7 @@ All controllers depend on `IDataService` (DI'd as `SqlDataService` today, with `
 
 ### `UserEntitlementService`
 
-`api/GrainOriginatorPortal.Api/Services/UserEntitlementService.cs`
+`api/GrainOriginatorPortal.Application/Services/UserEntitlementService.cs`
 
 | Method | Purpose |
 | --- | --- |

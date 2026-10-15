@@ -17,15 +17,44 @@
     "importHelpers": true,
     "target": "ES2022",
     "module": "ES2022",
-    "lib": ["ES2022", "dom"],
+    "lib": [
+      "ES2022",
+      "dom"
+    ],
     "paths": {
-      "@core/*": ["./src/app/core/*"],
-      "@shared/*": ["./src/app/shared/*"],
-      "@features/*": ["./src/app/features/*"],
-      "@models": ["./src/app/models/index.ts"],
-      "@models/*": ["./src/app/models/*"],
-      "@env/*": ["./src/environments/*"],
-      "@testing/*": ["./src/testing/*"]
+      "@core/*": [
+        "./src/app/core/*"
+      ],
+      "@shared/*": [
+        "./src/app/shared/*"
+      ],
+      "@features/*": [
+        "./src/app/features/*"
+      ],
+      "@models": [
+        "./src/app/models/index.ts"
+      ],
+      "@models/*": [
+        "./src/app/models/*"
+      ],
+      "@env/*": [
+        "./src/environments/*"
+      ],
+      "@testing/*": [
+        "./src/testing/*"
+      ],
+      "@libs/models": [
+        "./src/app/models/index.ts"
+      ],
+      "@libs/utils/*": [
+        "./src/app/shared/utils/*"
+      ],
+      "@mobile/*": [
+        "./projects/mobile/src/app/*"
+      ],
+      "@mobile-env/*": [
+        "./projects/mobile/src/environments/*"
+      ]
     }
   },
   "angularCompilerOptions": {

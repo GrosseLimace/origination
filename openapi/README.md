@@ -8,6 +8,7 @@ Infrastructure and Data Integrations teams read it directly from this repo (see
 |---|---|
 | `specification.yaml` | OpenAPI 3.0 spec — external-facing endpoints only |
 | `README.md` | This file: workflows, identities, and connectivity requirements |
+| `mobile/` | The mobile app surface (`api/mobile/v1`) — a separate APIM API with its own spec and workflow table. See `mobile/README.md` |
 
 Currently the only externally consumed surface is **BarChart bid-feed ingestion**. Everything else in
 the application is called by its own Angular front end and is deliberately out of scope here.

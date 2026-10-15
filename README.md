@@ -236,7 +236,7 @@ Azure AD bearer tokens via `Microsoft.Identity.Web`. All API endpoints require a
 
 ## Software Bill of Materials (SBOM)
 
-Last Updated: 2026-10-13
+Last Updated: 2026-10-15
 
 ### Backend Dependencies (C# / .NET 10)
 
@@ -263,9 +263,11 @@ Last Updated: 2026-10-13
 | @angular/forms | 21.2.25 | MIT | Reactive forms |
 | @angular/animations | 21.2.25 | MIT | Animation support |
 | @angular/cdk | 21.2.14 | MIT | Component primitives — drag-and-drop (bid sheet column/row reorder), scrolling, and Overlay (the Add-column picker, which must escape a clipping scroll container) |
+| @angular/service-worker | 21.2.25 | MIT | Service worker for the mobile PWA (`origination-mobile`): app-shell caching and read-cache data groups per `projects/mobile/ngsw-config.json` |
 | @azure/msal-angular | 5.1.1 | MIT | Azure AD authentication (Angular) |
 | @azure/msal-browser | 5.4.0 | MIT | MSAL browser runtime |
 | @microsoft/applicationinsights-web | 3.4.5 | MIT | Browser error telemetry to Application Insights (pinned exact; loaded lazily, only when the server returns a connection string). Brings 10 transitive packages, all MIT, none with install scripts: the @microsoft/applicationinsights-* family at 3.4.5, applicationinsights-shims 3.0.1, dynamicproto-js 2.0.5, @nevware21/ts-async 0.5.5, @nevware21/ts-utils 0.16.0 |
+| openapi-typescript | 7.13.0 | MIT | Dev only — generates `projects/mobile/src/app/core/api/api-types.ts` from `openapi/mobile/specification.yaml`, so the mobile client is typed against the APIM contract and CI fails on drift |
 | @it/design-system | 0.1.1 | Internal | Scoular IT design system components |
 | leaflet | 1.9.4 | BSD-2-Clause | Interactive map rendering |
 | leaflet.markercluster | ~1.5.3 | MIT | Leaflet marker clustering |
