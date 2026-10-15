@@ -116,6 +116,9 @@
       "name": "Contracts & tickets",
       "icon": "file-text",
       "faqIds": [
+        "contract-missing",
+        "ticket-missing",
+        "data-change-not-showing",
         "contracts-not-loaded",
         "data-sources",
         "unapplied-ticket",
@@ -193,6 +196,9 @@
       "icon": "wrench",
       "faqIds": [
         "report-problem",
+        "contract-missing",
+        "ticket-missing",
+        "data-change-not-showing",
         "slow-first-load",
         "login-loop",
         "contracts-not-loaded",
@@ -203,8 +209,9 @@
   "suggestions": {
     "/": [
       "missing-producer",
-      "trade-units-none-vs-unavailable",
-      "all-producers"
+      "contract-missing",
+      "ticket-missing",
+      "trade-units-none-vs-unavailable"
     ],
     "/build-list": [
       "build-list",
@@ -1159,6 +1166,8 @@
       "answer": "Contracts, pricing and tickets are read live from CTRM, so they're current. Producer details, storage contracts and DP contracts come from Scoular's data store, which is refreshed on a schedule and can lag behind CTRM. Grain on farm, bin sites, notes and planting intentions are saved in the Workbench itself and are always current. If a contract or ticket looks wrong, check it in CTRM first; if CTRM is right and the Workbench isn't, report it.",
       "escalate": true,
       "related": [
+        "contract-missing",
+        "data-change-not-showing",
         "contracts-not-loaded"
       ],
       "uiLabels": [],
@@ -2636,6 +2645,139 @@
       "chip": "Calculation looks wrong",
       "answer": "Check the inputs first — units matter (some costs are per acre, freight is per bushel). If the inputs are right and the result still looks wrong, use **Still need help?** and include the numbers you entered.",
       "escalate": true
+    },
+    {
+      "id": "contract-missing",
+      "question": "A contract isn't showing up. What should I check?",
+      "chip": "A contract isn't showing up",
+      "keywords": [
+        "contract",
+        "contracts",
+        "missing",
+        "showing",
+        "show",
+        "find",
+        "cant",
+        "gone",
+        "wrong",
+        "not"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "answer": "Contracts come live from CTRM, so the Workbench shows what CTRM has. Work through these checks:",
+      "steps": [
+        "Make sure you're on the right producer. A contract under a linked producer's account shows on that producer, not this one.",
+        "The **Open Contracts** tab lists open contracts. A closed or fully delivered contract won't be there.",
+        "If it was just entered in CTRM, give it up to 15 minutes. Lists and Actionable Insights refresh contract data every 15 minutes.",
+        "Check CTRM. If the contract isn't in CTRM, it hasn't been entered yet — follow up with whoever enters it. If it is in CTRM but not here, use **Still need help?**: that's a data issue we need to look at."
+      ],
+      "stepsOpen": true,
+      "actions": [
+        {
+          "kind": "producer-tab",
+          "label": "Open the Open Contracts tab",
+          "target": "contracts"
+        }
+      ],
+      "escalate": true,
+      "related": [
+        "ticket-missing",
+        "data-sources",
+        "contracts-not-loaded"
+      ],
+      "uiLabels": [
+        "Open Contracts"
+      ],
+      "lastVerified": "2026-10-15"
+    },
+    {
+      "id": "ticket-missing",
+      "question": "A ticket isn't showing up. What should I check?",
+      "chip": "A ticket isn't showing up",
+      "keywords": [
+        "ticket",
+        "tickets",
+        "missing",
+        "showing",
+        "show",
+        "find",
+        "cant",
+        "delivery",
+        "load",
+        "scale",
+        "not"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "answer": "Tickets come live from CTRM, so the Workbench shows what CTRM has. Work through these checks:",
+      "steps": [
+        "Make sure you're on the right producer. A ticket under a linked producer's account shows on that producer. A split load shows under both producers.",
+        "The **Unapplied Tickets** tab only lists tickets not yet applied to a contract. Once a ticket is applied, it leaves that tab.",
+        "Tickets go back three years. Older tickets aren't shown.",
+        "Check CTRM. If the ticket isn't in CTRM, follow up with the location that issued it. If it is in CTRM but not here, use **Still need help?**: that's a data issue we need to look at."
+      ],
+      "stepsOpen": true,
+      "actions": [
+        {
+          "kind": "producer-tab",
+          "label": "Open Unapplied Tickets",
+          "target": "tickets"
+        }
+      ],
+      "escalate": true,
+      "related": [
+        "contract-missing",
+        "unapplied-ticket",
+        "data-sources"
+      ],
+      "uiLabels": [
+        "Unapplied Tickets"
+      ],
+      "lastVerified": "2026-10-15"
+    },
+    {
+      "id": "data-change-not-showing",
+      "question": "I changed a producer's details in Master Data or CTRM. Why isn't it showing up?",
+      "chip": "A data change isn't showing up",
+      "keywords": [
+        "changed",
+        "change",
+        "update",
+        "updated",
+        "master",
+        "data",
+        "ctrm",
+        "not",
+        "showing",
+        "old",
+        "address",
+        "name",
+        "phone",
+        "refresh",
+        "yet",
+        "still"
+      ],
+      "routes": [
+        "/"
+      ],
+      "feature": "customers",
+      "answer": "It depends on what changed. Producer details from the customer master (name, address, phone, email, payment method) are copied into the Workbench once a night, so a change usually shows the next morning. Contract and ticket changes in CTRM show up within about 15 minutes. Anything you edit in the Workbench itself (contacts, bin sites, acres, notes) saves straight away.",
+      "steps": [
+        "Wait for the next overnight refresh for producer details, or about 15 minutes for contracts and tickets.",
+        "Still not showing? Check the change actually saved in the source system (Master Data or CTRM).",
+        "If it's right in the source system but not here, use **Still need help?** so we can look into it."
+      ],
+      "escalate": true,
+      "related": [
+        "data-sources",
+        "contract-missing"
+      ],
+      "uiLabels": [],
+      "lastVerified": "2026-10-15"
     }
   ]
 }

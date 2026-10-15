@@ -115,6 +115,36 @@ describe('HelpPanelService', () => {
     expect(service.spotlight()).toBeNull();
   });
 
+  it('replaces the previous answer when a new question is asked, instead of stacking it below', () => {
+    service.askFaq('build-list');
+    const turn = service.turn();
+    service.askFaq('tu-a');
+
+    expect(service.thread()).toEqual([
+      { kind: 'user', text: 'What is a trade unit?' },
+      { kind: 'answer', faqId: 'tu-a', feedback: null }
+    ]);
+    expect(service.turn()).toBe(turn + 1);
+  });
+
+  it('adds follow-on steps below the current answer, once each', () => {
+    service.askFaq('build-list');
+    service.escalate();
+    service.escalate();
+    service.startTroubleshooter('missing-producer');
+
+    expect(service.thread().map(t => t.kind)).toEqual(['user', 'answer', 'escalation', 'troubleshooter']);
+  });
+
+  it('remembers the question and every answer read, for the help desk ticket', () => {
+    service.ask('weather in Omaha');
+    service.askFaq('build-list');
+    service.askFaq('tu-a');
+
+    expect(service.lastQuestion()).toBe('What is a trade unit?');
+    expect(service.viewedFaqIds()).toEqual(['build-list', 'tu-a']);
+  });
+
   it('starts over on reset', () => {
     service.askFaq('build-list');
     service.reset();

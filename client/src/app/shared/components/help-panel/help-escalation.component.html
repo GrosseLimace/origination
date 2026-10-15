@@ -47,7 +47,7 @@
       <li class="flex gap-2">
         <span class="shrink-0 w-5 h-5 rounded-full bg-scoular-blue/10 dark:bg-scoular-blue/20 text-scoular-blue-medium dark:text-[#7CC4EC] text-xs font-semibold flex items-center justify-center">3</span>
         <div class="min-w-0 flex-1">
-          <label for="help-ticket-summary"><strong class="font-semibold text-gray-900 dark:text-white">Short Description</strong> — what's wrong, in a few words (optional)</label>
+          <label for="help-ticket-summary"><strong class="font-semibold text-gray-900 dark:text-white">Short Description</strong> — filled in from your question; edit it if you like</label>
           <input id="help-ticket-summary" type="text" autocomplete="off" maxlength="100" [value]="summary()" (input)="onSummary($event)"
             placeholder="e.g. Producer missing from my list"
             class="mt-1 w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-blue" />

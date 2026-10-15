@@ -121,6 +121,11 @@ export class HelpTroubleshooterComponent {
     this.panel.showOnScreen('producer-search');
   }
 
+  /** Step 1's "Show me the selector": outlines the trade-unit selector on the Producers page. */
+  showSelector(): void {
+    this.panel.showOnScreen('trade-unit-selector');
+  }
+
   openPreferences(): void {
     this.userTradeUnits.openPreferences();
   }

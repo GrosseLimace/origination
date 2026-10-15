@@ -2,10 +2,11 @@
      or a scrolled conversation is exactly as the user left it when they come back. -->
 @if (panel.open()) {
   <!-- Desktop: a column below the header that the page makes room for (app.component pads <main>).
-       Phone: full-screen over the page, so it's a modal dialog and traps focus. -->
+       Phone: full-screen over the page AND above the sticky app header (z-60), so the panel's own
+       Close and New question buttons are always reachable; it's a modal dialog and traps focus. -->
   <div role="dialog" aria-labelledby="help-panel-title" [attr.aria-modal]="panel.desktop() ? null : 'true'" [style.display]="visible() ? null : 'none'"
     [cdkTrapFocus]="!panel.desktop() && visible()"
-    class="fixed z-40 flex flex-col bg-gray-50 dark:bg-gray-900 inset-0 lg:inset-auto lg:right-0 lg:bottom-0 lg:top-[var(--app-header-h)] lg:w-[400px] lg:border-l border-gray-200 dark:border-gray-700 lg:shadow-[-8px_0_24px_-12px_rgba(0,0,0,0.18)] motion-safe:transition-transform">
+    class="fixed z-[60] lg:z-40 flex flex-col bg-gray-50 dark:bg-gray-900 inset-0 h-[100dvh] lg:h-auto lg:inset-auto lg:right-0 lg:bottom-0 lg:top-[var(--app-header-h)] lg:w-[400px] lg:border-l border-gray-200 dark:border-gray-700 lg:shadow-[-8px_0_24px_-12px_rgba(0,0,0,0.18)] motion-safe:transition-transform">
 
     <!-- Panel header -->
     <div class="flex items-center gap-2 px-4 h-14 shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
@@ -101,11 +102,11 @@
             }
             @case ('troubleshooter') {
               @if (t.item.kind === 'troubleshooter') {
-                <app-help-troubleshooter [tree]="t.item.tree" [index]="t.index" />
+                <app-help-troubleshooter data-help-item class="block" [tree]="t.item.tree" [index]="t.index" />
               }
             }
             @case ('escalation') {
-              <app-help-escalation />
+              <app-help-escalation data-help-item class="block" />
             }
           }
         }

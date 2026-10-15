@@ -188,8 +188,16 @@ export class HeaderComponent {
     return `flex items-center justify-center ${size} ${narrowNonProd} rounded-full border ${state} focus:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 transition-colors`;
   }
 
-  /** Help from the profile menu or the mobile drawer. Opens the panel; never closes it. */
-  openHelp(source: 'menu' | 'drawer'): void {
+  /** Profile menu → Help: the full Help library page. The "?" button is the way into the chat. */
+  openHelpLibrary(): void {
+    this.router.navigate(['/help']);
+  }
+
+  /**
+   * Mobile drawer → Help: opens the chat. Kept on the chat (not the library) because on narrow Dev/QA
+   * phones the "?" button is hidden to make room for the environment pill, so this is the only way in.
+   */
+  openHelp(source: 'drawer'): void {
     this.helpPanel.openPanel(source);
   }
 

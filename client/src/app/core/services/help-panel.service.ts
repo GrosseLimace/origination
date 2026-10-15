@@ -64,6 +64,9 @@ export class HelpPanelService {
   private readonly _desktop = this.layout.desktop;
   private readonly _thread = signal<HelpThreadItem[]>([]);
   private readonly _lastError = signal<{ message: string; at: Date } | null>(null);
+  private readonly _lastQuestion = signal<string | null>(null);
+  private readonly _viewed = signal<string[]>([]);
+  private readonly _turn = signal(0);
 
   readonly open = this._open.asReadonly();
   readonly thread = this._thread.asReadonly();
@@ -71,6 +74,12 @@ export class HelpPanelService {
   readonly spotlight = this._spotlight.asReadonly();
   /** The most recent error toast, for the support details. */
   readonly lastError = this._lastError.asReadonly();
+  /** What the user last asked (typed, or the question they picked), to start a help desk ticket from. */
+  readonly lastQuestion = this._lastQuestion.asReadonly();
+  /** Every answer shown this session, oldest first, for the support details. */
+  readonly viewedFaqIds = this._viewed.asReadonly();
+  /** Increments each time a new question replaces the conversation, so the panel can scroll to the top. */
+  readonly turn = this._turn.asReadonly();
 
   /** The panel is laid out beside the page (desktop) and the page should make room for it. */
   readonly pushesPage = this.layout.pushesPage;
@@ -123,6 +132,7 @@ export class HelpPanelService {
   /** Clears the conversation, back to the greeting and suggestions. */
   reset(): void {
     this._thread.set([]);
+    this._turn.update(t => t + 1);
   }
 
   /** Answers a typed question: an answer, "did you mean", or the no-match fallback. */
@@ -135,14 +145,15 @@ export class HelpPanelService {
     switch (match.kind) {
       case 'answer':
         this.usageTracking.trackHelpAnswer(match.id);
-        this.push(user, { kind: 'answer', faqId: match.id, feedback: null });
+        this.markViewed(match.id);
+        this.startOver(text, user, { kind: 'answer', faqId: match.id, feedback: null });
         break;
       case 'did-you-mean':
-        this.push(user, { kind: 'did-you-mean', faqIds: match.ids });
+        this.startOver(text, user, { kind: 'did-you-mean', faqIds: match.ids });
         break;
       case 'no-match':
         this.usageTracking.trackHelpNoMatch(text);
-        this.push(user, { kind: 'no-match' });
+        this.startOver(text, user, { kind: 'no-match' });
         break;
     }
   }
@@ -152,7 +163,8 @@ export class HelpPanelService {
     const faq = this.help.faq(faqId);
     if (!faq) return;
     this.usageTracking.trackHelpAnswer(faqId);
-    this.push({ kind: 'user', text: faq.chip ?? faq.question }, { kind: 'answer', faqId, feedback: null });
+    this.markViewed(faqId);
+    this.startOver(faq.question, { kind: 'user', text: faq.chip ?? faq.question }, { kind: 'answer', faqId, feedback: null });
   }
 
   /** Opens the panel on a question, from outside the panel (the Help page's "Ask in the Help panel"). */
@@ -161,11 +173,14 @@ export class HelpPanelService {
     void this.help.load().then(() => this.ask(question));
   }
 
+  /** Follow-on steps for the current question add below its answer (once each), rather than replacing it. */
   startTroubleshooter(tree: string): void {
+    if (this._thread().some(t => t.kind === 'troubleshooter' && t.tree === tree)) return;
     this.push({ kind: 'troubleshooter', tree });
   }
 
   escalate(): void {
+    if (this._thread().some(t => t.kind === 'escalation')) return;
     this.push({ kind: 'escalation' });
   }
 
@@ -225,6 +240,21 @@ export class HelpPanelService {
     } else {
       this.navigate('/');
     }
+  }
+
+  /**
+   * A new question replaces the conversation rather than stacking under it: answers that pile up
+   * below the fold get missed, so the panel only ever shows the current question and its follow-ups.
+   */
+  private startOver(question: string, ...items: HelpThreadItem[]): void {
+    this._spotlight.set(null);
+    this._lastQuestion.set(question);
+    this._thread.set(items);
+    this._turn.update(t => t + 1);
+  }
+
+  private markViewed(faqId: string): void {
+    this._viewed.update(v => (v.includes(faqId) ? v : [...v, faqId]));
   }
 
   private push(...items: HelpThreadItem[]): void {

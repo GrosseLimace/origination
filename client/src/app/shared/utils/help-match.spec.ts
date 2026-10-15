@@ -106,7 +106,10 @@ describe('matchHelpQuestion against the shipped content', () => {
     ['how do I mention someone in a note', 'mention-someone'],
     ['can I save a calculation', 'calculator-save'],
     ['what are DP contracts', 'dp-contracts'],
-    ['print a producer report', 'print-producer-report']
+    ['print a producer report', 'print-producer-report'],
+    ['contract is missing', 'contract-missing'],
+    ['ticket not showing up', 'ticket-missing'],
+    ['I changed the address in master data and it is not updated', 'data-change-not-showing']
   ])('"%s" answers with %s', (question, expected) => {
     expect(answer(question)).toEqual({ kind: 'answer', id: expected });
   });
