@@ -52,6 +52,13 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         var rejections = new List<OrganicCertificationRejection>();
 
+        // The sender's run id, shared across every message in one nightly run. Read here so that
+        // even a message rejected for having no NOP id still records which run it came from —
+        // "run X sent 1,000 messages and 3 were unusable" is only answerable if the unusable ones
+        // carry the id too. Null is normal and must never be a rejection reason.
+        var feedRunId = request.FeedRunId?.Trim();
+        if (string.IsNullOrEmpty(feedRunId)) feedRunId = null;
+
         var nopid = request.NopOperationId?.Trim();
         if (string.IsNullOrEmpty(nopid))
         {
@@ -64,7 +71,8 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
                 Message = "nopOperationID is required and was empty.",
             });
 
-            await AuditAsync(batchId, null, "Rejected", accepted: 0, rejected: 1,
+            await AuditAsync(batchId, feedRunId, request.RunPosition, request.RunTotal,
+                Trimmed(request.ScoularId), null, "Rejected", accepted: 0, rejected: 1,
                 unmatchedCustomer: 0, "Message carried no NOP operation id.", now, cancellationToken);
 
             return new OrganicCertificationIngestResponse
@@ -95,6 +103,10 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
         var auditRow = new OrganicCertificationLoad
         {
             BatchId = batchId,
+            FeedRunId = feedRunId,
+            RunPosition = request.RunPosition,
+            RunTotal = request.RunTotal,
+            ScoularId = Trimmed(request.ScoularId),
             Nopid = nopid,
             ReceivedOn = now,
             Status = "Received",
@@ -150,6 +162,74 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
             ItemsStored = itemsStored,
             Rejections = rejections,
         };
+    }
+
+    public async Task<OrganicCertificationSkipResponse> RecordSkipAsync(
+        OrganicCertificationSkipRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var batchId = Guid.NewGuid();
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        var scoularId = Trimmed(request.ScoularId);
+        var nopid = Trimmed(request.NopOperationId);
+        var reason = Trimmed(request.Reason);
+        var feedRunId = Trimmed(request.FeedRunId);
+
+        // ONE write, and no certification. A skip is a statement about a message that will never
+        // arrive, so there is nothing to upsert and no customer to resolve — the row exists to fill
+        // a position in the run and to say why it is empty.
+        //
+        // It deliberately does NOT touch an existing certification. A producer we already hold one
+        // for could be skipped tomorrow as NOT_IN_USDA, and whether that means "the USDA record
+        // went away" or "a lookup failed upstream" cannot be told apart from here. Acting on it
+        // would be guessing with a trader's compliance data.
+        _db.OrganicCertificationLoads.Add(new OrganicCertificationLoad
+        {
+            BatchId = batchId,
+            FeedRunId = feedRunId,
+            RunPosition = request.RunPosition,
+            RunTotal = request.RunTotal,
+            ScoularId = scoularId,
+            Nopid = nopid,
+            ReceivedOn = now,
+            Status = SkippedStatus,
+            SkipReason = reason,
+            Accepted = 0,
+            Rejected = 0,
+            UnmatchedCustomer = 0,
+            Message = "Sender skipped this producer; no certification was sent.",
+        });
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        // Identifiers and the reason code only — never anything that could carry payload content.
+        _logger.LogInformation(
+            "Organic certification skip recorded for {ScoularId} (NOPID {Nopid}): {Reason} "
+            + "[AUDIT_INGEST_ORGANIC] [DataMutation]",
+            scoularId, nopid ?? "none", reason);
+
+        return new OrganicCertificationSkipResponse
+        {
+            BatchId = batchId,
+            ScoularId = scoularId,
+            Reason = reason,
+            Recorded = true,
+        };
+    }
+
+    /// <summary>Audit status for a skip notice. A fourth value alongside Received / Succeeded /
+    /// Rejected, so a skip is never counted as a message that failed.</summary>
+    private const string SkippedStatus = "Skipped";
+
+    /// <summary>Trim to null, so whitespace from the sender never becomes a stored value that looks
+    /// like data.</summary>
+    private static string? Trimmed(string? value)
+    {
+        var trimmed = value?.Trim();
+        return string.IsNullOrEmpty(trimmed) ? null : trimmed;
     }
 
     /// <summary>
@@ -224,15 +304,24 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
         target.SourceLastUpdateDate = source.LastUpdatedDate?.Date;
         target.TotalAcreage = source.TotalAcreage;
 
-        // Presence in the feed is the active signal. Nothing here ever sets IsActive false: with
-        // one message per producer there is no batch boundary, so absence is undetectable — we
-        // cannot tell "not sent tonight" from "unchanged". Deactivation therefore has to come from
-        // an explicit terminal status, or from a run id the sender does not currently supply.
+        // Presence in the feed is the active signal. Nothing here ever sets IsActive false.
+        //
+        // The sender began supplying a run id on 2026-10-07 and it is now recorded below, but that
+        // is NOT on its own enough to deactivate on absence, and the gap is easy to miss: knowing
+        // which producers a run touched says nothing about whether the run FINISHED. A pipeline
+        // that sends 400 of 1,000 and dies would make 600 healthy producers look absent. Until
+        // there is an end-of-run signal, deactivation stays driven by an explicit terminal status.
         target.IsActive = true;
         target.DeactivatedOn = null;
 
         target.UpdatedOn = now;
         target.LoadBatchId = batchId;
+
+        // Last writer wins, deliberately: this says which run most recently touched the row, which
+        // is exactly what "not seen since run X" will need. Null when the sender omits it — never
+        // overwrite a real id with null, or a single legacy message would erase the history.
+        var feedRunId = source.FeedRunId?.Trim();
+        if (!string.IsNullOrEmpty(feedRunId)) target.LastFeedRunId = feedRunId;
     }
 
     /// <summary>
@@ -414,6 +503,10 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
     /// </summary>
     private async Task AuditAsync(
         Guid batchId,
+        string? feedRunId,
+        int? runPosition,
+        int? runTotal,
+        string? scoularId,
         string? nopid,
         string status,
         int accepted,
@@ -426,6 +519,13 @@ public class OrganicCertificationIngestService : IOrganicCertificationIngestServ
         _db.OrganicCertificationLoads.Add(new OrganicCertificationLoad
         {
             BatchId = batchId,
+            FeedRunId = feedRunId,
+            // Carried even on a rejection. A message we could not use still OCCUPIED its position
+            // in the run — leaving it off would make a rejected producer look like one that never
+            // arrived, which is the distinction this whole scheme exists to draw.
+            RunPosition = runPosition,
+            RunTotal = runTotal,
+            ScoularId = scoularId,
             Nopid = nopid,
             ReceivedOn = now,
             Status = status,

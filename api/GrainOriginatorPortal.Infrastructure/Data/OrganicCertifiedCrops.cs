@@ -26,6 +26,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data;
 /// one entry; a comma appearing inside the brackets must not break it in half.</item>
 /// <item><b>Duplicates collapse.</b> Splitting the first example yields Alfalfa three times, once
 /// alone and twice as half of a pairing. A trader wants one chip per crop.</item>
+/// <item><b>A leading "and" / "or" is dropped.</b> Certifiers write prose lists — "Corn, Soybeans,
+/// and Wheat" — which would otherwise produce a chip reading "and Wheat". See
+/// <see cref="StripLeadingConjunction"/>.</item>
+/// <item><b>A comma inside a number is not a separator.</b> "1,050 bushels" is one quantity, not a
+/// list. See <see cref="IsThousandsSeparator"/>.</item>
 /// </list>
 ///
 /// This is deliberately NOT clever. It does not try to recognise crop names, strip quantities or
@@ -35,11 +40,32 @@ namespace GrainOriginatorPortal.Infrastructure.Data;
 public static class OrganicCertifiedCrops
 {
     /// <summary>
-    /// Separators the desk considers list punctuation. The hyphen is the riskiest of these — it
-    /// appears inside quantities ("2024 Soybeans - 4000 bushels") as well as between crops — so if
-    /// prose entries start reading badly, it is the first one to reconsider.
+    /// Separators the desk considers list punctuation.
+    ///
+    /// 🔑 <b>The hyphen is deliberately NOT here, as of 2026-10-13.</b> It was, on the desk's
+    /// original instruction to treat "any sort of delimiter" as one — a reasonable call made before
+    /// anyone had seen real certifier data. The first full load (1,138 producers, 660 distinct
+    /// free-text strings) settled it with evidence:
+    ///
+    /// <list type="bullet">
+    /// <item><b>83 strings carry an unbracketed hyphen. Exactly ONE of them — "Alfalfa-Oats" — is a
+    /// genuine crop pairing.</b></item>
+    /// <item>The rest are compound names the split destroyed: "Black-eyed peas" became "Black" and
+    /// "eyed peas"; "single-ingredient" became two words; "Pullet Pre-Starter" lost its prefix; the
+    /// product code "MSSE Lay 21 P-2" became "MSSE Lay 21 P" and a stray "2".</item>
+    /// <item>Several that LOOK like pairings are single items: "Sorghum-Sudan" is one hybrid,
+    /// "Maize-Corn" is one crop named twice, "Non-Production Land" and "Processed Items-Other" are
+    /// labels.</item>
+    /// </list>
+    ///
+    /// So the trade is one combined chip ("Alfalfa-Oats" renders whole) against roughly eighty
+    /// strings that stop being mangled. Bailey Cozart, 2026-10-13: <i>"we can only do so much data
+    /// cleanup with the free form fields that we are getting from the USDA, and I would rather have
+    /// a combined chip than mangle a bunch of others."</i>
+    ///
+    /// Do not add it back without re-running that measurement.
     /// </summary>
-    private static readonly char[] Separators = [',', ';', '/', '&', '-', '+'];
+    private static readonly char[] Separators = [',', ';', '/', '&', '+'];
 
     /// <summary>Opening and closing brackets inside which separators are ignored.</summary>
     private const string Openers = "([{";
@@ -67,13 +93,15 @@ public static class OrganicCertifiedCrops
         var current = new StringBuilder();
         var depth = 0;
 
-        foreach (var ch in freeText)
+        for (var i = 0; i < freeText.Length; i++)
         {
+            var ch = freeText[i];
+
             if (Openers.Contains(ch)) depth++;
             else if (Closers.Contains(ch) && depth > 0) depth--;
 
             // Inside brackets, separators are part of the text rather than between entries.
-            if (depth == 0 && Separators.Contains(ch))
+            if (depth == 0 && Separators.Contains(ch) && !IsThousandsSeparator(freeText, i))
             {
                 parts.Add(current.ToString());
                 current.Clear();
@@ -92,11 +120,83 @@ public static class OrganicCertifiedCrops
 
         foreach (var part in parts)
         {
-            var trimmed = part.Trim();
+            var trimmed = StripLeadingConjunction(part.Trim());
             if (trimmed.Length == 0) continue;
             if (seen.Add(trimmed)) crops.Add(trimmed);
         }
 
         return crops;
     }
+
+    /// <summary>
+    /// Whether the character at <paramref name="index"/> is a comma acting as a thousands
+    /// separator — a digit on each side — rather than as list punctuation.
+    ///
+    /// Found in the first full load (Dev, 2026-10-13): nine certifiers wrote carryover quantities
+    /// like "Carryover Crops of: 2025 Soybeans - 1,050 bushels". Splitting on that comma produced
+    /// chips reading <i>"1"</i> and <i>"050 bushels"</i>.
+    ///
+    /// Only the comma is treated this way. None of the other separators appears inside a number, and
+    /// no crop name has a digit on both sides of a comma, so this cannot swallow a real list break:
+    /// "Corn, Soybeans" has a space after the comma, and "2024, 2019 Oats" likewise — both still
+    /// split. It is deliberately narrow for that reason.
+    /// </summary>
+    private static bool IsThousandsSeparator(string text, int index)
+    {
+        if (text[index] != ',') return false;
+        if (index == 0 || index == text.Length - 1) return false;
+
+        return char.IsAsciiDigit(text[index - 1]) && char.IsAsciiDigit(text[index + 1]);
+    }
+
+    /// <summary>
+    /// Removes a leading "and " or "or " from a split piece.
+    ///
+    /// Certifiers write prose lists, not data: the first real message from the pipeline carried
+    /// "Corn, Soybeans, and Wheat" (LEHMMAD, Dev dark run 2026-10-12), which split into a chip
+    /// reading <i>"and Wheat"</i>. Both samples we had been testing against used bare comma lists,
+    /// so it took live certifier wording to surface this.
+    ///
+    /// ⚠️ The trailing space in the comparison is load-bearing, not punctuation. Matching the bare
+    /// prefix would eat the start of real crops — "Andean" would become "ean", "Orchardgrass" would
+    /// become "chardgrass". Only a whole leading word followed by whitespace is removed.
+    ///
+    /// Repeats, so "and/or Wheat" — which the "/" separator already breaks into "and" and
+    /// "or Wheat" — ends up as an empty piece (dropped) and "Wheat". A piece that is nothing BUT a
+    /// conjunction collapses to empty and is dropped by the caller, which is the right answer: it
+    /// was never a crop.
+    ///
+    /// Deliberately only "and" and "or". This stays a punctuation fixer, not a prose parser — the
+    /// class's honest failure mode is an odd-looking chip, never a missing crop.
+    /// </summary>
+    private static string StripLeadingConjunction(string piece)
+    {
+        var result = piece;
+
+        while (true)
+        {
+            var before = result;
+
+            foreach (var conjunction in Conjunctions)
+            {
+                if (result.Length > conjunction.Length
+                    && result.StartsWith(conjunction, StringComparison.OrdinalIgnoreCase)
+                    && char.IsWhiteSpace(result[conjunction.Length]))
+                {
+                    result = result[(conjunction.Length + 1)..].TrimStart();
+                    break;
+                }
+
+                // The piece is the conjunction and nothing else — "Corn, and, Wheat" produces one.
+                if (result.Equals(conjunction, StringComparison.OrdinalIgnoreCase))
+                {
+                    return string.Empty;
+                }
+            }
+
+            if (ReferenceEquals(before, result) || before == result) return result;
+        }
+    }
+
+    private static readonly string[] Conjunctions = ["and", "or"];
 }

@@ -16,4 +16,19 @@ public interface IOrganicCertificationIngestService
     Task<OrganicCertificationIngestResponse> IngestAsync(
         OrganicCertificationIngestRequest request,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records that the sender deliberately did NOT send a certification for a producer it
+    /// considered in a run.
+    ///
+    /// Stores no certification — it writes one audit row so that producer's position in the run is
+    /// filled. Without it a deliberate skip and a message lost in transit are the same thing: a
+    /// missing position.
+    ///
+    /// Safe to retry: a re-sent notice writes another audit row, and the completeness check counts
+    /// DISTINCT positions rather than rows.
+    /// </summary>
+    Task<OrganicCertificationSkipResponse> RecordSkipAsync(
+        OrganicCertificationSkipRequest request,
+        CancellationToken cancellationToken = default);
 }

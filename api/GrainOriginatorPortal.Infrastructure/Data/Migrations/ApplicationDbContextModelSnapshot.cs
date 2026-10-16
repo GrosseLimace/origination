@@ -1909,6 +1909,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasDefaultValue(true)
                         .HasColumnName("IsActive");
 
+                    b.Property<string>("LastFeedRunId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("LastFeedRunId");
+
                     b.Property<Guid?>("LoadBatchId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("LoadBatchId");
@@ -2083,6 +2088,29 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("BatchId");
 
+                    b.Property<string>("FeedRunId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("FeedRunId");
+
+                    b.Property<int?>("RunPosition")
+                        .HasColumnType("int")
+                        .HasColumnName("RunPosition");
+
+                    b.Property<int?>("RunTotal")
+                        .HasColumnType("int")
+                        .HasColumnName("RunTotal");
+
+                    b.Property<string>("ScoularId")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("ScoularId");
+
+                    b.Property<string>("SkipReason")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("SkipReason");
+
                     b.Property<string>("Message")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)")
@@ -2118,6 +2146,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnName("UnmatchedCustomer");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("FeedRunId", "RunPosition")
+                        .HasDatabaseName("IX_OrganicCertificationLoad_FeedRunId")
+                        .HasFilter("[FeedRunId] IS NOT NULL");
 
                     b.HasIndex("ReceivedOn")
                         .HasDatabaseName("IX_OrganicCertificationLoad_ReceivedOn");

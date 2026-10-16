@@ -65,4 +65,33 @@ public class OrganicCertificationIngestController : ControllerBase
         [FromBody] OrganicCertificationIngestRequest request,
         CancellationToken cancellationToken = default)
         => Ok(await _service.IngestAsync(request, cancellationToken));
+
+    /// <summary>
+    /// Records a producer the sender considered but deliberately did not send a certification for.
+    /// </summary>
+    /// <remarks>
+    /// The run total counts every producer CONSIDERED, not the ones sent, because the sender only
+    /// learns mid-run that a producer has no USDA record. A skip notice fills that producer's
+    /// position, so "we hold runTotal distinct positions" means the run finished — while a message
+    /// genuinely lost in transit still leaves a gap. Without this the two are indistinguishable,
+    /// which is what prevents acting on absence at all.
+    ///
+    /// Separate from <see cref="Ingest"/> rather than a flag on it because a skip reason of
+    /// INELIGIBLE_NOP means the NOP id is blank or a placeholder — which ingest rejects outright as
+    /// MISSING_NOP_OPERATION_ID, the one failure that loses a whole message.
+    ///
+    /// Stores no certification, and never alters one that already exists.
+    ///
+    /// Safe to retry: a repeat writes another audit row, and completeness counts distinct positions
+    /// rather than rows.
+    /// </remarks>
+    [HttpPost("skip")]
+    [ProducesResponseType(typeof(OrganicCertificationSkipResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<OrganicCertificationSkipResponse>> Skip(
+        [FromBody] OrganicCertificationSkipRequest request,
+        CancellationToken cancellationToken = default)
+        => Ok(await _service.RecordSkipAsync(request, cancellationToken));
 }

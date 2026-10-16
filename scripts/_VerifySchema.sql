@@ -546,6 +546,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'OrganicCertification', 'CustomerId',           'bigint',         1),
 ('dbo', 'OrganicCertification', 'DeactivatedOn',        'datetime2',      1),
 ('dbo', 'OrganicCertification', 'IsActive',             'bit',            0),
+('dbo', 'OrganicCertification', 'LastFeedRunId',        'nvarchar(100)',  1),
 ('dbo', 'OrganicCertification', 'LoadBatchId',          'uniqueidentifier', 1),
 ('dbo', 'OrganicCertification', 'Nopid',                'nvarchar(50)',   0),
 ('dbo', 'OrganicCertification', 'OperationName',        'nvarchar(255)',  1),
@@ -576,6 +577,11 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'OrganicCertificationLoad', 'Id',                'int',            0),
 ('dbo', 'OrganicCertificationLoad', 'Accepted',          'int',            0),
 ('dbo', 'OrganicCertificationLoad', 'BatchId',           'uniqueidentifier', 0),
+('dbo', 'OrganicCertificationLoad', 'FeedRunId',         'nvarchar(100)',  1),
+('dbo', 'OrganicCertificationLoad', 'RunPosition',       'int',            1),
+('dbo', 'OrganicCertificationLoad', 'RunTotal',          'int',            1),
+('dbo', 'OrganicCertificationLoad', 'ScoularId',         'nvarchar(50)',   1),
+('dbo', 'OrganicCertificationLoad', 'SkipReason',        'nvarchar(50)',   1),
 ('dbo', 'OrganicCertificationLoad', 'Message',           'nvarchar(1000)', 1),
 ('dbo', 'OrganicCertificationLoad', 'Nopid',             'nvarchar(50)',   1),
 ('dbo', 'OrganicCertificationLoad', 'ReceivedOn',        'datetime2',      0),
@@ -801,7 +807,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (96)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (98)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -888,6 +894,7 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20261007145119_AddProducerBinSite'),
 ('20261007152343_WidenProducerBinSiteCoordinatePrecision'),
 ('20261007162014_AddBinSiteQueryLibraryItems'),
+('20261007180000_AddOrganicCertificationFeedRunId'),
 ('20261008202530_AddProducerBinSiteCapacity'),
 ('20261008202827_AddBushelsSoldToGrainOnFarm'),
 ('20261009141509_AddBinSiteCommodityAndMarketing'),
@@ -901,7 +908,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20261009185600_CombineGrainOnFarmAndBinSitePrompts'),
 ('20261009201625_AddBinSitesModifiedAt'),
 ('20261009201700_DropProducerDetailsBinCapacity'),
-('20261013163045_RestrictCustomerTradeUnitDeleteAndValidateCustomerFks');
+('20261013163045_RestrictCustomerTradeUnitDeleteAndValidateCustomerFks'),
+('20261014090000_AddOrganicCertificationRunPosition');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.
