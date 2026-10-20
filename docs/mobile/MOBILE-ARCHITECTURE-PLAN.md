@@ -204,7 +204,7 @@ All mobile work is on **`feature_MobileForMain`**: main + the `Application` extr
 
 - **Into main, two PRs:** `feature_MobileApplicationLayer` first (a pure move of the business logic into its own project, no behaviour change), then `feature_MobileForMain`, whose diff is then only the mobile work. No separate docs PR.
 - **Into Dev/QA:** merge `feature_MobileForMain` into the Dev or QA release branch, which already carries the BarChart.
-- `docs_MobileArchitecturePlan` and `feature_MobileSurface` are no longer updated; they stay until the work is merged. **Never open a PR from `feature_MobileSurface`.**
+- `docs_MobileArchitecturePlan` and `feature_MobileSurface` were deleted (2026-10-15 and 2026-10-20) after checking nothing on them was missing elsewhere: every file was either on this branch, an older copy of a file that still exists, or deliberately removed in main (old Farm feature, Unshipped Bushels page). Only the commit-by-commit history of the first mobile build went with them.
 
 ## 7. Risks (ranked)
 
