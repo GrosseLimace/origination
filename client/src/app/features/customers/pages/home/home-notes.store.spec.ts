@@ -75,6 +75,23 @@ describe('HomeNotesStore', () => {
     refreshPanel = vi.fn<() => void>();
   });
 
+  it('exposes its loading and saving flags read-only, so only the store can change them', () => {
+    // Same rule as AppStateService: the page and the panels read these; only the store writes them.
+    for (const flag of [store.isLoadingNotes, store.isSavingNote, store.noteSaveSucceededCounter]) {
+      expect('set' in flag).toBe(false);
+      expect('update' in flag).toBe(false);
+    }
+  });
+
+  it('stopLoading clears the loading flag, for when the page cancels in-flight reads', () => {
+    api.getNotesByCustomer.mockReturnValue(NEVER);
+    store.ensureCustomerNotes([1], vi.fn());
+    expect(store.isLoadingNotes()).toBe(true);
+
+    store.stopLoading();
+    expect(store.isLoadingNotes()).toBe(false);
+  });
+
   describe('ensureCustomerNotes', () => {
     it('cold: shows the spinner, reads every group member, caches them, refreshes the panel and the badge feed', () => {
       api.getNotesByCustomer.mockImplementation((id: number) =>
