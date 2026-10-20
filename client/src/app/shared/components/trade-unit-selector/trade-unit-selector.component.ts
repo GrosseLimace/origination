@@ -9,6 +9,8 @@ import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
   standalone: true,
   imports: [CommonModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  // Lets the Help panel's "Show me on screen" outline the selector wherever it appears.
+  host: { 'data-help-anchor': 'trade-unit-selector' },
   templateUrl: './trade-unit-selector.component.html'
 })
 export class TradeUnitSelectorComponent implements OnInit {

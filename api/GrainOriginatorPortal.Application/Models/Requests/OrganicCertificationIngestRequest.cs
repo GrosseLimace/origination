@@ -42,6 +42,47 @@ public record OrganicCertificationIngestRequest
     [StringLength(50, MinimumLength = 1)]
     public required string NopOperationId { get; init; }
 
+    /// <summary>
+    /// Shared by every message in one nightly run — the sender's own grouping key, e.g.
+    /// "replay-20261007T162718Z-d3dbb1f3". Optional: absent on anything sent before the pipeline
+    /// added it (2026-10-07), and we must not reject a message for lacking it.
+    ///
+    /// Taken from the BODY rather than the X-Correlation-Id header the sender also sets. APIM sits
+    /// in the request path and may rewrite or regenerate correlation headers; this field is the
+    /// sender's own and arrives unaltered.
+    ///
+    /// Recorded only — nothing reads it yet. It exists because it is the ONE thing that cannot be
+    /// recovered retrospectively: once nightly runs have passed without it, those run boundaries
+    /// are gone. It is the prerequisite for ever detecting absence ("this producer stopped being
+    /// sent"), which today is impossible because one message per producer gives no batch boundary.
+    ///
+    /// ⚠️ Treat it as opaque. Never parse it — the captured sample carries a "replay-" prefix, so
+    /// the shape varies by run type. Compare whole strings or not at all.
+    /// </summary>
+    [StringLength(100)]
+    public string? FeedRunId { get; init; }
+
+    /// <summary>
+    /// This producer's position in the run, 1..<see cref="RunTotal"/>, and how many producers the
+    /// run considered.
+    ///
+    /// Both paths carry these — a normal ingest and a skip notice — because completeness is counted
+    /// across the two together. A run of 839 where 23 producers were skipped is complete when we
+    /// hold 839 distinct positions, whichever endpoint each arrived at.
+    ///
+    /// ⚠️ The total counts producers CONSIDERED, not sent. The sender only learns mid-run that a
+    /// producer has no USDA record, so a send-count cannot be known up front.
+    ///
+    /// Null outside a nightly run: one-off intraday edits carry no run context, and that absence is
+    /// how they are recognised.
+    /// </summary>
+    [Range(1, int.MaxValue)]
+    public int? RunPosition { get; init; }
+
+    /// <summary>See <see cref="RunPosition"/>. Constant for the whole run.</summary>
+    [Range(1, int.MaxValue)]
+    public int? RunTotal { get; init; }
+
     [StringLength(255)]
     public string? OperationName { get; init; }
 

@@ -188,10 +188,84 @@ exists. **Do not treat `customerMatched: false` as an error or retry it.**
 **Scopes and items are replaced as a set.** Whatever you send becomes the complete list. An item you
 stop sending is removed. A surrendered operation with an empty `items` array is expected and fine.
 
+## Run completeness — `feedRunId`, `runPosition`, `runTotal`
+
+Both endpoints carry three optional run fields. Together they let us tell a run that **finished**
+from one that **died partway**, which is the prerequisite for ever acting on a producer's absence.
+
+| Field | Meaning |
+| --- | --- |
+| `feedRunId` | Shared by every message in one nightly run. Opaque — we compare it, never parse it. |
+| `runPosition` | This producer's position, `1..runTotal`. |
+| `runTotal` | How many producers the run **considered**. Constant for the whole run. |
+
+**`runTotal` counts producers CONSIDERED, not sent.** That is deliberate: you only discover mid-run
+that a producer has no USDA record, so a send-count cannot be known up front. Skipped producers fill
+their position via the skip endpoint below rather than leaving a hole.
+
+So: **we hold `runTotal` distinct positions ⇒ the run finished.** A message genuinely lost in transit
+still leaves a gap, which is exactly the signal we want.
+
+Completeness counts **distinct positions, not rows**, so re-sending a message is safe and does not
+read as progress. A rejected message still carries its position — it occupied one.
+
+All three are optional. One-off intraday edits carry none of them, and that absence is how we
+recognise them.
+
+## The skip endpoint
+
+```
+POST /api/organic-certifications/skip
+```
+
+For a producer you considered but deliberately did **not** send a certification for.
+
+```json
+{
+  "scoularId": "ABCFARM",
+  "nopOperationId": "1234567890",
+  "reason": "NOT_IN_USDA",
+  "feedRunId": "nightly-20261016T050000Z-ab12",
+  "runPosition": 412,
+  "runTotal": 839
+}
+```
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `scoularId` | **Yes** | The only identifier guaranteed present — see below |
+| `reason` | **Yes** | `NOT_IN_USDA`, `INELIGIBLE_NOP`, or anything else |
+| `nopOperationId` | No | Blank is normal and expected on `INELIGIBLE_NOP` |
+| `feedRunId` / `runPosition` / `runTotal` | No | Omit on a one-off |
+
+**Why `scoularId` is required and `nopOperationId` is not.** On an `INELIGIBLE_NOP` skip the NOP id
+is blank by definition, so without the customer code the notice would tie back to nobody.
+
+**Why this is a separate endpoint rather than a flag on `/ingest`.** `/ingest` rejects a blank
+`nopOperationId` with `MISSING_NOP_OPERATION_ID` — the one failure that loses a whole message,
+because there is then no key to store it under. Routing skips through it would mean relaxing the
+strictest validation in this contract.
+
+**An unrecognised `reason` is recorded, not rejected.** A new reason code must never become a
+permanent gap in the run.
+
+Response:
+
+```json
+{ "batchId": "…", "scoularId": "ABCFARM", "reason": "NOT_IN_USDA", "recorded": true }
+```
+
+A skip stores **no certification and never alters one we already hold.** If a producer we hold a
+certificate for is skipped as `NOT_IN_USDA`, we record it and change nothing — we cannot tell from
+here whether the USDA record went away or a lookup failed upstream, and guessing with compliance data
+is not something we will do.
+
 ## Retries
 
 Safe to retry, always. The operation upserts on `nopOperationId` and its children are replaced, so
 re-sending the same message converges rather than duplicating. A failed run can simply be run again.
+Skip notices are equally safe — a repeat writes another audit row, and completeness counts distinct
+positions.
 
 ## Errors
 
