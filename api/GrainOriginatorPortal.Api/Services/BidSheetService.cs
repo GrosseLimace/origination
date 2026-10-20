@@ -452,7 +452,7 @@ public class BidSheetService : IBidSheetService
     }
 
     /// <inheritdoc />
-    public async Task<BidSheetResponse> SetSheetSharesAsync(int sheetId, BidSheetSharesRequest request, CancellationToken cancellationToken)
+    public async Task<BidSheetResponse?> SetSheetSharesAsync(int sheetId, BidSheetSharesRequest request, CancellationToken cancellationToken)
     {
         // Any member. Note what this allows: a member can widen who sees the OWNER's sheet, and the
         // owner finds out by looking. That is the accepted trade for a shared working list -- the
