@@ -1108,13 +1108,20 @@ public class CustomerRepository : ICustomerRepository
             .ToListAsync(cancellationToken);
     }
 
-    /// <summary>The producer to onboard: by ScoularId when one was sent (E4), else by ODS id. A placeholder id
-    /// without a code cannot be onboarded (CTRM has nothing to look it up by), so that yields null.</summary>
+    /// <summary>The producer to onboard: by ScoularId when one was sent (E4), else by ODS id - on the ODS source
+    /// only. On the <c>ctrm</c> source an id alone is never looked up in the ODS: every CTRM candidate carries its
+    /// code, so a request without one is not a CTRM onboarding and yields null (CustomerNotFound). A placeholder id
+    /// without a code likewise yields null on either source.</summary>
     private async Task<Customer?> LoadOnboardingCandidateAsync(long customerId, string? scoularId, CancellationToken cancellationToken)
     {
         var code = scoularId?.Trim();
         if (!string.IsNullOrEmpty(code)) return await LoadOnboardingCandidateByCodeAsync(code, cancellationToken);
         if (CtrmCustomerCandidateId.IsCandidate(customerId)) return null;
+        if (CustomerSyncSources.Resolve(_configuration) == CustomerSyncSources.Ctrm)
+        {
+            _logger.LogWarning("AssignTradeUnits: unknown customer {CustomerId} sent without a producer code on the ctrm source; not looked up in the ODS.", customerId);
+            return null;
+        }
         return await LoadOnboardingCandidateAsync(customerId, cancellationToken);
     }
 
