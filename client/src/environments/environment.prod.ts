@@ -4,8 +4,9 @@ export const environment = {
   // 'production', which rendered an odd lowercase pill next to the title-cased ones.
   envName: 'Production',
   bidSheetEnabled: true,
-  // "Add from BarChart" picker + fed-bid display. Off until the vendor feed is live in this environment.
-  barchartBidsEnabled: false,
+  // "Add from BarChart" picker + fed-bid display. ON since the 2026-10-20 release: the PROD catalog
+  // finished its first full 7-day load on 2026-10-20 (84k listings, 4,024 locations, priced daily).
+  barchartBidsEnabled: true,
   usageDashboardEnabled: true,
   // 'NOP ID on file, no certificate' Actionable Insights category (trade unit 2080 only).
   // Compares two independent pipelines: the NOP id from Profisee via the nightly customer sync,
