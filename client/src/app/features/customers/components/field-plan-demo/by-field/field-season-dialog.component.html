@@ -51,20 +51,6 @@
                 @for (tu of tradeUnitOptions(); track tu) { <option [value]="tu">{{ tu }}</option> }
               </select></label>
           </div>
-          <button type="button" class="mt-2 text-sm text-scoular-green-accessible dark:text-scoular-green hover:underline bg-transparent border-0 p-0"
-                  (click)="showFieldMore = !showFieldMore">
-            {{ showFieldMore ? '▾' : '▸' }} FSA numbers (needed to finalize for 45Z)
-          </button>
-          @if (showFieldMore) {
-            <div class="mt-2 grid gap-3 sm:grid-cols-3">
-              <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">FSA farm #</span>
-                <input class="ci-input" [(ngModel)]="draftField.fsaFarmNo" (ngModelChange)="saveField()" /></label>
-              <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">Tract #</span>
-                <input class="ci-input" [(ngModel)]="draftField.fsaTractNo" (ngModelChange)="saveField()" /></label>
-              <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">Field #</span>
-                <input class="ci-input" [(ngModel)]="draftField.fsaFieldNo" (ngModelChange)="saveField()" /></label>
-            </div>
-          }
         </div>
 
         @if (draft.crop !== 'FALLOW') {

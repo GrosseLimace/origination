@@ -3,7 +3,6 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CiEnrollmentMockService } from '@core/services/ci-enrollment-mock.service';
 import { CiEnrollment, EnrollableSeason } from '@models';
-import { fsaKey } from '@shared/utils/ci-enrollment';
 
 /**
  * A producer's 45Z enrollment for one crop year, above the planting table in every field-plan
@@ -52,7 +51,7 @@ import { fsaKey } from '@shared/utils/ci-enrollment';
               <div class="font-medium text-gray-900 dark:text-white">Fields</div>
               <table class="mt-1 w-full text-left">
                 <thead class="text-xs uppercase text-gray-500 dark:text-gray-400">
-                  <tr><th class="w-8"></th><th class="py-1">Field</th><th>Crop</th><th>FSA farm/tract/field</th><th class="text-right">Acres</th><th class="text-right">Final CI (g CO₂e/bu)</th></tr>
+                  <tr><th class="w-8"></th><th class="py-1">Field</th><th>Crop</th><th class="text-right">Acres</th><th class="text-right">Final CI (g CO₂e/bu)</th></tr>
                 </thead>
                 <tbody>
                   @for (s of rows(); track s.seasonId) {
@@ -63,7 +62,6 @@ import { fsaKey } from '@shared/utils/ci-enrollment';
                       </td>
                       <td class="py-1 text-gray-900 dark:text-white">{{ s.fieldName }}</td>
                       <td class="text-gray-600 dark:text-gray-300">{{ s.cropLabel }}</td>
-                      <td class="text-gray-600 dark:text-gray-300">{{ fsa(s) }}</td>
                       <td class="text-right text-gray-600 dark:text-gray-300">{{ s.acres | number }}</td>
                       <td class="text-right">
                         @if (s.status === 'Final' && s.finalCiGPerBu !== undefined) {
@@ -186,10 +184,6 @@ export class CiEnrollmentCardComponent {
         this.draft = e ? { ...e, fieldSeasonIds: [...e.fieldSeasonIds], attestation: { ...e.attestation } } : null;
       }
     });
-  }
-
-  fsa(s: EnrollableSeason): string {
-    return fsaKey(s) ?? '—';
   }
 
   startEnrollment(): void {

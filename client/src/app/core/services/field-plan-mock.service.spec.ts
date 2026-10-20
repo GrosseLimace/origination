@@ -3,7 +3,6 @@ import { TestBed } from '@angular/core/testing';
 import { FieldPlanMockService } from './field-plan-mock.service';
 import { CALCULATOR_VERSION } from '@shared/utils/ci-enrollment';
 
-const FSA = { fsaFarmNo: '1234', fsaTractNo: '5678', fsaFieldNo: '3' };
 const AUDIT_READY = {
   nApplications: [{ product: 'Anhydrous' as const, lbsN: 180, timing: 'Preplant' as const, efficiency: 'None' as const }],
   evidence: [
@@ -22,7 +21,7 @@ describe('FieldPlanMockService (prototype)', () => {
   });
 
   function field(name: string) {
-    return plan.createField({ customerId: CUSTOMER, name, state: 'KS', county: 'Pratt', ...FSA });
+    return plan.createField({ customerId: CUSTOMER, name, state: 'KS', county: 'Pratt' });
   }
 
   it('should keep a field once and reuse it on another crop row', () => {

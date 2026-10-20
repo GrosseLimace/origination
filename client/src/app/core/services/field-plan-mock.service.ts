@@ -85,8 +85,7 @@ export class FieldPlanMockService {
   /** Locks the season with its actual yield and freezes the CI it was finalized at. Refused while the audit records are incomplete. */
   finalizeSeason(seasonId: string, actualYield: number, finalCiGPerBu: number): void {
     const season = this.seasons().find(s => s.id === seasonId);
-    const field = season && this.fields().find(f => f.fieldKey === season.fieldKey);
-    if (!season || !field || finalizeBlockers(season, field, actualYield).length > 0) return;
+    if (!season || finalizeBlockers(season, actualYield).length > 0) return;
     this.seasons.update(ss => ss.map(s => (s.id === seasonId
       ? { ...s, actualYield, finalCiGPerBu, calculatorVersion: CALCULATOR_VERSION, status: 'Final' as SeasonStatus, finalizedBy: 'you', finalizedAt: new Date().toISOString() }
       : s)));

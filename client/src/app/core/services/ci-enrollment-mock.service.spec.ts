@@ -4,7 +4,7 @@ import { EnrollableSeason } from '@models';
 import { CiEnrollmentMockService } from './ci-enrollment-mock.service';
 
 const north: EnrollableSeason = {
-  seasonId: 's1', fieldKey: 'f1', fieldName: 'North 80', fsaFarmNo: '1234', fsaTractNo: '5678', fsaFieldNo: '3',
+  seasonId: 's1', fieldKey: 'f1', fieldName: 'North 80',
   cropLabel: 'Corn', cropYear: 2026, acres: 80, actualYield: 205, status: 'Final', finalCiGPerBu: 4100,
 };
 const signed = {
@@ -43,15 +43,15 @@ describe('CiEnrollmentMockService (prototype)', () => {
     expect(enrollments.attest(second.key, [north])?.enrollmentId).toBe('CI-2026-000002');
   });
 
-  it('should refuse the same field for a second producer the same crop year', () => {
+  it('should refuse a field already in another attested enrollment the same crop year', () => {
     const owner = enrollments.start(9, 2026, ['s1']);
     enrollments.update({ ...owner, attestation: signed });
     enrollments.attest(owner.key, [north]);
 
     const tenant = enrollments.start(10, 2026, ['t1']);
     enrollments.update({ ...tenant, attestation: signed });
-    const sameFsa = { ...north, seasonId: 't1', fieldKey: 'tenant-f', fieldName: 'Rented 80' };
-    expect(enrollments.blockers(enrollments.current(10, 2026)!, [sameFsa])).toEqual(['Rented 80 is already in CI-2026-000001']);
-    expect(enrollments.attest(tenant.key, [sameFsa])).toBeUndefined();
+    const sameField = { ...north, seasonId: 't1' };
+    expect(enrollments.blockers(enrollments.current(10, 2026)!, [sameField])).toEqual(['North 80 is already in CI-2026-000001']);
+    expect(enrollments.attest(tenant.key, [sameField])).toBeUndefined();
   });
 });

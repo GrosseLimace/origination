@@ -328,9 +328,8 @@ export class PlantingIntentionsTableComponent {
     const year = this.fieldPlanYear;
     const scored = (label: string) => this.carbonIntensityEnabled && fdCicCropFor(label) !== null;
     const toRow = (s: { id: string; fieldKey: string; acres: number | null; actualYield: number | null; status: EnrollableSeason['status']; finalCiGPerBu?: number },
-                   field: { name: string; fsaFarmNo?: string; fsaTractNo?: string; fsaFieldNo?: string }, cropLabel: string): EnrollableSeason => ({
+                   field: { name: string }, cropLabel: string): EnrollableSeason => ({
       seasonId: s.id, fieldKey: s.fieldKey, fieldName: field.name,
-      fsaFarmNo: field.fsaFarmNo, fsaTractNo: field.fsaTractNo, fsaFieldNo: field.fsaFieldNo,
       cropLabel, cropYear: year, acres: s.acres, actualYield: s.actualYield, status: s.status, finalCiGPerBu: s.finalCiGPerBu,
     });
 
@@ -345,7 +344,7 @@ export class PlantingIntentionsTableComponent {
       });
     }
     const plan = this._demoOption() === 'B' ? this.byFieldPlan : this.cropPlan;
-    const fields = new Map<string, { name: string; customerId: number; fsaFarmNo?: string; fsaTractNo?: string; fsaFieldNo?: string }>(
+    const fields = new Map<string, { name: string; customerId: number }>(
       plan.fields().filter(f => f.customerId === customerId).map(f => [f.fieldKey, f]));
     return (plan.seasons() as { id: string; fieldKey: string; year: number; cropLabel: string; acres: number | null; actualYield: number | null; status: EnrollableSeason['status']; finalCiGPerBu?: number }[])
       .flatMap(s => {

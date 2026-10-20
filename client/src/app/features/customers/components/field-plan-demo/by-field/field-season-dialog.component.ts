@@ -73,7 +73,6 @@ export class ByFieldSeasonDialogComponent {
   /** Editable copies; every change is written straight back. */
   draft: FieldSeason | null = null;
   draftField: ProducerField | null = null;
-  showFieldMore = false;
 
   constructor() {
     effect(() => {
@@ -172,7 +171,7 @@ export class ByFieldSeasonDialogComponent {
   /** What the audit still needs before this field can be finalized (see finalizeBlockers). */
   get finalizeBlockerList(): string[] {
     const s = this.season();
-    return s && this.draftField ? finalizeBlockers(s, this.draftField, this.finalizeYield) : [];
+    return s ? finalizeBlockers(s, this.finalizeYield) : [];
   }
 
   get canFinalize(): boolean {

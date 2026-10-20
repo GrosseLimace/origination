@@ -68,26 +68,17 @@ export function applyNSummary(s: CiIntakeFields & { syntheticN: number | null; n
   Object.assign(s, nSummary(s.nApplications, s.noNApplied));
 }
 
-export interface FsaIds { fsaFarmNo?: string; fsaTractNo?: string; fsaFieldNo?: string }
-
-/** "farm/tract/field", or null until all three are filled in. */
-export function fsaKey(f: FsaIds): string | null {
-  const parts = [f.fsaFarmNo, f.fsaTractNo, f.fsaFieldNo].map(p => (p ?? '').trim());
-  return parts.every(p => p) ? parts.join('/') : null;
-}
-
 /**
  * What still stands between a scored field season and Final, in form order. Final is what the
  * enrollment and the ledger rely on, so it needs the records an auditor will ask for, not just
  * enough to score.
  */
-export function finalizeBlockers(season: ScorableSeason & CiIntakeFields, field: FsaIds, actualYield: number | null): string[] {
+export function finalizeBlockers(season: ScorableSeason & CiIntakeFields, actualYield: number | null): string[] {
   const blockers = [...missingInputs(season)];
   const nIdx = blockers.indexOf('nitrogen rate');
   if (nIdx >= 0) blockers.splice(nIdx, 1, 'nitrogen applications (or confirm none applied)');
   if (season.nApplications.some(a => !a.lbsN || a.lbsN <= 0)) blockers.push('pounds of N on every application');
   if (!actualYield || actualYield <= 0) blockers.push('actual yield');
-  if (!fsaKey(field)) blockers.push('FSA farm, tract and field numbers');
   const kinds = new Set(season.evidence.map(e => e.kind));
   if (!kinds.has('YieldRecord')) blockers.push('a yield record');
   if (season.nApplications.length > 0 && !kinds.has('NInvoice') && !kinds.has('NApplicationRecord')) {
@@ -111,8 +102,8 @@ export function formatEnrollmentId(cropYear: number, seq: number): string {
 /**
  * What still stands between a draft enrollment and Attested. `listed` is the enrollment's seasons as
  * they are now; `others` is every other enrollment (any producer), whose attested snapshots are
- * checked so a field — matched by field or by FSA farm/tract/field, which catches a landlord and a
- * tenant both enrolling it — is never claimed twice in a crop year.
+ * checked so a field is never claimed twice in a crop year. Only our own field IDs are matched: a
+ * field another buyer or producer enrolls is covered by the producer's "not enrolled elsewhere" attestation.
  */
 export function enrollmentBlockers(enrollment: CiEnrollment, listed: readonly EnrollableSeason[], others: readonly CiEnrollment[]): string[] {
   const blockers: string[] = [];
@@ -134,13 +125,10 @@ export function enrollmentBlockers(enrollment: CiEnrollment, listed: readonly En
     if (o.key === enrollment.key || o.status !== 'Attested' || o.cropYear !== enrollment.cropYear) continue;
     for (const s of o.snapshot ?? []) {
       claims.set(`field:${s.fieldKey}`, o.enrollmentId!);
-      const fsa = fsaKey(s);
-      if (fsa) claims.set(`fsa:${fsa}`, o.enrollmentId!);
     }
   }
   for (const s of listed) {
-    const fsa = fsaKey(s);
-    const by = claims.get(`field:${s.fieldKey}`) ?? (fsa ? claims.get(`fsa:${fsa}`) : undefined);
+    const by = claims.get(`field:${s.fieldKey}`);
     if (by) blockers.push(`${s.fieldName} is already in ${by}`);
   }
   return blockers;

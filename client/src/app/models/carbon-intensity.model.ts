@@ -22,9 +22,6 @@ export interface ProducerField {
   name: string;
   state: string;
   county: string;
-  fsaFarmNo?: string;
-  fsaTractNo?: string;
-  fsaFieldNo?: string;
 }
 
 export interface ManureApplication {
@@ -181,7 +178,7 @@ export interface CiEnrollment {
   attestation: ProducerAttestation;
   attestedBy?: string;
   attestedAt?: string;
-  /** The listed seasons as they stood when attested: field, FSA numbers, yield and frozen CI. */
+  /** The listed seasons as they stood when attested: field, yield and frozen CI. */
   snapshot?: EnrollableSeason[];
   withdrawnReason?: string;
 }
@@ -191,9 +188,6 @@ export interface EnrollableSeason {
   seasonId: string;
   fieldKey: string;
   fieldName: string;
-  fsaFarmNo?: string;
-  fsaTractNo?: string;
-  fsaFieldNo?: string;
   cropLabel: string;
   cropYear: number;
   acres: number | null;

@@ -35,9 +35,6 @@ export interface ProducerField {
   county: string;
   /** Trade unit the field's acres count under; defaults from the producer. */
   tradeUnit: string;
-  fsaFarmNo?: string;
-  fsaTractNo?: string;
-  fsaFieldNo?: string;
   latitude?: number;
   longitude?: number;
   /** PROTOTYPE ONLY: seeded demo field, labelled "Sample" so it isn't mistaken for real data. */

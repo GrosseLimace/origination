@@ -146,20 +146,6 @@
                   </select>
                 </label>
               </div>
-              <button type="button" class="mt-2 text-sm text-scoular-green-accessible dark:text-scoular-green hover:underline bg-transparent border-0 p-0"
-                      (click)="showFieldMore = !showFieldMore">
-                {{ showFieldMore ? '▾' : '▸' }} FSA numbers (needed to finalize for 45Z)
-              </button>
-              @if (showFieldMore) {
-                <div class="mt-2 grid gap-3 sm:grid-cols-3">
-                  <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">FSA farm #</span>
-                    <input class="ci-input" [(ngModel)]="draftField.fsaFarmNo" (ngModelChange)="saveField()" /></label>
-                  <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">Tract #</span>
-                    <input class="ci-input" [(ngModel)]="draftField.fsaTractNo" (ngModelChange)="saveField()" /></label>
-                  <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">Field #</span>
-                    <input class="ci-input" [(ngModel)]="draftField.fsaFieldNo" (ngModelChange)="saveField()" /></label>
-                </div>
-              }
             </div>
 
             <!-- 2. Yield -->
@@ -352,18 +338,6 @@
           </select></label>
         <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">Acres</span>
           <input type="number" min="0" class="ci-input" [(ngModel)]="newField.acres" /></label>
-        <div class="sm:col-span-2">
-          <button type="button" class="text-sm text-scoular-green-accessible dark:text-scoular-green hover:underline bg-transparent border-0 p-0" (click)="showNewFieldMore = !showNewFieldMore">
-            {{ showNewFieldMore ? '▾' : '▸' }} FSA numbers (needed to finalize for 45Z)
-          </button>
-          @if (showNewFieldMore) {
-            <div class="mt-2 grid gap-3 sm:grid-cols-3">
-              <input class="ci-input" placeholder="Farm #" [(ngModel)]="newField.fsaFarmNo" />
-              <input class="ci-input" placeholder="Tract #" [(ngModel)]="newField.fsaTractNo" />
-              <input class="ci-input" placeholder="Field #" [(ngModel)]="newField.fsaFieldNo" />
-            </div>
-          }
-        </div>
       </div>
 
       <div class="flex justify-end gap-2">

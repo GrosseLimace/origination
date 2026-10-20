@@ -27,9 +27,6 @@ export interface ProducerField {
   state: string;
   county: string;
   acres: number;
-  fsaFarmNo?: string;
-  fsaTractNo?: string;
-  fsaFieldNo?: string;
   latitude?: number;
   longitude?: number;
   /** PROTOTYPE ONLY: seeded demo field, labelled "Sample" so it isn't mistaken for real data. */

@@ -70,7 +70,6 @@ export class BesideFieldDialogComponent {
   /** Editable copies of the selected season and its field; every change is written straight back. */
   draft: FieldSeason | null = null;
   draftField: ProducerField | null = null;
-  showFieldMore = false;
   showManure = false;
 
   readonly seasons = computed(() => this.ci.seasonsForIntention(this.intention().id));
@@ -102,7 +101,6 @@ export class BesideFieldDialogComponent {
       if (s?.id !== this.draft?.id) {
         this.draft = s ? { ...s, manure: s.manure.map(m => ({ ...m })), ...cloneIntake(s) } : null;
         this.showManure = (s?.manure.length ?? 0) > 0;
-        this.showFieldMore = false;
       }
       const f = this.selectedField();
       if (f?.fieldKey !== this.draftField?.fieldKey) this.draftField = f ? { ...f } : null;
@@ -229,8 +227,7 @@ export class BesideFieldDialogComponent {
   // ── Add field ───────────────────────────────────────────────────────────
   showAddField = false;
   addPick: string | null = null;
-  newField = { name: '', state: '', county: '', acres: null as number | null, fsaFarmNo: '', fsaTractNo: '', fsaFieldNo: '' };
-  showNewFieldMore = false;
+  newField = { name: '', state: '', county: '', acres: null as number | null };
 
   /** The producer's fields not yet on this intention. */
   readonly availableFields = computed(() => {
@@ -240,8 +237,7 @@ export class BesideFieldDialogComponent {
 
   openAddField(): void {
     this.addPick = null;
-    this.newField = { name: '', state: this.customer().stateProvince && this.ci.countiesByState[this.customer().stateProvince!] ? this.customer().stateProvince! : 'KS', county: '', acres: null, fsaFarmNo: '', fsaTractNo: '', fsaFieldNo: '' };
-    this.showNewFieldMore = false;
+    this.newField = { name: '', state: this.customer().stateProvince && this.ci.countiesByState[this.customer().stateProvince!] ? this.customer().stateProvince! : 'KS', county: '', acres: null };
     this.showAddField = true;
   }
 
@@ -260,9 +256,6 @@ export class BesideFieldDialogComponent {
         state: this.newField.state,
         county: this.newField.county,
         acres: this.newField.acres!,
-        fsaFarmNo: this.newField.fsaFarmNo || undefined,
-        fsaTractNo: this.newField.fsaTractNo || undefined,
-        fsaFieldNo: this.newField.fsaFieldNo || undefined,
       }).fieldKey;
     }
     const season = this.ci.addSeason(fieldKey, this.intention().id, this.crop(), !!this.addPick);
@@ -297,7 +290,7 @@ export class BesideFieldDialogComponent {
   /** What the audit still needs before this field can be finalized (see finalizeBlockers). */
   get finalizeBlockerList(): string[] {
     const s = this.selectedSeason();
-    return s && this.draftField ? finalizeBlockers(s, this.draftField, this.finalizeYield) : [];
+    return s ? finalizeBlockers(s, this.finalizeYield) : [];
   }
 
   get canFinalize(): boolean {
