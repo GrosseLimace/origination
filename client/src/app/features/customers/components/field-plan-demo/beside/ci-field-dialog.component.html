@@ -144,7 +144,7 @@
               </div>
               <button type="button" class="mt-2 text-sm text-scoular-green-accessible dark:text-scoular-green hover:underline bg-transparent border-0 p-0"
                       (click)="showFieldMore = !showFieldMore">
-                {{ showFieldMore ? '▾' : '▸' }} FSA numbers (optional)
+                {{ showFieldMore ? '▾' : '▸' }} FSA numbers (needed to finalize for 45Z)
               </button>
               @if (showFieldMore) {
                 <div class="mt-2 grid gap-3 sm:grid-cols-3">
@@ -183,24 +183,9 @@
             <div>
               <h4 class="flex items-center gap-2 font-semibold text-gray-900 dark:text-white">
                 <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-scoular-green-accessible text-xs text-white">3</span>
-                Nitrogen
+                Nitrogen, other inputs and records
               </h4>
-              <div class="mt-2 grid gap-3 sm:grid-cols-2">
-                <label class="block text-sm">
-                  <span class="text-gray-700 dark:text-gray-300">Total commercial nitrogen (lbs N/ac)</span>
-                  <input type="number" min="0" class="ci-input" [class.ci-missing]="draft.syntheticN === null"
-                         [(ngModel)]="draft.syntheticN" (ngModelChange)="saveSeason()" />
-                  <span class="text-xs text-gray-500 dark:text-gray-400">All applications for the crop added together, as pounds of actual N, not product. Enter 0 if none.</span>
-                </label>
-                <label class="block text-sm">
-                  <span class="text-gray-700 dark:text-gray-300">
-                    Share with a nitrification inhibitor: <span class="font-semibold">{{ niPercent }}%</span>
-                  </span>
-                  <input type="range" min="0" max="100" step="5" class="mt-3 w-full accent-[var(--color-scoular-green-accessible,#2e7d32)]"
-                         [ngModel]="niPercent" (ngModelChange)="niPercent = $event" />
-                  <span class="text-xs text-gray-500 dark:text-gray-400">e.g. N-Serve, Instinct, Centuro. Half the N treated = 50%.</span>
-                </label>
-              </div>
+              <app-ci-intake-sections class="mt-2" [season]="draft" [disabled]="isFinal()" (changed)="saveSeason()" />
             </div>
 
             <!-- 4. Practices -->
@@ -365,7 +350,7 @@
           <input type="number" min="0" class="ci-input" [(ngModel)]="newField.acres" /></label>
         <div class="sm:col-span-2">
           <button type="button" class="text-sm text-scoular-green-accessible dark:text-scoular-green hover:underline bg-transparent border-0 p-0" (click)="showNewFieldMore = !showNewFieldMore">
-            {{ showNewFieldMore ? '▾' : '▸' }} FSA numbers (optional)
+            {{ showNewFieldMore ? '▾' : '▸' }} FSA numbers (needed to finalize for 45Z)
           </button>
           @if (showNewFieldMore) {
             <div class="mt-2 grid gap-3 sm:grid-cols-3">
@@ -390,7 +375,7 @@
   <div class="fixed inset-0 z-[70] flex items-start justify-center bg-black/40 px-4 pt-[12vh]" (click)="showApply = false">
     <div class="w-full max-w-md rounded-lg bg-white dark:bg-gray-800 shadow-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4" (click)="$event.stopPropagation()">
       <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Copy {{ draftField?.name }}'s practices</h3>
-      <p class="text-sm text-gray-600 dark:text-gray-300">Nitrogen, inhibitor, tillage, cover crop and manure are copied. Acres and yield stay as they are.</p>
+      <p class="text-sm text-gray-600 dark:text-gray-300">Nitrogen applications, other fertilizer, energy, tillage, cover crop and manure are copied. Acres, yield and records stay as they are.</p>
       <div class="space-y-1.5">
         @for (s of seasons(); track s.id) {
           @if (s.id !== draft.id) {

@@ -8,6 +8,8 @@ import { copiesAllPractices, practicesToCopy } from '@shared/utils/ci-copy-forwa
 import { CoverCrop, Customer, FdCicCrop, FieldSeason, ManureApplication, PlantingIntention, ProducerField, Tillage } from './model';
 import { COVER_LABELS, TILLAGE_LABELS, estimateCi, missingInputs, nationalAverage, seasonStatus, summarizeIntention } from '@shared/utils/ci-illustrative';
 import { CiPreviewPanelComponent } from '../../field-plan/ci-preview-panel.component';
+import { CiIntakeSectionsComponent } from '../../field-plan/ci-intake-sections.component';
+import { cloneIntake } from '@shared/utils/ci-enrollment';
 
 /**
  * The "45Z Field Data" dialog for one planting intention: the producer's fields assigned to it
@@ -18,7 +20,7 @@ import { CiPreviewPanelComponent } from '../../field-plan/ci-preview-panel.compo
   selector: 'app-demo-beside-dialog',
   standalone: true,
   imports: [
-    CommonModule, FormsModule, ButtonComponent, CiPreviewPanelComponent,
+    CommonModule, FormsModule, ButtonComponent, CiPreviewPanelComponent, CiIntakeSectionsComponent,
     DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent,
   ],
   templateUrl: './ci-field-dialog.component.html',
@@ -94,7 +96,7 @@ export class BesideFieldDialogComponent {
       const s = this.selectedSeason();
       // Re-copy only when the selection changes, not on every save, so typing isn't interrupted.
       if (s?.id !== this.draft?.id) {
-        this.draft = s ? { ...s, manure: s.manure.map(m => ({ ...m })) } : null;
+        this.draft = s ? { ...s, manure: s.manure.map(m => ({ ...m })), ...cloneIntake(s) } : null;
         this.showManure = (s?.manure.length ?? 0) > 0;
         this.showFieldMore = false;
       }
@@ -136,15 +138,6 @@ export class BesideFieldDialogComponent {
 
   saveField(): void {
     if (this.draftField) this.ci.updateField(this.draftField);
-  }
-
-  get niPercent(): number {
-    return Math.round((this.draft?.niFraction ?? 0) * 100);
-  }
-  set niPercent(value: number) {
-    if (!this.draft) return;
-    this.draft.niFraction = Math.min(Math.max(Number(value) || 0, 0), 100) / 100;
-    this.saveSeason();
   }
 
   setTillage(value: Tillage): void {
@@ -221,6 +214,9 @@ export class BesideFieldDialogComponent {
         ...s,
         syntheticN: from.syntheticN, niFraction: from.niFraction, tillage: from.tillage,
         coverCrop: from.coverCrop, manure: from.manure.map(m => ({ ...m })),
+        // Inputs, not records: each field keeps its own evidence.
+        nApplications: from.nApplications.map(a => ({ ...a })), noNApplied: from.noNApplied,
+        phosphateLbs: from.phosphateLbs, potashLbs: from.potashLbs, limeTons: from.limeTons, energy: { ...from.energy },
       });
     }
     this.showApply = false;

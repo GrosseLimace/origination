@@ -8,6 +8,8 @@ import { CoverCrop, FALLOW, FieldSeason, ManureApplication, ProducerField, Tilla
 import { COVER_LABELS, TILLAGE_LABELS, estimateCi, fdCicCropFor, missingInputs } from '@shared/utils/ci-illustrative';
 import { copiesAllPractices, practicesToCopy } from '@shared/utils/ci-copy-forward';
 import { CiPreviewPanelComponent } from '../../field-plan/ci-preview-panel.component';
+import { CiIntakeSectionsComponent } from '../../field-plan/ci-intake-sections.component';
+import { cloneIntake } from '@shared/utils/ci-enrollment';
 import { environment } from '@env/environment';
 
 /**
@@ -19,7 +21,7 @@ import { environment } from '@env/environment';
   selector: 'app-demo-byfield-dialog',
   standalone: true,
   imports: [
-    CommonModule, FormsModule, ButtonComponent, CiPreviewPanelComponent,
+    CommonModule, FormsModule, ButtonComponent, CiPreviewPanelComponent, CiIntakeSectionsComponent,
     DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent,
   ],
   templateUrl: './field-season-dialog.component.html',
@@ -73,7 +75,7 @@ export class ByFieldSeasonDialogComponent {
     effect(() => {
       const s = this.season();
       if (s?.id !== this.draft?.id || s?.status !== this.draft?.status) {
-        this.draft = s ? { ...s, manure: s.manure.map(m => ({ ...m })) } : null;
+        this.draft = s ? { ...s, manure: s.manure.map(m => ({ ...m })), ...cloneIntake(s) } : null;
       }
       const f = this.field();
       if (f?.fieldKey !== this.draftField?.fieldKey) this.draftField = f ? { ...f } : null;
@@ -90,15 +92,6 @@ export class ByFieldSeasonDialogComponent {
 
   saveField(): void {
     if (this.draftField && this.draft) this.plan.updateField(this.draftField, this.draft.year);
-  }
-
-  get niPercent(): number {
-    return Math.round((this.draft?.niFraction ?? 0) * 100);
-  }
-  set niPercent(value: number) {
-    if (!this.draft) return;
-    this.draft.niFraction = Math.min(Math.max(Number(value) || 0, 0), 100) / 100;
-    this.saveSeason();
   }
 
   setTillage(value: Tillage): void {
