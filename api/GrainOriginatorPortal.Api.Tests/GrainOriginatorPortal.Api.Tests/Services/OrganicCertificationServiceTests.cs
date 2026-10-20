@@ -531,4 +531,154 @@ public class OrganicCertificationServiceTests
         Assert.False(result.NoCertificateOnFile);
         Assert.NotNull(result.Certification);
     }
+
+    // ── Run completeness ─────────────────────────────────────────────────────────────────────
+    //
+    // The rules themselves are exhaustively covered in OrganicRunCompletenessTests, which needs no
+    // database. These cover the wiring: that the right rows are selected, that ingest and skip rows
+    // are counted together, and that the human-readable summary says the right thing.
+
+    private static OrganicCertificationLoad Load(
+        string? runId, int? position, int? total, string status = "Succeeded",
+        string scoularId = "ABCFARM", DateTime? receivedOn = null) => new()
+        {
+            BatchId = Guid.NewGuid(),
+            FeedRunId = runId,
+            RunPosition = position,
+            RunTotal = total,
+            ScoularId = scoularId,
+            Status = status,
+            ReceivedOn = receivedOn ?? Today.UtcDateTime,
+        };
+
+    [Fact]
+    public async Task AFinishedRunReportsComplete()
+    {
+        using var db = NewContext();
+        db.OrganicCertificationLoads.AddRange(
+            Load("run-a", 1, 3), Load("run-a", 2, 3), Load("run-a", 3, 3));
+        await db.SaveChangesAsync();
+
+        var result = await Service(db).GetRunCompletenessAsync("run-a");
+
+        Assert.Equal("Complete", result.Outcome);
+        Assert.Equal(3, result.RunTotal);
+        Assert.Equal(0, result.MissingCount);
+        Assert.Contains("Run finished", result.Summary);
+    }
+
+    [Fact]
+    public async Task ASkipFillsItsPositionSoTheRunStillCompletes()
+    {
+        // The reason the skip endpoint exists, proved end to end through the database rather than
+        // only in the rules.
+        using var db = NewContext();
+        db.OrganicCertificationLoads.AddRange(
+            Load("run-b", 1, 3),
+            Load("run-b", 2, 3, status: "Skipped", scoularId: "BFARM"),
+            Load("run-b", 3, 3, scoularId: "CFARM"));
+        await db.SaveChangesAsync();
+
+        var result = await Service(db).GetRunCompletenessAsync("run-b");
+
+        Assert.Equal("Complete", result.Outcome);
+        Assert.Equal(1, result.Skipped);
+        Assert.Contains("including 1 the sender skipped", result.Summary);
+    }
+
+    [Fact]
+    public async Task AShortRunReportsIncompleteAndWarnsAgainstActingOnAbsence()
+    {
+        using var db = NewContext();
+        db.OrganicCertificationLoads.AddRange(Load("run-c", 1, 3), Load("run-c", 2, 3));
+        await db.SaveChangesAsync();
+
+        var result = await Service(db).GetRunCompletenessAsync("run-c");
+
+        Assert.Equal("Incomplete", result.Outcome);
+        Assert.Equal([3], result.MissingPositions);
+        Assert.Contains("Do not treat a producer's absence as meaningful", result.Summary);
+    }
+
+    [Fact]
+    public async Task OnlyRowsForTheRequestedRunAreCounted()
+    {
+        // The obvious wiring bug: assessing every row in the table rather than one run's.
+        using var db = NewContext();
+        db.OrganicCertificationLoads.AddRange(
+            Load("run-d", 1, 2), Load("run-d", 2, 2),
+            Load("run-e", 1, 9));
+        await db.SaveChangesAsync();
+
+        var result = await Service(db).GetRunCompletenessAsync("run-d");
+
+        Assert.Equal("Complete", result.Outcome);
+        Assert.Equal(2, result.MessagesReceived);
+    }
+
+    [Fact]
+    public async Task AReplayWithNoRunTotalIsNotAssessableRatherThanIncomplete()
+    {
+        // Replays and intraday edits carry no run fields. Note this is decided by the ABSENCE of a
+        // total, not by the sender's "replay-" prefix — we never parse the run id.
+        using var db = NewContext();
+        db.OrganicCertificationLoads.AddRange(
+            Load("replay-20261012T221421Z-d49ce704", null, null),
+            Load("replay-20261012T221421Z-d49ce704", null, null));
+        await db.SaveChangesAsync();
+
+        var result = await Service(db).GetRunCompletenessAsync("replay-20261012T221421Z-d49ce704");
+
+        Assert.Equal("NotAssessable", result.Outcome);
+        Assert.Contains("Replays and intraday edits", result.Summary);
+    }
+
+    [Fact]
+    public async Task AnUnknownRunIdIsNotAssessableRatherThanAnError()
+    {
+        using var db = NewContext();
+
+        var result = await Service(db).GetRunCompletenessAsync("never-happened");
+
+        Assert.Equal("NotAssessable", result.Outcome);
+        Assert.Equal(0, result.MessagesReceived);
+    }
+
+    [Fact]
+    public async Task AnEmptyRunIdIsHandledWithoutQuerying()
+    {
+        using var db = NewContext();
+
+        var result = await Service(db).GetRunCompletenessAsync("   ");
+
+        Assert.Equal("NotAssessable", result.Outcome);
+        Assert.Contains("No feed run id", result.Summary);
+    }
+
+    [Fact]
+    public async Task RecentRunsAreNewestFirstAndExcludeNonRuns()
+    {
+        using var db = NewContext();
+        db.OrganicCertificationLoads.AddRange(
+            Load("older", 1, 1, receivedOn: Today.UtcDateTime.AddDays(-2)),
+            Load("newer", 1, 1, receivedOn: Today.UtcDateTime),
+            // No total: a replay or intraday edit. Must not appear in a list of RUNS.
+            Load("replay-x", null, null, receivedOn: Today.UtcDateTime.AddHours(-1)));
+        await db.SaveChangesAsync();
+
+        var runs = await Service(db).GetRecentRunsAsync();
+
+        Assert.Equal(["newer", "older"], runs.Select(r => r.FeedRunId));
+    }
+
+    [Fact]
+    public async Task RecentRunsClampsAnAbsurdTake()
+    {
+        using var db = NewContext();
+        db.OrganicCertificationLoads.Add(Load("run-f", 1, 1));
+        await db.SaveChangesAsync();
+
+        Assert.Single(await Service(db).GetRecentRunsAsync(take: 100_000));
+        Assert.Single(await Service(db).GetRecentRunsAsync(take: -5));
+    }
 }

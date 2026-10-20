@@ -33,6 +33,23 @@ public interface IOrganicCertificationService
     /// </summary>
     Task<IReadOnlyList<OrganicMissingCertificateResponse>> GetMissingCertificatesAsync(
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Whether one nightly run finished, by its feed run id.
+    ///
+    /// This is the gate on ever acting on a producer's absence: until a run is known Complete, the
+    /// difference between "this producer stopped being certified" and "the run never reached them"
+    /// is unknowable.
+    /// </summary>
+    Task<OrganicRunCompletenessResponse> GetRunCompletenessAsync(
+        string feedRunId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The most recent runs with their outcomes, newest first. The operational view: did last
+    /// night's feed finish, and the one before that.
+    /// </summary>
+    Task<IReadOnlyList<OrganicRunCompletenessResponse>> GetRecentRunsAsync(
+        int take = 14, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -230,6 +247,144 @@ public class OrganicCertificationService : IOrganicCertificationService
             .OrderBy(r => r.ScoularId, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
+
+    public async Task<OrganicRunCompletenessResponse> GetRunCompletenessAsync(
+        string feedRunId, CancellationToken cancellationToken = default)
+    {
+        var runId = feedRunId?.Trim();
+        if (string.IsNullOrEmpty(runId))
+        {
+            return new OrganicRunCompletenessResponse
+            {
+                FeedRunId = string.Empty,
+                Outcome = nameof(OrganicRunCompleteness.Outcome.NotAssessable),
+                Summary = "No feed run id supplied.",
+            };
+        }
+
+        // Compared whole and case-insensitively. The run id is the sender's, and we deliberately
+        // never parse it — see OrganicRunCompletenessTests for why the "replay-" prefix is not a
+        // rule here.
+        var rows = await _db.OrganicCertificationLoads
+            .AsNoTracking()
+            .Where(l => l.FeedRunId != null && l.FeedRunId == runId)
+            .Select(l => new
+            {
+                l.RunPosition,
+                l.RunTotal,
+                l.ScoularId,
+                l.Status,
+                l.ReceivedOn,
+            })
+            .ToListAsync(cancellationToken);
+
+        return Describe(runId, rows.Select(r =>
+            (r.RunPosition, r.RunTotal, r.ScoularId, r.Status, r.ReceivedOn)).ToList());
+    }
+
+    public async Task<IReadOnlyList<OrganicRunCompletenessResponse>> GetRecentRunsAsync(
+        int take = 14, CancellationToken cancellationToken = default)
+    {
+        var limit = Math.Clamp(take, 1, 90);
+
+        // Which runs, newest first, before pulling their rows. Ordering by the latest message in
+        // each run rather than by the id, because the id is opaque and may not sort chronologically.
+        var runIds = await _db.OrganicCertificationLoads
+            .AsNoTracking()
+            .Where(l => l.FeedRunId != null && l.RunTotal != null)
+            .GroupBy(l => l.FeedRunId!)
+            .Select(g => new { FeedRunId = g.Key, LastSeen = g.Max(l => l.ReceivedOn) })
+            .OrderByDescending(g => g.LastSeen)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+
+        if (runIds.Count == 0) return [];
+
+        var ids = runIds.Select(r => r.FeedRunId).ToList();
+
+        var rows = await _db.OrganicCertificationLoads
+            .AsNoTracking()
+            .Where(l => l.FeedRunId != null && ids.Contains(l.FeedRunId))
+            .Select(l => new
+            {
+                l.FeedRunId,
+                l.RunPosition,
+                l.RunTotal,
+                l.ScoularId,
+                l.Status,
+                l.ReceivedOn,
+            })
+            .ToListAsync(cancellationToken);
+
+        var byRun = rows.GroupBy(r => r.FeedRunId!)
+                        .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        return runIds
+            .Where(r => byRun.ContainsKey(r.FeedRunId))
+            .Select(r => Describe(r.FeedRunId, byRun[r.FeedRunId]
+                .Select(x => (x.RunPosition, x.RunTotal, x.ScoularId, x.Status, x.ReceivedOn))
+                .ToList()))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Turns one run's audit rows into the answer a person wants at 9am.
+    ///
+    /// The rules themselves live in <see cref="OrganicRunCompleteness"/>, which knows nothing about
+    /// the database and is unit-tested exhaustively. This method only supplies the rows and adds the
+    /// human-readable context around the verdict.
+    /// </summary>
+    private static OrganicRunCompletenessResponse Describe(
+        string feedRunId,
+        IReadOnlyList<(int? Position, int? Total, string? ScoularId, string Status, DateTime ReceivedOn)> rows)
+    {
+        var result = OrganicRunCompleteness.Assess(
+            rows.Select(r => new OrganicRunCompleteness.RunMessage(r.Position, r.Total, r.ScoularId)));
+
+        var skipped = rows.Count(r => string.Equals(r.Status, "Skipped", StringComparison.OrdinalIgnoreCase));
+        var rejected = rows.Count(r => string.Equals(r.Status, "Rejected", StringComparison.OrdinalIgnoreCase));
+        var stored = rows.Count(r => string.Equals(r.Status, "Succeeded", StringComparison.OrdinalIgnoreCase));
+
+        return new OrganicRunCompletenessResponse
+        {
+            FeedRunId = feedRunId,
+            Outcome = result.Outcome.ToString(),
+            Summary = Summarise(result, skipped, rejected),
+            RunTotal = result.RunTotal,
+            DistinctPositionsReceived = result.DistinctPositionsReceived,
+            MissingCount = result.MissingCount,
+            MissingPositions = result.MissingPositions,
+            Problems = result.Problems,
+            MessagesReceived = rows.Count,
+            Stored = stored,
+            Skipped = skipped,
+            Rejected = rejected,
+            FirstMessageOn = rows.Count == 0 ? null : rows.Min(r => r.ReceivedOn),
+            LastMessageOn = rows.Count == 0 ? null : rows.Max(r => r.ReceivedOn),
+        };
+    }
+
+    private static string Summarise(OrganicRunCompleteness.Result result, int skipped, int rejected)
+        => result.Outcome switch
+        {
+            OrganicRunCompleteness.Outcome.Complete =>
+                $"Run finished. All {result.RunTotal} positions accounted for"
+                + (skipped > 0 ? $", including {skipped} the sender skipped" : string.Empty)
+                + (rejected > 0 ? $", and {rejected} we could not use" : string.Empty)
+                + ".",
+
+            OrganicRunCompleteness.Outcome.Incomplete =>
+                $"Run did not finish, or is still running. {result.DistinctPositionsReceived} of "
+                + $"{result.RunTotal} positions received; {result.MissingCount} missing. "
+                + "Do not treat a producer's absence as meaningful.",
+
+            OrganicRunCompleteness.Outcome.Invalid =>
+                "Run is internally inconsistent and its numbers cannot be trusted. "
+                + string.Join(" ", result.Problems),
+
+            _ => "Not a nightly run — no message carried a run total. Replays and intraday edits "
+               + "look like this by design.",
+        };
 
     private static OrganicCertificationResponse Map(
         Infrastructure.Data.Entities.OrganicCertification source,
