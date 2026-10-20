@@ -16,15 +16,7 @@
           </div>
         }
 
-        <!-- Loading overlay (map only, shifts left when panel is open) -->
-        @if (isRefreshing()) {
-          <div class="absolute top-0 left-0 bottom-0 z-[998] flex items-center justify-center bg-white/60 dark:bg-gray-900/60 backdrop-blur-sm transition-all duration-300"
-               [style.right]="showPanel() ? 'var(--bid-panel-w)' : '0'">
-            <div class="inline-block animate-spin rounded-full h-10 w-10 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green"></div>
-          </div>
-        }
-
-        @if (!addLocationMode()) {
+        @if (!addLocationMode() && !barchartMode()) {
           <!-- Floating filter bar (top-left, constrained to not overlap panel) -->
           <div #filterBar class="absolute top-2.5 left-14 z-[1000] flex items-center gap-2 flex-wrap bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 transition-all duration-300"
                [style.max-width]="showPanel() ? 'calc(100% - var(--bid-panel-w) - 90px)' : 'calc(100% - 80px)'">
@@ -38,24 +30,40 @@
               </svg>
             </button>
             @if (showFilters()) {
-            <app-trade-unit-selector />
-            @if (hasIndividualTu() || cropYears().length > 0) {
             <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
+            <!-- These used to hide entirely until the active sheet had bid data, which made sense when
+                 the map only ever showed locations that already had bids. Now the map is a catalog
+                 browser first: the crop and year lists offer every possible choice (filterableCrops /
+                 filterableYears), not just what the active sheet happens to have priced, so filtering
+                 works before you've added anything. Selecting a crop also narrows the catalog dots
+                 themselves -- see _loadCatalogLocations. -->
+            <!-- What the map is showing: any number of your sheets, or every location anyone has
+                 added. Leads the bar because it is the context every filter after it is read against,
+                 and it was previously only visible with the side panel open. The panel's own sheet bar
+                 keeps the full menu (share / rename / delete) -- this is switch-and-see. -->
+            @if (sheets().length > 0) {
+              <app-sheet-multi-select
+                [sheets]="sheets()" [selectedIds]="selectedSheetIds()"
+                [showAllOption]="true" [showingAll]="mapScope() === 'all'" [compact]="true"
+                [showRowActions]="true"
+                (toggled)="toggleSheet($event)" (pickedOnly)="selectSheet($event)"
+                (pickedAll)="setMapScope('all')"
+                (sharedSheet)="openShareSheet($event)" (renamedSheet)="openRenameSheet($event)"
+                (deletedSheet)="openDeleteSheetConfirm($event)" />
+            }
+
             <select [ngModel]="selectedCrop()" (ngModelChange)="selectedCrop.set($event); onMapCropChange()" class="px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
-              @if (crops().length === 0) {
-                <option value="" disabled selected>No crops yet</option>
-              }
-              @for (crop of crops(); track crop) {
+              <option value="">All Crops</option>
+              @for (crop of mapCropChoices(); track crop) {
                 <option [value]="crop">{{ crop }}</option>
               }
             </select>
             <select [ngModel]="selectedYear()" (ngModelChange)="onYearDropdownChange(+$event)" class="px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
-              @for (year of cropYears(); track year) {
+              @for (year of filterableYears(); track year) {
                 <option [value]="year">{{ year }}</option>
               }
             </select>
             <select [ngModel]="selectedMonth()" (ngModelChange)="onMonthDropdownChange(+$event)" class="px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
-              <option [value]="0">Year</option>
               <option [value]="1">January</option>
               <option [value]="2">February</option>
               <option [value]="3">March</option>
@@ -69,13 +77,28 @@
               <option [value]="11">November</option>
               <option [value]="12">December</option>
             </select>
-            @if (hasIndividualTu() || cropYears().length > 0) {
             <select [ngModel]="selectedBasis()" (ngModelChange)="selectedBasis.set($event); onFilterChange()" class="px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
               <option value="all">All Status</option>
               <option value="matching">Matching</option>
               <option value="beating">Beating</option>
             </select>
-            }
+
+            <!-- Cash / basis / both. A segmented control rather than a dropdown: these are states the
+                 user flips between constantly, and the current one should be readable without opening
+                 anything. Same control as the Edit Bids header, and the same shared mode — picking Both
+                 here is what makes the map pins carry the pair. -->
+            @if (barchartEnabled) {
+              <div class="flex items-center rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden"
+                   title="Cash is the posted flat price. Basis is cents against the futures board, so -30 is thirty under. Both shows them together as cash / basis.">
+                @for (m of ['cash', 'basis', 'both']; track m) {
+                  <button (click)="setPriceMode($any(m))"
+                          [class]="priceMode() === m
+                            ? 'px-2.5 py-1.5 text-sm font-medium bg-scoular-green-accessible text-white capitalize'
+                            : 'px-2.5 py-1.5 text-sm font-medium bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 capitalize'">
+                    {{ m }}
+                  </button>
+                }
+              </div>
             }
             <!-- Search + Clear group: flows naturally with dropdowns, fitting on row 2 if there's room or wrapping further if needed -->
             <div class="flex items-center gap-2">
@@ -88,7 +111,7 @@
                 placeholder="Search locations..."
                 class="w-44 px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
               />
-              @if (activeTradeUnits().length > 0 || searchQuery()) {
+              @if (searchQuery() || selectedBasis() !== 'all') {
               <button (click)="clearAllFilters()" class="px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-scoular-red hover:bg-gray-100 dark:text-gray-400 dark:hover:text-scoular-red dark:hover:bg-gray-700 transition-colors">Clear</button>
               }
             </div>
@@ -98,13 +121,13 @@
           <!-- Floating action buttons (bottom-left) -->
           <div class="absolute bottom-4 left-4 z-[1000] flex items-center gap-2">
             <button
-              (click)="enterAddLocationMode()"
+              (click)="startAddLocation('map')"
               class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg shadow-lg transition-colors"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M5 12h14"/><path d="M12 5v14"/>
               </svg>
-              Add Location
+              Add
             </button>
             <button
               (click)="toggleMapView()"
@@ -125,20 +148,6 @@
                 </svg>
                 Map
               }
-            </button>
-            <button
-              (click)="refreshBids()"
-              [disabled]="isRefreshing()"
-              [title]="'Last refreshed: ' + timeSinceRefresh()"
-              class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-gray-700 hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500 rounded-lg shadow-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class.animate-spin]="isRefreshing()">
-                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
-                <path d="M21 3v5h-5"/>
-                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
-                <path d="M8 16H3v5"/>
-              </svg>
-              <span class="hidden sm:inline">{{ isRefreshing() ? 'Refreshing...' : timeSinceRefresh() }}</span>
             </button>
             <button
               (click)="togglePanel()"
@@ -172,11 +181,11 @@
                 <span class="text-sm text-gray-700 dark:text-gray-300">Reference</span>
               </div>
               <div class="flex items-center gap-2">
-                <div class="w-4 h-4 rounded shrink-0" style="background:#dc2626; border:1.5px solid #991b1b;"></div>
+                <div class="w-4 h-4 rounded shrink-0" style="background:#b91c1c; border:1.5px solid #7f1d1d;"></div>
                 <span class="text-sm text-gray-700 dark:text-gray-300">Beating</span>
               </div>
               <div class="flex items-center gap-2">
-                <div class="w-4 h-4 rounded shrink-0" style="background:#eab308; border:1.5px solid #a16207;"></div>
+                <div class="w-4 h-4 rounded shrink-0" style="background:#ca8a04; border:1.5px solid #854d0e;"></div>
                 <span class="text-sm text-gray-700 dark:text-gray-300">Matching</span>
               </div>
               <!-- Scoular: green fill when no reference is set, green ring once status owns the fill.
@@ -186,15 +195,112 @@
                 <div class="w-4 h-4 rounded shrink-0" style="background:#00875F; border:1.5px solid #006B4C;"></div>
                 <span class="text-sm text-gray-700 dark:text-gray-300">Scoular facility</span>
               </div>
+              <!-- Dropped the "Catalog (not yet added)" swatch: a pale blue dot is what a pin looks like
+                   when it has nothing to say, which needs no explaining, and in "All locations" added
+                   pins share that exact colour now anyway — so the row was describing a distinction the
+                   map no longer draws. -->
+              <!-- No swatch on this row, deliberately. The first version drew a grey square with a
+                   corner dot, and grey is what a pin looks like with NO reference set -- so the row
+                   read as "grey means changed", inventing a colour meaning that doesn't exist. What
+                   marks a changed pin is motion, not colour, so the row describes the motion and the
+                   sample pulses with the same animation the pins use. -->
+              <div class="flex items-center gap-2 pt-1 mt-1 border-t border-gray-200 dark:border-gray-700">
+                <div class="bid-moved-pulse w-4 h-4 rounded shrink-0 flex items-center justify-center" style="background:#6b7280; border:1.5px solid #4b5563;">
+                  <div class="w-1.5 h-1.5 rounded-full" style="background:rgba(255,255,255,0.85);"></div>
+                </div>
+                <span class="text-sm text-gray-700 dark:text-gray-300">Pulsing = bid changed in last 24h (fed bids: the basis)</span>
+              </div>
             </div>
             }
           </div>
+
+          <!-- Catalog location detail popup — the live-bids preview for an un-added BarChart pin -->
+          @if (catalogDetailKey()) {
+            <div class="absolute top-16 left-14 z-[1150] bg-white dark:bg-gray-900 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 w-80 max-w-[calc(100%-6rem)] max-h-[70vh] flex flex-col">
+              <div class="shrink-0 flex items-start justify-between gap-2 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                <div class="min-w-0">
+                  @if (catalogDetail(); as detail) {
+                    <p class="text-sm font-semibold text-gray-900 dark:text-white truncate">{{ detail.location.elevator || detail.location.locationKey }}</p>
+                    @if (detail.location.locationName) {
+                      <p class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ detail.location.locationName }}</p>
+                    }
+                    <p class="text-xs text-gray-400 dark:text-gray-500">{{ [detail.location.city, detail.location.state].join(', ') }}</p>
+                  } @else {
+                    <p class="text-sm font-semibold text-gray-400 dark:text-gray-500">Loading…</p>
+                  }
+                </div>
+                <button (click)="closeCatalogDetail()" class="shrink-0 p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+              </div>
+              <div class="flex-1 overflow-auto px-4 py-2">
+                @if (catalogDetailLoading()) {
+                  <div class="flex items-center justify-center py-8">
+                    <div class="inline-block animate-spin rounded-full h-5 w-5 border-2 border-gray-300 dark:border-gray-600 border-t-scoular-green"></div>
+                  </div>
+                } @else if (catalogDetail(); as detail) {
+                  @if (catalogDetailRows().length === 0) {
+                    <p class="text-xs text-gray-400 dark:text-gray-500 italic py-3">{{ catalogDetailEmptyMessage() }}</p>
+                  } @else {
+                    <!-- The header names the price the Cash/Basis/Both toggle is showing, rather than
+                         saying "Price" over whichever one happened to come first. -->
+                    <table class="w-full text-xs">
+                      <thead>
+                        <tr class="text-gray-400 dark:text-gray-500">
+                          <th class="text-left font-medium pb-1">Crop</th>
+                          <th class="text-right font-medium pb-1">Delivery</th>
+                          @if (priceMode() === 'both') {
+                            <th class="text-right font-medium pb-1">Cash</th>
+                            <th class="text-right font-medium pb-1">Basis</th>
+                          } @else {
+                            <th class="text-right font-medium pb-1">{{ priceModeLabel() }}</th>
+                          }
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (row of catalogDetailRows(); track row.crop + '|' + row.cropYear + '|' + row.month) {
+                          <tr class="border-t border-gray-100 dark:border-gray-800">
+                            <td class="py-1 text-gray-700 dark:text-gray-300">{{ row.crop }}</td>
+                            <td class="py-1 text-right text-gray-500 dark:text-gray-400">{{ formatMonthYear(row.month, row.cropYear) }}</td>
+                            @if (priceMode() === 'both') {
+                              <td class="py-1 text-right font-medium text-gray-900 dark:text-white">{{ row.cash != null ? row.cash : '--' }}</td>
+                              <td class="py-1 text-right font-medium text-gray-900 dark:text-white">{{ basisCellText(row.basis) }}</td>
+                            } @else {
+                              <td class="py-1 text-right font-medium text-gray-900 dark:text-white">{{ priceMode() === 'basis' ? basisCellText(row.basis) : (row.cash ?? '--') }}</td>
+                            }
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                    @if (detail.unmappedBidCount > 0) {
+                      <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-2">+{{ detail.unmappedBidCount }} more bid{{ detail.unmappedBidCount === 1 ? '' : 's' }} in an unmapped commodity, not shown.</p>
+                    }
+                  }
+                }
+              </div>
+              <div class="shrink-0 px-4 py-3 border-t border-gray-200 dark:border-gray-700 space-y-1.5">
+                <button (click)="toggleCatalogReference(catalogDetailKey()!)" [disabled]="!catalogDetail()"
+                  class="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  [ngClass]="catalogReferenceKey() === catalogDetailKey()
+                    ? 'text-white bg-scoular-blue border-scoular-blue hover:bg-scoular-blue-dark'
+                    : 'text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                  {{ catalogReferenceKey() === catalogDetailKey() ? 'Remove as comparison reference' : 'Compare other bids to this one' }}
+                </button>
+                <button (click)="addCatalogDetailToSheet()" [disabled]="catalogDetailLoading() || catalogDetailAdding() || !catalogDetail() || catalogDetailOnActiveSheet()"
+                  class="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                  {{ catalogDetailAdding() ? 'Adding…' : catalogDetailOnActiveSheet() ? 'Already on this sheet' : (addTargetSheet() ? 'Add to "' + addTargetSheet()!.name + '"' : 'Add to a bid sheet') }}
+                </button>
+              </div>
+            </div>
+          }
 
           <!-- Slide-in bids panel (right edge) -->
           <div class="absolute top-0 right-0 h-full w-full sm:w-[var(--bid-panel-w)] z-[999] bg-white dark:bg-gray-900 shadow-2xl border-l border-gray-200 dark:border-gray-700 flex flex-col transition-transform duration-300 ease-in-out"
                [style.transform]="showPanel() ? 'translateX(0)' : 'translateX(100%)'">
 
-            @if (panelSelectedLocation()) {
+            @if (panelSelectedLocationId()) {
             <!-- ========== DETAIL VIEW ========== -->
             <!-- Detail Header -->
             <div class="shrink-0 flex items-center gap-2 px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[52px]">
@@ -217,8 +323,8 @@
                   <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                 </button>
               } @else {
-                <h3 class="text-sm font-semibold text-gray-900 dark:text-white truncate flex-1">{{ panelSelectedLocation() }}</h3>
-                @if (hasIndividualTu()) {
+                <h3 class="text-sm font-semibold text-gray-900 dark:text-white truncate flex-1">{{ panelSelectedName() }}</h3>
+                @if (true) {
                 <button (click)="startEditLocationName()" title="Edit location name" class="shrink-0 p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 </button>
@@ -234,13 +340,13 @@
               <!-- Action buttons -->
               <div class="flex items-center gap-2 flex-wrap px-4 py-3 border-b border-gray-200 dark:border-gray-700">
                 <button (click)="panelSetReference()" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap"
-                  [ngClass]="selectedLocationName() === panelSelectedLocation()
+                  [ngClass]="selectedLocationId() === panelSelectedLocationId()
                     ? 'text-white bg-scoular-blue border-scoular-blue hover:bg-blue-700'
                     : 'text-scoular-blue-medium dark:text-scoular-blue border-scoular-blue/30 dark:border-scoular-blue/40 hover:bg-scoular-blue/10 dark:hover:bg-scoular-blue/20'">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-                  @if (selectedLocationName() === panelSelectedLocation()) { Reference } @else { Set as Reference }
+                  @if (selectedLocationId() === panelSelectedLocationId()) { Reference } @else { Set as Reference }
                 </button>
-                @if (hasIndividualTu()) {
+                @if (true) {
                 <button (click)="toggleLocationScoularStatus()"
                   [title]="panelSelectedIsScoular() ? 'Unmark as Scoular facility' : 'Mark as Scoular facility'"
                   class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap"
@@ -267,15 +373,15 @@
                 <thead class="sticky top-0 z-10">
                   <tr class="bg-gray-50 dark:bg-gray-800">
                     <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Crop</th>
-                    <th class="px-7 py-3 text-center text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 relative whitespace-nowrap">
-                      <button (click)="shiftYearsBack()" class="absolute left-1 top-1/2 -translate-y-1/2 p-1 rounded transition-colors" [class]="canShiftYearsBack() ? 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-100 cursor-pointer' : 'invisible'">
+                    <th class="px-6 py-3 text-center text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 relative whitespace-nowrap">
+                      <button (click)="shiftYearsBack()" class="absolute left-1 top-1/2 -translate-y-1/2 p-1 rounded transition-colors text-gray-500 hover:text-gray-800 dark:hover:text-gray-100 cursor-pointer">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
                       </button>
                       {{ formatMonthYear(oldDisplay().month, oldDisplay().year) || 'Old' }}
                     </th>
-                    <th class="px-7 py-3 text-center text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 relative whitespace-nowrap">
+                    <th class="px-6 py-3 text-center text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 relative whitespace-nowrap">
                       {{ formatMonthYear(newDisplay().month, newDisplay().year) || 'New' }}
-                      <button (click)="shiftYearsForward()" class="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded transition-colors" [class]="canShiftYearsForward() ? 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-100 cursor-pointer' : 'invisible'">
+                      <button (click)="shiftYearsForward()" class="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded transition-colors text-gray-500 hover:text-gray-800 dark:hover:text-gray-100 cursor-pointer">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
                       </button>
                     </th>
@@ -287,25 +393,41 @@
                 <tbody>
                   @for (row of panelLocationBids(); track row.crop) {
                     <tr class="border-b border-gray-200 dark:border-gray-700">
-                      <td class="px-3 py-3 text-[length:var(--text-fluid-sm)] font-medium text-gray-900 dark:text-white">{{ row.crop }}</td>
-                      <td class="px-1 py-3 text-[length:var(--text-fluid-md)] font-mono font-semibold text-center" [ngClass]="{
+                      <td class="px-3 py-3 text-[length:var(--text-fluid-sm)] font-medium text-gray-900 dark:text-white">
+                        <div class="flex items-center gap-1.5">
+                          <span>{{ row.crop }}</span>
+                          @if (barchartEnabled && row.isFed) {
+                            <span class="px-1 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green"
+                                  [title]="row.fedAsOf ? 'From BarChart — updated ' + formatAsOf(row.fedAsOf) : 'From BarChart'">Feed</span>
+                          } @else if (barchartEnabled && (row.oldBidLabel || row.newBidLabel || row.oldBid || row.newBid)) {
+                            <span class="px-1 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide bg-scoular-blue/10 text-scoular-blue-medium dark:bg-scoular-blue/20 dark:text-scoular-blue"
+                                  title="Typed by hand — yours to edit, and the feed never touches it.">Manual</span>
+                          }
+                        </div>
+                      </td>
+                      <td class="px-1 py-3 text-[length:var(--text-fluid-sm)] font-mono font-semibold text-center whitespace-nowrap" [ngClass]="{
                         'text-scoular-blue-medium dark:text-scoular-blue': row.oldStatus === 'reference',
                         'text-scoular-yellow dark:text-scoular-yellow': row.oldStatus === 'matching',
                         'text-scoular-red-accessible dark:text-scoular-red': row.oldStatus === 'beating',
                         'text-gray-900 dark:text-white': row.oldStatus === 'none'
-                      }">{{ row.oldBid || '--' }}</td>
-                      <td class="px-1 py-3 text-[length:var(--text-fluid-md)] font-mono font-semibold text-center" [ngClass]="{
+                      }">{{ row.oldBidLabel || row.oldBid || '--' }}@if (row.oldBidContract) {<span class="ml-1 text-[12px] font-normal text-gray-500 dark:text-gray-400">{{ row.oldBidContract }}</span>}</td>
+                      <td class="px-1 py-3 text-[length:var(--text-fluid-sm)] font-mono font-semibold text-center whitespace-nowrap" [ngClass]="{
                         'text-scoular-blue-medium dark:text-scoular-blue': row.newStatus === 'reference',
                         'text-scoular-yellow dark:text-scoular-yellow': row.newStatus === 'matching',
                         'text-scoular-red-accessible dark:text-scoular-red': row.newStatus === 'beating',
                         'text-gray-900 dark:text-white': row.newStatus === 'none'
-                      }">{{ row.newBid || '--' }}</td>
+                      }">{{ row.newBidLabel || row.newBid || '--' }}@if (row.newBidContract) {<span class="ml-1 text-[12px] font-normal text-gray-500 dark:text-gray-400">{{ row.newBidContract }}</span>}</td>
                       @if (deleteMode()) {
                       <td class="px-1 py-3 text-center">
+                        @if (row.isFed) {
+                          <span class="text-[10px] text-gray-400 dark:text-gray-500"
+                                title="BarChart owns this crop's bids. Remove the location to stop showing them.">Feed</span>
+                        } @else {
                         <button (click)="requestDeleteCrop(row.crop)" title="Delete {{ row.crop }} bids"
                           class="p-1 rounded text-gray-400 hover:text-scoular-red-accessible dark:text-gray-500 dark:hover:text-scoular-red transition-colors">
                           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                         </button>
+                        }
                       </td>
                       }
                     </tr>
@@ -318,7 +440,7 @@
               <!-- Delete entire location (only visible in delete mode) -->
               @if (deleteMode()) {
               <div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
-                <button (click)="showDeleteLocationConfirm.set(true)"
+                <button (click)="openDeleteLocationConfirm()"
                   class="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-scoular-red-accessible dark:text-scoular-red rounded-lg border border-scoular-red/30 dark:border-scoular-red/40 hover:bg-scoular-red/10 dark:hover:bg-scoular-red/20 transition-colors">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                   Delete Location &amp; All Bids
@@ -331,7 +453,7 @@
               </div>
               @if (deleteMode()) {
               <div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
-                <button (click)="showDeleteLocationConfirm.set(true)"
+                <button (click)="openDeleteLocationConfirm()"
                   class="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-scoular-red-accessible dark:text-scoular-red rounded-lg border border-scoular-red/30 dark:border-scoular-red/40 hover:bg-scoular-red/10 dark:hover:bg-scoular-red/20 transition-colors">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                   Delete Location
@@ -339,25 +461,114 @@
               </div>
               }
               }
+
+              @if (panelSelectedBarchartKey()) {
+                <div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
+                  <button (click)="openPublishedBidsForPanelLocation()"
+                    title="Every delivery period this elevator publishes, not just the months on your sheet"
+                    class="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                    See all published bids
+                  </button>
+                </div>
+              }
             </div>
 
             } @else {
             <!-- ========== LIST VIEW ========== -->
+
+            <!-- Sheet bar: which sheet is open, and the menu to switch/create/rename/share/delete. -->
+            <div class="shrink-0 relative px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+              <!-- Styled as an actual control -- bordered, on a white field, with a caption above it.
+                   It used to be bare text on the panel's own background at the same size as a row, so it
+                   read as a heading rather than something you could click to switch sheets. -->
+              <p class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1">Bid sheet</p>
+              <!-- Edit sits beside the sheet it edits. It used to be a row lower, next to the crop/period
+                   heading, which put the sheet's name and the button that opens it in separate rows. -->
+              <div class="flex items-center gap-1.5">
+                @if (cropYears().length > 0 && mapScope() !== 'all') {
+                  <button (click)="openEditBids()" title="Edit bids"
+                          class="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-semibold text-scoular-green-accessible dark:text-scoular-green bg-white dark:bg-gray-900 border border-scoular-green-accessible/40 dark:border-scoular-green/40 hover:bg-scoular-green/10 dark:hover:bg-scoular-green/20 shadow-sm transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    Edit
+                  </button>
+                }
+
+                <button (click)="toggleSheetMenu()"
+                        class="flex-1 min-w-0 flex items-center gap-2 px-3 py-2 text-left rounded-md bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 hover:border-scoular-green-accessible dark:hover:border-scoular-green shadow-sm transition-colors group">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-gray-400"><path d="M3 3v18h18"/><path d="M18.7 8 12 15l-4-4-4.7 4.7"/></svg>
+                  <span class="flex-1 min-w-0 text-sm font-semibold text-gray-900 dark:text-white truncate group-hover:text-scoular-green-accessible transition-colors">
+                    @if (mapScope() === 'all') {
+                      All locations
+                    } @else {
+                      {{ selectedSheetsLabel() || (sheets().length === 0 ? 'No bid sheets yet' : 'Choose a bid sheet') }}
+                    }
+                  </span>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-gray-400 group-hover:text-scoular-green-accessible transition-colors"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+              </div>
+
+              @if (showSheetMenu()) {
+                <div class="absolute left-3 right-3 top-full mt-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-[1200] overflow-hidden">
+                  @if (sheets().length > 0) {
+                    <div class="max-h-48 overflow-auto py-1">
+                      <!-- Tick to show alongside, click the name to show on its own -- the same two
+                           gestures the toolbar control offers, so the panel does not disagree with it. -->
+                      @for (sheet of sheets(); track sheet.id) {
+                        <div class="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                          <input type="checkbox" [checked]="mapScope() !== 'all' && selectedSheetIds().includes(sheet.id)"
+                                 (change)="toggleSheet(sheet.id)" [attr.aria-label]="'Show ' + sheet.name"
+                                 class="shrink-0 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
+                          <button (click)="selectSheet(sheet.id)" title="Show only this sheet"
+                            class="truncate flex-1 text-left"
+                            [class]="mapScope() !== 'all' && selectedSheetIds().includes(sheet.id) ? 'text-scoular-green-accessible dark:text-scoular-green font-semibold' : 'text-gray-800 dark:text-gray-200'">
+                            {{ sheet.name }}
+                          </button>
+                          @if (!sheet.isOwner) {
+                            <span class="shrink-0 text-[10px] text-gray-400 dark:text-gray-500">shared</span>
+                          }
+                          <!-- Per sheet, not per selection: these three cannot be done to a set.
+                               Sharing two sheets with someone means two different things, and a delete
+                               confirmation naming several would be a trap. Share and Rename are open to
+                               any member; DELETE is the creator's alone, matching the server's
+                               RequireSheetOwnerAsync. -->
+                          <button (click)="openShareSheet(sheet.id)" [title]="'Share \'' + sheet.name + '\''"
+                            class="shrink-0 p-1 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200/70 dark:hover:bg-gray-700 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                          </button>
+                          <button (click)="openRenameSheet(sheet.id)" [title]="'Rename \'' + sheet.name + '\''"
+                            class="shrink-0 p-1 rounded text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green hover:bg-gray-200/70 dark:hover:bg-gray-700 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                          </button>
+                          @if (sheet.isOwner) {
+                            <button (click)="openDeleteSheetConfirm(sheet.id)" [title]="'Delete \'' + sheet.name + '\''"
+                              class="shrink-0 p-1 rounded text-gray-400 hover:text-scoular-red-accessible dark:hover:text-scoular-red hover:bg-gray-200/70 dark:hover:bg-gray-700 transition-colors">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                            </button>
+                          }
+                        </div>
+                      }
+                    </div>
+                    <div class="border-t border-gray-200 dark:border-gray-700"></div>
+                  }
+                  <!-- Into the pick-then-name flow, the same one "+ Add > Build a bid sheet" and the
+                       empty state's own button use. This opened the name dialog straight away, so the
+                       only way to get a sheet from here was to name an empty one and then go hunting
+                       for locations. Naming comes last. -->
+                  <button (click)="chooseBuildSheet()" class="w-full text-left px-3 py-2 text-sm flex items-center gap-2 text-scoular-green-accessible dark:text-scoular-green hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    New bid sheet
+                  </button>
+                </div>
+              }
+            </div>
+
             <!-- Panel Header -->
             <div class="shrink-0 flex items-center gap-2 px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[52px]">
-              @if (hasIndividualTu() || cropYears().length > 0) {
-              <button (click)="openEditBids()" [title]="editBidsReadOnly() ? 'View bids' : 'Edit bids'" class="shrink-0 flex items-center gap-2 px-3.5 py-2 rounded-md text-sm font-semibold text-scoular-green-accessible dark:text-scoular-green border border-scoular-green-accessible/30 dark:border-scoular-green/30 hover:bg-scoular-green/10 dark:hover:bg-scoular-green/20 transition-colors">
-                @if (editBidsReadOnly()) {
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
-                  View Bids
-                } @else {
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                  Edit
-                }
-              </button>
-              }
+              <!-- Edit moved up beside the sheet dropdown. This row is now just what you're looking at
+                   (crop and period) plus the close button. -->
               <h3 class="text-base font-bold text-gray-900 dark:text-white truncate flex-1">
-                @if (selectedCrop() && (hasIndividualTu() || cropYears().length > 0)) {
+                @if (selectedCrop() && cropYears().length > 0) {
                   {{ selectedCrop() }} · {{ formatMonthYear(selectedMonth(), selectedYear()) }}
                 } @else {
                   Locations
@@ -371,13 +582,52 @@
             <!-- Panel Body -->
             <div class="flex-1 overflow-auto">
 
-              @if (!hasIndividualTu() && cropYears().length === 0) {
+              @if (!sheetsLoaded()) {
+                <div class="flex flex-col items-center justify-center h-full px-6 text-center">
+                  <div class="inline-block animate-spin rounded-full h-6 w-6 border-2 border-gray-300 dark:border-gray-600 border-t-scoular-green"></div>
+                </div>
+              } @else if (mapScope() === 'all') {
+                <!-- The panel is the SHEET's comparison list. In All locations the map is browsing
+                     everything and there is no sheet to compare against, so the panel says so rather
+                     than list rows that have nothing to do with what you'd be about to edit. -->
+                <div class="flex flex-col items-center justify-center h-full px-6 text-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-300 dark:text-gray-600 mb-4">
+                    <circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>
+                  </svg>
+                  <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Showing all locations</p>
+                  <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">Pick a bid sheet from the dropdown above the map to compare and edit its bids. Click any pin to see its live prices.</p>
+                </div>
+              } @else if (sheets().length === 0) {
+                <div class="flex flex-col items-center justify-center h-full px-6 text-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-300 dark:text-gray-600 mb-4">
+                    <path d="M3 3v18h18"/><path d="M18.7 8 12 15l-4-4-4.7 4.7"/>
+                  </svg>
+                  <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">No bid sheets yet</p>
+                  <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed mb-3">A bid sheet is a list of locations you compare. Pick the ones you want and name it — you can share it with colleagues afterwards.</p>
+                  <button (click)="chooseBuildSheet(); showPanel.set(false)" class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    Build a Bid Sheet
+                  </button>
+                </div>
+              } @else if (!activeSheet()) {
+                <div class="flex flex-col items-center justify-center h-full px-6 text-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-300 dark:text-gray-600 mb-4">
+                    <path d="M3 3v18h18"/><path d="M18.7 8 12 15l-4-4-4.7 4.7"/>
+                  </svg>
+                  <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Choose a bid sheet</p>
+                  <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">Pick one from the bar above to see its locations and bids.</p>
+                </div>
+              } @else if (cropYears().length === 0) {
                 <div class="flex flex-col items-center justify-center h-full px-6 text-center">
                   <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-300 dark:text-gray-600 mb-4">
                     <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
                   </svg>
-                  <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">No location selected</p>
-                  <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">Select a location on the map or choose a trade unit from the filter to view bids.</p>
+                  <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">No bids yet</p>
+                  <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed mb-3">Add a location to "{{ activeSheet()?.name }}" to start tracking bids.</p>
+                  <button (click)="startAddLocation('map'); showPanel.set(false)" class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    Add Location
+                  </button>
                 </div>
               } @else {
 
@@ -388,7 +638,7 @@
                   </svg>
                   <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">No locations found</p>
                   <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed mb-3">Add a location to start tracking bids.</p>
-                  <button (click)="enterAddLocationMode(); showPanel.set(false)" class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors">
+                  <button (click)="startAddLocation('map'); showPanel.set(false)" class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                     Add Location
                   </button>
@@ -400,26 +650,26 @@
                 <thead class="sticky top-0 z-10">
                   <tr class="bg-gray-50 dark:bg-gray-800">
                     <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Location</th>
-                    <th class="px-7 py-3 text-center text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 relative whitespace-nowrap">
-                      <button (click)="shiftYearsBack()" class="absolute left-1 top-1/2 -translate-y-1/2 p-1 rounded transition-colors" [class]="canShiftYearsBack() ? 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-100 cursor-pointer' : 'invisible'">
+                    <th class="px-6 py-3 text-center text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 relative whitespace-nowrap">
+                      <button (click)="shiftYearsBack()" class="absolute left-1 top-1/2 -translate-y-1/2 p-1 rounded transition-colors text-gray-500 hover:text-gray-800 dark:hover:text-gray-100 cursor-pointer">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
                       </button>
                       {{ formatMonthYear(oldDisplay().month, oldDisplay().year) || 'Old' }}
                     </th>
-                    <th class="px-7 py-3 text-center text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 relative whitespace-nowrap">
+                    <th class="px-6 py-3 text-center text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 relative whitespace-nowrap">
                       {{ formatMonthYear(newDisplay().month, newDisplay().year) || 'New' }}
-                      <button (click)="shiftYearsForward()" class="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded transition-colors" [class]="canShiftYearsForward() ? 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-100 cursor-pointer' : 'invisible'">
+                      <button (click)="shiftYearsForward()" class="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded transition-colors text-gray-500 hover:text-gray-800 dark:hover:text-gray-100 cursor-pointer">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
                       </button>
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  @for (item of filteredBidItems(); track item.name) {
+                  @for (item of filteredBidItems(); track item.locationId) {
                     <tr
                       (click)="selectPanelItem(item)"
                       class="group border-b border-gray-200 dark:border-gray-700 cursor-pointer transition-colors"
-                      [ngClass]="scoularLocationNames().has(item.name)
+                      [ngClass]="scoularLocationIds().has(item.locationId)
                         ? 'bg-green-50 dark:bg-green-900/30 hover:bg-green-100 dark:hover:bg-green-900/50'
                         : 'hover:bg-gray-50 dark:hover:bg-gray-800'"
                     >
@@ -431,18 +681,20 @@
                           }
                         </div>
                       </td>
-                      <td class="px-1 py-3 text-base font-mono font-semibold text-center" [ngClass]="{
+                      <td class="px-1 py-3 text-[length:var(--text-fluid-sm)] font-mono font-semibold text-center whitespace-nowrap" [ngClass]="{
                         'text-scoular-blue-medium dark:text-scoular-blue': item.oldStatus === 'reference',
                         'text-scoular-yellow dark:text-scoular-yellow': item.oldStatus === 'matching',
                         'text-scoular-red-accessible dark:text-scoular-red': item.oldStatus === 'beating',
                         'text-gray-900 dark:text-white': item.oldStatus === 'none'
-                      }">{{ item.oldBid || '--' }}</td>
-                      <td class="px-1 py-3 text-base font-mono font-semibold text-center" [ngClass]="{
+                      }"
+                        [title]="item.oldCoveredBy ? item.oldCoveredBy + ' contract: its delivery window covers this month' : ''">{{ item.oldBidLabel || item.oldBid || '--' }}@if (item.oldBidContract) {<span class="ml-1 text-[12px] font-normal text-gray-500 dark:text-gray-400">{{ item.oldBidContract }}</span>}</td>
+                      <td class="px-1 py-3 text-[length:var(--text-fluid-sm)] font-mono font-semibold text-center whitespace-nowrap" [ngClass]="{
                         'text-scoular-blue-medium dark:text-scoular-blue': item.newStatus === 'reference',
                         'text-scoular-yellow dark:text-scoular-yellow': item.newStatus === 'matching',
                         'text-scoular-red-accessible dark:text-scoular-red': item.newStatus === 'beating',
                         'text-gray-900 dark:text-white': item.newStatus === 'none'
-                      }">{{ item.newBid || '--' }}</td>
+                      }"
+                        [title]="item.newCoveredBy ? item.newCoveredBy + ' contract: its delivery window covers this month' : ''">{{ item.newBidLabel || item.newBid || '--' }}@if (item.newBidContract) {<span class="ml-1 text-[12px] font-normal text-gray-500 dark:text-gray-400">{{ item.newBidContract }}</span>}</td>
                     </tr>
                   }
                 </tbody>
@@ -469,7 +721,12 @@
                     <div>
                       <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">Delete Location?</h4>
                       <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                        Permanently delete <span class="font-medium text-gray-700 dark:text-gray-300">{{ panelSelectedLocation() }}</span> and all its bids. This cannot be undone.
+                        Permanently delete <span class="font-medium text-gray-700 dark:text-gray-300">{{ panelSelectedName() }}</span> and all its bids. This cannot be undone.
+                        @if (deleteLocationSheetCount(); as count) {
+                          @if (count > 1) {
+                            <span class="block mt-1.5 font-medium text-scoular-red-accessible dark:text-scoular-red">It is on {{ count }} bid sheets — this removes it from all of them.</span>
+                          }
+                        }
                       </p>
                     </div>
                   </div>
@@ -477,6 +734,291 @@
                 <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
                   <button (click)="showDeleteLocationConfirm.set(false)" class="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
                   <button (click)="confirmDeleteLocation()" class="px-3 py-1.5 text-xs font-medium text-white bg-scoular-red-accessible hover:bg-scoular-red rounded-lg transition-colors">Delete</button>
+                </div>
+              </div>
+            </div>
+          }
+
+          <!-- Create Bid Sheet -->
+          <!-- Sheet modals sit at z-[1200], one step above the Edit Bids overlay (z-[1100]): they
+               come BEFORE it in the DOM, so at equal z-index the grid would paint over them, and Share /
+               Rename / Delete are reachable from the grid's own header. -->
+          @if (showCreateSheet()) {
+            <div class="absolute inset-0 z-[1200] bg-black/40 backdrop-blur-sm flex items-center justify-center">
+              <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-sm mx-4">
+                <div class="px-5 pt-5 pb-4">
+                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">{{ namingSheetForBatch() ? 'Name your bid sheet' : 'New Bid Sheet' }}</h4>
+                  <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed mb-3">
+                    @if (namingSheetForBatch()) {
+                      The locations you ticked go on it, and you'll land straight in the bids grid. Share it with colleagues from there.
+                    } @else {
+                      A named list of the locations you want to compare. Share it with colleagues who should see and edit it too.
+                    }
+                  </p>
+                  <input
+                    type="text"
+                    [ngModel]="newSheetName()"
+                    (ngModelChange)="newSheetName.set($event)"
+                    (keydown.enter)="confirmCreateSheet()"
+                    placeholder="e.g. West Desk"
+                    class="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent"
+                  />
+                </div>
+                <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+                  <button (click)="cancelCreateSheet()" class="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
+                  <button (click)="confirmCreateSheet()" [disabled]="!newSheetName().trim() || creatingSheet()" class="px-3 py-1.5 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                    {{ creatingSheet() ? 'Creating…' : (namingSheetForBatch() ? 'Create & add locations' : 'Create') }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          }
+
+          <!-- Rename Bid Sheet -->
+          @if (showRenameSheet()) {
+            <div class="absolute inset-0 z-[1200] bg-black/40 backdrop-blur-sm flex items-center justify-center">
+              <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-md mx-4">
+                <div class="px-5 pt-5 pb-4">
+                  <h4 class="text-base font-semibold text-gray-900 dark:text-white mb-3">Rename Bid Sheet</h4>
+                  <input
+                    type="text"
+                    [ngModel]="renameSheetName()"
+                    (ngModelChange)="renameSheetName.set($event)"
+                    (keydown.enter)="confirmRenameSheet()"
+                    class="w-full px-3.5 py-2.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-base text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent"
+                  />
+                </div>
+                <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+                  <button (click)="cancelRenameSheet()" class="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
+                  <button (click)="confirmRenameSheet()" [disabled]="!renameSheetName().trim() || renamingSheet()" class="px-3 py-1.5 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                    {{ renamingSheet() ? 'Saving…' : 'Save' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          }
+
+          <!-- Delete: which one? Deleting the sheet and taking locations off it differ enormously in
+               blast radius, so the button asks before doing either. -->
+          @if (showDeleteChoice()) {
+            <div class="absolute inset-0 z-[1200] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+                 (click)="cancelDeleteChoice()">
+              <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-md"
+                   (click)="$event.stopPropagation()">
+                <div class="px-5 pt-5 pb-3">
+                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Remove what?</h4>
+                  <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    @if (selectedSheets().length > 1) {
+                      Taking locations off leaves them for everyone else. To delete a whole sheet, use its ⋯ menu in the sheet picker — with several open there is no single sheet this button could mean.
+                    } @else {
+                      Taking locations off this sheet leaves them for everyone else. Deleting the sheet cannot be undone.
+                    }
+                  </p>
+                </div>
+                <div class="p-3 pt-0 space-y-2">
+                  <button (click)="chooseRemoveLocations()"
+                          class="w-full text-left p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-scoular-green-accessible hover:bg-scoular-green/5 dark:hover:bg-scoular-green/10 transition-colors">
+                    <div class="flex items-start gap-3">
+                      <span class="shrink-0 mt-0.5 text-gray-500 dark:text-gray-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                      </span>
+                      <span class="min-w-0">
+                        <span class="block text-sm font-medium text-gray-900 dark:text-white">Remove locations from this sheet</span>
+                        <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          Pick one or several. They stay company-wide with their bids, and any other sheet holding them is untouched — you can add them back any time.
+                        </span>
+                      </span>
+                    </div>
+                  </button>
+
+                  <!-- Owner-only, matching the server guard. A member sees only the option they can use. -->
+                  @if (selectedSheets().length === 1 && sheetActionTarget()?.isOwner) {
+                    <button (click)="chooseDeleteSheet()"
+                            class="w-full text-left p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-scoular-red hover:bg-scoular-red/5 dark:hover:bg-scoular-red/10 transition-colors">
+                      <div class="flex items-start gap-3">
+                        <span class="shrink-0 mt-0.5 text-scoular-red-accessible dark:text-scoular-red">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                        </span>
+                        <span class="min-w-0">
+                          <span class="block text-sm font-medium text-gray-900 dark:text-white">Delete the whole bid sheet</span>
+                          <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            Removes "{{ sheetActionTarget()?.name }}" and unshares it. The locations themselves stay.
+                          </span>
+                        </span>
+                      </div>
+                    </button>
+                  }
+                </div>
+                <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+                  <button (click)="cancelDeleteChoice()" class="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
+                </div>
+              </div>
+            </div>
+          }
+
+          <!-- Multi-select removal. Unlinking, not deleting -- said plainly, because "remove" next to a
+               list of locations could easily be read as destroying them. -->
+          @if (showRemoveLocations()) {
+            <div class="absolute inset-0 z-[1200] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+              <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-md max-h-[80vh] flex flex-col">
+                <div class="px-5 pt-5 pb-3 shrink-0">
+                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">Remove locations from "{{ selectedSheetsLabel() }}"</h4>
+                  <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                    @if (removeSheetCount() > 1) {
+                      They come off {{ removeSheetCount() }} sheets — every one you have open that holds them. The locations and their bids stay, and anyone else's sheet holding them is unaffected.
+                    } @else {
+                      They come off this sheet only. The locations and their bids stay, and anyone else's sheet holding them is unaffected.
+                    }
+                  </p>
+                </div>
+
+                @if (removableLocations().length === 0) {
+                  <div class="px-5 pb-4 shrink-0">
+                    <p class="text-xs text-gray-400 dark:text-gray-500 italic">There are no locations on the sheets you have open.</p>
+                  </div>
+                } @else {
+                  <div class="px-5 pb-2 shrink-0 flex items-center justify-between">
+                    <button (click)="toggleAllRemoveLocations()"
+                            class="text-xs font-medium text-scoular-green-accessible dark:text-scoular-green hover:underline">
+                      {{ allRemovableSelected() ? 'Clear all' : 'Select all' }}
+                    </button>
+                    <span class="text-xs text-gray-400 dark:text-gray-500">{{ removeLocationIds().size }} selected</span>
+                  </div>
+
+                  <div class="flex-1 overflow-auto px-5 pb-3 space-y-1">
+                    @for (loc of removableLocations(); track loc.id) {
+                      <label class="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition-colors">
+                        <input type="checkbox"
+                               [checked]="removeLocationIds().has(loc.id)"
+                               (change)="toggleRemoveLocation(loc.id)"
+                               class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
+                        <span class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ loc.name }}</span>
+                        @if (loc.isScoularFacility) {
+                          <span class="shrink-0 text-[10px] uppercase tracking-wide text-scoular-green-accessible dark:text-scoular-green">Scoular</span>
+                        }
+                      </label>
+                    }
+                  </div>
+                }
+
+                <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2 shrink-0">
+                  <button (click)="cancelRemoveLocations()" class="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
+                  <button (click)="confirmRemoveLocations()"
+                          [disabled]="removeLocationIds().size === 0 || removingLocations()"
+                          class="px-3 py-1.5 text-xs font-medium text-white bg-scoular-red-accessible hover:bg-scoular-red rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                    {{ removingLocations() ? 'Removing…' : 'Remove' + (removeLocationIds().size > 0 ? ' (' + removeLocationIds().size + ')' : '') }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          }
+
+          <!-- Delete Bid Sheet Confirmation -->
+          @if (showDeleteSheetConfirm()) {
+            <div class="absolute inset-0 z-[1200] bg-black/40 backdrop-blur-sm flex items-center justify-center">
+              <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-sm mx-4">
+                <div class="px-5 pt-5 pb-4">
+                  <div class="flex items-start gap-3">
+                    <div class="shrink-0 w-9 h-9 rounded-full bg-scoular-red/10 dark:bg-scoular-red/20 flex items-center justify-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-red-accessible dark:text-scoular-red">
+                        <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">Delete "{{ sheetActionTarget()?.name }}"?</h4>
+                      <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                        This removes the sheet and unshares it. The locations on it stay -- they are shared company-wide and other sheets may hold them too.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+                  <button (click)="cancelDeleteSheet()" class="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
+                  <button (click)="confirmDeleteSheet()" [disabled]="deletingSheet()" class="px-3 py-1.5 text-xs font-medium text-white bg-scoular-red-accessible hover:bg-scoular-red rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                    {{ deletingSheet() ? 'Deleting…' : 'Delete' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          }
+
+          <!-- Share Bid Sheet -->
+          @if (showShareSheet()) {
+            <div class="absolute inset-0 z-[1200] bg-black/40 backdrop-blur-sm flex items-center justify-center">
+              <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
+                <div class="px-5 pt-5 pb-3 shrink-0">
+                  <h4 class="text-base font-semibold text-gray-900 dark:text-white mb-1">Share "{{ sheetActionTarget()?.name }}"</h4>
+                  <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">Everyone you add can edit this sheet — its locations, columns and order.</p>
+                </div>
+                <!-- Tabbed picker, mirroring Manage Groups: the four kinds are searched differently and
+                     a bare name means something different in each, so one mixed list would be worse. -->
+                <div class="px-5 pb-2 shrink-0 flex flex-wrap gap-1">
+                  @for (tab of shareTabs(); track tab.id) {
+                    <button (click)="shareTab.set(tab.id); shareSearch.set('')"
+                            [class]="shareTab() === tab.id
+                              ? 'px-2.5 py-1 rounded-md text-xs font-semibold bg-scoular-green-accessible text-white'
+                              : 'px-2.5 py-1 rounded-md text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700'">
+                      {{ tab.label }}
+                      <span class="opacity-70">{{ tab.count }}</span>
+                    </button>
+                  }
+                </div>
+
+                <div class="px-5 pb-3 shrink-0">
+                  <input
+                    type="text"
+                    [ngModel]="shareSearch()"
+                    (ngModelChange)="shareSearch.set($event)"
+                    [placeholder]="shareTab() === 'person' ? 'Search people…'
+                      : shareTab() === 'trade-unit' ? 'Search trade units…'
+                      : shareTab() === 'trade-unit-group' ? 'Search groups…' : 'Search recap groups…'"
+                    class="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent"
+                  />
+                </div>
+
+                <!-- The list is always visible, not a search dropdown: you can browse the desks and
+                     groups you have without knowing their names, which is the point of the tabs. -->
+                <div class="px-5 pb-3 shrink-0 max-h-52 overflow-auto border-b border-gray-200 dark:border-gray-700">
+                  @if (shareCatalogLoading()) {
+                    <p class="text-xs text-gray-400 dark:text-gray-500 py-2">Loading…</p>
+                  } @else if (shareOptions().length === 0) {
+                    <p class="text-xs text-gray-400 dark:text-gray-500 py-2">
+                      @if (shareSearch()) { No match for “{{ shareSearch() }}”. }
+                      @else if (shareTab() === 'recap-group') { You are not in any recap groups yet. }
+                      @else { Nothing left to add here. }
+                    </p>
+                  }
+                  @for (option of shareOptions(); track option.memberType + option.memberId) {
+                    <button (click)="addShareCandidate(option)"
+                            class="w-full text-left px-2 py-1.5 rounded-md text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-baseline gap-2">
+                      <span class="text-gray-900 dark:text-white truncate">{{ option.label }}</span>
+                      <span class="text-xs text-gray-400 dark:text-gray-500 truncate">{{ option.sub }}</span>
+                    </button>
+                  }
+                </div>
+
+                <div class="flex-1 overflow-auto px-5 py-3 space-y-1.5">
+                  @if (pendingShares().length === 0) {
+                    <p class="text-xs text-gray-400 dark:text-gray-500 italic">Not shared with anyone yet.</p>
+                  }
+                  @for (share of pendingShares(); track share.memberType + share.memberId) {
+                    <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-gray-50 dark:bg-gray-800">
+                      <span class="min-w-0">
+                        <span class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ share.name || share.memberId }}</span>
+                        <!-- The kind is spelled out: "2190" alone could be a desk or a person. -->
+                        <span class="ml-1.5 text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">{{ shareKindLabel(share.memberType) }}</span>
+                      </span>
+                      <button (click)="removeShareCandidate(share.memberType, share.memberId)" class="shrink-0 p-1 rounded text-gray-400 hover:text-scoular-red hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                      </button>
+                    </div>
+                  }
+                </div>
+                <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2 shrink-0">
+                  <button (click)="cancelShareSheet()" class="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
+                  <button (click)="confirmShareSheet()" [disabled]="savingShares()" class="px-3 py-1.5 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                    {{ savingShares() ? 'Saving…' : 'Save' }}
+                  </button>
                 </div>
               </div>
             </div>
@@ -496,7 +1038,7 @@
                     <div>
                       <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">Delete Crop Bids?</h4>
                       <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                        Permanently delete all <span class="font-medium text-gray-700 dark:text-gray-300">{{ pendingDeleteCrop() }}</span> bids from <span class="font-medium text-gray-700 dark:text-gray-300">{{ panelSelectedLocation() }}</span>. This cannot be undone.
+                        Permanently delete all <span class="font-medium text-gray-700 dark:text-gray-300">{{ pendingDeleteCrop() }}</span> bids from <span class="font-medium text-gray-700 dark:text-gray-300">{{ panelSelectedName() }}</span>. This cannot be undone.
                       </p>
                     </div>
                   </div>
@@ -508,6 +1050,153 @@
               </div>
             </div>
           }
+
+        <!-- ============ ADD LOCATION: WHERE FROM? ============ -->
+        <!-- Which sheet a new location lands on, asked only when several are open and the answer is
+             not already settled. Adding to all of them was rejected: a sheet is a curated list someone
+             else may be sharing, and there is no undo for that on this screen. -->
+        @if (showAddSheetChoice()) {
+          <div class="absolute inset-0 z-[1250] flex items-center justify-center bg-black/40 p-4"
+               (click)="cancelAddSheetChoice()">
+            <div class="w-full max-w-sm bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden"
+                 (click)="$event.stopPropagation()">
+              <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Which sheet?</h4>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  You have {{ selectedSheets().length }} sheets open. Pick where this goes — the rest of what you add this session goes there too.
+                </p>
+              </div>
+              <div class="p-3 space-y-2 max-h-64 overflow-auto">
+                @for (sheet of selectedSheets(); track sheet.id) {
+                  <button (click)="chooseAddTargetSheet(sheet.id)"
+                          class="w-full text-left px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-900 dark:text-white hover:border-scoular-green-accessible hover:bg-scoular-green/5 dark:hover:bg-scoular-green/10 transition-colors">
+                    <span class="truncate">{{ sheet.name }}</span>
+                    @if (!sheet.isOwner) {
+                      <span class="ml-1.5 text-[10px] text-gray-400 dark:text-gray-500">shared</span>
+                    }
+                  </button>
+                }
+              </div>
+              <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+                <button (click)="cancelAddSheetChoice()"
+                        class="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        }
+
+        @if (showAddSourceChoice()) {
+          <div class="absolute inset-0 z-[1200] flex items-center justify-center bg-black/40 p-4"
+               (click)="cancelAddSourceChoice()">
+            <div class="w-full max-w-md bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden"
+                 (click)="$event.stopPropagation()">
+              <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Add</h4>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  @if (addLocationOrigin() === 'editBids') {
+                    Add locations to the sheet you're editing, or create one yourself.
+                  } @else {
+                    Build a sheet from the map, or add a single location yourself.
+                  }
+                </p>
+              </div>
+
+              <div class="p-3 space-y-2">
+                <!-- "Build a bid sheet" is hidden when this was opened from the Edit Bids grid. You can
+                     only be on that screen with a sheet already open and in front of you, so offering
+                     to go build a DIFFERENT one is an answer to a question nobody asked there. From the
+                     map it stays, because starting a new sheet is a perfectly normal thing to want. -->
+                @if (addLocationOrigin() !== 'editBids') {
+                <button (click)="chooseBuildSheet()"
+                        class="w-full text-left p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-scoular-green-accessible hover:bg-scoular-green/5 dark:hover:bg-scoular-green/10 transition-colors">
+                  <div class="flex items-start gap-3">
+                    <span class="flex-shrink-0 mt-0.5 text-scoular-green-accessible dark:text-scoular-green">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18.7 8 12 15l-4-4-4.7 4.7"/></svg>
+                    </span>
+                    <span class="min-w-0">
+                      <span class="block text-sm font-medium text-gray-900 dark:text-white">Build a bid sheet</span>
+                      <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        Tick the locations you want to compare, name the sheet, and go straight to entering bids. Share it with colleagues from there.
+                      </span>
+                    </span>
+                  </div>
+                </button>
+                }
+
+                @if (addTargetSheet(); as sheet) {
+                  <button (click)="chooseAddToSheet()"
+                          class="w-full text-left p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-scoular-green-accessible hover:bg-scoular-green/5 dark:hover:bg-scoular-green/10 transition-colors">
+                    <div class="flex items-start gap-3">
+                      <span class="flex-shrink-0 mt-0.5 text-scoular-green-accessible dark:text-scoular-green">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+                      </span>
+                      <span class="min-w-0">
+                        <span class="block text-sm font-medium text-gray-900 dark:text-white truncate">Add locations to "{{ sheet.name }}"</span>
+                        <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          Pick more from the BarChart feed. Their bids appear on their own and stay current — you won't type them.
+                        </span>
+                      </span>
+                    </div>
+                  </button>
+                }
+
+                <button (click)="chooseManualAdd()"
+                        class="w-full text-left p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-scoular-green-accessible hover:bg-scoular-green/5 dark:hover:bg-scoular-green/10 transition-colors">
+                  <div class="flex items-start gap-3">
+                    <span class="flex-shrink-0 mt-0.5 text-gray-400 dark:text-gray-500">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                    </span>
+                    <span class="min-w-0">
+                      <span class="block text-sm font-medium text-gray-900 dark:text-white">Add a location manually</span>
+                      <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        Drop a pin on the map, name it, and enter the bids yourself. Use this for anything the feed doesn't carry.
+                      </span>
+                    </span>
+                  </div>
+                </button>
+              </div>
+
+              <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+                <button (click)="cancelAddSourceChoice()"
+                        class="px-3 py-1.5 rounded-lg text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        }
+
+        <!-- ============ ADD FROM BARCHART ============ -->
+        @if (barchartMode()) {
+          <!-- left-14 clears Leaflet's zoom control, the same offset the filter bar uses. -->
+          <div class="absolute top-2.5 left-14 z-[1100] bg-white dark:bg-gray-900 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 max-w-[300px]">
+            <p class="text-sm font-semibold text-gray-900 dark:text-white">
+              {{ barchartSheetMode() === 'new' ? 'Pick the locations for your sheet' : 'Pick a location from BarChart' }}
+            </p>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              Pins are competitor locations in the feed near this view. Pan the map to look elsewhere, or search by name.
+              Hollow pins are already added (link them to add to this sheet); blue pins are the ones you have ticked to add.
+            </p>
+          </div>
+
+          <app-barchart-picker
+            #picker
+            [searchArea]="barchartSearchArea()"
+            [adding]="barchartAdding()"
+            [newSheetMode]="barchartSheetMode() === 'new'"
+            [sheetNameDraft]="newSheetName()"
+            (sheetNameDraftChange)="newSheetName.set($event)"
+            [sheetName]="addTargetSheet()?.name ?? ''"
+            [sheetLocationIds]="barchartSheetMode() === 'new' ? emptyLocationIds : activeSheetLocationIds()"
+            (resultsChange)="onBarchartResults($event)"
+            (focus)="onBarchartFocus($event)"
+            (addMany)="onBarchartAddMany($event)"
+            (selectionChange)="onBarchartSelectionChange($event)"
+            (close)="exitBarchartMode()"
+          />
+        }
 
         <!-- ============ ADD LOCATION MODE ============ -->
         @if (addLocationMode()) {
@@ -546,20 +1235,6 @@
                 </button>
               </div>
 
-              <!-- Trade Unit (outside scroll container so dropdown opens downward unclipped) -->
-              <div class="shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-                <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Trade Unit <span class="text-scoular-red">*</span></label>
-                @if (addLocationTus().length === 1) {
-                  <div class="text-sm font-medium text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2">{{ addLocationTus()[0] }}</div>
-                } @else {
-                  <select [ngModel]="newLocationTu()" (ngModelChange)="newLocationTu.set($event)" class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green">
-                    <option value="">Select Trade Unit…</option>
-                    @for (tu of addLocationTus(); track tu) {
-                      <option [value]="tu">{{ tu }}</option>
-                    }
-                  </select>
-                }
-              </div>
 
               <!-- Body -->
               <div class="px-4 py-3 space-y-3 overflow-y-auto flex-1 min-h-0 add-location-scroll">
@@ -617,147 +1292,89 @@
           <div class="absolute inset-0 z-[1100] bg-white dark:bg-gray-900 flex flex-col">
 
             <!-- Header -->
-            <div class="shrink-0 px-5 py-4 border-b border-gray-200 dark:border-gray-700 bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 flex items-center justify-between gap-4">
+            <div class="shrink-0 px-5 py-4 border-b border-gray-200 dark:border-gray-700 bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 flex flex-wrap items-center justify-between gap-x-4 gap-y-2.5">
 
-              <!-- Icon + title + year nav (left, all on one line) -->
-              <div class="flex items-center gap-3">
+              <!-- Icon + title + year nav (left). Wraps on laptop widths: crushing was clipping the
+                   Cash/Basis/Both toggle and stacking the trade-unit dropdowns. -->
+              <div class="flex flex-wrap items-center gap-3 gap-y-2.5">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green-accessible shrink-0">
                   <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                   <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                 </svg>
                 <h4 class="text-xl font-bold text-gray-900 dark:text-white">Edit Bids</h4>
-                <div class="flex items-center gap-1 ml-2">
-                  <button (click)="prevEditYear()" class="p-1 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-white/60 dark:hover:bg-gray-700 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-                  </button>
-                  <span class="text-lg font-bold text-gray-700 dark:text-gray-300 tabular-nums px-1">{{ editBidsYear() }}</span>
-                  <button (click)="nextEditYear()" class="p-1 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-white/60 dark:hover:bg-gray-700 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-                  </button>
-                </div>
-                <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
-                <div class="relative">
-                  <button (click)="openMonthDropdown()"
-                    class="flex items-center gap-2 px-3.5 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-base text-gray-900 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 cursor-pointer shadow-sm transition-colors">
-                    <span class="font-medium">{{ editBidsMonthsLabel() }}</span>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><polyline points="6 9 12 15 18 9"/></svg>
-                  </button>
-                  @if (showMonthDropdown()) {
-                    <div class="fixed inset-0 z-40" (click)="cancelMonthSelection()"></div>
-                    <div class="absolute left-0 top-full mt-1 w-44 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50 flex flex-col">
-                      <div class="py-1 max-h-56 overflow-auto">
-                      <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white font-medium border-b border-gray-100 dark:border-gray-700">
-                        <input type="checkbox" [checked]="pendingMonths().includes(0)" (change)="toggleEditMonth(0)"
-                          class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        Year
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(1)" (change)="toggleEditMonth(1)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        January
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(2)" (change)="toggleEditMonth(2)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        February
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(3)" (change)="toggleEditMonth(3)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        March
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(4)" (change)="toggleEditMonth(4)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        April
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(5)" (change)="toggleEditMonth(5)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        May
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(6)" (change)="toggleEditMonth(6)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        June
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(7)" (change)="toggleEditMonth(7)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        July
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(8)" (change)="toggleEditMonth(8)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        August
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(9)" (change)="toggleEditMonth(9)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        September
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(10)" (change)="toggleEditMonth(10)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        October
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(11)" (change)="toggleEditMonth(11)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        November
-                      </label>
-                      <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                        <input type="checkbox" [checked]="pendingMonths().includes(12)" (change)="toggleEditMonth(12)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        December
-                      </label>
-                      </div>
-                      <div class="flex items-center gap-2 px-3 py-2 border-t border-gray-200 dark:border-gray-700">
-                        <button (click)="cancelMonthSelection()" class="flex-1 px-2 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
-                        <button (click)="confirmMonthSelection()" class="flex-1 px-2 py-1.5 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors">Done</button>
-                      </div>
-                    </div>
-                  }
-                </div>
-                <div class="relative">
-                  <button (click)="openCropDropdown()"
-                    class="flex items-center gap-2 px-3.5 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-base text-gray-900 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 cursor-pointer shadow-sm transition-colors">
-                    <span class="font-medium">Crops</span>
-                    <span class="text-sm text-gray-400">({{ editBidsCrops().length }}/{{ crops().length }})</span>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><polyline points="6 9 12 15 18 9"/></svg>
-                  </button>
-                  @if (showCropDropdown()) {
-                    <div class="fixed inset-0 z-40" (click)="cancelCropSelection()"></div>
-                    <div class="absolute left-0 top-full mt-1 w-52 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50 flex flex-col">
-                      <div class="py-1 max-h-56 overflow-auto">
-                        @for (crop of crops(); track crop) {
-                          <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                            <input type="checkbox" [checked]="!pendingHiddenCrops().has(crop)" (change)="toggleCropVisibility(crop)"
-                              class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                            {{ crop }}
-                          </label>
-                        }
-                      </div>
-                      <div class="flex items-center gap-2 px-3 py-2 border-t border-gray-200 dark:border-gray-700">
-                        <button (click)="cancelCropSelection()" class="flex-1 px-2 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
-                        <button (click)="confirmCropSelection()" class="flex-1 px-2 py-1.5 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors">Done</button>
-                      </div>
-                    </div>
-                  }
-                </div>
-              </div>
+                <!-- Which sheets are being edited. No "All locations" here, unlike the map's copy of
+                     this control: the grid is the sheets' rows (openEditBids narrows the map back to
+                     them first), so there is always at least one. -->
+                @if (sheets().length > 0) {
+                  <app-sheet-multi-select
+                    [sheets]="sheets()" [selectedIds]="selectedSheetIds()" [showRowActions]="true"
+                    (toggled)="onEditBidsSheetToggle($event)" (pickedOnly)="onEditBidsSheetPickOnly($event)"
+                    (sharedSheet)="openShareSheet($event)" (renamedSheet)="openRenameSheet($event)"
+                    (deletedSheet)="openDeleteSheetConfirm($event)" />
+                }
 
-              <!-- Trade unit selector + refresh (right) -->
-              <div class="flex items-center gap-2.5">
-                <app-trade-unit-selector [deferred]="true" (done)="applyEditBidsTuFilter()" />
+                <!-- Sheet actions, beside the sheet they act on -- so you don't have to leave the grid
+                     to share what you're editing.
+                     SHARE appears only with ONE sheet open: with several there is no single sheet the
+                     button could mean, and the picker's per-row ⋯ menu is unambiguous by construction.
+                     RENAME is deliberately NOT here: it sits on the Locations column header, next to
+                     the sheet name it changes, rather than as an anonymous pencil among the toolbar.
+                     DELETE opens a choice (sheet vs. locations) and so is NOT owner-gated any more --
+                     removing locations is ordinary member editing, and it is union-wide. The
+                     sheet-delete option inside that dialog is owner-only AND single-sheet-only. -->
+                @if (selectedSheets().length > 0) {
+                  <div class="flex items-center gap-1.5">
+                    @if (selectedSheets().length === 1 && activeSheet(); as sheet) {
+                    <button (click)="openShareSheet(sheet.id)" [title]="sheet.shares.length > 0 ? 'Share (' + sheet.shares.length + ' people)' : 'Share'"
+                      class="flex items-center gap-1.5 px-2.5 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                      @if (sheet.shares.length > 0) { <span class="text-xs text-gray-500 dark:text-gray-400">{{ sheet.shares.length }}</span> }
+                    </button>
+                    }
+                    <button (click)="openDeleteChoice()" [title]="selectedSheets().length > 1 ? 'Remove locations from these sheets' : 'Remove locations from this sheet, or delete the sheet'"
+                      class="p-2 text-scoular-red-accessible dark:text-scoular-red bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-scoular-red/10 dark:hover:bg-scoular-red/20 transition-colors shadow-sm">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                    </button>
+                  </div>
+                }
+
                 <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
-                <button
-                  (click)="refreshBids()"
-                  [disabled]="isRefreshing()"
-                  [title]="'Last refreshed: ' + timeSinceRefresh()"
-                  class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed shadow-sm">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class.animate-spin]="isRefreshing()">
-                    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
-                    <path d="M21 3v5h-5"/>
-                    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
-                    <path d="M8 16H3v5"/>
-                  </svg>
-                  <span>{{ isRefreshing() ? 'Refreshing...' : timeSinceRefresh() }}</span>
-                </button>
+                <!-- Same control as the sheet header, with Both added: an originator comparing elevators
+                     wants the flat price and the basis side by side, not one flip at a time. -->
+                @if (barchartEnabled) {
+                  <div class="flex shrink-0 items-center rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden"
+                       title="Cash is the posted flat price. Basis is cents against the futures board, so -30 is thirty under. Both shows cash with basis beneath it.">
+                    @for (m of ['cash', 'basis', 'both']; track m) {
+                      <button (click)="setPriceMode($any(m))"
+                              [class]="priceMode() === m
+                                ? 'px-2.5 py-1.5 text-sm font-medium bg-scoular-green-accessible text-white capitalize'
+                                : 'px-2.5 py-1.5 text-sm font-medium bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 capitalize'">
+                        {{ m }}
+                      </button>
+                    }
+                  </div>
+                  <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
+                }
+
+                <!-- Print sits in this same row now, right after the cash/basis divider, instead of
+                     its own group pushed to the far right. No trade-unit selector: the sheet is not
+                     scoped by desk, and no refresh button either -- opening the grid trues itself
+                     up in the background. -->
                 <button (click)="printEditBids()" title="Print Bids"
-                  class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm">
+                  class="flex shrink-0 items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm">
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/>
                   </svg>
                   <span>Print</span>
+                </button>
+                <!-- Export: the grid as displayed, as a workbook -- location names, the price(s) the toggle is
+                     showing, and the contract symbol. Saves unsaved cells first. -->
+                <button (click)="exportEditBids()" [disabled]="exporting()" title="Export to Excel"
+                  class="flex shrink-0 items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>
+                  </svg>
+                  <span>{{ exporting() ? 'Exporting…' : 'Export' }}</span>
                 </button>
               </div>
             </div>
@@ -774,86 +1391,166 @@
             } @else if (editBidsRows().length === 0) {
               <div class="flex-1 flex flex-col items-center justify-center gap-3 text-gray-400 dark:text-gray-500">
                 <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="opacity-40"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
-                <p class="text-sm">No locations or crops found for this trade unit.</p>
+                <p class="text-sm">No locations on this bid sheet yet.</p>
                 <button (click)="addLocationFromEditBids()" class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors mt-2">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                   Add Location
                 </button>
               </div>
             } @else {
-              <div class="flex-1 overflow-auto">
-                <table class="border-collapse text-sm" style="min-width: max-content; width: 100%;">
+              <!-- cdkScrollable is what makes a row drag auto-scroll this container. Without it the CDK
+                   has no registered scrollable ancestor to scroll, so dragging a row to the top or
+                   bottom edge just sat there: you had to drop, scroll by hand, pick the row up again,
+                   and repeat. The class alone doesn't do it -- the directive has to be present. -->
+              <div class="flex-1 overflow-auto" cdkScrollable>
+                <!-- width:100% and NO min-width:max-content. The trailing slack cell is width:100%,
+                     and under max-content sizing a percentage cell contributes a whole container width
+                     to the table's intrinsic width -- so the table overflowed and showed a horizontal
+                     scrollbar even with zero bid columns. The max-content floor was belt-and-braces
+                     anyway: the Locations cell and every bid column carry their own min-w-*, which is
+                     what actually forces the scrollbar once there are genuinely too many columns. -->
+                <table class="border-collapse text-sm" style="width: 100%;">
                   <thead>
-                    <tr cdkDropList cdkDropListOrientation="horizontal" (cdkDropListDropped)="onCropColumnDrop($event)"
+                    <tr cdkDropList cdkDropListOrientation="horizontal" (cdkDropListDropped)="onColumnDrop($event)"
                         class="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-                      <th class="sticky top-0 left-0 z-30 px-4 py-3.5 text-left text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-r border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 min-w-[180px] lg:min-w-[260px]">Location</th>
+                      <!-- Names the ticked sheets in the corner cell: with several sheets in play, the
+                           grid otherwise looks identical whichever ones are open. -->
+                      <th class="sticky top-0 left-0 z-30 px-4 py-3.5 text-left text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-r border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 min-w-[240px] lg:min-w-[340px]">
+                        <span class="inline-flex items-center gap-1.5 align-middle">
+                          <span>Locations@if (selectedSheetsLabel(); as label) { <span class="normal-case text-gray-700 dark:text-gray-200"> — {{ label }}</span> }</span>
+                          <!-- Rename lives here rather than in the toolbar: it is the name right beside
+                               it that changes. Only with ONE sheet ticked, since with several the label
+                               is a joined phrase and there is no single sheet the pencil could point at.
+                               Not owner-gated: renaming a shared sheet is ordinary member editing. -->
+                          @if (selectedSheets().length === 1 && activeSheet()) {
+                            <button (click)="openRenameSheet()" title="Rename this bid sheet"
+                              class="shrink-0 p-1 rounded text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green hover:bg-gray-200/70 dark:hover:bg-gray-700 transition-colors">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            </button>
+                          }
+                        </span>
+                      </th>
                       @for (col of editGridColumns(); track col.key) {
+                        <!-- No cdkDragHandle: the whole header is the grab target, so there is no grip
+                             icon competing with the label for the width of a bid column. The remove
+                             button stops mousedown from reaching the drag, or clicking it would begin
+                             a drag instead. -->
                         <th cdkDrag cdkDragLockAxis="x"
-                            (cdkDragStarted)="draggingCrop.set(col.crop)"
-                            (cdkDragEnded)="draggingCrop.set('')"
-                            class="sticky top-0 z-20 px-4 py-3.5 text-center text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 min-w-[80px] transition-colors"
-                            [ngClass]="draggingCrop() === col.crop ? 'bg-scoular-green/10 dark:bg-scoular-green/20' : 'bg-gray-50 dark:bg-gray-800'">
-                          <div class="flex items-center justify-center gap-1.5">
-                            <span cdkDragHandle class="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400 flex-shrink-0">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>
-                            </span>
-                            {{ col.label }}
-                          </div>
+                            (cdkDragStarted)="draggingColKey.set(col.key)"
+                            (cdkDragEnded)="draggingColKey.set('')"
+                            class="group/col sticky top-0 z-20 whitespace-nowrap px-4 py-3 text-center text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider border-l border-gray-200 dark:border-gray-700 border-b cursor-grab active:cursor-grabbing transition-colors"
+                            [ngClass]="[priceMode() === 'both' ? 'min-w-[310px]' : 'min-w-[185px]', draggingColKey() === col.key ? 'bg-scoular-green/10 dark:bg-scoular-green/20' : 'bg-gray-50 dark:bg-gray-800']">
+                          {{ col.label }}
+                          <!-- Absolutely positioned, NOT a flex sibling of the label. Hidden with
+                               opacity it still occupied its slot, so every label sat half a button
+                               left of centre. Out of the flow, the label centres on the cell and the
+                               button rides the right edge. The <th> is sticky, which is a positioned
+                               value, so this anchors to the cell without needing a relative ancestor.
+                               Revealed on hover: with a dozen columns a permanent x on each reads as
+                               clutter, and removing one is rare next to typing in them.
+                               Focus-visible keeps it reachable by keyboard. -->
+                          <button type="button" (click)="removeColumn(col.key)"
+                            (mousedown)="$event.stopPropagation()"
+                            [disabled]="columnMutationBusy()"
+                            [title]="'Remove the ' + col.label + ' column'"
+                            class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-300 dark:text-gray-600 opacity-0 group-hover/col:opacity-100 focus-visible:opacity-100 hover:text-scoular-red-accessible dark:hover:text-scoular-red hover:bg-gray-200/70 dark:hover:bg-gray-700 disabled:opacity-0 transition-all">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                          </button>
                         </th>
                       }
-                      <th class="sticky top-0 z-20 px-3 py-3.5 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 w-12 relative">
-                        <button
-                          (click)="openAddCommodity()"
-                          title="Add commodity"
-                          class="flex items-center justify-center w-7 h-7 mx-auto rounded-lg text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M5 12h14"/><path d="M12 5v14"/>
-                          </svg>
+                      <!-- Add Commodity is the LAST column: a new column appears where this button
+                           is, so the button has to sit where the next one will go. It keeps its label
+                           here in a way it could not when it sat between Locations and the bids --
+                           at the end of the row that width was empty anyway. -->
+                      <th class="sticky top-0 z-20 w-14 px-2 py-3 text-center border-l border-gray-200 dark:border-gray-700 border-b bg-gray-50 dark:bg-gray-800">
+                        <button type="button" cdkOverlayOrigin #addColumnTrigger="cdkOverlayOrigin"
+                          (click)="toggleAddColumn()"
+                          [disabled]="columnMutationBusy()"
+                          [title]="atColumnLimit()
+                            ? 'At the ' + maxEditBidColumns + '-column limit — remove one to add another'
+                            : 'Add Commodity'"
+                          aria-label="Add Commodity"
+                          class="inline-flex items-center justify-center w-7 h-7 rounded border border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:text-scoular-green-accessible dark:hover:text-scoular-green hover:border-scoular-green-accessible dark:hover:border-scoular-green disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                         </button>
-                        @if (showAddCommoditySearch()) {
-                          <div class="fixed inset-0 z-40" (click)="closeAddCommoditySearch()"></div>
-                          <div class="absolute right-0 top-full mt-1 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50">
-                            <div class="p-2 border-b border-gray-100 dark:border-gray-700">
-                              <input
-                                type="text"
-                                [ngModel]="addCommodityQuery()"
-                                (ngModelChange)="addCommodityQuery.set($event)"
-                                placeholder="Search by Code or Name"
-                                autofocus
-                                class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green placeholder-gray-400"
-                              />
+                        <ng-template cdkConnectedOverlay
+                          [cdkConnectedOverlayOrigin]="addColumnTrigger"
+                          [cdkConnectedOverlayOpen]="showAddColumn()"
+                          [cdkConnectedOverlayHasBackdrop]="true"
+                          cdkConnectedOverlayBackdropClass="cdk-overlay-transparent-backdrop"
+                          [cdkConnectedOverlayPositions]="addColumnOverlayPositions"
+                          (backdropClick)="showAddColumn.set(false)"
+                          (detach)="showAddColumn.set(false)">
+                          <div class="w-72 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl p-3 normal-case tracking-normal"
+                               (keydown.escape)="showAddColumn.set(false)">
+
+                            <!-- Crop -->
+                            <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Commodity</label>
+                            <input type="text" [ngModel]="addColumnQuery()" (ngModelChange)="addColumnQuery.set($event)"
+                              placeholder="Search commodities…"
+                              class="w-full mb-1.5 px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
+                            <!-- Denser than the default: at text-sm only four or five commodities were
+                                 visible at a time, which is a lot of scrolling to find one. -->
+                            <div class="max-h-44 overflow-auto rounded border border-gray-200 dark:border-gray-700 mb-3">
+                              @for (c of addColumnCropChoices(); track c.code) {
+                                <button type="button" (click)="addColumnCrop.set(c.code)"
+                                  [class]="addColumnCrop() === c.code
+                                    ? 'w-full text-left px-2 py-1 text-xs bg-scoular-green/10 dark:bg-scoular-green/20 text-gray-900 dark:text-white'
+                                    : 'w-full text-left px-2 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'">
+                                  <span class="font-semibold">{{ c.code }}</span>
+                                  <span class="text-gray-500 dark:text-gray-400"> — {{ c.name }}</span>
+                                </button>
+                              } @empty {
+                                <p class="px-2 py-2 text-xs text-gray-500 dark:text-gray-400">No commodities match.</p>
+                              }
                             </div>
-                            @if (filteredCommodities(addCommodityQuery()).length > 0) {
-                              <div class="max-h-56 overflow-y-auto py-1">
-                                @for (c of filteredCommodities(addCommodityQuery()); track c.code) {
-                                  <button
-                                    type="button"
-                                    (mousedown)="selectEditBidCommodity(c)"
-                                    class="w-full text-left px-3 py-2 text-sm text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                                    [class.opacity-40]="crops().includes(c.code)"
-                                  >
-                                    {{ c.name }}
-                                    @if (crops().includes(c.code)) {
-                                      <span class="text-xs text-gray-400 dark:text-gray-500 ml-1">(already added)</span>
-                                    }
-                                  </button>
-                                }
+
+                            <!-- Year + month -->
+                            <div class="flex gap-2 mb-3">
+                              <div class="flex-1">
+                                <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Crop year</label>
+                                <select [ngModel]="addColumnYear()" (ngModelChange)="addColumnYear.set(+$event)"
+                                  class="w-full px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                                  @for (y of editBidsYearChoices(); track y) { <option [value]="y">{{ y }}</option> }
+                                </select>
                               </div>
-                            } @else if (addCommodityQuery().length > 0) {
-                              <p class="px-3 py-2.5 text-sm text-gray-400 dark:text-gray-500">No crops found</p>
-                            } @else {
-                              <p class="px-3 py-2.5 text-sm text-gray-400 dark:text-gray-500">Type to search…</p>
+                              <div class="flex-1">
+                                <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Month</label>
+                                <select [ngModel]="addColumnMonth()" (ngModelChange)="addColumnMonth.set(+$event)"
+                                  class="w-full px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                                  @for (m of monthChoices; track m.value) { <option [value]="m.value">{{ m.label }}</option> }
+                                </select>
+                              </div>
+                            </div>
+
+                            @if (addColumnIsDuplicate()) {
+                              <p class="mb-2 text-xs text-gray-500 dark:text-gray-400">That column is already on the sheet.</p>
+                            } @else if (atColumnLimit()) {
+                              <p class="mb-2 text-xs text-gray-500 dark:text-gray-400">{{ maxEditBidColumns }} columns is the limit — remove one to add another.</p>
                             }
+
+                            <div class="flex gap-2">
+                              <button type="button" (click)="showAddColumn.set(false)"
+                                class="flex-1 px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors">Close</button>
+                              <button type="button" (click)="addColumn()" [disabled]="!canAddColumn()"
+                                class="flex-1 px-2 py-1.5 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition-colors">Add</button>
+                            </div>
                           </div>
-                        }
+                        </ng-template>
                       </th>
+                      <!-- Slack eater. The table is width:100% with auto layout, so without somewhere
+                           for the spare width to go it is shared across the real columns and the
+                           Locations cell -- the widest -- swallows most of it. That is what made one
+                           bid column sit beside a Locations column several times its natural size. -->
+                      <th class="sticky top-0 z-20 w-full border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"></th>
                     </tr>
                   </thead>
-                  <tbody cdkDropList (cdkDropListDropped)="onRowDrop($event)">
-                    @for (row of editBidsRows(); track row.name; let rowIdx = $index) {
-                      <tr cdkDrag class="border-b border-gray-100 dark:border-gray-800 transition-colors"
-                          [ngClass]="scoularLocationNames().has(row.name)
+                  <!-- autoScrollStep defaults to 2px per frame, which on a long sheet is a crawl. 18
+                       covers a tall list in a couple of seconds while still being steerable. -->
+                  <tbody cdkDropList [cdkDropListAutoScrollStep]="18" (cdkDropListDropped)="onRowDrop($event)">
+                    @for (row of editBidsRows(); track row.locationId; let rowIdx = $index) {
+                      <tr cdkDrag [cdkDragDisabled]="!canReorderRows()" class="border-b border-gray-100 dark:border-gray-800 transition-colors"
+                          [ngClass]="scoularLocationIds().has(row.locationId)
                             ? 'bg-green-50 dark:bg-green-900/30'
                             : 'bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/40'">
                         <!-- Sticky frozen column MUST be opaque so horizontally-scrolled bid cells
@@ -861,42 +1558,186 @@
                              match how their translucent tints (green-900/30, scoular-green/10|20)
                              rendered over the table background — same look, but no bleed-through. -->
                         <td class="sticky left-0 z-10 px-4 py-3 border-r border-gray-200 dark:border-gray-700"
-                            [ngClass]="scoularLocationNames().has(row.name)
+                            [ngClass]="scoularLocationIds().has(row.locationId)
                               ? 'bg-green-50 dark:bg-[#122a29]'
                               : (row.type === 'elevator'
                                 ? 'bg-[#e6f6f1] dark:bg-[#0e3435]'
                                 : 'bg-white dark:bg-gray-900')">
-                          <div class="flex items-center gap-2">
-                            <span cdkDragHandle class="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400 flex-shrink-0">
+                          <div class="flex items-center gap-2 w-full">
+                            <!-- Greyed rather than hidden with several sheets ticked, and it says why:
+                                 a handle that vanishes reads as a bug, and row order is the sheet's. -->
+                            <span cdkDragHandle
+                                  [title]="reorderDisabledReason() || 'Drag to reorder'"
+                                  [class]="canReorderRows()
+                                    ? 'cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400 flex-shrink-0'
+                                    : 'cursor-not-allowed text-gray-200 dark:text-gray-700 flex-shrink-0'">
                               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>
                             </span>
-                            <span class="text-sm font-medium text-gray-900 dark:text-white truncate max-w-[160px] lg:max-w-[220px]" [title]="row.name">{{ row.name }}</span>
+                            <!-- One line, not clamped to two and not ellipsised. BarChart names carry the
+                                 company AND the site ("Farmers Cooperative Dorchester - Beattie"), so
+                                 cutting one short removes exactly the part that distinguishes it. The
+                                 column is free to size to the longest name because the trailing slack
+                                 column takes the spare width -- before that existed, this cell absorbed
+                                 it all and had to be clamped to stop it swallowing the grid. -->
+                            @if (renamingRow() === row.locationId) {
+                              <!-- Adding a batch from BarChart lands on this screen, so the vendor's
+                                   name is corrected here rather than one dialog at a time. -->
+                              <div class="flex-1 min-w-0 relative">
+                                <input type="text" [attr.id]="'rename-row-' + row.locationId"
+                                       [ngModel]="renameRowDraft()" [ngModelOptions]="{ standalone: true }"
+                                       (ngModelChange)="renameRowDraft.set($event)"
+                                       (keydown.enter)="saveRenameRow(row)" (keydown.escape)="cancelRenameRow()"
+                                       (blur)="saveRenameRow(row)"
+                                       class="w-full text-sm rounded border bg-white dark:bg-gray-800 text-gray-900 dark:text-white pl-2 pr-12 py-1 focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                                       [ngClass]="renameRowValid()
+                                         ? 'border-scoular-green-accessible'
+                                         : 'border-scoular-red-accessible'" />
+                                <!-- mousedown is prevented on both: the input commits on blur, so letting these
+                                     take focus first would save before the click ever ran. -->
+                                <div class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                                  @if (renameRowDraft()) {
+                                    <button (mousedown)="clearRenameRow($event)" (click)="clearRenameRow($event)" title="Clear"
+                                            class="p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                                    </button>
+                                  }
+                                  <button (mousedown)="$event.preventDefault()" (click)="saveRenameRow(row)"
+                                          [disabled]="!renameRowValid()" title="Save name"
+                                          class="p-0.5 rounded text-scoular-green-accessible hover:text-scoular-green disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                  </button>
+                                </div>
+                              </div>
+                            } @else {
+                              <!-- The name sizes to its text rather than filling the cell, so the pencil sits
+                                   against the end of the name instead of floating off at the far right. -->
+                              <span class="text-sm font-medium text-gray-900 dark:text-white leading-tight whitespace-nowrap" [title]="row.name">{{ row.name }}</span>
+                              @if (true) {
+                                <button (click)="startRenameRow(row, $event)" title="Rename location"
+                                        class="shrink-0 p-1 rounded text-gray-300 hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300 transition-colors">
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                </button>
+                                <!-- Fill is the whole signal: solid means one of ours, outline means a
+                                     competitor. Deliberately the same grey either way -- colour here would
+                                     compete with the bid status colours, which are what the eye should be
+                                     drawn to. Guessed from the publishing company when the location is added,
+                                     and corrected here. -->
+                                <button (click)="toggleRowScoular(row, $event)" title="Mark Scoular Location"
+                                        class="ml-auto shrink-0 p-1 rounded text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 transition-colors">
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+                                       [attr.fill]="isRowScoular(row) ? 'currentColor' : 'none'"
+                                       stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                                  </svg>
+                                </button>
+                              }
+                            }
+                            @if (barchartEnabled && row.isBarchartLinked) {
+                              <!-- Pinned to the right edge so the chips line up down the column, whatever
+                                   length the names are and whether or not they wrap. -->
+                              <span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green"
+                                    title="Linked to BarChart — its bids refresh on their own each night. You can still type over one; the feed reclaims that cell on its next run.">Feed</span>
+                            } @else if (barchartEnabled) {
+                              <span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-scoular-blue/10 text-scoular-blue-medium dark:bg-scoular-blue/20 dark:text-scoular-blue"
+                                    title="Typed by hand. If the feed starts publishing this location, it takes the cells over.">Manual</span>
+                            }
                           </div>
                         </td>
                         @for (col of editGridColumns(); track col.key; let colIdx = $index) {
-                          <td class="px-3 py-2.5 transition-colors"
-                              [ngClass]="draggingCrop() === col.crop ? 'bg-scoular-green/5 dark:bg-scoular-green/10' : ''">
+                          <td class="px-3 py-2.5 border-l border-gray-200 dark:border-gray-700 transition-colors"
+                              [ngClass]="draggingColKey() === col.key ? 'bg-scoular-green/5 dark:bg-scoular-green/10' : ''">
+                            <div class="flex items-start gap-1.5">
+                            @if (priceMode() !== 'basis') {
+                            <!-- The wrapper exists for the board letter: trade notation inside the box,
+                                 right behind where the quote sits ("-80 ZCU26"). It hides while the cell is
+                                 being edited so it can never read as part of what was typed. -->
+                            <!-- Resolved once: the input needs it to reserve room, and the symbol
+                                 needs it to position against. '' when no symbol applies. -->
+                            @let cashSymbol = (priceMode() === 'cash' && row.bids[col.key] && row.bids[col.key] === row.originalBids[col.key] && row.boardChips[col.key]) ? row.boardChips[col.key] : '';
+                            <div class="relative flex-1 min-w-0 group overflow-hidden">
                             <input
                               type="text"
                               [attr.id]="'bid-' + rowIdx + '-' + col.key"
+                              [style.paddingRight]="cashSymbol ? 'calc(0.75rem + ' + cashSymbol.length + 'ch + 5px)' : null"
                               [ngModel]="row.bids[col.key]"
                               (ngModelChange)="updateBid(rowIdx, col.key, $event)"
                               (keydown)="onBidKeyDown($event, rowIdx, colIdx)"
                               (blur)="onBidBlur()"
-                              [readonly]="editBidsReadOnly()"
+                              [readonly]="cellReadOnly()"
                               placeholder="—"
+                              [title]="row.coverageChips[col.key] ? row.coverageChips[col.key] + ' contract: its delivery window covers this month' : ''"
                               class="w-full font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
-                              [ngClass]="editBidsReadOnly()
-                                ? 'border-transparent bg-transparent text-gray-700 dark:text-gray-300 cursor-default focus:ring-0 read-only:cursor-default'
+                              [ngClass]="cellReadOnly()
+                                ? 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60 text-gray-700 dark:text-gray-300 cursor-default focus:ring-0'
                                 : (row.bids[col.key] !== row.originalBids[col.key]
                                   ? 'border-scoular-green-accessible bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 text-gray-900 dark:text-white'
                                   : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300')"
                             />
+                            <!-- Only while the fed value is present and untouched: the symbol describes
+                                 the FED bid, and the moment the user types their own number it would be
+                                 mislabelling a manual bid. font-mono makes every character 1ch wide, so
+                                 "centre + half the value's length" lands the symbol flush beside the
+                                 number rather than parked at the far edge of the box. -->
+                            @if (cashSymbol) {
+                              <span class="absolute top-1/2 -translate-y-1/2 pointer-events-none font-mono text-sm text-gray-500 dark:text-gray-400 group-focus-within:opacity-0 transition-opacity"
+                                    [style.left]="'calc(50% + ' + (row.bids[col.key].length / 2) + 'ch - ' + (cashSymbol.length / 2) + 'ch + 2.5px)'">{{ cashSymbol }}</span>
+                            }
+                            </div>
+                            }
+                            @if (priceMode() !== 'cash') {
+                              <!-- Basis sits beside cash rather than under it, so the two read as the pair
+                                   an originator quotes. The board symbol rides on the basis, which
+                                   is the number the board denominates and the way originators write it. -->
+                              @let basisSymbol = (row.basisBids[col.key] && !basisChanged(row, col.key) && row.boardChips[col.key]) ? row.boardChips[col.key] : '';
+                              <div class="relative flex-1 min-w-0 group overflow-hidden">
+                              <!-- Carries the grid's cell id only in basis mode, where the cash input is
+                                   not rendered at all: without it, arrow-key navigation and the
+                                   focus-the-new-row jump after an add had nothing to look up. In Both
+                                   mode the cash input owns the id and keeps the keyboard contract. -->
+                              <input
+                                type="text"
+                                [attr.id]="priceMode() === 'basis' ? 'bid-' + rowIdx + '-' + col.key : null"
+                                [style.paddingRight]="basisSymbol ? 'calc(0.75rem + ' + basisSymbol.length + 'ch + 5px)' : null"
+                                [ngModel]="row.basisBids[col.key]"
+                                [ngModelOptions]="{ standalone: true }"
+                                (ngModelChange)="updateBasisBid(rowIdx, col.key, $event)"
+                                (keydown)="onBidKeyDown($event, rowIdx, colIdx)"
+                                (blur)="onBidBlur()"
+                                [readonly]="cellReadOnly()"
+                                placeholder="—"
+                                [title]="row.coverageChips[col.key] ? row.coverageChips[col.key] + ' contract: its delivery window covers this month' : ''"
+                                class="w-full font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
+                                [ngClass]="cellReadOnly()
+                                  ? 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60 text-gray-700 dark:text-gray-300 cursor-default focus:ring-0'
+                                  : (basisChanged(row, col.key)
+                                    ? 'border-scoular-green-accessible bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 text-gray-900 dark:text-white'
+                                    : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300')"
+                              />
+                              <!-- Same guards as the cash side: fed value present and untouched. -->
+                              @if (basisSymbol) {
+                                <span class="absolute top-1/2 -translate-y-1/2 pointer-events-none font-mono text-sm text-gray-500 dark:text-gray-400 group-focus-within:opacity-0 transition-opacity"
+                                      [style.left]="'calc(50% + ' + (row.basisBids[col.key].length / 2) + 'ch - ' + (basisSymbol.length / 2) + 'ch + 2.5px)'">{{ basisSymbol }}</span>
+                              }
+                              </div>
+                            }
+                            </div>
+                            @if (priceMode() === 'both') {
+                              <!-- Two bare numbers side by side are ambiguous and the header can only name
+                                   the period, so each value says what it is. -->
+                              <div class="mt-0.5 flex items-start gap-1.5">
+                                <div class="flex-1 min-w-0 text-[10px] leading-none text-center uppercase tracking-wide text-gray-400 dark:text-gray-500">Cash</div>
+                                <div class="flex-1 min-w-0 text-[10px] leading-none text-center uppercase tracking-wide text-gray-400 dark:text-gray-500">Basis</div>
+                              </div>
+                            }
                           </td>
                         }
+                        <!-- Under Add Commodity: empty, but it holds that column's width so the bid
+                             cells stay under their own headers. -->
+                        <td class="border-l border-gray-200 dark:border-gray-700"></td>
+                        <td class="w-full"></td>
                       </tr>
                     }
-                    @if (!editBidsReadOnly()) {
+                    @if (true) {
                     <tr
                       (click)="addLocationFromEditBids()"
                       class="border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors"
@@ -909,7 +1750,9 @@
                           Add Location
                         </div>
                       </td>
-                      <td [attr.colspan]="editGridColumns().length + 1"></td>
+                      <!-- The sticky Location cell above accounts for one; the +2 is the Add column
+                           beside it and the trailing slack column, neither of which has content here. -->
+                      <td [attr.colspan]="editGridColumns().length + 2"></td>
                     </tr>
                     }
                   </tbody>
@@ -923,7 +1766,7 @@
                 (click)="closeEditBids()"
                 class="px-3 py-1.5 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
               >Close</button>
-              @if (!editBidsReadOnly()) {
+              @if (true) {
               <button
                 (click)="doneEditBids()"
                 [disabled]="editBidsSaving()"
@@ -957,6 +1800,7 @@
                             <img [src]="printLogoUrl" alt="Scoular" style="height:32px;width:auto;" />
                           </div>
                           <div style="text-align:right;font-size:10px;color:#4b5563;line-height:1.6;">
+                            <p style="font-weight:600;color:#1a1a1a;">{{ printPriceModeCaption() }}</p>
                             @if (printAddress().trim()) { <p>{{ printAddress().trim() }}</p> }
                             @if (printPhone().trim()) { <p>{{ printPhone().trim() }}</p> }
                           </div>
@@ -1000,7 +1844,7 @@
                             </div>
                           }
                         } @else {
-                          <p class="text-center text-gray-400 py-8 text-sm">Select at least one crop and one month</p>
+                          <p class="text-center text-gray-400 py-8 text-sm">Select at least one column</p>
                         }
                         <!-- Footer -->
                         <div style="margin-top:16px;padding-top:8px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;">
@@ -1011,7 +1855,10 @@
                     </div>
 
                     <!-- Options (right) -->
-                    <div class="w-72 shrink-0 p-5 overflow-auto space-y-5">
+                    <!-- cdkScrollable for the same reason as the grid: this column holds the crop,
+                         month and location drag lists, and without it a drag to either edge won't
+                         scroll the column. -->
+                    <div class="w-72 shrink-0 p-5 overflow-auto space-y-5" cdkScrollable>
                       <!-- Contact info -->
                       <div>
                         <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Contact Info</h4>
@@ -1030,71 +1877,33 @@
                           </div>
                         </div>
                       </div>
-                      <!-- Crops (drag to reorder — order drives the grid + print) -->
+                      <!-- Columns. One list where there were two -- crops and months could describe
+                           the printed columns between them only while columns were their cross
+                           product. No drag handles: the grid header is where columns are ordered now,
+                           and print follows it, so there is one place to arrange them instead of two
+                           that had to agree. -->
                       <div>
-                        <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Crops</h4>
-                        <div cdkDropList (cdkDropListDropped)="onPrintCropDrop($event)" class="space-y-1">
-                          @for (crop of editBidsCrops(); track crop) {
-                            <div cdkDrag class="flex items-center gap-1.5 rounded px-0.5 py-0.5">
-                              <span cdkDragHandle class="shrink-0 cursor-grab text-gray-300 hover:text-gray-500 select-none px-0.5" title="Drag to reorder">⠿</span>
-                              <label class="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0">
-                                <input type="checkbox" [checked]="printSelectedCrops().has(crop)" (change)="togglePrintCrop(crop)"
-                                  class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
-                                <span class="text-sm text-gray-700 dark:text-gray-300">{{ crop }}</span>
-                              </label>
-                            </div>
+                        <div class="flex items-center justify-between mb-3">
+                          <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Columns</h4>
+                          <button type="button" (click)="toggleAllPrintColumns()"
+                            class="text-xs font-medium text-scoular-green-accessible dark:text-scoular-green hover:underline">
+                            {{ allPrintColumnsSelected() ? 'None' : 'All' }}
+                          </button>
+                        </div>
+                        <div class="space-y-1 max-h-56 overflow-auto">
+                          @for (col of editGridColumns(); track col.key) {
+                            <label class="flex items-center gap-2.5 cursor-pointer rounded px-0.5 py-0.5">
+                              <input type="checkbox" [checked]="printSelectedColumns().has(col.key)" (change)="togglePrintColumn(col.key)"
+                                class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
+                              <span class="text-sm text-gray-700 dark:text-gray-300">
+                                {{ col.crop }} <span class="tabular-nums">{{ getMonthName(col.month) }} {{ col.year }}</span>
+                              </span>
+                            </label>
+                          } @empty {
+                            <p class="text-xs text-gray-500 dark:text-gray-400">The grid has no columns to print.</p>
                           }
                         </div>
                       </div>
-                      <!-- Months (drag to reorder — order drives the grid + print column order) -->
-                      <div>
-                        <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Months</h4>
-                        <div cdkDropList (cdkDropListDropped)="onPrintMonthDrop($event)" class="space-y-1">
-                          @for (month of editBidsMonths(); track month) {
-                            <div cdkDrag class="flex items-center gap-1.5 rounded px-0.5 py-0.5">
-                              <span cdkDragHandle class="shrink-0 cursor-grab text-gray-300 hover:text-gray-500 select-none px-0.5" title="Drag to reorder">⠿</span>
-                              <label class="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0">
-                                <input type="checkbox" [checked]="printSelectedMonths().has(month)" (change)="togglePrintMonth(month)"
-                                  class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
-                                <span class="text-sm text-gray-700 dark:text-gray-300">{{ getMonthName(month) }}</span>
-                              </label>
-                            </div>
-                          }
-                        </div>
-                      </div>
-                      <!-- Yearly columns builder: one row per column (enable + year + Old/New). -->
-                      @if (printHasYearly()) {
-                        <div>
-                          <div class="flex items-center justify-between mb-2">
-                            <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Year Columns</h4>
-                            <button (click)="addPrintYearlyRow()" [disabled]="printYearlyRows().length >= 5"
-                              class="text-xs font-medium text-scoular-green-accessible hover:text-scoular-green disabled:text-gray-400 disabled:cursor-not-allowed">+ Add year</button>
-                          </div>
-                          <div cdkDropList (cdkDropListDropped)="onPrintYearlyRowDrop($event)" class="space-y-1.5">
-                            @for (row of printYearlyRows(); track row.id) {
-                              <div cdkDrag class="flex items-center gap-1.5">
-                                <span cdkDragHandle class="shrink-0 cursor-grab text-gray-300 hover:text-gray-500 select-none px-0.5" title="Drag to reorder">⠿</span>
-                                <input type="checkbox" [checked]="row.enabled" (change)="togglePrintYearlyRow(row.id)" title="Show this column"
-                                  class="shrink-0 rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
-                                <select [ngModel]="row.offset" (ngModelChange)="setPrintYearlyRowOffset(row.id, $event)"
-                                  class="shrink-0 h-7 px-1 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green cursor-pointer">
-                                  @for (c of printYearChoices(); track c.offset) {
-                                    <option [ngValue]="c.offset">{{ c.year }}</option>
-                                  }
-                                </select>
-                                <select [ngModel]="row.oldNew" (ngModelChange)="setPrintYearlyRowOldNew(row.id, $event)"
-                                  class="flex-1 min-w-0 h-7 px-1 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green cursor-pointer">
-                                  <option [ngValue]="''">Year only</option>
-                                  <option [ngValue]="'old'">Old Crop</option>
-                                  <option [ngValue]="'new'">New Crop</option>
-                                </select>
-                                <button (click)="removePrintYearlyRow(row.id)" [disabled]="printYearlyRows().length <= 1"
-                                  class="shrink-0 w-6 h-6 flex items-center justify-center text-gray-400 hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed" title="Remove">✕</button>
-                              </div>
-                            }
-                          </div>
-                        </div>
-                      }
                       <!-- Layout: locations down the side (one Location column, crop bands across) or
                            the transpose (crop/period rows, locations across in blocks). Same data in
                            both — only the arrangement changes. -->
