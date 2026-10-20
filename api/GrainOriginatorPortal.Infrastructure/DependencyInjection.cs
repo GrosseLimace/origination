@@ -138,7 +138,6 @@ public static class DependencyInjection
         services.AddScoped<ISavedListRepository, SavedListRepository>();
         services.AddScoped<IDisplayNameLookupRepository, DisplayNameLookupRepository>();
         services.AddScoped<IProducerDetailsRepository, ProducerDetailsRepository>();
-        services.AddScoped<IFarmRepository, FarmRepository>();
         services.AddScoped<IPlantingIntentionRepository, PlantingIntentionRepository>();
         services.AddScoped<INoteRepository, NoteRepository>();
         services.AddScoped<IReminderRepository, ReminderRepository>();
@@ -159,6 +158,7 @@ public static class DependencyInjection
         services.AddScoped<IContractRepository, ContractRepositorySwitch>();
         services.AddScoped<IBidSheetRepository, BidSheetRepository>();
         services.AddScoped<IBarchartIngestRepository, BarchartIngestRepository>();
+        services.AddScoped<IBarchartCatalogRepository, BarchartCatalogRepository>();
         services.AddScoped<ICustomerRepository, CustomerRepository>();
         services.AddScoped<IUserPreferenceRepository, UserPreferenceRepository>();
         services.AddScoped<IEntitlementsRepository, EntitlementsRepository>();

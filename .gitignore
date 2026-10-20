@@ -39,3 +39,4 @@ client/coverage/
 
 # Built by .github/workflows/deploy-workbook.yml (and local what-if runs); never committed.
 infra/workbooks/**/azuredeploy.parameters.generated.json
+.fake

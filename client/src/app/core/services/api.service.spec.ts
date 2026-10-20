@@ -1,8 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ApiService } from './api.service';
+import { ToastService } from './toast.service';
+import { ApiError } from '@core/errors/api-error';
 import { environment } from '@env/environment';
 
 const BASE = environment.apiBaseUrl;
@@ -317,4 +319,63 @@ describe('ApiService', () => {
       { status: 400, statusText: 'Bad Request' }
     );
   }));
+
+  it('throws an ApiError carrying the envelope, with status and traceId at their old property names', () => {
+    let caught: unknown;
+    service.getCustomers().subscribe({ error: e => caught = e });
+    httpMock.expectOne(`${BASE}/customers`).flush(
+      { error: { code: 'INTERNAL_ERROR', message: 'Something went wrong (Ref: t-9)', traceId: 't-9' } },
+      { status: 500, statusText: 'Internal Server Error' }
+    );
+
+    expect(caught).toBeInstanceOf(ApiError);
+    const err = caught as ApiError;
+    expect(err.status).toBe(500);
+    expect(err.traceId).toBe('t-9');
+    expect(err.code).toBe('INTERNAL_ERROR');
+    expect(err.category).toBe('server');
+    expect(err.message).toBe('Something went wrong (Ref: t-9)');
+  });
+
+  it('throws a network ApiError when the request never got a response', () => {
+    let caught: unknown;
+    service.getCustomers().subscribe({ error: e => caught = e });
+    httpMock.expectOne(`${BASE}/customers`).error(new ProgressEvent('error'), { status: 0, statusText: 'Unknown Error' });
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).category).toBe('network');
+    expect((caught as ApiError).status).toBe(0);
+  });
+
+  it('still tells the user their session expired on a 401', () => {
+    const spy = vi.spyOn(TestBed.inject(ToastService), 'error');
+    let caught: unknown;
+    service.getCustomers().subscribe({ error: e => caught = e });
+    httpMock.expectOne(`${BASE}/customers`).flush(null, { status: 401, statusText: 'Unauthorized' });
+
+    expect(spy).toHaveBeenCalledWith('Your session has expired — please refresh the page to sign in again.');
+    expect((caught as ApiError).category).toBe('unauthorized');
+  });
+
+  it('still toasts the server\'s 403 message, falling back to the generic access-denied text', () => {
+    const spy = vi.spyOn(TestBed.inject(ToastService), 'error');
+
+    service.getCustomers().subscribe({ error: () => {} });
+    httpMock.expectOne(`${BASE}/customers`).flush(
+      { error: { code: 'AUTHORIZATION_FORBIDDEN', message: 'Not your trade unit' } },
+      { status: 403, statusText: 'Forbidden' }
+    );
+    service.getCustomers().subscribe({ error: () => {} });
+    httpMock.expectOne(`${BASE}/customers`).flush(null, { status: 403, statusText: 'Forbidden' });
+
+    expect(spy).toHaveBeenNthCalledWith(1, 'Not your trade unit');
+    expect(spy).toHaveBeenNthCalledWith(2, 'Access denied: you are not authorized for this resource.');
+  });
+
+  it('does not toast other failures — the call site decides how to show them', () => {
+    const spy = vi.spyOn(TestBed.inject(ToastService), 'error');
+    service.getCustomers().subscribe({ error: () => {} });
+    httpMock.expectOne(`${BASE}/customers`).flush(null, { status: 500, statusText: 'Internal Server Error' });
+    expect(spy).not.toHaveBeenCalled();
+  });
 });

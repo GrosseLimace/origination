@@ -57,6 +57,11 @@ export class GrowthOpportunityComponent {
     conversions: this.appState.commodityConversions(),
   }));
 
+  /** The unit conversions failed to load, so contracts the coverage drops were dropped for that
+   *  reason, not because of their unit. */
+  readonly conversionsUnavailable = computed(() =>
+    this.appState.commodityConversionsLoadFailed() && this.appState.commodityConversions().length === 0);
+
   /** True when there are intentions but no yield estimate has been entered for any of them — the
    *  panel can't project anything, and saying so beats rendering a row of zeros. */
   readonly hasNoYieldEstimates = computed(() =>

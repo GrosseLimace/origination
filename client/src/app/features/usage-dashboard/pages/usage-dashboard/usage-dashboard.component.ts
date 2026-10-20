@@ -227,7 +227,6 @@ export class UsageDashboardComponent {
     { id: 'dashboard', label: 'Planting Intention Dashboard' },
     { id: 'build-a-list', label: 'Build a List' },
     { id: 'insights', label: 'Actionable Insights' },
-    { id: 'unshipped-bushels', label: 'Unshipped Bushels' },
     { id: 'bidsheet', label: 'Bid Sheet' },
     { id: 'daily-recap', label: 'Daily Recap' },
   ];
@@ -402,6 +401,22 @@ export class UsageDashboardComponent {
     return source.pipe(finalize(() => this.pendingCount.update(n => Math.max(0, n - 1))));
   }
 
+  /** Quiet window for reportPanelFailure, so one outage that takes several panels down is one toast. */
+  private static readonly PanelFailureQuietMs = 5000;
+  private lastPanelFailureToastAt = 0;
+
+  /**
+   * The chart and breakdown panels used to swallow their errors, so a failed load drew an empty
+   * chart or a table of zeros that read as "nobody used it". They share one message because they
+   * load together and usually fail together; the KPI row and originator table keep their own.
+   */
+  private reportPanelFailure(): void {
+    const now = Date.now();
+    if (now - this.lastPanelFailureToastAt < UsageDashboardComponent.PanelFailureQuietMs) return;
+    this.lastPanelFailureToastAt = now;
+    this.toastService.show('Some usage panels failed to load — they may be empty or out of date. Refresh to try again.', 'error');
+  }
+
   /** Loads the manager roster. Also the filter's Retry handler after a failed load. Deliberately
    *  not run through track(): the page-level spinner covers the first attempt via
    *  managerFilterReady, and a Retry from inside the dropdown must not blank every panel. */
@@ -463,7 +478,7 @@ export class UsageDashboardComponent {
 
     this.track(this.apiService.getUsageDailyActive(from, to, managerId))
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({ next: data => this.dailyActive.set(data), error: () => {} });
+      .subscribe({ next: data => this.dailyActive.set(data), error: () => this.reportPanelFailure() });
   }
 
   /** Tracks which filter combination each tab's data was loaded for, so switching tabs back and
@@ -477,21 +492,21 @@ export class UsageDashboardComponent {
     if (tab === 'whats-doing') {
       this.track(this.apiService.getUsageActivityBreakdown(from, to, managerId))
         .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe({ next: data => this.activityBreakdown.set(data), error: () => {} });
+        .subscribe({ next: data => this.activityBreakdown.set(data), error: () => this.reportPanelFailure() });
 
       this.track(this.apiService.getUsageQueryLibraryUsage(from, to, managerId))
         .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe({ next: data => this.queryLibraryUsage.set(data), error: () => {} });
+        .subscribe({ next: data => this.queryLibraryUsage.set(data), error: () => this.reportPanelFailure() });
 
       this.track(this.apiService.getUsageQuerySearchGaps(from, to, managerId))
         .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe({ next: data => this.querySearchGaps.set(data), error: () => {} });
+        .subscribe({ next: data => this.querySearchGaps.set(data), error: () => this.reportPanelFailure() });
     }
 
     if (tab === 'whos-not') {
       this.track(this.apiService.getUsageUnderusedFeatures(from, to, managerId))
         .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe({ next: data => this.underusedFeatures.set(data), error: () => {} });
+        .subscribe({ next: data => this.underusedFeatures.set(data), error: () => this.reportPanelFailure() });
     }
   }
 
@@ -501,14 +516,14 @@ export class UsageDashboardComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: data => { this.featureSessions.set(data); this.featureSessionsLoading.set(false); },
-        error: () => this.featureSessionsLoading.set(false)
+        error: () => { this.featureSessionsLoading.set(false); this.reportPanelFailure(); }
       });
   }
 
   loadWeeklyTrend(managerId?: string): void {
     this.track(this.apiService.getUsageWeeklyTrend(managerId))
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({ next: data => this.weeklyTrend.set(data), error: () => {} });
+      .subscribe({ next: data => this.weeklyTrend.set(data), error: () => this.reportPanelFailure() });
   }
 
   /** Exclusions change every panel's numbers, so re-read everything. */
