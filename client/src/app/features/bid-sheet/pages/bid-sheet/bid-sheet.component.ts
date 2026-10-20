@@ -4501,9 +4501,13 @@ export class BidSheetComponent {
         this._refreshMapMarkers();
         this.usageTracking.postClickEvent('interaction', 'bidsheet', 'location-deleted', name);
       },
-      error: () => {
+      error: (err) => {
         this.showDeleteLocationConfirm.set(false);
-        this.toastService.error('Failed to delete location');
+        // A 403 carries a reason worth reading: someone else's location, or a BarChart location, which
+        // is never deleted and has to be removed from the sheet instead.
+        this.toastService.error(err?.status === 403 && err?.message
+          ? err.message
+          : 'Failed to delete location');
       }
     });
   }
