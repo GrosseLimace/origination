@@ -3112,6 +3112,22 @@ describe('BidSheetComponent — owner actions act on the sheet they were raised 
     expect(shared).toEqual([2]);
   });
 
+  // Taking yourself off someone else's sheet: the server saves it and answers 204, because you can no
+  // longer see the sheet. That used to be read as a failure ("Failed to update sharing") while the
+  // change had gone through; now the sheet drops out of the list like a delete, and the rest stay.
+  it('drops the sheet from the list when the caller has taken themselves off it', () => {
+    const api = TestBed.inject(ApiService) as unknown as { setBidSheetShares: (id: number) => unknown };
+    api.setBidSheetShares = (id: number) => { shared.push(id); return of(null); };
+    component.openShareSheet(2);
+
+    component.confirmShareSheet();
+
+    expect(shared).toEqual([2]);
+    expect(component.sheets().map(s => s.id)).toEqual([1]);
+    expect(component.selectedSheetIds()).toEqual([1]);
+    expect(component.showShareSheet()).toBe(false);
+  });
+
   // The toolbar buttons have no row to be raised from, so they keep pointing at the first ticked --
   // which is why the ones that cannot be made unambiguous are hidden once several are open.
   it('falls back to the first ticked sheet when raised without one', () => {
