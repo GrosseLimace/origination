@@ -438,38 +438,30 @@
               <!-- Delete crop confirmation is shown as a popup (see below showDeleteCropConfirm block) -->
 
               <!-- Delete entire location (only visible in delete mode) -->
-              @if (deleteMode()) {
+              <!-- No delete for BarChart locations: they are never deleted (business rule, 2026-10-20; the server
+                   refuses too). The way off a sheet is Remove locations from this sheet. -->
+              @if (deleteMode() && !panelSelectedBarchartKey()) {
               <div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
-                @if (panelSelectedBarchartKey()) {
-                <!-- BarChart locations are never deleted (business rule, 2026-10-20; the server refuses too). Point at the
-                     way off a sheet instead: Remove locations from this sheet keeps the location and its feed bids. -->
-                <p class="text-xs text-gray-500 dark:text-gray-400 text-center">BarChart locations can't be deleted. To take this off your sheet, use <span class="font-medium text-gray-700 dark:text-gray-300">Remove locations from this sheet</span>.</p>
-                } @else {
-                  <button (click)="openDeleteLocationConfirm()"
-                    class="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-scoular-red-accessible dark:text-scoular-red rounded-lg border border-scoular-red/30 dark:border-scoular-red/40 hover:bg-scoular-red/10 dark:hover:bg-scoular-red/20 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                    Delete Location &amp; All Bids
-                  </button>
-                }
+                <button (click)="openDeleteLocationConfirm()"
+                  class="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-scoular-red-accessible dark:text-scoular-red rounded-lg border border-scoular-red/30 dark:border-scoular-red/40 hover:bg-scoular-red/10 dark:hover:bg-scoular-red/20 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                  Delete Location &amp; All Bids
+                </button>
               </div>
               }
               } @else {
               <div class="flex flex-col items-center justify-center py-12 px-6 text-center">
                 <p class="text-sm text-gray-400 dark:text-gray-500">No bids recorded for this location.</p>
               </div>
-              @if (deleteMode()) {
+              <!-- No delete for BarChart locations: they are never deleted (business rule, 2026-10-20; the server
+                   refuses too). The way off a sheet is Remove locations from this sheet. -->
+              @if (deleteMode() && !panelSelectedBarchartKey()) {
               <div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
-                @if (panelSelectedBarchartKey()) {
-                <!-- BarChart locations are never deleted (business rule, 2026-10-20; the server refuses too). Point at the
-                     way off a sheet instead: Remove locations from this sheet keeps the location and its feed bids. -->
-                <p class="text-xs text-gray-500 dark:text-gray-400 text-center">BarChart locations can't be deleted. To take this off your sheet, use <span class="font-medium text-gray-700 dark:text-gray-300">Remove locations from this sheet</span>.</p>
-                } @else {
-                  <button (click)="openDeleteLocationConfirm()"
-                    class="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-scoular-red-accessible dark:text-scoular-red rounded-lg border border-scoular-red/30 dark:border-scoular-red/40 hover:bg-scoular-red/10 dark:hover:bg-scoular-red/20 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                    Delete Location
-                  </button>
-                }
+                <button (click)="openDeleteLocationConfirm()"
+                  class="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-scoular-red-accessible dark:text-scoular-red rounded-lg border border-scoular-red/30 dark:border-scoular-red/40 hover:bg-scoular-red/10 dark:hover:bg-scoular-red/20 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                  Delete Location
+                </button>
               </div>
               }
               }
