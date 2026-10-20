@@ -34,7 +34,7 @@
           <app-help-icon [name]="stepsOpen() ? 'chevron-up' : 'chevron-down'" [size]="14" />
         </button>
         @if (stepsOpen()) {
-          <ol class="mt-2 ml-5 list-decimal space-y-1.5 text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+          <ol [id]="headingId() + '-steps'" class="mt-2 ml-5 list-decimal space-y-1.5 text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
             @for (step of steps(); track $index) {
               <li>
                 @for (s of step; track $index) {
@@ -58,13 +58,13 @@
 
     @if (faq().examples?.length) {
       <div>
-        <button type="button" (click)="examplesOpen.set(!examplesOpen())" [attr.aria-expanded]="examplesOpen()"
+        <button type="button" (click)="toggleExamples()" [attr.aria-expanded]="examplesOpen()"
           class="inline-flex items-center gap-1 text-sm font-medium text-scoular-blue-medium dark:text-[#7CC4EC] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue rounded">
           Try an example
           <app-help-icon [name]="examplesOpen() ? 'chevron-up' : 'chevron-down'" [size]="14" />
         </button>
         @if (examplesOpen()) {
-          <ul class="mt-2 flex flex-wrap gap-2">
+          <ul [id]="headingId() + '-examples'" class="mt-2 flex flex-wrap gap-2">
             @for (ex of faq().examples; track ex) {
               <li>
                 <button type="button" (click)="tryExample(ex)"
@@ -80,14 +80,14 @@
 
     @if (faq().troubleshoot?.length) {
       <div>
-        <button type="button" (click)="troubleOpen.set(!troubleOpen())" [attr.aria-expanded]="troubleOpen()"
+        <button type="button" (click)="toggleTrouble()" [attr.aria-expanded]="troubleOpen()"
           class="inline-flex items-center gap-1 text-sm font-medium text-scoular-blue-medium dark:text-[#7CC4EC] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue rounded">
           <app-help-icon name="wrench" [size]="14" />
           Troubleshoot this
           <app-help-icon [name]="troubleOpen() ? 'chevron-up' : 'chevron-down'" [size]="14" />
         </button>
         @if (troubleOpen()) {
-          <ul class="mt-2 space-y-1">
+          <ul [id]="headingId() + '-trouble'" class="mt-2 space-y-1">
             @for (t of faq().troubleshoot; track $index) {
               <li>
                 <button type="button" (click)="troubleshoot($index)"
