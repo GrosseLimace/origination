@@ -1,9 +1,10 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, ChangeDetectionStrategy } from '@angular/core';
 import { ToastService, Toast } from '@core/services/toast.service';
 
 @Component({
   selector: 'app-toast-container',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full">
       @for (toast of toastService.toasts(); track toast.id) {
@@ -36,6 +37,8 @@ import { ToastService, Toast } from '@core/services/toast.service';
           </svg>
           <span class="flex-1 text-sm leading-snug">{{ toast.message }}</span>
           <button
+            type="button"
+            aria-label="Dismiss notification"
             (click)="toastService.dismiss(toast.id)"
             class="flex-shrink-0 p-0.5 hover:opacity-70 transition-opacity"
           >

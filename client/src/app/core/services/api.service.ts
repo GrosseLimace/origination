@@ -56,11 +56,22 @@ import {
 } from '@models';
 import { environment } from '@env/environment';
 import { ToastService } from '@core/services/toast.service';
+import { ApiError } from '@core/errors/api-error';
 
 /**
  * ApiService provides HTTP methods for communicating with the .NET Web API backend.
  * All methods return RxJS Observables for async data handling.
  */
+/** A recap group as the server sends it: an int id, and the CC list under ccList. */
+type RecapGroupDto = import('@features/daily-digest/models/recap-group.model').RecapGroup & { id: number | string; ccList?: string[] };
+
+/** A saved list as the server sends it: the three JSON columns arrive as strings. */
+type SavedListDto = Omit<SavedList, 'filters' | 'includedCustomerIds' | 'excludedCustomerIds'> & {
+  filters?: string | null;
+  includedCustomerIds?: string | null;
+  excludedCustomerIds?: string | null;
+};
+
 @Injectable({
   providedIn: 'root'
 })
@@ -74,7 +85,7 @@ export class ApiService {
   // slow ODS endpoint (e.g. from HomeComponent._loadAllData() and DataPreloadService).
   // When a second caller requests the same key while the first is still in-flight,
   // they share one HTTP request and both receive the same response.
-  private readonly _inFlight = new Map<string, Observable<any>>();
+  private readonly _inFlight = new Map<string, Observable<unknown>>();
 
   private _dedupe<T>(key: string, request: Observable<T>): Observable<T> {
     const cached = this._inFlight.get(key);
@@ -92,6 +103,13 @@ export class ApiService {
     return shared;
   }
 
+  /** Where the browser sends its error telemetry, or null when it is off. Swallows its own failure
+   *  without a toast: telemetry being unavailable is not something the user can act on. */
+  getClientTelemetryConfig(): Observable<{ connectionString: string | null }> {
+    return this.http.get<{ connectionString: string | null }>(`${this.baseUrl}/clienttelemetry`)
+      .pipe(catchError(() => of({ connectionString: null })));
+  }
+
   private handleError(error: unknown): Observable<never> {
     if (isDevMode()) {
       console.error('API Error:', error);
@@ -107,27 +125,14 @@ export class ApiService {
         // re-auth; this only makes sure they're told why the screen stopped working.
         this.toastService.error('Your session has expired — please refresh the page to sign in again.');
       }
-      // Surface the server's real message (falling back through the common shapes) + status, so
-      // callers can show something useful instead of a generic "Server error". For validation
-      // errors, prefer the first field-level detail (e.g. "A location named X already exists in
-      // this trade unit") over the generic top-level "One or more fields failed validation." text.
-      const errObj = (error.error as {
-        error?: { message?: string; traceId?: string; details?: Array<{ message?: string }> }
-      } | null)?.error;
-      const detailMsg = errObj?.details?.find(d => !!d?.message)?.message;
-      const serverMsg = detailMsg ?? errObj?.message ?? (error.error as { message?: string } | null)?.message ?? error.message;
-      const wrapped = new Error(serverMsg || 'Server error');
-      (wrapped as Error & { status?: number }).status = error.status;
-      // Carry the server's correlation id through to call sites. The API populates it on every
-      // error and builds a "(Ref: …)" message around it specifically so a user can quote it to
-      // support, but it was being dropped here, so no surface in the app ever showed one.
-      if (errObj?.traceId) {
-        (wrapped as Error & { traceId?: string }).traceId = errObj.traceId;
-      }
-      return throwError(() => wrapped);
+      // One typed error for every HTTP failure: the server's real message (fallback order in
+      // ApiError.fromHttpErrorResponse), status, code, field details and correlation id. The API
+      // builds a "(Ref: …)" message around that id so a user can quote it to support, so it has to
+      // survive the trip to the call site.
+      return throwError(() => ApiError.fromHttpErrorResponse(error));
     }
 
-    return throwError(() => error instanceof Error ? error : new Error('Server error'));
+    return throwError(() => ApiError.fromUnknown(error));
   }
 
   // ==========================================================================
@@ -174,7 +179,7 @@ export class ApiService {
 
   /** Shapes a server RecapGroupDto into the frontend RecapGroup (int id -> string). */
   private mapRecapGroup(
-    dto: import('@features/daily-digest/models/recap-group.model').RecapGroup & { id: number | string; ccList?: string[] },
+    dto: RecapGroupDto,
   ): import('@features/daily-digest/models/recap-group.model').RecapGroup {
     return {
       id: String(dto.id),
@@ -213,7 +218,7 @@ export class ApiService {
 
   /** Fetches the current user's recap groups. */
   getRecapGroups(): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup[]> {
-    return this.http.get<any[]>(`${this.baseUrl}/dailyrecapgroups`)
+    return this.http.get<RecapGroupDto[]>(`${this.baseUrl}/dailyrecapgroups`)
       .pipe(
         map(list => list.map(g => this.mapRecapGroup(g))),
         catchError(e => this.handleError(e)),
@@ -224,7 +229,7 @@ export class ApiService {
   createRecapGroup(
     req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest,
   ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
-    return this.http.post<any>(`${this.baseUrl}/dailyrecapgroups`, this.toRecapGroupBody(req, true))
+    return this.http.post<RecapGroupDto>(`${this.baseUrl}/dailyrecapgroups`, this.toRecapGroupBody(req, true))
       .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
   }
 
@@ -233,7 +238,7 @@ export class ApiService {
     id: string,
     req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest,
   ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
-    return this.http.put<any>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}`, this.toRecapGroupBody(req, false))
+    return this.http.put<RecapGroupDto>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}`, this.toRecapGroupBody(req, false))
       .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
   }
 
@@ -242,7 +247,7 @@ export class ApiService {
     id: string,
     enabled: boolean,
   ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
-    return this.http.put<any>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}/enabled`, { enabled })
+    return this.http.put<RecapGroupDto>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}/enabled`, { enabled })
       .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
   }
 
@@ -410,22 +415,6 @@ export class ApiService {
     let params = new HttpParams();
     if (scoularId) params = params.set('scoularId', scoularId);
     return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/customer/${customerId}`, { params })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Per-producer unapplied tickets — the fast, narrowly-scoped fetch the home page fires on
-   *  producer select. Applied tickets are loaded lazily per-contract via {@link getAppliedTicketsByContract}. */
-  getUnappliedTicketsByCustomer(customerId: number, scoularId?: string): Observable<Ticket[]> {
-    let params = new HttpParams();
-    if (scoularId) params = params.set('scoularId', scoularId);
-    return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/customer/${customerId}/unapplied`, { params })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Lazy per-contract applied-tickets fetch — fires when the contracts table expands a row.
-   *  Contract numbers may contain spaces (e.g. "PC  13042") so the id must be URL-encoded. */
-  getAppliedTicketsByContract(sourceContractId: string): Observable<Ticket[]> {
-    return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/contract/${encodeURIComponent(sourceContractId)}/applied`)
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -731,12 +720,6 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Deletes producer details for a customer */
-  deleteProducerDetails(customerId: number): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/producerdetails/customer/${customerId}`)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
   // ==========================================================================
   // Stored Grain Operations
   // ==========================================================================
@@ -856,7 +839,7 @@ export class ApiService {
     try { return JSON.parse(val) as T; } catch { return undefined; }
   }
 
-  private static hydrateSavedList(l: any): SavedList {
+  private static hydrateSavedList(l: SavedListDto): SavedList {
     return {
       ...l,
       filters: ApiService.parseSavedListJson<RefinementFilters>(l.filters),
@@ -884,7 +867,7 @@ export class ApiService {
   /** Fetches all saved customer lists — deserializes JSON strings to objects */
   getSavedLists(): Observable<SavedList[]> {
     return this._dedupe('savedlists',
-      this.http.get<any[]>(`${this.baseUrl}/savedlists`).pipe(
+      this.http.get<SavedListDto[]>(`${this.baseUrl}/savedlists`).pipe(
         map(lists => lists.map(ApiService.hydrateSavedList)),
         catchError(e => this.handleError(e))
       )
@@ -894,7 +877,7 @@ export class ApiService {
   /** Manager-only: fetches all saved lists tied to the given trade unit(s) that belong to other
    *  users, each carrying the creator's display name. Same JSON deserialization as getSavedLists. */
   getTeamSavedLists(tradeUnits: string): Observable<SavedList[]> {
-    return this.http.get<any[]>(`${this.baseUrl}/savedlists/team`, { params: { tradeUnits } }).pipe(
+    return this.http.get<SavedListDto[]>(`${this.baseUrl}/savedlists/team`, { params: { tradeUnits } }).pipe(
       map(lists => lists.map(ApiService.hydrateSavedList)),
       catchError(e => this.handleError(e))
     );

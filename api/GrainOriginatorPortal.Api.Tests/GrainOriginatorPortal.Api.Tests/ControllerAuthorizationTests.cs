@@ -31,7 +31,6 @@ public class ControllerAuthorizationTests
         yield return new object[] { typeof(DiagnosticsController) };
         yield return new object[] { typeof(DpContractsController) };
         yield return new object[] { typeof(EntitlementsController) };
-        yield return new object[] { typeof(FarmsController) };
         yield return new object[] { typeof(GeocodeController) };
         yield return new object[] { typeof(MeController) };
         yield return new object[] { typeof(NotesController) };
