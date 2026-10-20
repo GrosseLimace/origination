@@ -870,7 +870,8 @@
           "Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore": "[10.0.3, )",
           "Microsoft.Extensions.Http.Resilience": "[10.3.0, )",
           "Microsoft.Identity.Web": "[3.8.4, )",
-          "Microsoft.OpenApi": "[2.7.5, )"
+          "Microsoft.OpenApi": "[2.7.5, )",
+          "System.Security.Cryptography.Pkcs": "[10.0.13, )"
         }
       },
       "grainoriginatorportal.application": {
