@@ -165,7 +165,9 @@ public class CustomersController : ControllerBase
         // Rep-driven onboarding: assigning trade-unit membership is intentionally open to any rep and
         // not admin-gated / caller-entitlement-validated. Accepted risk — see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-03).
         var codes = request.TradeUnitCodes ?? new List<string>();
-        var outcome = await _service.AssignTradeUnitsAsync(id, codes, cancellationToken);
+        // ScoularId (plan E4): sent for a candidate found by the CTRM onboarding search, whose id in the
+        // URL is only a placeholder; the server looks the producer up by code and mints the real id.
+        var outcome = await _service.AssignTradeUnitsAsync(id, codes, request.ScoularId, cancellationToken);
 
         switch (outcome.Result)
         {

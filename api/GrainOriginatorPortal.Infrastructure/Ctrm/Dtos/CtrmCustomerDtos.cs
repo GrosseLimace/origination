@@ -52,6 +52,13 @@ public sealed class CtrmCustomerDto
     public JsonElement NopidNo { get; set; }
     public string? PaymentMethod { get; set; }
 
+    /// <summary>"Y" marks an MDM duplicate record. Projected only by the onboarding search (plan E3), which
+    /// drops such rows the way the ODS search's <c>IsDuplicate = 0</c> did; null everywhere else.</summary>
+    public string? DuplicateYN { get; set; }
+
+    /// <summary>True when <see cref="DuplicateYN"/> says the row is a duplicate.</summary>
+    public bool IsDuplicate => string.Equals(DuplicateYN?.Trim(), "Y", StringComparison.OrdinalIgnoreCase);
+
     public string IdText => Id.ValueKind switch
     {
         JsonValueKind.String => Id.GetString() ?? "",

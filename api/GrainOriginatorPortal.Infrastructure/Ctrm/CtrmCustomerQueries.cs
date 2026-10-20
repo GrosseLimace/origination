@@ -53,6 +53,38 @@ public static class CtrmCustomerQueries
 
     public const string CustomersProbe = "query { customers(skip: 0, take: 1) { totalCount items { sourceCode activeYN } } }";
 
+    /// <summary>The one field the onboarding search projects beyond <see cref="Projection"/>: the MDM duplicate flag.</summary>
+    public const string SearchExtraProjection = "duplicateYN";
+
+    /// <summary>The producer industry code the onboarding search filters on server-side, as the ODS search's <c>IndustryCode1 = 'PR'</c> did.</summary>
+    public const string ProducerIndustryCode = "PR";
+
+    /// <summary>
+    /// The add-customer (onboarding) search document (plan E3): one <c>byName</c> alias on <c>nameContains</c>, and
+    /// when <paramref name="byCode"/> a second <c>byCode</c> alias on <c>sourceCodeContains</c>, both restricted to
+    /// producers with <c>industryCode1: "PR"</c>. Both filters and the industry filter were confirmed on the gateway
+    /// on 2026-10-20. <c>$sourceSystem</c> is sent only when configured; an unprovided variable leaves the argument
+    /// absent. The <c>$code</c> variable is declared only when its alias is present, so an unused variable can never
+    /// be reported.
+    /// </summary>
+    public static string CustomersSearch(bool byCode, bool extended, int take)
+    {
+        if (take <= 0) throw new ArgumentOutOfRangeException(nameof(take));
+        var projection = Projection(extended) + " " + SearchExtraProjection;
+        var builder = new StringBuilder("query ($name: String, $sourceSystem: String");
+        if (byCode) builder.Append(", $code: String");
+        builder.Append(") {\n");
+        builder.Append("  byName: customers(skip: 0, take: ").Append(take)
+            .Append(", nameContains: $name, industryCode1: \"").Append(ProducerIndustryCode).Append("\", sourceSystem: $sourceSystem) { totalCount items { ")
+            .Append(projection).Append(" } }\n");
+        if (byCode)
+            builder.Append("  byCode: customers(skip: 0, take: ").Append(take)
+                .Append(", sourceCodeContains: $code, industryCode1: \"").Append(ProducerIndustryCode).Append("\", sourceSystem: $sourceSystem) { totalCount items { ")
+                .Append(projection).Append(" } }\n");
+        builder.Append('}');
+        return builder.ToString();
+    }
+
     /// <summary>
     /// One aliased <c>customers(sourceCode:)</c> field per code; codes are JSON-serialised, never interpolated raw.
     /// Every alias carries <see cref="Projection"/> for <paramref name="extended"/>.

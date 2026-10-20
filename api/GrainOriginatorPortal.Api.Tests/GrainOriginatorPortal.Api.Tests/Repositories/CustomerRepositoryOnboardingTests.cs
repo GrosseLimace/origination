@@ -119,7 +119,7 @@ public class CustomerRepositoryOnboardingTests
         app.SaveChanges();
         sut.Candidate = OdsCandidate(777, "smitfar");
 
-        var outcome = await sut.AssignTradeUnitsAsync(777, ["1085"], "rep@scoular.com", CancellationToken.None);
+        var outcome = await sut.AssignTradeUnitsAsync(777, ["1085"], null, "rep@scoular.com", CancellationToken.None);
 
         Assert.Equal(AssignTradeUnitsResult.Ok, outcome.Result);
         Assert.Equal(MintedId, outcome.CustomerId);
@@ -154,7 +154,7 @@ public class CustomerRepositoryOnboardingTests
         app.SaveChanges();
         sut.Candidate = OdsCandidate(777, "SMITFAR");
 
-        var outcome = await sut.AssignTradeUnitsAsync(777, ["1085"], "rep@scoular.com", CancellationToken.None);
+        var outcome = await sut.AssignTradeUnitsAsync(777, ["1085"], null, "rep@scoular.com", CancellationToken.None);
 
         Assert.Equal(AssignTradeUnitsResult.Ok, outcome.Result);
         Assert.True(outcome.Adopted);
@@ -182,7 +182,7 @@ public class CustomerRepositoryOnboardingTests
         });
         app.SaveChanges();
 
-        var outcome = await sut.AssignTradeUnitsAsync(900, ["1085"], "rep@scoular.com", CancellationToken.None);
+        var outcome = await sut.AssignTradeUnitsAsync(900, ["1085"], null, "rep@scoular.com", CancellationToken.None);
 
         Assert.False(outcome.Adopted);
         Assert.False(app.CustomerTradeUnits.Single(t => t.CustomerId == 900 && t.TradeUnit == "2190").IsActive);
@@ -201,7 +201,7 @@ public class CustomerRepositoryOnboardingTests
         app.SaveChanges();
         sut.Candidate = OdsCandidate(777, "SMITFAR");
 
-        var outcome = await sut.AssignTradeUnitsAsync(777, ["1085"], "rep@scoular.com", CancellationToken.None);
+        var outcome = await sut.AssignTradeUnitsAsync(777, ["1085"], null, "rep@scoular.com", CancellationToken.None);
 
         Assert.Equal(AssignTradeUnitsResult.Ok, outcome.Result);
         Assert.Equal(900L, outcome.CustomerId);
@@ -221,7 +221,7 @@ public class CustomerRepositoryOnboardingTests
         app.SaveChanges();
         sut.Candidate = OdsCandidate(777, "SMITFAR");
 
-        var outcome = await sut.AssignTradeUnitsAsync(777, ["1085"], "rep@scoular.com", CancellationToken.None);
+        var outcome = await sut.AssignTradeUnitsAsync(777, ["1085"], null, "rep@scoular.com", CancellationToken.None);
 
         Assert.Equal(MintedId, outcome.CustomerId);
         Assert.True(outcome.Adopted);
@@ -241,7 +241,7 @@ public class CustomerRepositoryOnboardingTests
         app.SaveChanges();
         sut.Candidate = OdsCandidate(777, "SMITFAR");
 
-        var outcome = await sut.AssignTradeUnitsAsync(777, ["1085"], "rep@scoular.com", CancellationToken.None);
+        var outcome = await sut.AssignTradeUnitsAsync(777, ["1085"], null, "rep@scoular.com", CancellationToken.None);
 
         Assert.Equal(AssignTradeUnitsResult.Ok, outcome.Result);
         Assert.Equal(777L, outcome.CustomerId);
@@ -259,7 +259,7 @@ public class CustomerRepositoryOnboardingTests
         var sut = Build(out var app);
         sut.Candidate = OdsCandidate(777, "SMITFAR");
 
-        var outcome = await sut.AssignTradeUnitsAsync(777, [" ", ""], "rep@scoular.com", CancellationToken.None);
+        var outcome = await sut.AssignTradeUnitsAsync(777, [" ", ""], null, "rep@scoular.com", CancellationToken.None);
 
         Assert.Equal(AssignTradeUnitsResult.NoCodes, outcome.Result);
         Assert.Equal(777L, outcome.CustomerId);
@@ -275,7 +275,7 @@ public class CustomerRepositoryOnboardingTests
         var sut = Build(out var app);
         sut.Candidate = null;
 
-        var outcome = await sut.AssignTradeUnitsAsync(777, ["1085"], "rep@scoular.com", CancellationToken.None);
+        var outcome = await sut.AssignTradeUnitsAsync(777, ["1085"], null, "rep@scoular.com", CancellationToken.None);
 
         Assert.Equal(AssignTradeUnitsResult.CustomerNotFound, outcome.Result);
         Assert.Equal(777L, outcome.CustomerId);
@@ -296,7 +296,7 @@ public class CustomerRepositoryOnboardingTests
             new Customer { Id = 500, ScoularId = "SMITFAR", Name = "Smith Farms", IsActive = true });
         app.SaveChanges();
 
-        var outcome = await sut.AssignTradeUnitsAsync(777, ["1085"], "rep@scoular.com", CancellationToken.None);
+        var outcome = await sut.AssignTradeUnitsAsync(777, ["1085"], null, "rep@scoular.com", CancellationToken.None);
 
         Assert.Equal(AssignTradeUnitsResult.Ok, outcome.Result);
         Assert.Equal(777L, outcome.CustomerId);

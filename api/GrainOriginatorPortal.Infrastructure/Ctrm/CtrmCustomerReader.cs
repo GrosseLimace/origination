@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Diagnostics;
 using System.Text.Json;
 using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
@@ -473,6 +474,110 @@ public sealed class CtrmCustomerReader
         };
     }
 
+    // -------------------------------------------------------------------------
+    // Onboarding search (plan E3)
+
+    /// <summary>Rows requested per alias in the onboarding search: the API's page ceiling.</summary>
+    public const int SearchTake = 500;
+
+    /// <summary>Candidates returned at most. A type-ahead, matching the ODS search's TOP 50.</summary>
+    public const int SearchMaxResults = 50;
+
+    /// <summary>A single token of 3 to 7 non-blank characters is also tried as a partial producer code.</summary>
+    private static readonly Regex CodeLike = new(@"^\S{3,7}$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// The add-customer search against the CTRM customer master (plan E3): producers whose name contains the
+    /// longest word of the term, plus, for a single short token, producers whose code contains it. The server
+    /// restricts to <c>industryCode1 = PR</c>; in memory the rows must pass <see cref="Sync.CtrmCustomerFilters.IsInScope"/>,
+    /// not be MDM duplicates, and contain EVERY word of the term in the name or the code (the ODS search's
+    /// multi-word AND). One row per source code (<see cref="PickCanonical"/>), ordered by name, capped at
+    /// <see cref="SearchMaxResults"/>. Interactive: a user is typing, so it takes the interactive lane and the
+    /// short server-timeout budget. Never returns a partial answer as Ok.
+    /// </summary>
+    public async Task<CtrmReadResult<CtrmCustomerSearch>> SearchAsync(string searchTerm, CancellationToken cancellationToken)
+    {
+        var words = (searchTerm ?? string.Empty)
+            .Split([' ', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+        var search = new CtrmCustomerSearch
+        {
+            ExtendedFields = string.Equals(_configuration[ExtendedFieldsKey]?.Trim(), "true", StringComparison.OrdinalIgnoreCase)
+        };
+        if (words.Count == 0)
+            return new CtrmReadResult<CtrmCustomerSearch> { Status = CtrmReadStatus.Ok, Value = search };
+
+        var nameTerm = words.OrderByDescending(w => w.Length).First();
+        var codeTerm = words.Count == 1 && CodeLike.IsMatch(words[0]) ? words[0] : null;
+        var sourceSystem = _configuration[SourceSystemKey]?.Trim();
+
+        var document = CtrmCustomerQueries.CustomersSearch(byCode: codeTerm is not null, search.ExtendedFields, SearchTake);
+        var variables = new Dictionary<string, object?> { ["name"] = nameTerm };
+        if (codeTerm is not null) variables["code"] = codeTerm;
+        if (!string.IsNullOrEmpty(sourceSystem)) variables["sourceSystem"] = sourceSystem;
+
+        var stopwatch = Stopwatch.StartNew();
+        CtrmReadResult<Dictionary<string, CtrmPage<CtrmCustomerDto>>> read;
+        using (CtrmTradeUnitThrottle.Interactive())
+        {
+            read = await CtrmServerTimeoutRetry.RunAsync(
+                () => _client.QueryAsync<Dictionary<string, CtrmPage<CtrmCustomerDto>>>(document, variables, cancellationToken),
+                _configuration, _logger, "customers onboarding search", interactive: true);
+        }
+
+        if (read.Status == CtrmReadStatus.PartialSuccess)
+            return new CtrmReadResult<CtrmCustomerSearch>
+            {
+                Status = CtrmReadStatus.QueryError, HttpStatus = read.HttpStatus, ErrorCode = read.ErrorCode,
+                Detail = "partial answer (data plus errors): " + read.Detail
+            };
+        if (!read.Ok || read.Value is null)
+            return new CtrmReadResult<CtrmCustomerSearch>
+            {
+                Status = read.Ok ? CtrmReadStatus.Error : read.Status, HttpStatus = read.HttpStatus, ErrorCode = read.ErrorCode,
+                Detail = read.Detail ?? "CTRM returned no data for the onboarding search."
+            };
+
+        var rows = new List<CtrmCustomerDto>();
+        foreach (var alias in codeTerm is null ? new[] { "byName" } : new[] { "byName", "byCode" })
+        {
+            if (!read.Value.TryGetValue(alias, out var page) || page is null)
+                return new CtrmReadResult<CtrmCustomerSearch>
+                {
+                    Status = CtrmReadStatus.Error, HttpStatus = read.HttpStatus,
+                    Detail = $"CTRM returned no '{alias}' customers object for the onboarding search."
+                };
+            rows.AddRange(page.Items ?? []);
+            if (page.TotalCount > SearchTake) search.Truncated = true;
+        }
+        search.Received = rows.Count;
+
+        var kept = rows
+            .Where(dto => Sync.CtrmCustomerFilters.IsInScope(dto, out _) && !dto.IsDuplicate && EveryWordMatches(dto, words))
+            .GroupBy(dto => dto.SourceCode!.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(group => PickCanonical(group.ToList()))
+            .Where(dto => dto is not null)
+            .Select(dto => dto!)
+            .OrderBy(dto => dto.Name?.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ThenBy(dto => dto.SourceCode?.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Take(SearchMaxResults);
+        search.Items.AddRange(kept);
+
+        // Counts only: the term and the names are producer data.
+        _logger.LogInformation(
+            "CTRM onboarding search: {Kept} candidate(s) from {Received} row(s) ({Aliases} alias(es), truncated={Truncated}) in {Ms} ms.",
+            search.Items.Count, search.Received, codeTerm is null ? 1 : 2, search.Truncated, stopwatch.ElapsedMilliseconds);
+
+        return new CtrmReadResult<CtrmCustomerSearch> { Status = CtrmReadStatus.Ok, HttpStatus = read.HttpStatus, Value = search };
+    }
+
+    private static bool EveryWordMatches(CtrmCustomerDto dto, IReadOnlyList<string> words)
+    {
+        var name = dto.Name ?? string.Empty;
+        var code = dto.SourceCode ?? string.Empty;
+        return words.All(w => name.Contains(w, StringComparison.OrdinalIgnoreCase) || code.Contains(w, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static int? TotalCountOf(CtrmReadResult<JsonElement> read) =>
         read.Ok
         && read.Value.ValueKind == JsonValueKind.Object
@@ -597,6 +702,22 @@ public sealed class CtrmCustomerReader
     private static bool IsPermissionMissing(CtrmReadStatus status, string? errorCode) =>
         status == CtrmReadStatus.Unauthorized
         || (errorCode?.StartsWith("AUTH_", StringComparison.OrdinalIgnoreCase) ?? false);
+}
+
+/// <summary>The result of the onboarding search (plan E3): in-scope, non-duplicate producers matching the term.</summary>
+public sealed class CtrmCustomerSearch
+{
+    /// <summary>At most <see cref="CtrmCustomerReader.SearchMaxResults"/> rows, one per source code, ordered by name.</summary>
+    public List<CtrmCustomerDto> Items { get; } = [];
+
+    /// <summary>True when an alias reported more rows than one page holds, so the result is the first page's best, not everything.</summary>
+    public bool Truncated { get; set; }
+
+    /// <summary>True when the extended projection was sent, so the rows carry the extended fields.</summary>
+    public bool ExtendedFields { get; set; }
+
+    /// <summary>Rows received before filtering, for the log line.</summary>
+    public int Received { get; set; }
 }
 
 /// <summary>The result of a customer master lookup by producer code.</summary>

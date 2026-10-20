@@ -1,4 +1,5 @@
 using GrainOriginatorPortal.Infrastructure.Abstractions;
+using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
@@ -19,14 +20,23 @@ public class CustomerRepository : ICustomerRepository
     private readonly ITicketRepository _ticketRepository;
     private readonly ILogger<CustomerRepository> _logger;
     private readonly IConfiguration _configuration;
+    private readonly CtrmCustomerReader? _ctrmCustomers;
+    private readonly ICustomerSyncRepository? _syncRepository;
 
+    /// <param name="ctrmCustomers">The CTRM customer master reader, used by the onboarding search and by
+    /// onboarding-by-code when <c>CustomerSync:Source</c> is <c>ctrm</c> (plan E3/E4). Optional so the
+    /// InMemory-provider tests, which never reach CTRM, need not supply one.</param>
+    /// <param name="syncRepository">Mints ids for producers onboarded from CTRM, which has no id for them. Same
+    /// optionality.</param>
     public CustomerRepository(
         OriginationDbContext context,
         ApplicationDbContext appContext,
         ITicketRepository ticketRepository,
         IContractRepository contractRepository,
         ILogger<CustomerRepository> logger,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        CtrmCustomerReader? ctrmCustomers = null,
+        ICustomerSyncRepository? syncRepository = null)
     {
         _context = context;
         _appContext = appContext;
@@ -34,6 +44,8 @@ public class CustomerRepository : ICustomerRepository
         _contractRepository = contractRepository;
         _logger = logger;
         _configuration = configuration;
+        _ctrmCustomers = ctrmCustomers;
+        _syncRepository = syncRepository;
     }
 
     /// <summary>Strips a leading non-alphanumeric prefix from a name for sorting (so an onboarded
@@ -232,12 +244,16 @@ public class CustomerRepository : ICustomerRepository
         return new[] { trimmed, trimmed.ToUpperInvariant(), trimmed.ToLowerInvariant() }.Distinct(StringComparer.Ordinal);
     }
 
-    /// <summary>Onboarding search candidates from base.vw_CurrentCustomers (TOP 50, the sync's
-    /// quality filters), mapped to Customer. No dedupe against dbo.Customer — the caller does
-    /// that. Returns an empty list for a blank term. A seam: the raw ODS SQL cannot run on the
-    /// InMemory provider, and E3 later re-routes the search to CTRM.</summary>
+    /// <summary>Onboarding search candidates, source per <c>CustomerSync:Source</c>: on <c>ctrm</c> the CTRM
+    /// customer master (<see cref="QueryCtrmOnboardingCandidatesAsync"/>, plan E3); otherwise
+    /// base.vw_CurrentCustomers (TOP 50, the sync's quality filters), mapped to Customer. No dedupe
+    /// against dbo.Customer — the caller does that. Returns an empty list for a blank term. A seam:
+    /// the raw ODS SQL cannot run on the InMemory provider.</summary>
     protected virtual async Task<List<Customer>> QueryOnboardingCandidatesAsync(string searchTerm, CancellationToken cancellationToken)
     {
+        if (CustomerSyncSources.Resolve(_configuration) == CustomerSyncSources.Ctrm)
+            return await QueryCtrmOnboardingCandidatesAsync(searchTerm, cancellationToken);
+
         var searchWords = searchTerm.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
                                     .Select(w => w.Trim())
                                     .Where(w => w.Length > 0)
@@ -287,6 +303,32 @@ public class CustomerRepository : ICustomerRepository
             .ToListAsync(cancellationToken);
 
         return rows.Select(MapOdsRowToCustomer).ToList();
+    }
+
+    /// <summary>The CTRM half of the onboarding search (plan E3). Each candidate carries a NEGATIVE placeholder
+    /// id (<see cref="CtrmCustomerCandidateId"/>) and its ScoularId; the real id is minted when the producer is
+    /// onboarded with that ScoularId (E4). A failed read is logged and yields no candidates — the search is a
+    /// fallback the user is typing into, not a sync.</summary>
+    protected virtual async Task<List<Customer>> QueryCtrmOnboardingCandidatesAsync(string searchTerm, CancellationToken cancellationToken)
+    {
+        if (_ctrmCustomers is null)
+        {
+            _logger.LogWarning("CTRM onboarding search: CustomerSync:Source is ctrm but no CTRM customer reader is registered; returning no candidates.");
+            return [];
+        }
+
+        var read = await _ctrmCustomers.SearchAsync(searchTerm, cancellationToken);
+        if (!read.Ok || read.Value is null)
+        {
+            _logger.LogWarning("CTRM onboarding search unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
+                "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", read.Status, read.Detail);
+            return [];
+        }
+
+        var search = read.Value;
+        return search.Items
+            .Select(dto => new CtrmCustomerSyncAttributes(dto, search.ExtendedFields).CreateNew(CtrmCustomerCandidateId.From(dto.SourceCode!)))
+            .ToList();
     }
 
     /// <summary>Maps a base.vw_CurrentCustomers row onto the Customer DTO. IsManual stays
@@ -660,11 +702,13 @@ public class CustomerRepository : ICustomerRepository
     /// (trimmed, case-insensitive; minted or not) — preferring an active row, then the lowest id,
     /// the tie-break the ODS sync shares when it adopts by ScoularId (C3) — and reactivates it as manual if inactive,
     /// so one producer never ends up under two ids. The outcome's CustomerId is the id actually
-    /// written to (Adopted = true when that differs from the request). E4 later adds the ScoularId
-    /// to the request so the client never has to send an ODS id at all. An adoption is add-only:
-    /// pre-existing active manual trade units on the adopted row are kept, because an onboarding
-    /// request carries only the new codes.</summary>
-    public async Task<AssignTradeUnitsOutcome> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, string currentUser, CancellationToken cancellationToken)
+    /// written to (Adopted = true when that differs from the request). With <paramref name="scoularId"/>
+    /// (E4) the candidate is loaded by code - from CTRM on the <c>ctrm</c> source, where the producer has
+    /// no id yet and one is minted here, or from base.vw_CurrentCustomers otherwise - and the id in
+    /// the request may be a negative placeholder (<see cref="CtrmCustomerCandidateId"/>). Without it the
+    /// id must be an ODS id. An adoption is add-only: pre-existing active manual trade units on the
+    /// adopted row are kept, because an onboarding request carries only the new codes.</summary>
+    public async Task<AssignTradeUnitsOutcome> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, string? scoularId, string currentUser, CancellationToken cancellationToken)
     {
         // Normalize: trim, drop blanks, de-dupe (case-insensitive).
         var codes = tradeUnitCodes
@@ -690,10 +734,11 @@ public class CustomerRepository : ICustomerRepository
         var adopted = false;
         if (!customerExists)
         {
-            var candidate = await LoadOnboardingCandidateAsync(customerId, cancellationToken);
+            var candidate = await LoadOnboardingCandidateAsync(customerId, scoularId, cancellationToken);
             if (candidate is null)
             {
-                _logger.LogWarning("AssignTradeUnits: customer {CustomerId} not found in base.vw_CurrentCustomers", customerId);
+                _logger.LogWarning("AssignTradeUnits: customer {CustomerId} not found in the customer master (code supplied: {CodeSupplied})",
+                    customerId, !string.IsNullOrWhiteSpace(scoularId));
                 return AssignTradeUnitsOutcome.CustomerNotFound(customerId);
             }
 
@@ -729,6 +774,24 @@ public class CustomerRepository : ICustomerRepository
             }
             else
             {
+                if (candidate.Id <= 0)
+                {
+                    // A CTRM candidate has no id of its own (the search handed out a placeholder): mint the
+                    // real one from dbo.CustomerIdSequence, the band the nightly ctrm sync also mints from (E4).
+                    if (_syncRepository is null)
+                    {
+                        _logger.LogWarning("AssignTradeUnits: a CTRM candidate needs a minted id but no sync repository is registered; not onboarded.");
+                        return AssignTradeUnitsOutcome.CustomerNotFound(customerId);
+                    }
+                    var requestedId = customerId;
+                    var minted = await _syncRepository.ReserveCustomerIdsAsync(1, cancellationToken);
+                    candidate.Id = minted[0];
+                    customerId = candidate.Id;
+                    // Ids only — never the code or the name.
+                    _logger.LogInformation(
+                        "AssignTradeUnits: placeholder {RequestedId} onboarded from CTRM as minted customer {CustomerId}",
+                        requestedId, customerId);
+                }
                 candidate.IsManual = true;
                 candidate.IsActive = true;
                 _appContext.Customers.Add(candidate);
@@ -1021,14 +1084,77 @@ public class CustomerRepository : ICustomerRepository
             .ToListAsync(cancellationToken);
     }
 
+    /// <summary>The producer to onboard: by ScoularId when one was sent (E4), else by ODS id. A placeholder id
+    /// without a code cannot be onboarded (CTRM has nothing to look it up by), so that yields null.</summary>
+    private async Task<Customer?> LoadOnboardingCandidateAsync(long customerId, string? scoularId, CancellationToken cancellationToken)
+    {
+        var code = scoularId?.Trim();
+        if (!string.IsNullOrEmpty(code)) return await LoadOnboardingCandidateByCodeAsync(code, cancellationToken);
+        if (CtrmCustomerCandidateId.IsCandidate(customerId)) return null;
+        return await LoadOnboardingCandidateAsync(customerId, cancellationToken);
+    }
+
     /// <summary>The producer to onboard for an id not yet in dbo.Customer: a single
     /// base.vw_CurrentCustomers row by CustomerId, mapped to Customer (null when absent). A seam:
-    /// the raw ODS SQL cannot run on the InMemory provider, and E4 later re-routes onboarding to
-    /// CTRM.</summary>
+    /// the raw ODS SQL cannot run on the InMemory provider.</summary>
     protected virtual async Task<Customer?> LoadOnboardingCandidateAsync(long customerId, CancellationToken cancellationToken)
     {
         var row = await GetOdsCustomerRowAsync(customerId, cancellationToken);
         return row is null ? null : MapOdsRowToCustomer(row);
+    }
+
+    /// <summary>The producer to onboard by ScoularId (plan E4), source per <c>CustomerSync:Source</c>. On
+    /// <c>ctrm</c> the master row must be in scope (<see cref="CtrmCustomerFilters.IsInScope"/>) and comes
+    /// back with a placeholder id for <see cref="AssignTradeUnitsAsync"/> to mint over; otherwise the
+    /// base.vw_CurrentCustomers row for that code, active first. A seam, like the id variant.</summary>
+    protected virtual async Task<Customer?> LoadOnboardingCandidateByCodeAsync(string scoularId, CancellationToken cancellationToken)
+    {
+        if (CustomerSyncSources.Resolve(_configuration) == CustomerSyncSources.Ctrm)
+        {
+            if (_ctrmCustomers is null)
+            {
+                _logger.LogWarning("AssignTradeUnits: CustomerSync:Source is ctrm but no CTRM customer reader is registered; cannot onboard by code.");
+                return null;
+            }
+
+            var lookup = await _ctrmCustomers.GetBySourceCodesAsync([scoularId], cancellationToken);
+            if (!lookup.Ok || lookup.Value is null)
+            {
+                _logger.LogWarning("AssignTradeUnits: CTRM customer lookup unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
+                    "INFRASTRUCTURE_CTRM_UNAVAILABLE", "Infrastructure", lookup.Status, lookup.Detail);
+                return null;
+            }
+            if (!lookup.Value.ByCode.TryGetValue(scoularId, out var dto)) return null;
+            if (!CtrmCustomerFilters.IsInScope(dto, out var reason))
+            {
+                // Reason only; never the code.
+                _logger.LogInformation("AssignTradeUnits: the CTRM master row for the requested code is out of scope ({Reason}); not onboarded.", reason);
+                return null;
+            }
+            return new CtrmCustomerSyncAttributes(dto, lookup.Value.ExtendedFields).CreateNew(CtrmCustomerCandidateId.From(scoularId));
+        }
+
+        var row = await GetOdsCustomerRowByScoularIdAsync(scoularId, cancellationToken);
+        return row is null ? null : MapOdsRowToCustomer(row);
+    }
+
+    /// <summary>Reads the producer row for a ScoularId from base.vw_CurrentCustomers, active rows first.</summary>
+    private async Task<OdsCustomerRow?> GetOdsCustomerRowByScoularIdAsync(string scoularId, CancellationToken cancellationToken)
+    {
+        var rows = await _context.Database
+            .SqlQueryRaw<OdsCustomerRow>(@"
+                SELECT TOP 1
+                    c.CustomerId, c.ScoularId, c.CustomerName, c.IndustryCode1, c.IndustryCode2, c.NopIdNumber,
+                    c.MerchandisingCity, c.MerchandisingStateProvince, c.MerchandisingAddressLine1, c.MerchandisingPostalCode,
+                    c.MerchandisingPhone, c.MerchandisingEmail, c.ExtendedPrimaryPhone, c.SupplementalEmail,
+                    c.ExtendedAddressLine1, c.ExtendedAddressLine2, c.ExtendedAddressLine3, c.ExtendedAddressLine4,
+                    c.ExtendedCity, c.ExtendedPostalCode, c.ExtendedStateProvince, c.ExtendedCountry,
+                    c.EffectiveStartDate, c.EffectiveEndDate
+                FROM base.vw_CurrentCustomers c
+                WHERE c.ScoularId = @scoularId
+                ORDER BY c.IsActive DESC, c.CustomerId", new SqlParameter("@scoularId", scoularId))
+            .ToListAsync(cancellationToken);
+        return rows.FirstOrDefault();
     }
 
     /// <summary>Reads a single producer row from base.vw_CurrentCustomers by CustomerId.</summary>

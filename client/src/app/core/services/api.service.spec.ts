@@ -67,6 +67,21 @@ describe('ApiService', () => {
     req.flush([]);
   });
 
+  it('assignTradeUnits() sends only the codes for an existing producer', () => {
+    service.assignTradeUnits(42, ['1085']).subscribe();
+    const req = httpMock.expectOne(r => r.url === `${BASE}/customers/42/trade-units`);
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual({ tradeUnitCodes: ['1085'] });
+    req.flush({ id: 42 });
+  });
+
+  it('assignTradeUnits() sends the producer code for a CTRM onboarding candidate (placeholder id)', () => {
+    service.assignTradeUnits(-1234567890123456, ['1085'], 'JONESFA').subscribe();
+    const req = httpMock.expectOne(r => r.url === `${BASE}/customers/-1234567890123456/trade-units`);
+    expect(req.request.body).toEqual({ tradeUnitCodes: ['1085'], scoularId: 'JONESFA' });
+    req.flush({ id: 5000000000000777 });
+  });
+
   // ── DP Contracts ───────────────────────────────────────────────────────────
 
   it('getDpContracts() calls GET /dpcontracts', () => {

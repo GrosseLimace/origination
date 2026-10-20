@@ -1926,17 +1926,20 @@ export class HomeComponent {
    *  onboarding candidate that PUT inserts them into dbo.Customer, which the ProducerDetails
    *  save then depends on (FK). Existing customers with no TU change skip straight to the
    *  details save, unchanged. */
-  handleSaveCustomer(data: { customerId: number; acres: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { siteKey: string; name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { binSiteKey?: string; commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[]; intentionMoves?: { from: string; to: string }[] }): void {
+  handleSaveCustomer(data: { customerId: number; scoularId?: string; acres: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { siteKey: string; name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { binSiteKey?: string; commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[]; intentionMoves?: { from: string; to: string }[] }): void {
     // Only call the trade-unit reconcile when the dialog flagged it safe + meaningful
     // (onboarding a candidate, or the manual TU set actually changed). A pure details edit
     // skips it entirely, and a failed TU-load never reconciles (so manual TUs can't be wiped).
     if (data.reconcileTradeUnits) {
-      this.apiService.assignTradeUnits(data.customerId, data.tradeUnitCodes ?? []).subscribe({
+      this.apiService.assignTradeUnits(data.customerId, data.tradeUnitCodes ?? [], data.scoularId).subscribe({
         next: (customer) => {
           // The server may have adopted an existing row for the same producer (matched by ScoularId);
           // everything below must use the id it actually wrote the trade units to.
           const effective = applyAdoptedCustomerId(data, customer);
-          const adopted = effective.customerId !== data.customerId;
+          // A candidate from the CTRM search carries a negative placeholder id; the server mints the
+          // real one, so a changed id there is a brand-new row, not an adoption.
+          const minted = data.customerId < 0;
+          const adopted = !minted && effective.customerId !== data.customerId;
           const sel = this.selectedCustomer();
           if (adopted) {
             // Select the returned record first so _saveProducerDetailsAndLinks can find it (the list may not hold it).
@@ -1944,9 +1947,10 @@ export class HomeComponent {
             this.selectedCustomer.set({ ...customer, isManual: true, isOnboardCandidate: false });
           } else if (sel?.id === data.customerId && sel.isOnboardCandidate) {
             // A brand-new onboarding: they're now in dbo.Customer — clear the candidate flag on
-            // the selected record so we stay on this producer and notes / details unlock.
+            // the selected record so we stay on this producer and notes / details unlock. The
+            // returned record carries the real id (minted for a CTRM candidate).
             this.toastService.success('Producer added and trade units assigned. Select that trade unit or group to see them.');
-            this.selectedCustomer.set({ ...sel, isManual: true, isOnboardCandidate: false });
+            this.selectedCustomer.set({ ...sel, ...customer, isManual: true, isOnboardCandidate: false });
           }
           this._saveProducerDetailsAndLinks(effective);
           this._movePlantingIntentions(effective.customerId, effective.intentionMoves ?? []);

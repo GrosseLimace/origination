@@ -68,8 +68,8 @@ public class CustomerService : ICustomerService
     }
 
     /// <inheritdoc />
-    public Task<AssignTradeUnitsOutcome> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, CancellationToken cancellationToken) =>
-        _repository.AssignTradeUnitsAsync(customerId, tradeUnitCodes, _requestContext.GetCurrentUser(), cancellationToken);
+    public Task<AssignTradeUnitsOutcome> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, string? scoularId, CancellationToken cancellationToken) =>
+        _repository.AssignTradeUnitsAsync(customerId, tradeUnitCodes, scoularId, _requestContext.GetCurrentUser(), cancellationToken);
 
     /// <inheritdoc />
     public Task<DeactivateTradeUnitResult> DeactivateDormantTradeUnitAsync(long customerId, string tradeUnit, CancellationToken cancellationToken) =>

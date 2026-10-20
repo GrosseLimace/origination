@@ -75,6 +75,9 @@ export class EditCustomerDialogComponent {
   public close = output<void>();
   public save = output<{
     customerId: number;
+    // The producer code, sent only for an onboarding candidate: a candidate from the CTRM search has
+    // a placeholder id, and the server onboards it by this code (plan E4).
+    scoularId?: string;
     acres: number;
     commodities: string[];
     // Derived from the primary contact row — kept on the payload so downstream consumers
@@ -1317,6 +1320,7 @@ export class EditCustomerDialogComponent {
       // always re-derived fresh from current tickets, so they should never be persisted.
       this.save.emit({
         customerId: customer.id,
+        scoularId: customer.isOnboardCandidate ? (customer.scoularId ?? undefined) : undefined,
         acres: this._parseNumericInput(this.editAcres),
         commodities: this.editCommodities().filter(c => !this.isTicketCommodity(c)),
         primaryContact: primaryRow?.name ?? '',
