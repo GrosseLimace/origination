@@ -7,13 +7,14 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket, ContractPricingLine } from '@models';
 import { expandSearchWithAliases } from '@shared/utils/commodity-aliases';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
+import { contractPricingInfo, ContractPricingInfo } from '@shared/utils/contract-pricing-status';
 import { compareTicketsByDateThenNumber } from '@shared/utils/ticket-sort';
 import { TicketDisplayNumberPipe } from '@shared/pipes/ticket-display-number.pipe';
 
 type SortColumn = 'contractNumber' | 'date' | 'crop' | 'quantity' | 'specialType' | 'price' | 'deliveryStart' | 'status'
   | 'remaining' | 'delivered' | 'unsettled';
 type SortDirection = 'none' | 'asc' | 'desc';
-type PricingInfo = { status: 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'FLAT' | 'DEFERRED' | 'LOADING' | 'ERROR'; cashPrice?: number; basisPrice?: number };
+type PricingInfo = ContractPricingInfo;
 
 /** Optional fulfillment columns revealed by the "More columns" toolbar toggle. Adding a new
  *  one is a single entry here (+ a SortColumn key + a comparator case). Value returns null when
@@ -524,57 +525,10 @@ export class ContractsTableComponent {
     return this.pricingInfoByContract().get(contract.id) ?? this._computePricingInfo(contract);
   }
 
+  /** The rule itself lives in contractPricingInfo, shared with the customer print report. */
   private _computePricingInfo(contract: Contract): PricingInfo {
-    const ptc = (contract.priceTypeCode ?? '').trim().toUpperCase();
     const key = contract.sourceContractId;
-    const lines = key ? this.pricingLinesMap().get(key) : undefined;
-
-    // Pricing lines not loaded yet — wait
-    if (lines === undefined && !this.pricingLinesLoaded()) return { status: 'LOADING' };
-    const safeLines = lines ?? [];
-    const hasLines = safeLines.length > 0;
-
-    // Flat pricing — PriceTypeCode is 'P', show the cash price from pricing line if available
-    if (ptc === 'P') {
-      if (hasLines && safeLines[0].flatPrice != null) {
-        return { status: 'FLAT', cashPrice: safeLines[0].flatPrice };
-      }
-      return { status: 'PRICED' };
-    }
-
-    // Deferred pricing — special type
-    if (ptc === 'D') {
-      return { status: 'DEFERRED' };
-    }
-
-    // Unpriced — check if pricing has started via pricing lines with sequence > 0
-    if (ptc === 'U') {
-      if (hasLines) {
-        const hasSequence = safeLines.some(l => (l.priceSequence ?? 0) > 0);
-        if (hasSequence) {
-          const totalPricedQty = safeLines.reduce((sum, l) => sum + (l.priceQuantity ?? 0), 0);
-          const contractQty = contract.quantity ?? 0;
-          // 1-bushel tolerance — float sums of priceQuantity can miss the contractQty target
-          // by epsilon (e.g. 99999.9999 vs 100000) and flip the badge to PARTIAL when it's
-          // actually fully priced. One bushel is below merchandiser-meaningful rounding.
-          const remaining = contractQty - totalPricedQty;
-          if (totalPricedQty > 0 && remaining > 1) return { status: 'PARTIAL' };
-          if (remaining <= 1) return { status: 'PRICED' };
-        }
-      }
-      // Single-line unpriced contract with a real basis on file: surface the basis number
-      // alongside the UNPRICED state so the user sees the locked-in basis without
-      // having to expand the row. Multiple lines still show plain UNPRICED — the
-      // line ambiguity is the reason for the badge in the first place. Exclude 0 because
-      // CTRM stores no-basis-yet as 0; rendering "$0.00/Bu" would look like a real lock.
-      if (safeLines.length === 1 && safeLines[0].basisPrice != null && safeLines[0].basisPrice !== 0) {
-        return { status: 'UNPRICED', basisPrice: safeLines[0].basisPrice };
-      }
-      return { status: 'UNPRICED' };
-    }
-
-    // No PriceTypeCode (NULL) — rare, default to unpriced
-    return { status: 'UNPRICED' };
+    return contractPricingInfo(contract, key ? this.pricingLinesMap().get(key) : undefined, this.pricingLinesLoaded());
   }
 
   /** Quantity to show for a single pricing line. Two cases get computed values
