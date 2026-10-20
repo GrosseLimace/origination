@@ -3657,7 +3657,7 @@
       "id": "angular.sheet-multi-select-missing-spec",
       "audit": "angular",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "title": "sheet-multi-select.component.ts is the one remaining component with no .spec.ts",
       "description": "The broad unit-test coverage gap (angular.broad-unit-test-coverage-gap, resolved 2026-10-14..19) closed from 28/49 to 48/49 components covered during the Home/Dashboard/Build-List/Bid-Sheet decomposition. sheet-multi-select.component.ts is the sole remaining component without a matching .spec.ts.",
       "files": [
@@ -3668,7 +3668,12 @@
         "date": "2026-10-20"
       },
       "last_verified": "2026-10-20",
-      "notes": "[2026-10-20] Found during angular-domain reconciliation pass while re-counting component spec coverage."
+      "notes": "[2026-10-20] Found during angular-domain reconciliation pass while re-counting component spec coverage.",
+      "resolved_in": {
+        "date": "2026-10-20",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "sheet-multi-select.component.spec.ts added: 21 rendering tests through the real template covering the trigger label in every state, open/close (Done, backdrop, trigger), tick vs show-only, All locations, and the per-row share/rename/delete actions (delete owner-only). Mutation-checked four ways. Every *.component.ts in the client now has a spec. Verified 2026-10-20."
     },
     {
       "id": "clean-slop.customer-print-report-duplicates-pricing-status-logic",
