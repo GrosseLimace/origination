@@ -8,12 +8,12 @@ import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDes
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { Customer, Contract, ContractPricingLine, PlantingIntention, StoredGrain, Note, Commodity, DashboardPlantingEstimate, Ticket } from '@models';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
+import { contractPricingInfo, ContractPricingInfo } from '@shared/utils/contract-pricing-status';
 import { buildLbsPerBushelMap, findYieldEstimate, sumInBushels } from '@shared/utils/production-coverage';
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
 import { binSiteGrainBreakdown, formatLastBid, grainOnFarmColorKey, indexCommoditiesByCode } from '@shared/utils/grain-on-farm';
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
 
-type PricingStatus = 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'FLAT' | 'DEFERRED' | 'LOADING';
 
 /** The report's include toggles whose default depends on the data. */
 type SectionKey = 'totalAcres' | 'totalContracted' | 'contracts' | 'tickets' | 'planting' | 'storage' | 'binSites' | 'pricingLines';
@@ -181,33 +181,10 @@ export class CustomerPrintReportComponent {
     return map;
   });
 
-  // --- Pricing logic mirrors contracts-table.component.ts getPricingInfo ---
-  getPricingInfo(contract: Contract): { status: PricingStatus; cashPrice?: number } {
-    const ptc = (contract.priceTypeCode ?? '').trim().toUpperCase();
+  // --- Pricing: the same rule the contracts table uses (shared util, not a copy) ---
+  getPricingInfo(contract: Contract): ContractPricingInfo {
     const lines = contract.sourceContractId ? this.pricingLinesMap().get(contract.sourceContractId) : undefined;
-    const safeLines = lines ?? [];
-    const hasLines = safeLines.length > 0;
-
-    if (ptc === 'P') {
-      if (hasLines && safeLines[0].flatPrice != null) {
-        return { status: 'FLAT', cashPrice: safeLines[0].flatPrice };
-      }
-      return { status: 'PRICED' };
-    }
-    if (ptc === 'D') return { status: 'DEFERRED' };
-    if (ptc === 'U') {
-      if (hasLines) {
-        const hasSequence = safeLines.some(l => (l.priceSequence ?? 0) > 0);
-        if (hasSequence) {
-          const totalPricedQty = safeLines.reduce((sum, l) => sum + (l.priceQuantity ?? 0), 0);
-          const contractQty = contract.quantity ?? 0;
-          if (totalPricedQty > 0 && totalPricedQty < contractQty) return { status: 'PARTIAL' };
-          if (totalPricedQty >= contractQty) return { status: 'PRICED' };
-        }
-      }
-      return { status: 'UNPRICED' };
-    }
-    return { status: 'UNPRICED' };
+    return contractPricingInfo(contract, lines, this.pricingLines() !== undefined);
   }
 
   getPricingLinesForContract(contract: Contract): ContractPricingLine[] {
