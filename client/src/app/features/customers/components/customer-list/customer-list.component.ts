@@ -202,6 +202,23 @@ export class CustomerListComponent {
       this._rebuildReminderCache();
     });
 
+    // After an onboarding save the parent re-selects the producer as a real record: the candidate
+    // flag cleared and, for a producer found in CTRM, the minted id in place of the search's
+    // placeholder. The search-result row that was clicked still carries the candidate, so swap it
+    // for the real record here; otherwise a second click on that row would reload the candidate
+    // state against an id that no longer means anything. Matched on the producer code, which is the
+    // one identifier both sides share. filteredCustomers is read untracked so this cannot loop.
+    effect(() => {
+      const sel = this.selectedCustomer();
+      if (!sel || sel.isOnboardCandidate || !sel.scoularId) return;
+      const rows = untracked(() => this.filteredCustomers());
+      const index = rows.findIndex(r => r.isOnboardCandidate && r.scoularId === sel.scoularId);
+      if (index < 0) return;
+      const next = [...rows];
+      next[index] = sel;
+      this.filteredCustomers.set(next);
+    });
+
     // Re-run the active saved list's NLQ when tickets / stored grain / planting
     // intentions arrive AFTER the first run. Without this, a saved list whose query
     // needs tickets (e.g. "Producers with unapplied tickets") runs once when those
