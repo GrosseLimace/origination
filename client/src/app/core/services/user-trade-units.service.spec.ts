@@ -25,6 +25,7 @@ describe('UserTradeUnitsService', () => {
     setUserGroups: ReturnType<typeof vi.fn>;
     setSelectedGroupNames: ReturnType<typeof vi.fn>;
     setTradeUnits: ReturnType<typeof vi.fn>;
+    markNoTradeUnitAssignments: ReturnType<typeof vi.fn>;
   };
   let dataPreload: { forceReload: ReturnType<typeof vi.fn> };
 
@@ -42,6 +43,10 @@ describe('UserTradeUnitsService', () => {
       setSelectedGroupNames: vi.fn(),
       // Mirror the real setter so the "did the selection change" comparison sees the pruned value.
       setTradeUnits: vi.fn((units: string[]) => selectedTradeUnits.set(units)),
+      markNoTradeUnitAssignments: vi.fn(() => {
+        appState.userGroups.set([]);
+        appState.noTradeUnitAssignments.set(true);
+      }),
     };
     dataPreload = { forceReload: vi.fn() };
     TestBed.configureTestingModule({

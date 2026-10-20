@@ -157,7 +157,6 @@ All routes require Azure AD bearer token authentication. Base path: `/api/v1`
 |--------|----------|-------------|
 | GET | `/commodities` | All active commodities |
 | GET | `/storedgrain/customer/{customerId}` | Stored grain (stub, no ODS table yet) |
-| GET | `/farms/customer/{customerId}` | Farms (stub, no ODS table yet) |
 
 > Trade unit and trade-unit-group catalog lookups are sourced from the **TradeUnitPreferences** database (`dbo.vw_UserTradeUnitPreferences`, see `/usertradeunits`). Managers assign users to trade units in a separate preferences application, which owns the writes; this app only reads. Replaced the Entitlements DB 2026-08-18. The app DB no longer maintains a local TU catalog.
 
@@ -239,6 +238,7 @@ Last Updated: 2026-10-13
 | @angular/animations | 21.2.25 | MIT | Animation support |
 | @azure/msal-angular | 5.1.1 | MIT | Azure AD authentication (Angular) |
 | @azure/msal-browser | 5.4.0 | MIT | MSAL browser runtime |
+| @microsoft/applicationinsights-web | 3.4.5 | MIT | Browser error telemetry to Application Insights (pinned exact; loaded lazily, only when the server returns a connection string). Brings 10 transitive packages, all MIT, none with install scripts: the @microsoft/applicationinsights-* family at 3.4.5, applicationinsights-shims 3.0.1, dynamicproto-js 2.0.5, @nevware21/ts-async 0.5.5, @nevware21/ts-utils 0.16.0 |
 | @it/design-system | 0.1.1 | Internal | Scoular IT design system components |
 | leaflet | 1.9.4 | BSD-2-Clause | Interactive map rendering |
 | leaflet.markercluster | ~1.5.3 | MIT | Leaflet marker clustering |

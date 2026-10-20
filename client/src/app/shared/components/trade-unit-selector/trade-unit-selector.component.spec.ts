@@ -20,7 +20,7 @@ describe('TradeUnitSelectorComponent — empty / error states', () => {
     tradeUnits = {
       // Mirror the real service: an empty result flags "no assignments" in app state.
       load: vi.fn(() => {
-        TestBed.inject(AppStateService).noTradeUnitAssignments.set(true);
+        TestBed.inject(AppStateService).markNoTradeUnitAssignments();
         return of([]);
       }),
       openPreferences: vi.fn(),

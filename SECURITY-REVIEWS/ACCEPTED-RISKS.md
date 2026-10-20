@@ -1466,8 +1466,11 @@ original five-name seed**, and the scoping code (`ResolveEffectiveManagerIdAsync
 immediately before commit `2c7df34d`. Re-introducing per-caller scoping is a revert, not a design.
 
 **Accepted by:** Origination engineering — recorded 2026-10-09 at the product owner's request.
-Surfaced by the pre-push code review of the branch. Routed with AR-01/02/07/08 for IT Security
-countersignature, because it is an authorization-scope widening rather than a classification choice.
+Surfaced by the pre-push code review of the branch. This entry does not change the 2026-09-21
+decision recorded at the top of this file: IT Security countersignature for AR-01, AR-02 and AR-08 is
+closed as declined, and AR-07's remains open. AR-10 is an authorization-scope widening rather than a
+classification choice, so whether it (and AR-07) should go to asksecurity@scoular.com is the project
+owner's call; as of 2026-10-13 that has not been done and this entry should not be read as saying it has.
 
 ---
 

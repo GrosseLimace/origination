@@ -1,29 +1,49 @@
+import { CROP_CODE_MAP } from './crop-group-match';
+
+/** The search words for a crop plus every commodity code Build a List knows for it (CROP_CODE_MAP),
+ *  so the two lists cannot drift apart again. The codes matter most on the Tickets table, whose
+ *  search sees only the product code: "wheat" used to miss SRWW, SWW, HADW, DNSW, CWRS, FDWT, WHTO
+ *  and WHFG tickets, "corn" missed DMGC, "beans" missed DNGS and "milo" missed RO98. Words first,
+ *  then codes, deduplicated. */
+function withCodes(words: string[], group: keyof typeof CROP_CODE_MAP): string[] {
+  return [...new Set([...words, ...CROP_CODE_MAP[group]])];
+}
+
+const SORGHUM = withCodes(['milo', 'sorghum', 'sor', 'sg'], 'sorghum');
+const SOYBEANS = withCodes(['beans', 'soybeans', 'soy', 'sb'], 'soybeans');
+const CORN = withCodes(['yc', 'corn', 'yellow corn'], 'corn');
+const WHEAT = withCodes(['wheat', 'hrw', 'hw', 'hard red winter'], 'wheat');
+
 /**
- * Canonical commodity alias map — single source of truth for crop name synonyms.
+ * Canonical commodity alias map for the table and Insights searches.
  * When a user types "milo", search results should also include "sorghum" (and vice versa).
  *
  * Each key maps to the full set of terms that should be treated as equivalent.
  * All keys and values are lowercase. Consumers should lowercase their input before lookup.
+ *
+ * Barley, canola, oats and sunflower are deliberately absent: their codes (BASE, BLY, OAT...) are
+ * short enough to match unrelated text, and the Insights search also matches producer names.
+ * The hard-red-winter keys stay specific to that class rather than expanding to every wheat.
  */
 export const COMMODITY_ALIAS_MAP: Record<string, string[]> = {
   // Milo / Sorghum
-  'milo':        ['milo', 'sorghum', 'sor', 'sg'],
-  'sorghum':     ['milo', 'sorghum', 'sor', 'sg'],
-  'sor':         ['milo', 'sorghum', 'sor', 'sg'],
-  'sg':          ['milo', 'sorghum', 'sor', 'sg'],
+  'milo':        SORGHUM,
+  'sorghum':     SORGHUM,
+  'sor':         SORGHUM,
+  'sg':          SORGHUM,
   // Soybeans
-  'beans':       ['beans', 'soybeans', 'soy', 'sb'],
-  'soybeans':    ['beans', 'soybeans', 'soy', 'sb'],
-  'soy':         ['beans', 'soybeans', 'soy', 'sb'],
-  'sb':          ['beans', 'soybeans', 'soy', 'sb'],
+  'beans':       SOYBEANS,
+  'soybeans':    SOYBEANS,
+  'soy':         SOYBEANS,
+  'sb':          SOYBEANS,
   // Corn
-  'yc':          ['yc', 'corn', 'yellow corn'],
-  'corn':        ['yc', 'corn', 'yellow corn'],
-  'yellow corn': ['yc', 'corn', 'yellow corn'],
+  'yc':          CORN,
+  'corn':        CORN,
+  'yellow corn': CORN,
   // Wheat
   'hrw':         ['hrw', 'wheat', 'hard red winter', 'hw'],
   'hw':          ['hw', 'wheat', 'hrw'],
-  'wheat':       ['wheat', 'hrw', 'hw', 'hard red winter'],
+  'wheat':       WHEAT,
   'hard red winter': ['hrw', 'wheat', 'hard red winter', 'hw'],
 };
 

@@ -25,7 +25,7 @@
 
   <!-- Geocoding progress bar — visible while refining locations, does not block the map -->
   <div class="h-1 bg-gray-100 dark:bg-gray-700 overflow-hidden">
-    @if (isGeocoding) {
+    @if (isGeocoding()) {
       <div class="h-full bg-green-500 animate-pulse w-full"></div>
     }
   </div>

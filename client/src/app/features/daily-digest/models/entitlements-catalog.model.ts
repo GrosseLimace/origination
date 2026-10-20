@@ -25,6 +25,9 @@ export interface EntitlementTradeUnitGroup {
 }
 
 export interface EntitlementsCatalog {
+  /** True when the API could not read the catalog and the lists are empty because of that, not
+   *  because there is nobody to offer. The call still succeeds; show a notice rather than silence. */
+  degraded?: boolean;
   people: EntitlementPerson[];
   tradeUnits: EntitlementTradeUnit[];
   groups: EntitlementTradeUnitGroup[];

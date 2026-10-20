@@ -1,4 +1,4 @@
-import { Component, ElementRef, HostListener, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, HostListener, inject, input, signal } from '@angular/core';
 
 import { CALCULATOR_TYPES, CalculatorType } from '../models/calculator.model';
 import { CalculatorWidgetComponent } from './calculator-widget.component';
@@ -13,6 +13,9 @@ import { CalculatorWidgetComponent } from './calculator-widget.component';
   standalone: true,
   imports: [CalculatorWidgetComponent],
   templateUrl: './calculator-launcher.component.html',
+  // The template reads only inputs and signals. The document click/Escape listeners write
+  // signals too, so they re-render the picker without relying on the listener marking the view.
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CalculatorLauncherComponent {
   /** Selected producer's name — prefilled into the calculator's Farm Name field. */

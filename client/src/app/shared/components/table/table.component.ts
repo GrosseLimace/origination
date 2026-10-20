@@ -1,9 +1,10 @@
-import { Component, input, output, computed } from '@angular/core';
+import { Component, input, output, computed, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 @Component({
   selector: 'app-table',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule],
   template: `
     <div [class]="wrapperClass()" [style.max-height]="maxHeight()">
@@ -77,6 +78,7 @@ export class TableComponent {
 @Component({
   selector: 'app-table-header',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule],
   host: { style: 'display: contents' },
   template: `
@@ -90,6 +92,7 @@ export class TableHeaderComponent {}
 @Component({
   selector: 'app-table-body',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule],
   host: { style: 'display: contents' },
   template: `
@@ -103,6 +106,7 @@ export class TableBodyComponent {}
 @Component({
   selector: 'app-table-row',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule],
   host: { style: 'display: contents' },
   template: `
@@ -144,6 +148,7 @@ export class TableRowComponent {
 @Component({
   selector: 'app-table-head',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule],
   host: { style: 'display: contents' },
   template: `
@@ -172,6 +177,7 @@ export class TableHeadComponent {
 @Component({
   selector: 'app-table-cell',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule],
   host: { style: 'display: contents' },
   template: `
