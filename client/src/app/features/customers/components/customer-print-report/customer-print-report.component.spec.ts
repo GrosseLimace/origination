@@ -489,6 +489,20 @@ describe('CustomerPrintReportComponent', () => {
       expect(pcw100[5]).toBe('Sep 13, 2026 – Nov 12, 2026');
     });
 
+    it('prints Priced for a contract priced to within a rounding fraction of its quantity, as the Contracts tab does', () => {
+      // Float sums of priceQuantity can land a hair under the contract quantity. The print report kept
+      // its own copy of the pricing rule without the table's 1-bushel tolerance, so this printed
+      // "Partial" while the Contracts tab showed "Priced". Both now use contractPricingInfo.
+      open({
+        contracts: [makeContract({ id: 9, sourceContractId: 'PCW900', contractNumber: 'PCW900', priceTypeCode: 'U', quantity: 10000 })],
+        pricingLines: [
+          makeLine({ contractId: 'PCW900', priceSequence: 1, priceQuantity: 3333.3333 }),
+          makeLine({ contractId: 'PCW900', priceSequence: 2, priceQuantity: 6666.6666 }),
+        ],
+      });
+      expect(contractCells('PCW900')[2]).toBe('Priced');
+    });
+
     it('prints pricing lines under their contract (sequence 0 hidden), counts only open contracts\' lines, and goes flat when hidden', () => {
       open({ contracts: contracts(), pricingLines: lines() });
 
