@@ -145,10 +145,12 @@ public class CustomerRepository : ICustomerRepository
             whereClauses.Add($@"(
                 c.CustomerName LIKE '%' + {paramName} + '%'
                 OR c.ScoularId LIKE '%' + {paramName} + '%'{phoneClause}
+                OR c.MerchandisingEmail LIKE '%' + {paramName} + '%'
+                OR c.SupplementalEmail LIKE '%' + {paramName} + '%'
                 OR c.MerchandisingCity LIKE '%' + {paramName} + '%'
                 OR c.MerchandisingStateProvince = {paramName}
                 OR c.CustomerId IN (SELECT CustomerId FROM dbo.ProducerDetails WHERE PrimaryContact LIKE '%' + {paramName} + '%')
-                OR c.CustomerId IN (SELECT CustomerId FROM dbo.ProducerContact WHERE Name LIKE '%' + {paramName} + '%')
+                OR c.CustomerId IN (SELECT CustomerId FROM dbo.ProducerContact WHERE Name LIKE '%' + {paramName} + '%' OR Email LIKE '%' + {paramName} + '%')
             )");
         }
 
@@ -176,7 +178,7 @@ public class CustomerRepository : ICustomerRepository
         await EnrichCustomersWithESignAsync(scoredCustomers, cancellationToken);
         await EnrichCustomersWithAchAsync(scoredCustomers, cancellationToken);
         await EnrichCustomersWithTradeUnitsAsync(scoredCustomers, cancellationToken);
-        // Do not log the raw search term — it may contain producer name/phone (PII). Log metadata only.
+        // Do not log the raw search term — it may contain producer name/phone/email (PII). Log metadata only.
         _logger.LogInformation("Customer search returned {Count} customers from Customer", scoredCustomers.Count);
         return scoredCustomers;
     }
