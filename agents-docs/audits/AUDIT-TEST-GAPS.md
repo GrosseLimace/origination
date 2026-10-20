@@ -1,10 +1,28 @@
 # Audit: Test Gap Analysis (`test-gaps`)
 
 Scope: coverage breadth across `api/GrainOriginatorPortal.Api.Tests` (xUnit) and `client/` (Vitest)
-Baseline (unverified this run per the audit's hard limits — no test suite executed): dotnet 535/535 and vitest 601/601 as of the last reconciliation; the gap is coverage breadth, not currently-failing tests.
+Baseline (unverified this run per the audit's hard limits — no test suite executed): dotnet/vitest counts not re-run; the gap is coverage breadth, not currently-failing tests.
 
-**Findings:** 11 total, 3 open (2 critical, 1 medium), 8 resolved
-**Opened:** 2026-09-19 | **Last reconciled:** 2026-10-13
+**Findings:** 11 total, 0 open, 11 resolved
+**Opened:** 2026-09-19 | **Last reconciled:** 2026-10-20
+
+## Reconciliation (2026-10-20)
+
+Audited HEAD (`audit/pilot-20261020`, based on the Bid Sheet Remodel + BarChart PROD release, `524c9be6`..`5ed04040` — note this is ahead of `main`, which still sits at `524c9be6`/#704). The mobile app, organic-cert-feed, self-help panel, and customer-onboarding-via-GraphQL work referenced in other branches' commit messages (`feature_MobileApplicationLayer`, `feature_CustomersFromGraphQL`, `feature/578-self-help`) are **not** part of this branch's ancestry — confirmed by `git ls-tree` turning up zero mobile/help/onboarding files — so none of that surface was in scope this pass.
+
+All 3 previously-open findings are now **resolved, verified directly against source** (not taken on the prior note's word):
+
+- `test-gaps.angular-god-components` — **resolved.** All 5 named components now have specs (`build-list.component.spec.ts`, `bid-sheet.component.spec.ts` at 3144 lines, `home.component.spec.ts` + a separate `.render.spec.ts`, `dashboard.component.spec.ts`, `customer-list.component.spec.ts`). The fix matched the suggested approach exactly: a systematic extract-and-test campaign (`refactor(build-list): move X into a feature util` / `refactor(home): move X into a page-scoped store`, each preceded by a `test(...): characterise X before extracting it` commit) pulled `build-list.component.ts` down from 4557 to 3109 lines and `home.component.ts` into 1581 lines plus 8 extracted store/util files, all 7 of the behavioral ones with matching specs (the 8th, `home-page.state.ts`, is a plain signal container with no branches — correctly left untested). The Bid Sheet remodel did the same: 12 of its logic files now live under `bid-sheet/utils/`, every one with a spec.
+- `test-gaps.repository-layer-gap` — **resolved.** `TicketRepositoryTests.cs` (7 `[Fact]`s) and `UsageRepositoryTests.cs` (27 `[Fact]`s) now exist and directly construct/exercise both repositories.
+- `test-gaps.ctrm-keep-warm-service-untested` — **resolved.** The previously-blocking design issue (sealed reader classes, private gating method) was fixed at the source: cadence/backoff logic was extracted into a new `CtrmKeepWarmBackoff.cs`, now covered by `CtrmKeepWarmBackoffTests.cs` and `CtrmKeepWarmCycleTests.cs` alongside the existing `CtrmKeepWarmServiceTests.cs`.
+
+Sampled the rest of the new surface for the same risk pattern (orchestration/error-path logic shipped without assertions) and found no new gap:
+
+- BarChart ingest (`BarchartIngestController` → `BarchartIngestService`): the controller is a thin pass-through (confirmed by reading it in full) with all real logic — the deactivation `maxSharePercent` safety limit, the apply-bids feed-actor stamping, the switched-off-but-still-audited skip path — covered by name-matching `[Theory]`/`[Fact]` cases in `BarchartIngestServiceTests.cs`.
+- `fix(organic): reject an all-same-digit NOPID` (67454be8) — shipped with its own 3 test cases in the same commit per the commit message, confirmed by the diff touching `CustomerTradeUnitViewContractTests.cs`.
+- `fix(usage-dashboard, bid-sheet): say so when a panel's data fails to load` (1620ad03) — shipped with spec additions to both `usage-dashboard.component.spec.ts` (60 lines) and `bid-sheet.component.spec.ts` (18 lines) in the same commit.
+
+No new findings opened this pass. This is the first reconciliation since the original 2026-09-19 pass to reach zero open findings — the prior two critical items had stood since the original audit.
 
 ## Reconciliation (2026-10-13)
 
@@ -100,4 +118,4 @@ No widespread weak-test pattern found. Existing Angular specs use `@testing-libr
 
 ## Overall coverage health
 
-The gap continues to concentrate in code with the most real-world blast radius rather than being spread evenly: the five largest Angular feature components and the two largest .NET repositories remain the only critical-severity pieces, unchanged since the original pass two reconciliations ago. Every medium/high finding opened since then has been closed by an actual test addition except the one genuinely blocked by application design (`CtrmKeepWarmService`'s per-producer isolation). The newest feature work (Bin Sites/Grain on Farm, Usage Dashboard manager-for-all, trade-unit-contract-read) shipped with specs for nearly everything except one sibling page, `UserUsageDetailComponent`, that got left out of an otherwise well-tested feature branch — a pattern (one page/component skipped in an otherwise-covered branch) worth watching for in future reconciliations rather than a sign of systemic drift. Highest-leverage next tests, in priority order: (1) `UserUsageDetailComponent`'s activity-partitioning computed()s (cheap, isolated, this run's new finding), (2) `TicketRepository`/`UsageRepository` baseline tests, (3) god-component logic extraction + specs (highest effort, highest total risk reduction — `build-list.component.ts` alone is now 4557 lines with zero coverage).
+As of 2026-10-20, all 11 tracked findings are resolved and zero are open — the first time this audit has reached that state since it opened 2026-09-19. The two longest-standing critical items (the 5 god components, the repository-layer gap) were closed not by bolting on specs after the fact but by a deliberate extract-then-test campaign: characterization tests written before each extraction, then the logic moved into a dedicated util/store file with its own spec, repeated across build-list, home, and the bid-sheet remodel. The one item that had looked architecturally blocked (`CtrmKeepWarmService`'s per-producer isolation, previously "genuinely untestable without an application-source change") was unblocked by actually making that source change — extracting `CtrmKeepWarmBackoff` — rather than by working around it. Sampling this reconciliation's new surface (BarChart ingest, the organic NOPID fix, the panel-failure-toast fix) found the same discipline applied to brand-new code, not just retrofitted onto old findings. Nothing currently rises to a reportable gap; the main watch item for the next reconciliation is whether this test-first extraction discipline holds as new feature branches (mobile, customer onboarding via GraphQL, self-help panel — all out of scope this run, not yet on this branch) land.
