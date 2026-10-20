@@ -48,9 +48,9 @@ const declaredRoutes = new Set(
     .map(path => '/' + path)
 );
 
-/** Routes users don't need screen-specific suggestions for: admin, release notes, help itself, and a
- *  drill-down reached only from Actionable Insights. They fall back to the "*" list. */
-const NO_SUGGESTIONS_NEEDED = ['/usage-dashboard', '/usage-dashboard/users/:userId', '/whats-new', '/help', '/unshipped-bushels'];
+/** Routes users don't need screen-specific suggestions for: admin, release notes and help itself.
+ *  They fall back to the "*" list. */
+const NO_SUGGESTIONS_NEEDED = ['/usage-dashboard', '/usage-dashboard/users/:userId', '/whats-new', '/help'];
 
 const allActions: { faqId: string; action: HelpAction }[] = content.faqs.flatMap(f =>
   [...(f.actions ?? []), ...(f.link ? [f.link] : [])].map(action => ({ faqId: f.id, action }))

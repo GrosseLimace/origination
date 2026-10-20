@@ -11,7 +11,6 @@ import { UserPreferencesService } from '@core/services/user-preferences.service'
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
 import { AppInsightsService } from '@core/services/app-insights.service';
-import { HelpPanelService } from '@core/services/help-panel.service';
 import { HelpPanelStateService } from '@core/services/help-panel-state.service';
 import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';

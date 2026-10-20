@@ -17,7 +17,6 @@ const PAGE_NAMES: Record<string, string> = {
   '/insights': 'Actionable Insights',
   '/bid-sheet': 'Bid Sheet',
   '/daily-digest': 'Manage Groups',
-  '/unshipped-bushels': 'Unshipped Bushels',
   '/help': 'Help'
 };
 
