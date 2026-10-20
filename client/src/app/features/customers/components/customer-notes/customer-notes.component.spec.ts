@@ -5,7 +5,7 @@ import { of } from 'rxjs';
 import { CustomerNotesComponent } from './customer-notes.component';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
-import { Customer, Note, NoteMention } from '@models';
+import { Customer, MentionCatalog, Note, NoteMention } from '@models';
 import { TeamsDirectoryService } from '@core/services/teams-directory.service';
 
 // Covers the note search filter (content + author + created/modified date, ALL typed words required)
@@ -148,5 +148,93 @@ describe('CustomerNotesComponent — note search filter + highlight', () => {
     // Clearing overflow (e.g. after expand removes the clamp) drops it from the set.
     component.setNoteOverflow(1, false);
     expect(component.isNoteOverflowing(1)).toBe(false);
+  });
+});
+
+describe('CustomerNotesComponent — degraded mention catalog', () => {
+  function create(catalog: Partial<MentionCatalog>): CustomerNotesComponent {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: { getMentionCatalog: () => of({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [], teamsChannels: [], ...catalog }) } },
+        { provide: TeamsDirectoryService, useValue: { getChannels: () => of([]) } },
+        { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(CustomerNotesComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    const fixture = TestBed.createComponent(CustomerNotesComponent);
+    fixture.componentRef.setInput('customer', makeCustomer(100));
+    fixture.componentRef.setInput('notes', []);
+    fixture.detectChanges();
+    return fixture.componentInstance;
+  }
+
+  it('is not degraded when the API answered in full', () => {
+    expect(create({}).mentionCatalogDegraded()).toBe(false);
+  });
+
+  it('is degraded when the API says a source could not be read, so the picker can say so', () => {
+    // The API still answers 200 with whatever it gathered; without this flag an outage looks like
+    // "nobody to mention".
+    expect(create({ degraded: true }).mentionCatalogDegraded()).toBe(true);
+  });
+});
+
+// Real template: the input handler closes an empty dropdown, and the notice lives inside the
+// dropdown, so only a rendered test shows whether the notice can actually appear.
+describe('CustomerNotesComponent — degraded notice in the rendered picker', () => {
+  function render(catalog: Partial<MentionCatalog>): ComponentFixture<CustomerNotesComponent> {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: { getMentionCatalog: () => of({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [], teamsChannels: [], ...catalog }) } },
+        { provide: TeamsDirectoryService, useValue: { getChannels: () => of([]) } },
+        { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
+      ],
+    });
+    const fixture = TestBed.createComponent(CustomerNotesComponent);
+    fixture.componentRef.setInput('customer', makeCustomer(100));
+    fixture.componentRef.setInput('notes', []);
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  function typeInNote(fixture: ComponentFixture<CustomerNotesComponent>, text: string): void {
+    const ta = fixture.nativeElement.querySelector('textarea') as HTMLTextAreaElement;
+    ta.value = text;
+    ta.setSelectionRange(text.length, text.length);
+    ta.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+  }
+
+  const notice = (fixture: ComponentFixture<CustomerNotesComponent>) =>
+    fixture.nativeElement.querySelector('[role="status"]') as HTMLElement | null;
+
+  it('shows the notice when the catalog is degraded and nobody matches', () => {
+    const fixture = render({ degraded: true });
+    typeInNote(fixture, 'Call @zz');
+    expect(fixture.componentInstance.mentionOptions()).toEqual([]);
+    expect(notice(fixture)?.textContent).toContain("couldn't be loaded");
+  });
+
+  it('Escape dismisses a dropdown that shows only the degraded notice, and claims the keypress', () => {
+    const fixture = render({ degraded: true });
+    typeInNote(fixture, 'Call @zz');
+    expect(fixture.componentInstance.mentionDropdownOpen()).toBe(true);
+
+    const ta = fixture.nativeElement.querySelector('textarea') as HTMLTextAreaElement;
+    const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    ta.dispatchEvent(esc);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.mentionDropdownOpen()).toBe(false);
+    expect(notice(fixture)).toBeNull();
+    // Claimed, so a dialog wrapping the composer would not also close on it.
+    expect(esc.defaultPrevented).toBe(true);
+  });
+
+  it('still closes an empty dropdown when the catalog answered in full', () => {
+    const fixture = render({});
+    typeInNote(fixture, 'Call @zz');
+    expect(fixture.componentInstance.mentionDropdownOpen()).toBe(false);
+    expect(notice(fixture)).toBeNull();
   });
 });

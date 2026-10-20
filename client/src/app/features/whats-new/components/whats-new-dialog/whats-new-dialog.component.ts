@@ -44,18 +44,14 @@ import { WhatsNewReleaseListComponent } from '../whats-new-release-list/whats-ne
   ],
   templateUrl: './whats-new-dialog.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  // app-dialog closes on the backdrop and the X, but does not handle Escape. Listen on the
-  // document so Escape works without the panel holding focus.
-  host: { '(document:keydown.escape)': 'onEscape()' }
+  // No Escape listener of its own: app-dialog handles Escape and routes it through (close), the
+  // same as the X and the backdrop. This component used to add one when app-dialog did not, and
+  // once app-dialog gained it the two together closed the dialog twice per keypress.
 })
 export class WhatsNewDialogComponent {
   readonly isOpen = input.required<boolean>();
   readonly releases = input.required<WhatsNewRelease[]>();
   readonly close = output<void>();
-
-  onEscape(): void {
-    if (this.isOpen()) this.onClose();
-  }
 
   onClose(): void {
     this.close.emit();

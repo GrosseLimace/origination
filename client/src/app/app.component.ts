@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterOutlet } from '@angular/router';
 import { HeaderComponent } from '@shared/components/header/header.component';
@@ -9,6 +9,7 @@ import { DataPreloadService } from '@core/services/data-preload.service';
 import { UserPreferencesService } from '@core/services/user-preferences.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
+import { AppInsightsService } from '@core/services/app-insights.service';
 import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { filter } from 'rxjs';
@@ -17,7 +18,11 @@ import { filter } from 'rxjs';
   selector: 'app-root',
   standalone: true,
   imports: [RouterOutlet, HeaderComponent, ToastContainerComponent, WhatsNewDialogComponent],
-  templateUrl: './app.component.html'
+  templateUrl: './app.component.html',
+  // The template reads signals only (isAuthenticated, showWhatsNew, whatsNew.unseenReleases), and
+  // the MSAL subscription and the release-notes promise write signals. Every routed page is OnPush
+  // too (home was the last, 2026-10-14), so nothing below relies on the root re-checking it.
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class AppComponent {
   readonly isAuthenticated = signal(false);
@@ -29,6 +34,7 @@ export class AppComponent {
   private readonly msalService = inject(MsalService);
   private readonly broadcastService = inject(MsalBroadcastService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly appInsights = inject(AppInsightsService);
 
   private whatsNewRequested = false;
 
@@ -36,6 +42,7 @@ export class AppComponent {
     // Check if already authenticated (e.g. returning from redirect or existing session)
     this.isAuthenticated.set(this.msalService.instance.getAllAccounts().length > 0);
     this.loadWhatsNewOnce();
+    this.startTelemetry();
 
     // Listen for MSAL interactions to complete, then re-check auth state
     this.broadcastService.inProgress$
@@ -46,6 +53,7 @@ export class AppComponent {
       .subscribe(() => {
         this.isAuthenticated.set(this.msalService.instance.getAllAccounts().length > 0);
         this.loadWhatsNewOnce();
+        this.startTelemetry();
       });
 
     inject(IdleTimeoutService).start();
@@ -58,6 +66,15 @@ export class AppComponent {
   onWhatsNewClose(): void {
     this.whatsNew.markCurrentAsSeen();
     this.showWhatsNew.set(false);
+  }
+
+  /** Turns on error telemetry once there is a signed-in account; the config endpoint is
+   *  authenticated. start() runs once however often this is called, and never throws. */
+  private startTelemetry(): void {
+    if (!this.isAuthenticated()) return;
+    const account = this.msalService.instance.getActiveAccount() ?? this.msalService.instance.getAllAccounts()[0];
+    // The short name (UPN before the @), as the server's logs record the user.
+    void this.appInsights.start(account?.username?.split('@')[0] || null);
   }
 
   /**

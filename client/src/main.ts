@@ -115,7 +115,31 @@ bootstrapApplication(AppComponent, {
     MsalBroadcastService,
   ],
 }).catch((err) => {
-  if (!environment.production) {
-    console.error(err);
-  }
+  // Unconditional on purpose. This runs before any provider exists, so there is no error handler,
+  // no telemetry client and no toast to route through; the console is the only sink. Guarding it
+  // on environment.production meant a failed production bootstrap (a throwing provider factory,
+  // an MSAL init error) rendered a blank page with no diagnostic trail anywhere, in the one case
+  // where that log line is the entire investigation.
+  console.error('[bootstrap] Application failed to start', err);
+
+  // A blank page reads as the site being down. Say what happened instead. Plain DOM, because
+  // nothing of Angular's is available at this point; deliberately minimal and static.
+  const root = document.querySelector('app-root') ?? document.body;
+  root.replaceChildren();
+  const panel = document.createElement('div');
+  panel.setAttribute('role', 'alert');
+  panel.style.cssText = 'max-width:32rem;margin:4rem auto;padding:1.5rem;font-family:system-ui,sans-serif;color:#1f2937;';
+  const heading = document.createElement('h1');
+  heading.style.cssText = 'font-size:1.25rem;margin:0 0 .5rem;';
+  heading.textContent = 'The application could not start';
+  const body = document.createElement('p');
+  body.style.cssText = 'margin:0 0 1rem;line-height:1.5;';
+  body.textContent = 'Please reload the page. If this keeps happening, contact IT and mention the time it occurred.';
+  const reload = document.createElement('button');
+  reload.type = 'button';
+  reload.textContent = 'Reload';
+  reload.style.cssText = 'padding:.5rem 1rem;border:1px solid #9ca3af;border-radius:.375rem;background:#fff;cursor:pointer;';
+  reload.addEventListener('click', () => location.reload());
+  panel.append(heading, body, reload);
+  root.appendChild(panel);
 });

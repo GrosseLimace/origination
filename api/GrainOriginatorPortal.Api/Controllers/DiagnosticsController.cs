@@ -1,23 +1,12 @@
-// System namespaces
-using System.Net;
-using System.Text.Json;
-using System.Text.RegularExpressions;
-
 // Microsoft namespaces
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Data.SqlClient;
 
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Ctrm;
-using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Services.Diagnostics;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -29,55 +18,33 @@ namespace GrainOriginatorPortal.Api.Controllers;
 [Produces("application/json")]
 public class DiagnosticsController : ControllerBase
 {
-    private readonly OriginationDbContext _context;
-    private readonly ApplicationDbContext _appContext;
-    private readonly TradeUnitPreferencesDbContext _tuPrefContext;
-    private readonly ILogger<DiagnosticsController> _logger;
     private readonly IWebHostEnvironment _env;
-    private readonly IHttpClientFactory _httpFactory;
     private readonly CustomerSyncService _customerSync;
-    private readonly IGraphDirectoryClient _graphDirectory;
-    private readonly ICtrmGraphQlClient _ctrm;
-    private readonly IContractRepository _contracts;
-    private readonly ITicketRepository _tickets;
-    private readonly CtrmProvenance _provenance;
-    private readonly CtrmContractReader _contractReader;
-    private readonly CtrmTicketReader _ticketReader;
-    private readonly IConfiguration _config;
-    private static int _isGeocoding;
+    private readonly ISchemaDiagnosticsService _schema;
+    private readonly ICtrmDiagnosticsService _ctrm;
+    private readonly ICommoditySeedService _commoditySeed;
+    private readonly IElevatorCacheDiagnosticsService _elevatorCache;
+    private readonly IUsageRollupBackfillService _usageRollups;
+    private readonly IAppAccessDiagnosticsService _appAccess;
 
     public DiagnosticsController(
-        OriginationDbContext context,
-        ApplicationDbContext appContext,
-        TradeUnitPreferencesDbContext tuPrefContext,
-        ILogger<DiagnosticsController> logger,
         IWebHostEnvironment env,
-        IHttpClientFactory httpFactory,
         CustomerSyncService customerSync,
-        IGraphDirectoryClient graphDirectory,
-        ICtrmGraphQlClient ctrm,
-        IContractRepository contracts,
-        ITicketRepository tickets,
-        CtrmProvenance provenance,
-        CtrmContractReader contractReader,
-        CtrmTicketReader ticketReader,
-        IConfiguration config)
+        ISchemaDiagnosticsService schema,
+        ICtrmDiagnosticsService ctrm,
+        ICommoditySeedService commoditySeed,
+        IElevatorCacheDiagnosticsService elevatorCache,
+        IUsageRollupBackfillService usageRollups,
+        IAppAccessDiagnosticsService appAccess)
     {
-        _ctrm = ctrm;
-        _contracts = contracts;
-        _tickets = tickets;
-        _provenance = provenance;
-        _contractReader = contractReader;
-        _ticketReader = ticketReader;
-        _context = context;
-        _appContext = appContext;
-        _tuPrefContext = tuPrefContext;
-        _logger = logger;
         _env = env;
-        _httpFactory = httpFactory;
         _customerSync = customerSync;
-        _graphDirectory = graphDirectory;
-        _config = config;
+        _schema = schema;
+        _ctrm = ctrm;
+        _commoditySeed = commoditySeed;
+        _elevatorCache = elevatorCache;
+        _usageRollups = usageRollups;
+        _appAccess = appAccess;
     }
 
     // -------------------------------------------------------------------------
@@ -88,45 +55,7 @@ public class DiagnosticsController : ControllerBase
     {
         if (DenyIfNotDevelopment() is { } deny) return deny;
 
-        static async Task<object> TestDb(DbContext db, string name, string testSql)
-        {
-            try
-            {
-                await db.Database.OpenConnectionAsync();
-                var conn = db.Database.GetDbConnection();
-                var dbName = conn.Database;
-                string? result = null;
-                using var cmd = conn.CreateCommand();
-                cmd.CommandText = testSql;
-                var raw = await cmd.ExecuteScalarAsync();
-                result = raw?.ToString();
-                return new { name, status = "OK", database = dbName, result };
-            }
-            catch (SqlException)
-            {
-                return new { name, status = "FAILED", message = "Database connection failed" };
-            }
-            catch (Exception)
-            {
-                return new { name, status = "FAILED", message = "Connection test failed" };
-            }
-        }
-
-        // ODS tests must run sequentially — DbContext is not thread-safe
-        var odsCustomers = await TestDb(_context, "ODS - vw_CurrentCustomers",
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA='originations' AND TABLE_NAME='vw_CurrentCustomers'");
-        var odsPricing = await TestDb(_context, "ODS - vw_ContractPricing",
-            "SELECT TOP 1 customer_id FROM originations.vw_ContractPricing");
-
-        // Other contexts can run in parallel
-        var otherResults = await Task.WhenAll(
-            TestDb(_appContext, "Origination (OriginationConnection)",
-                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='ProducerDetails'"),
-            TestDb(_tuPrefContext, "TradeUnitPreferences (TradeUnitPreferencesConnection)",
-                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE='BASE TABLE'")
-        );
-
-        return Ok(new object[] { odsCustomers, odsPricing }.Concat(otherResults));
+        return Ok(await _schema.CheckConnectionsAsync());
     }
 
     // -------------------------------------------------------------------------
@@ -152,52 +81,7 @@ public class DiagnosticsController : ControllerBase
     {
         if (DenyIfProduction() is { } deny) return deny;
 
-        // A fixed 30-day probe window. There is no configured contract window any more - every read is
-        // scoped by producer - so this only has to be a range that reliably contains a row.
-        var from = DateTime.Today.AddDays(-30).ToString("yyyy-MM-dd");
-        var to = DateTime.Today.ToString("yyyy-MM-dd");
-
-        const string document = """
-            query ($from: Date!, $to: Date!) {
-              contracts(skip: 0, take: 1, contractDateFrom: $from, contractDateTo: $to) {
-                totalCount
-                items { contractId contractPrefixType customerId contractDate priceTypeCode }
-              }
-            }
-            """;
-
-        var result = await _ctrm.QueryAsync<JsonElement>(document, new { from, to }, cancellationToken);
-
-        int? totalCount = null;
-        string? sampleContractId = null;
-        if (result.Ok
-            && result.Value is { ValueKind: JsonValueKind.Object } data
-            && data.TryGetProperty("contracts", out var contracts)
-            && contracts.ValueKind == JsonValueKind.Object)
-        {
-            if (contracts.TryGetProperty("totalCount", out var tc) && tc.TryGetInt32(out var tcVal))
-                totalCount = tcVal;
-            if (contracts.TryGetProperty("items", out var items)
-                && items.ValueKind == JsonValueKind.Array
-                && items.GetArrayLength() > 0
-                && items[0].TryGetProperty("contractId", out var cid))
-                sampleContractId = cid.GetString();
-        }
-
-        return Ok(new
-        {
-            Configured = _ctrm.IsConfigured,
-            Source = _config.GetValue<string>("Ctrm:Source"),
-            Endpoint = _config.GetValue<string>("Ctrm:GraphQlUri"),
-            Window = new { From = from, To = to },
-            Status = result.Status.ToString(),
-            result.HttpStatus,
-            result.ErrorCode,
-            result.Detail,
-            TotalCountInWindow = totalCount,
-            SampleContractId = sampleContractId,
-            Healthy = result.Ok && totalCount is > 0
-        });
+        return Ok(await _ctrm.GetConnectivityAsync(cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -224,38 +108,7 @@ public class DiagnosticsController : ControllerBase
         if (string.IsNullOrWhiteSpace(scoularId))
             return BadRequest(new { Error = "scoularId is required (the Scoular customer code, e.g. TATOBIN)." });
 
-        var contracts = await _contracts.GetByCustomerAsync(0, scoularId.Trim(), cancellationToken);
-        var pricingLines = await _contracts.GetPricingLinesByCustomerAsync(scoularId.Trim(), cancellationToken);
-
-        return Ok(new
-        {
-            ScoularId = scoularId.Trim(),
-            ServedBy = _contracts is ContractRepositorySwitch { UsingCtrm: true } ? "ctrm" : "ods",
-            ContractCount = contracts.Count,
-            PricingLineCount = pricingLines.Count,
-            // Enough per contract to eyeball parity against the screen without dumping everything.
-            Contracts = contracts.Select(c => new
-            {
-                c.Id,
-                Synthetic = CtrmSyntheticId.IsSynthetic(c.Id),
-                c.SourceContractId,
-                c.CtrmCustomerId,
-                c.CommodityCode,
-                c.Quantity,
-                c.OpenBalanceQuantity,
-                c.SettledQuantity,
-                c.PriceTypeCode,
-                Status = c.Status.ToString(),
-                c.ContractDate,
-                c.DeliveryStart,
-                c.DeliveryEnd,
-                c.ClosedDate,
-                c.CropYear,
-                c.CustomerConfirmStatus,
-                c.HedgeMarketMonthDescription,
-                PricingLines = pricingLines.Count(p => p.ContractId == c.SourceContractId)
-            })
-        });
+        return Ok(await _ctrm.GetContractsForProducerAsync(scoularId.Trim(), cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -277,43 +130,7 @@ public class DiagnosticsController : ControllerBase
     {
         if (DenyIfProduction() is { } deny) return deny;
 
-        const string document = """
-            query ($prefix: String!, $number: String!, $suffix: String!, $bl: Date!, $product: String!) {
-              t1: ticket(ticketPrefix: $prefix, ticketNumber: $number, ticketSuffix: $suffix, ticketBLDate: $bl, productCode: $product) { ticketNumber }
-              t2: ticket(ticketPrefix: $prefix, ticketNumber: $number, ticketSuffix: $suffix, ticketBLDate: $bl, productCode: $product) { ticketNumber }
-            }
-            """;
-
-        var variables = new
-        {
-            prefix = "YMMU",
-            number = "408279",
-            suffix = "2",
-            bl = "2024-12-31",
-            product = "YSB"
-        };
-
-        var result = await _ctrm.QueryAsync<JsonElement>(document, variables, cancellationToken);
-
-        var aliasesReturned = new List<string>();
-        if (result.Ok && result.Value is { ValueKind: JsonValueKind.Object } data)
-        {
-            foreach (var property in data.EnumerateObject())
-                aliasesReturned.Add(property.Name);
-        }
-
-        return Ok(new
-        {
-            Status = result.Status.ToString(),
-            result.HttpStatus,
-            result.ErrorCode,
-            result.Detail,
-            AliasesReturned = aliasesReturned,
-            Supported = aliasesReturned.Contains("t1") && aliasesReturned.Contains("t2"),
-            Meaning = aliasesReturned.Contains("t1") && aliasesReturned.Contains("t2")
-                ? "Aliased batching works — a producer's tickets can be fetched in one request."
-                : "Aliased batching did NOT work — ticket lookups stay one request each; cap the per-producer count."
-        });
+        return Ok(await _ctrm.GetAliasBatchSupportAsync(cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -335,6 +152,11 @@ public class DiagnosticsController : ControllerBase
     /// from the App Service is the only way to test egress from inside the VNet rather than from a
     /// workstation on VPN. These endpoints report connectivity status only — no schema, no data.
     /// </remarks>
+    private IActionResult? DenyIfProduction()
+        => _env.IsDevelopment() || _env.IsEnvironment("Dev") || _env.IsEnvironment("QA")
+            ? null
+            : NotFound();
+
     // -------------------------------------------------------------------------
     /// <summary>
     /// Times one producer's screen the way the client loads it, stage by stage. Dev/QA only.
@@ -368,116 +190,7 @@ public class DiagnosticsController : ControllerBase
         if (code.Length > CtrmCustomerCodes.MaxLength * 2)
             return BadRequest(new { Error = "scoularId is not a plausible customer code." });
 
-        if (cold)
-        {
-            _contractReader.Invalidate(code);
-            _ticketReader.Invalidate(code);
-        }
-
-        // The pacing read is the one stage keyed on our surrogate Id rather than the CTRM code: it
-        // resolves the code itself from Customer, so passing 0 found nothing, recorded NoScoularId and
-        // returned an empty list after a single DB lookup - a few milliseconds of fiction in the wall time.
-        var customerId = await _appContext.Customers
-            .AsNoTracking()
-            .Where(c => c.ScoularId == code)
-            .Select(c => (long?)c.Id)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        var stages = new List<object>();
-        var wall = System.Diagnostics.Stopwatch.StartNew();
-
-        // As the client fires them: the contract list and the ticket list at the same time.
-        var contractsWatch = System.Diagnostics.Stopwatch.StartNew();
-        var contractsTask = _contracts.GetByCustomerAsync(0, code, cancellationToken);
-        var ticketsWatch = System.Diagnostics.Stopwatch.StartNew();
-        var ticketsTask = _tickets.GetByCustomerAsync(0, code, cancellationToken);
-
-        var contractRows = await Timed(contractsTask, contractsWatch);
-        stages.Add(Stage("contracts", contractsWatch, contractRows, _provenance.Contracts));
-
-        var ticketRows = await Timed(ticketsTask, ticketsWatch);
-        stages.Add(Stage("tickets", ticketsWatch, ticketRows, _provenance.Tickets));
-
-        // Then the two that follow on screen.
-        if (customerId is { } id)
-        {
-            var pacingWatch = System.Diagnostics.Stopwatch.StartNew();
-            var pacingRows = await Timed(_contracts.GetHistoricalForPacingAsync(id, cancellationToken), pacingWatch);
-            stages.Add(Stage("pacing", pacingWatch, pacingRows, _provenance.Contracts));
-        }
-        else
-        {
-            // Said plainly rather than reported as a fast zero: this producer has no Origination row, so
-            // the pacing card would not load for them either.
-            stages.Add(Stage("pacing", null, rows: -1, provenance: "not measurable: no Customer row for this code"));
-        }
-
-        var linesWatch = System.Diagnostics.Stopwatch.StartNew();
-        var lineRows = await Timed(_contracts.GetPricingLinesByCustomerAsync(code, cancellationToken), linesWatch);
-        stages.Add(Stage("pricingLines", linesWatch, lineRows, _provenance.Contracts));
-
-        wall.Stop();
-
-        return Ok(new
-        {
-            ScoularId = code,
-            CustomerId = customerId,
-            Cold = cold,
-            WallMs = wall.ElapsedMilliseconds,
-            Stages = stages,
-            Cache = new
-            {
-                Contracts = _contractReader.Describe(code),
-                Tickets = _ticketReader.Describe(code)
-            },
-            Failure = _provenance.Failure is { } f ? $"{f.What}:{f.Status}" : null,
-            Partial = _provenance.Partial
-        });
-    }
-
-    /// <summary>Awaits a stage, stopping its watch even when the read throws.</summary>
-    private static async Task<int> Timed<T>(Task<List<T>> read, System.Diagnostics.Stopwatch watch)
-    {
-        try
-        {
-            var rows = await read;
-            return rows.Count;
-        }
-        catch
-        {
-            // A 503 from the failure filter is a legitimate outcome to time; report it as -1 rather than
-            // failing the whole measurement.
-            return -1;
-        }
-        finally
-        {
-            watch.Stop();
-        }
-    }
-
-    private static object Stage(string name, System.Diagnostics.Stopwatch? watch, int rows, string? provenance) => new
-    {
-        Name = name,
-        Ms = watch?.ElapsedMilliseconds,
-        Rows = rows,
-        Provenance = provenance
-    };
-
-    private IActionResult? DenyIfProduction()
-        => _env.IsDevelopment() || _env.IsEnvironment("Dev") || _env.IsEnvironment("QA")
-            ? null
-            : NotFound();
-
-    // -------------------------------------------------------------------------
-    /// <summary>
-    /// Validates that tableName is a safe SQL identifier (letters, digits, underscores only).
-    /// Throws ValidationException if the name contains characters that could indicate injection.
-    /// security-guide.md §4.1 input validation.
-    /// </summary>
-    private static void ValidateTableName(string tableName)
-    {
-        if (!Regex.IsMatch(tableName, @"^[A-Za-z_][A-Za-z0-9_]*$"))
-            throw new ValidationException("tableName", "tableName must contain only letters, digits, and underscores.");
+        return Ok(await _ctrm.GetProducerTimingAsync(code, cold, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -488,17 +201,7 @@ public class DiagnosticsController : ControllerBase
     {
         if (DenyIfNotDevelopment() is { } deny) return deny;
 
-        var result = await _context.Database.SqlQueryRaw<TableInfo>(
-            @"SELECT DB_NAME() as DatabaseName, TABLE_NAME as TableName
-              FROM INFORMATION_SCHEMA.TABLES
-              WHERE TABLE_TYPE = 'BASE TABLE'
-              ORDER BY TABLE_NAME"
-        ).ToListAsync(cancellationToken);
-
-        var dbName = result.FirstOrDefault()?.DatabaseName ?? "Unknown";
-        var tables = result.Select(t => t.TableName).ToList();
-
-        return Ok(new { Database = dbName, TableCount = tables.Count, Tables = tables });
+        return Ok(await _schema.GetTablesAsync(cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -508,16 +211,8 @@ public class DiagnosticsController : ControllerBase
     public async Task<IActionResult> GetTableWithSchema(string tableName, CancellationToken cancellationToken = default)
     {
         if (DenyIfNotDevelopment() is { } deny) return deny;
-        ValidateTableName(tableName);
 
-        var result = await _context.Database.SqlQueryRaw<TableSchemaInfo>(
-            @"SELECT TABLE_SCHEMA as SchemaName, TABLE_NAME as TableName
-              FROM INFORMATION_SCHEMA.TABLES
-              WHERE TABLE_NAME = {0} AND TABLE_TYPE = 'BASE TABLE'",
-            tableName
-        ).ToListAsync(cancellationToken);
-
-        return Ok(result);
+        return Ok(await _schema.GetTableWithSchemaAsync(tableName, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -527,22 +222,8 @@ public class DiagnosticsController : ControllerBase
     public async Task<IActionResult> GetTableSchema(string tableName, CancellationToken cancellationToken = default)
     {
         if (DenyIfNotDevelopment() is { } deny) return deny;
-        ValidateTableName(tableName);
 
-        var columns = await _context.Database.SqlQueryRaw<ColumnInfo>(
-            @"SELECT
-                COLUMN_NAME as ColumnName,
-                DATA_TYPE as DataType,
-                IS_NULLABLE as IsNullable,
-                CHARACTER_MAXIMUM_LENGTH as MaxLength,
-                COLUMN_DEFAULT as DefaultValue
-              FROM INFORMATION_SCHEMA.COLUMNS
-              WHERE TABLE_NAME = {0}
-              ORDER BY ORDINAL_POSITION",
-            tableName
-        ).ToListAsync(cancellationToken);
-
-        return Ok(new { TableName = tableName, ColumnCount = columns.Count, Columns = columns });
+        return Ok(await _schema.GetTableSchemaAsync(tableName, cancellationToken));
     }
 
     /// <summary>
@@ -579,32 +260,10 @@ public class DiagnosticsController : ControllerBase
     [HttpPost("usage-rollups/backfill")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> BackfillUsageRollups(
-        [FromServices] IUsageRepository usageRepository,
         [FromQuery] int days = 90,
         CancellationToken cancellationToken = default)
     {
-        days = Math.Clamp(days, 1, 90);
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var weekStarts = new HashSet<DateOnly>();
-
-        for (var offset = days; offset >= 1; offset--)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var date = today.AddDays(-offset);
-
-            await usageRepository.AggregateUserActivityDailyAsync(date, cancellationToken);
-            await usageRepository.AggregateFeatureUsageDailyAsync(date, cancellationToken);
-            await usageRepository.AggregateUserFeatureUsageDailyAsync(date, cancellationToken);
-
-            weekStarts.Add(date.AddDays(-(((int)date.DayOfWeek + 6) % 7))); // Monday-start
-        }
-
-        // Weekly rollups read UserActivityDaily, so they can only run once the days above exist.
-        foreach (var weekStart in weekStarts.OrderBy(w => w))
-            await usageRepository.AggregateWeeklyLoginsAsync(weekStart, cancellationToken);
-
-        _logger.LogInformation("Backfilled usage rollups for {Days} days ({Weeks} weeks)", days, weekStarts.Count);
-        return Ok(new { daysAggregated = days, weeksAggregated = weekStarts.Count });
+        return Ok(await _usageRollups.BackfillAsync(days, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -624,102 +283,10 @@ public class DiagnosticsController : ControllerBase
     [ProducesResponseType(typeof(AppAccessGroupMembersResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAppAccessGroupMembers(CancellationToken cancellationToken = default)
     {
-        var groupId = _config.GetValue<string>("AppAccess:GroupId")?.Trim();
-        var groupName = _config.GetValue<string>("AppAccess:GroupName")?.Trim();
-        if (string.IsNullOrEmpty(groupId) && string.IsNullOrEmpty(groupName))
-        {
-            return Ok(new AppAccessGroupMembersResponse
-            {
-                GroupName = string.Empty,
-                Outcome = "NotConfigured",
-                Detail = "Neither AppAccess:GroupId nor AppAccess:GroupName is set for this environment."
-            });
-        }
-
-        // Prefer the direct object read — the scoped managed identity can read its specific
-        // group(s) but cannot list/search, so the name-search path only works locally.
-        var groupResult = !string.IsNullOrEmpty(groupId)
-            ? await _graphDirectory.GetGroupByIdAsync(groupId, cancellationToken)
-            : await _graphDirectory.FindGroupByNameAsync(groupName!, cancellationToken);
-        var label = groupResult.Value?.DisplayName ?? groupName ?? groupId!;
-        if (!groupResult.Ok)
-        {
-            return Ok(new AppAccessGroupMembersResponse
-            {
-                GroupName = label,
-                Outcome = groupResult.Status.ToString(),
-                HttpStatus = groupResult.HttpStatus,
-                Detail = groupResult.Detail
-            });
-        }
-
-        var membersResult = await _graphDirectory.GetGroupTransitiveUserMembersAsync(groupResult.Value!.Id, cancellationToken);
-        if (!membersResult.Ok)
-        {
-            return Ok(new AppAccessGroupMembersResponse
-            {
-                GroupName = label,
-                Outcome = membersResult.Status.ToString(),
-                HttpStatus = membersResult.HttpStatus,
-                Detail = membersResult.Detail
-            });
-        }
-
-        var members = membersResult.Value!
-            .OrderBy(u => u.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .Select(u => new AppAccessGroupMemberResponse
-            {
-                DisplayName = u.DisplayName,
-                UserPrincipalName = u.UserPrincipalName,
-                AccountEnabled = u.AccountEnabled
-            })
-            .ToList();
-
-        // Group-scoped grant without User.ReadBasic.All: Graph returns members but strips user
-        // properties. Call that out as its own outcome — it's the last step of the grant progression.
-        var idOnlyCount = members.Count(m => string.IsNullOrEmpty(m.UserPrincipalName));
-        if (members.Count > 0 && idOnlyCount == members.Count)
-        {
-            return Ok(new AppAccessGroupMembersResponse
-            {
-                GroupName = label,
-                Outcome = "MembersIdOnly",
-                HttpStatus = 200,
-                Detail = $"{members.Count} members returned, but with ids only (no names/UPNs) — the identity " +
-                         "also needs the User.ReadBasic.All application permission. The app matches people by " +
-                         "UPN, so filtering stays OFF (fail-open) until that grant lands.",
-                MemberCount = members.Count,
-                Members = members
-            });
-        }
-
-        _logger.LogInformation("App-access group read OK: {MemberCount} members", members.Count);
-        return Ok(new AppAccessGroupMembersResponse
-        {
-            GroupName = label,
-            Outcome = "Ok",
-            HttpStatus = 200,
-            Detail = idOnlyCount > 0
-                ? $"{idOnlyCount} of {members.Count} members returned id-only (no UPN) and are excluded from matching."
-                : null,
-            MemberCount = members.Count,
-            Members = members
-        });
+        return Ok(await _appAccess.GetGroupMembersAsync(cancellationToken));
     }
 
     // -------------------------------------------------------------------------
-    private record TableInfo
-    {
-        public string DatabaseName { get; init; } = "";
-        public string TableName { get; init; } = "";
-    }
-
-    private record TableSchemaInfo
-    {
-        public string SchemaName { get; init; } = "";
-        public string TableName { get; init; } = "";
-    }
-
     /// <summary>
     /// Seeds dbo.Commodities from distinct CommodityCode/CommodityDescription in ODS contracts.
     /// Skips codes that already exist. Dev/QA only.
@@ -730,39 +297,7 @@ public class DiagnosticsController : ControllerBase
     {
         if (DenyIfNotDevelopment() is { } deny) return deny;
 
-        // Get distinct commodity codes from ODS contracts
-        var odsContracts = await _context.Contracts.AsNoTracking()
-            .Where(c => c.ContractPrefixType == "P" && c.CommodityCode != null && c.CommodityCode != ""
-                     && c.CommodityDescription != null && c.CommodityDescription != "")
-            .Select(c => new { c.CommodityCode, c.CommodityDescription })
-            .Distinct()
-            .ToListAsync(cancellationToken);
-
-        // Get existing commodity codes
-        var existingCodes = await _appContext.Commodities
-            .Select(c => c.Code)
-            .ToListAsync(cancellationToken);
-        var existingSet = new HashSet<string>(existingCodes, StringComparer.OrdinalIgnoreCase);
-
-        int inserted = 0;
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var item in odsContracts)
-        {
-            var code = item.CommodityCode!.Trim();
-            if (existingSet.Contains(code) || seen.Contains(code)) continue;
-            seen.Add(code);
-
-            _appContext.Commodities.Add(new Commodity
-            {
-                Code = code,
-                Name = item.CommodityDescription!.Trim(),
-                IsActive = true
-            });
-            inserted++;
-        }
-
-        await _appContext.SaveChangesAsync(cancellationToken);
-        return Ok(new { Inserted = inserted, AlreadyExisted = existingCodes.Count, TotalOds = odsContracts.Count });
+        return Ok(await _commoditySeed.SeedAsync(cancellationToken));
     }
 
     /// <summary>
@@ -777,84 +312,7 @@ public class DiagnosticsController : ControllerBase
     {
         if (DenyIfNotDevelopment() is { } deny) return deny;
 
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-
-        // Read all elevators from ODS
-        var odsElevators = await _context.Elevators.AsNoTracking().ToListAsync(cancellationToken);
-
-        // Read existing cache
-        var existingCache = await _appContext.ElevatorCaches.ToDictionaryAsync(e => e.ElevatorCode, cancellationToken);
-
-        int inserted = 0, updated = 0, geocoded = 0, geoFailed = 0;
-
-        foreach (var elev in odsElevators)
-        {
-            var code = (elev.ElevatorCode ?? "").Trim();
-            if (string.IsNullOrEmpty(code)) continue;
-
-            if (existingCache.TryGetValue(code, out var cached))
-            {
-                // Update existing
-                cached.ElevatorShortName = elev.ElevatorShortName?.Trim();
-                cached.ElevatorName = elev.ElevatorName?.Trim();
-                cached.Address = elev.Address1?.Trim();
-                cached.City = elev.City?.Trim();
-                cached.State = elev.State?.Trim();
-                cached.ZipCode = elev.ZipCode?.ToString("0");
-                cached.OurFacility = elev.OurFacility?.Trim();
-                cached.TradeUnitCode = elev.ElevatorLocationCode?.Trim();
-                cached.LastRefreshedAt = DateTime.UtcNow;
-                updated++;
-            }
-            else
-            {
-                // Insert new
-                var newEntry = new ElevatorCache
-                {
-                    ElevatorCode = code,
-                    ElevatorShortName = elev.ElevatorShortName?.Trim(),
-                    ElevatorName = elev.ElevatorName?.Trim(),
-                    Address = elev.Address1?.Trim(),
-                    City = elev.City?.Trim(),
-                    State = elev.State?.Trim(),
-                    ZipCode = elev.ZipCode?.ToString("0"),
-                    OurFacility = elev.OurFacility?.Trim(),
-                    TradeUnitCode = elev.ElevatorLocationCode?.Trim(),
-                    IsActive = true,
-                    LastRefreshedAt = DateTime.UtcNow
-                };
-                _appContext.ElevatorCaches.Add(newEntry);
-                existingCache[code] = newEntry;
-                inserted++;
-            }
-        }
-
-        await _appContext.SaveChangesAsync(cancellationToken);
-
-        // Optional geocoding for entries missing coordinates
-        if (geocode)
-        {
-            var toGeocode = await _appContext.ElevatorCaches
-                .Where(e => e.Latitude == null && e.IsActive)
-                .Where(e => e.City != null || e.Address != null)
-                .ToListAsync(cancellationToken);
-
-            (geocoded, geoFailed) = await GeocodeElevatorsAsync(
-                toGeocode, _httpFactory, _logger, saveEvery: null, _appContext, cancellationToken);
-
-            await _appContext.SaveChangesAsync(cancellationToken);
-        }
-
-        sw.Stop();
-        return Ok(new
-        {
-            OdsTotal = odsElevators.Count,
-            Inserted = inserted,
-            Updated = updated,
-            Geocoded = geocoded,
-            GeoFailed = geoFailed,
-            ElapsedSeconds = sw.Elapsed.TotalSeconds
-        });
+        return Ok(await _elevatorCache.RefreshAsync(geocode, cancellationToken));
     }
 
     /// <summary>
@@ -863,7 +321,7 @@ public class DiagnosticsController : ControllerBase
     /// </summary>
     [HttpPost("elevator-cache/geocode")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
-    // No CancellationToken parameter: this is fire-and-forget. The background Task.Run below
+    // No CancellationToken parameter: this is fire-and-forget. The background work in the service
     // deliberately outlives the request and takes a fresh scope, so a request-scoped token would
     // be cancelled the moment we return 202. One used to be declared here and silently ignored,
     // which read as if the work were cancellable.
@@ -871,26 +329,10 @@ public class DiagnosticsController : ControllerBase
     {
         if (DenyIfNotDevelopment() is { } deny) return deny;
 
-        if (Interlocked.CompareExchange(ref _isGeocoding, 1, 0) != 0)
+        if (_elevatorCache.TryStartBackgroundGeocode() is not { } started)
             return Conflict(new { Message = "Geocoding is already in progress." });
 
-        var missing = _appContext.ElevatorCaches
-            .Count(e => e.Latitude == null && e.IsActive && (e.City != null || e.Address != null));
-
-        // Capture the service provider before the request ends
-        var serviceProvider = HttpContext.RequestServices.GetRequiredService<IServiceScopeFactory>();
-        _ = Task.Run(async () =>
-        {
-            try { await GeocodeElevatorsBackground(serviceProvider); }
-            finally { Interlocked.Exchange(ref _isGeocoding, 0); }
-        });
-
-        return Accepted(new
-        {
-            Message = "Geocoding started in background",
-            ElevatorsToGeocode = missing,
-            EstimatedMinutes = Math.Ceiling(missing * 1.1 / 60.0)
-        });
+        return Accepted(started);
     }
 
     /// <summary>Returns current geocoding progress.</summary>
@@ -900,121 +342,7 @@ public class DiagnosticsController : ControllerBase
     {
         if (DenyIfNotDevelopment() is { } deny) return deny;
 
-        var total = await _appContext.ElevatorCaches.CountAsync(e => e.IsActive, cancellationToken);
-        var withCoords = await _appContext.ElevatorCaches.CountAsync(e => e.IsActive && e.Latitude != null, cancellationToken);
-        var missing = total - withCoords;
-
-        return Ok(new
-        {
-            Total = total,
-            WithCoordinates = withCoords,
-            MissingCoordinates = missing,
-            PercentComplete = total > 0 ? Math.Round(100.0 * withCoords / total, 1) : 0
-        });
-    }
-
-    private async Task GeocodeElevatorsBackground(IServiceScopeFactory scopeFactory)
-    {
-        try
-        {
-            // Create a new scope since the controller's DbContext will be disposed
-            using var scope = scopeFactory.CreateScope();
-            var appContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var httpFactory = scope.ServiceProvider.GetRequiredService<IHttpClientFactory>();
-            var logger = scope.ServiceProvider.GetRequiredService<ILogger<DiagnosticsController>>();
-
-            var toGeocode = await appContext.ElevatorCaches
-                .Where(e => e.Latitude == null && e.IsActive)
-                .Where(e => e.City != null || e.Address != null)
-                .ToListAsync();
-
-            var (done, failed) = await GeocodeElevatorsAsync(
-                toGeocode, httpFactory, logger, saveEvery: 50, appContext, CancellationToken.None);
-
-            await appContext.SaveChangesAsync();
-            logger.LogInformation("Elevator geocoding complete: {Done} geocoded, {Failed} failed", done, failed);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Background elevator geocoding crashed");
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    /// <summary>
-    /// Fills in Latitude/Longitude for elevators that lack them, writing onto the tracked entities
-    /// (the caller saves). Returns (geocoded, failed).
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Both the synchronous refresh and the fire-and-forget background job used to carry their own
-    /// near-identical copy of this loop — same query assembly, same 1.1s pacing, same JSON
-    /// parsing, same swallow-and-count — so a fix to one silently missed the other.
-    /// </para>
-    /// <para>
-    /// Uses the named "nominatim" client, which Program.cs wires with a 10s timeout, 3-attempt
-    /// exponential backoff and a circuit breaker. The old code took a bare, unconfigured client, so
-    /// a Nominatim outage burned through the whole elevator list with no protection at all. The
-    /// query text is deliberately unchanged (free-text <c>q=</c> rather than
-    /// IGeocodeService's structured street/city/state parameters): routing through the service
-    /// would also change which addresses match, and that belongs in its own change with a look at
-    /// the resulting coordinates.
-    /// </para>
-    /// </remarks>
-    private static async Task<(int Geocoded, int Failed)> GeocodeElevatorsAsync(
-        List<ElevatorCache> toGeocode,
-        IHttpClientFactory httpFactory,
-        ILogger logger,
-        int? saveEvery,
-        ApplicationDbContext appContext,
-        CancellationToken cancellationToken)
-    {
-        var client = httpFactory.CreateClient("nominatim");
-        int done = 0, failed = 0;
-
-        foreach (var elev in toGeocode)
-        {
-            if (cancellationToken.IsCancellationRequested) break;
-
-            var parts = new[] { elev.Address?.Trim(), elev.City?.Trim(), elev.State?.Trim() }
-                .Where(p => !string.IsNullOrWhiteSpace(p));
-            var query = string.Join(", ", parts);
-            if (string.IsNullOrWhiteSpace(query)) { failed++; continue; }
-
-            try
-            {
-                // Nominatim's usage policy is 1 req/sec. This is a Dev/QA-only admin job, so it
-                // paces itself rather than contending for GeocodeService's shared limiter.
-                await Task.Delay(1100, cancellationToken);
-                var response = await client.GetAsync(
-                    $"search?format=json&limit=1&q={Uri.EscapeDataString(query)}", cancellationToken);
-
-                if (response.IsSuccessStatusCode)
-                {
-                    var json = await response.Content.ReadAsStringAsync(cancellationToken);
-                    var results = JsonSerializer.Deserialize<JsonElement[]>(json);
-                    if (results != null && results.Length > 0)
-                    {
-                        elev.Latitude = double.Parse(results[0].GetProperty("lat").GetString()!);
-                        elev.Longitude = double.Parse(results[0].GetProperty("lon").GetString()!);
-                        done++;
-                    }
-                    else { failed++; }
-                }
-                else { failed++; }
-
-                // Checkpoint periodically so a long run doesn't lose everything if it dies.
-                if (saveEvery is { } n && (done + failed) % n == 0)
-                    await appContext.SaveChangesAsync(cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Geocoding failed for {Code}", elev.ElevatorCode);
-                failed++;
-            }
-        }
-
-        return (done, failed);
+        return Ok(await _elevatorCache.GetGeocodeStatusAsync(cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -1025,81 +353,6 @@ public class DiagnosticsController : ControllerBase
     {
         if (DenyIfNotDevelopment() is { } deny) return deny;
 
-        var missing = await _appContext.ElevatorCaches
-            .Where(e => e.Latitude == null && e.IsActive && e.ZipCode != null && e.ZipCode != "0")
-            .ToListAsync(cancellationToken);
-
-        if (missing.Count == 0)
-            return Ok(new { Message = "No elevators need zip-based geocoding", Updated = 0 });
-
-        // Group by zip to avoid redundant API calls
-        var byZip = missing.GroupBy(e => e.ZipCode!.Trim().Split('.')[0].Split('-')[0]).ToList();
-        var client = _httpFactory.CreateClient();
-        int updated = 0, failed = 0;
-        var zipCache = new Dictionary<string, (double lat, double lng)>();
-
-        foreach (var group in byZip)
-        {
-            var zip = group.Key;
-            if (string.IsNullOrWhiteSpace(zip) || zip == "0") { failed += group.Count(); continue; }
-
-            // Normalize: take first 5 digits
-            if (zip.Length > 5) zip = zip[..5];
-
-            if (!zipCache.TryGetValue(zip, out var coords))
-            {
-                try
-                {
-                    await Task.Delay(100, cancellationToken); // Be polite
-                    var response = await client.GetAsync($"https://api.zippopotam.us/us/{zip}", cancellationToken);
-                    if (response.IsSuccessStatusCode)
-                    {
-                        var json = await response.Content.ReadAsStringAsync(cancellationToken);
-                        var doc = JsonSerializer.Deserialize<JsonElement>(json);
-                        var places = doc.GetProperty("places");
-                        if (places.GetArrayLength() > 0)
-                        {
-                            var place = places[0];
-                            var lat = double.Parse(place.GetProperty("latitude").GetString()!);
-                            var lng = double.Parse(place.GetProperty("longitude").GetString()!);
-                            coords = (lat, lng);
-                            zipCache[zip] = coords;
-                        }
-                        else { failed += group.Count(); continue; }
-                    }
-                    else { failed += group.Count(); continue; }
-                }
-                catch { failed += group.Count(); continue; }
-            }
-
-            foreach (var elev in group)
-            {
-                elev.Latitude = coords.lat;
-                elev.Longitude = coords.lng;
-                updated++;
-            }
-
-            // Save every 100
-            if (updated % 100 == 0) await _appContext.SaveChangesAsync(cancellationToken);
-        }
-
-        await _appContext.SaveChangesAsync(cancellationToken);
-
-        return Ok(new
-        {
-            Message = "Zip-based geocoding complete",
-            UniqueZips = byZip.Count,
-            Updated = updated,
-            Failed = failed
-        });
-    }
-
-    private record ColumnInfo
-    {
-        public string ColumnName { get; init; } = "";
-        public string DataType { get; init; } = "";
-        public string IsNullable { get; init; } = "";
-        public int? MaxLength { get; init; }
-        public string? DefaultValue { get; init; }
+        return Ok(await _elevatorCache.GeocodeByZipAsync(cancellationToken));
     }
 }

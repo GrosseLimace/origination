@@ -28,7 +28,6 @@ GrainOriginatorPortal/
         │   ├── build-list/
         │   ├── bid-sheet/
         │   ├── calculators/
-        │   ├── unshipped-bushels/
         │   ├── daily-digest/
         │   └── usage-dashboard/
         ├── shared/
@@ -158,7 +157,6 @@ All routes require Azure AD bearer token authentication. Base path: `/api/v1`
 |--------|----------|-------------|
 | GET | `/commodities` | All active commodities |
 | GET | `/storedgrain/customer/{customerId}` | Stored grain (stub, no ODS table yet) |
-| GET | `/farms/customer/{customerId}` | Farms (stub, no ODS table yet) |
 
 > Trade unit and trade-unit-group catalog lookups are sourced from the **TradeUnitPreferences** database (`dbo.vw_UserTradeUnitPreferences`, see `/usertradeunits`). Managers assign users to trade units in a separate preferences application, which owns the writes; this app only reads. Replaced the Entitlements DB 2026-08-18. The app DB no longer maintains a local TU catalog.
 
@@ -238,7 +236,7 @@ Azure AD bearer tokens via `Microsoft.Identity.Web`. All API endpoints require a
 
 ## Software Bill of Materials (SBOM)
 
-Last Updated: 2026-10-06
+Last Updated: 2026-10-20
 
 ### Backend Dependencies (C# / .NET 10)
 
@@ -253,7 +251,7 @@ Last Updated: 2026-10-06
 | Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore | 10.0.3 | MIT | EF Core health check endpoint |
 | Microsoft.Extensions.Http.Resilience | 10.3.0 | MIT | HTTP retry / resilience policies |
 | Microsoft.Identity.Web | 3.8.4 | MIT | Azure AD / JWT Bearer authentication |
-| System.Security.Cryptography.Xml | 10.0.10 | MIT | XML crypto — transitive (via Microsoft.Identity.Web), pinned to clear EncryptedXml advisories (GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf, CVE-2026-47302, CVE-2026-50525 & CVE-2026-50648 DoS, CVE-2026-47304 feature-bypass) |
+| System.Security.Cryptography.Xml | 10.0.13 | MIT | XML crypto — transitive (via Microsoft.Identity.Web), pinned to clear EncryptedXml advisories (GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf, CVE-2026-47302, CVE-2026-50525 & CVE-2026-50648 DoS, CVE-2026-47304 feature-bypass); raised 2026-10-13 to 10.0.13 for CVE-2026-96958/-96959/-96960 (SignedXml/C14N/EncryptedXml DoS, <= 10.0.12) — the old 10.0.10 pin had fallen inside that range. Pulls System.Security.Cryptography.Pkcs to the matching 10.0.13. Pin covers Infrastructure + tests only: .NET 10 package pruning drops it from the web app, which loads it from the App Service ASP.NET Core runtime |
 
 ### Frontend Dependencies (Angular 21 / TypeScript)
 
@@ -267,6 +265,8 @@ Last Updated: 2026-10-06
 | @angular/cdk | 21.2.14 | MIT | Component primitives — drag-and-drop (bid sheet column/row reorder), scrolling, and Overlay (the Add-column picker, which must escape a clipping scroll container) |
 | @azure/msal-angular | 5.1.1 | MIT | Azure AD authentication (Angular) |
 | @azure/msal-browser | 5.23.0 | MIT | MSAL browser runtime (raised from 5.4.0 because `@cws/core-auth` peers on ^5.23.0) |
+| @azure/msal-browser | 5.4.0 | MIT | MSAL browser runtime |
+| @microsoft/applicationinsights-web | 3.4.5 | MIT | Browser error telemetry to Application Insights (pinned exact; loaded lazily, only when the server returns a connection string). Brings 10 transitive packages, all MIT, none with install scripts: the @microsoft/applicationinsights-* family at 3.4.5, applicationinsights-shims 3.0.1, dynamicproto-js 2.0.5, @nevware21/ts-async 0.5.5, @nevware21/ts-utils 0.16.0 |
 | @it/design-system | 0.1.1 | Internal | Scoular IT design system components |
 | @cws/workspace | 0.2.0 | Internal | SPIKE: Contract Workspace shell, routes and provider bundle, mounted at `/cws` (local only, `cwsSpikeEnabled`). Vendored from `client/vendor/cws/`; the 16 `@cws/*` packages are released together at one version |
 | @cws/features-home | 0.2.0 | Internal | SPIKE: CWS contract grid |
@@ -284,8 +284,7 @@ Last Updated: 2026-10-06
 | @cws/shared-ui | 0.2.0 | Internal | SPIKE: CWS UI components |
 | @cws/shared-form-engine | 0.2.0 | Internal | SPIKE: CWS form engine |
 | @cws/shared-utils | 0.2.0 | Internal | SPIKE: CWS utilities |
-| @microsoft/applicationinsights-web | 3.4.4 | MIT | Required peer of `@cws/core-telemetry` (CWS telemetry is not enabled in the spike) |
-| @microsoft/applicationinsights-angularplugin-js | 15.4.2 | MIT | Required peer of `@cws/core-telemetry` |
+| @microsoft/applicationinsights-angularplugin-js | 15.4.2 | MIT | SPIKE: required peer of `@cws/core-telemetry` (CWS telemetry is not enabled in the spike; its other peer, `@microsoft/applicationinsights-web`, is the app's own 3.4.5 above) |
 | leaflet | 1.9.4 | BSD-2-Clause | Interactive map rendering |
 | leaflet.markercluster | ~1.5.3 | MIT | Leaflet marker clustering |
 | rxjs | 7.8.2 | Apache-2.0 | Reactive programming (Observables) |

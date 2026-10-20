@@ -233,8 +233,14 @@
                   <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-3 text-gray-300 dark:text-gray-600">
                     <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
                   </svg>
-                  <p class="text-sm font-medium text-gray-500 dark:text-gray-400">No saved lists yet</p>
-                  <p class="text-xs text-gray-400/80 dark:text-gray-500/80 mt-1">Run a query, then use <span class="font-medium text-gray-500 dark:text-gray-400">Save List</span> to keep it here for next time.</p>
+                  @if (savedListsLoadFailed()) {
+                    <!-- A failed load must not read as "you have none". -->
+                    <p class="text-sm font-medium text-amber-700 dark:text-amber-300">Couldn't load your saved lists</p>
+                    <p class="text-xs text-gray-400/80 dark:text-gray-500/80 mt-1">Refresh the page to try again.</p>
+                  } @else {
+                    <p class="text-sm font-medium text-gray-500 dark:text-gray-400">No saved lists yet</p>
+                    <p class="text-xs text-gray-400/80 dark:text-gray-500/80 mt-1">Run a query, then use <span class="font-medium text-gray-500 dark:text-gray-400">Save List</span> to keep it here for next time.</p>
+                  }
                 </div>
               }
               @if (isManager() && libraryTeamLists().length === 0 && selectedCategory() === 'Team Lists') {
@@ -456,6 +462,8 @@
           } @else if (sourceLoadFailed()) {
             <!-- An outage must not read as an empty trade unit. -->
             <p class="text-sm text-amber-700 dark:text-amber-300">Contract and ticket data could not be loaded from CTRM, so this list is incomplete. Please retry shortly.</p>
+          } @else if (customersLoadFailed()) {
+            <p class="text-sm text-amber-700 dark:text-amber-300">Producers for the selected trade units could not be loaded. Refresh the page to try again.</p>
           } @else {
             <p class="text-sm text-gray-500 dark:text-gray-400">No producers found for the selected trade units. Try selecting different trade units above.</p>
           }
@@ -478,6 +486,17 @@
               Retry
             </button>
           </div>
+        </div>
+      }
+
+      <!-- Other data the prompt needs (DP, planting, contact history, follow-ups) failed to load —
+           same reasoning as the contracts panel above. -->
+      @if (unavailableDataForQuery().length > 0 && hasGenerated() && queryText().trim() && !isProcessing() && !waitingForTickets() && !waitingForNotes() && !waitingForDp()) {
+        <div class="flex items-start gap-3 px-4 py-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-500 dark:text-amber-400 flex-shrink-0 mt-0.5">
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12" y1="17" y2="17.01"/>
+          </svg>
+          <p class="flex-1 text-sm text-amber-800 dark:text-amber-200">Couldn't load {{ unavailableDataForQuery().join(' and ') }}, so results below may be incomplete. Refresh the page to try again.</p>
         </div>
       }
 
@@ -536,7 +555,7 @@
       }
 
       <!-- Valid query, no matches (query was understood but data is empty for these criteria) -->
-      @if (queryReturnedNoMatches() && hasGenerated() && queryText().trim() && !contractsUnavailableForQuery()) {
+      @if (queryReturnedNoMatches() && hasGenerated() && queryText().trim() && !contractsUnavailableForQuery() && unavailableDataForQuery().length === 0) {
         <div class="flex items-start gap-3 px-4 py-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500 dark:text-blue-400 flex-shrink-0 mt-0.5">
             <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
@@ -1112,12 +1131,12 @@
                 @if (showPlantingFilters()) {
                   @let hp = hiddenFilters();
                   <div class="flex flex-wrap gap-x-4 sm:gap-x-10 gap-y-4 sm:gap-y-5">
-                    <!-- Planting Year & Type -->
+                    <!-- Crop Year & Type -->
                     <div class="space-y-2.5">
-                      <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Planting Year & Type</p>
+                      <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Crop Year & Type</p>
                       @if (!hp.has('plantingYear')) {
                         <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                          <span class="shrink-0">Planting year</span>
+                          <span class="shrink-0">Crop Year</span>
                           <input type="number" min="2020" max="2030"
                             [ngModel]="pendingRefinements().plantingYear || ''"
                             (ngModelChange)="updateRefinement(r => ({...r, plantingYear: $event ? +$event : null}))"
@@ -1983,7 +2002,7 @@
       }
 
       <!-- Save / Update List Dialog -->
-      <app-dialog [isOpen]="showSaveDialog()" (close)="closeSaveDialog()" size="sm">
+      <app-dialog [isOpen]="showSaveDialog()" (close)="closeSaveDialog()" [closeOnEscape]="false" size="sm">
         <app-dialog-header>
           <app-dialog-title>{{ activeSavedList() ? 'Update List' : 'Save List' }}</app-dialog-title>
           <app-dialog-description>{{ activeSavedList() ? 'Update the name or keep it the same' : 'Give this list a name so you can easily access it later' }}</app-dialog-description>
@@ -2007,7 +2026,7 @@
       </app-dialog>
 
       <!-- Step 1: pick the member(s) to build a list for (member-first flow) -->
-      <app-dialog [isOpen]="showBuildForDialog()" (close)="closeBuildForDialog()" size="sm">
+      <app-dialog [isOpen]="showBuildForDialog()" (close)="closeBuildForDialog()" [closeOnEscape]="false" size="sm">
         <app-dialog-header>
           <app-dialog-title>Who is this list for?</app-dialog-title>
           <app-dialog-description>Pick the team member(s), then build the list — each gets their own copy.</app-dialog-description>
@@ -2043,7 +2062,7 @@
 
       <!-- Step 3: name + confirm the assignment (manager-only). Members pre-selected from step 1
            in the build-for flow, or chosen here when assigning an existing list from a row. -->
-      <app-dialog [isOpen]="showAssignDialog()" (close)="closeAssignDialog()" size="sm">
+      <app-dialog [isOpen]="showAssignDialog()" (close)="closeAssignDialog()" [closeOnEscape]="false" size="sm">
         <app-dialog-header>
           <app-dialog-title>Assign list to team member(s)</app-dialog-title>
           <app-dialog-description>Each selected member gets their own copy in their Saved Lists.</app-dialog-description>

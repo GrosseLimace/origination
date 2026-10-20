@@ -28,6 +28,14 @@ import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl, googleM
 import { binSiteHasCoordinates } from '@shared/utils/coordinates';
 import { buildProductionCoverage } from '@shared/utils/production-coverage';
 
+/** One tab in the producer profile's tab strip, with its count badge. */
+interface ProfileTab {
+  id: string;
+  label: string;
+  shortLabel: string;
+  count: number;
+}
+
 @Component({
   selector: 'app-customer-profile',
   standalone: true,
@@ -55,6 +63,14 @@ export class CustomerProfileComponent {
   private readonly destroyRef = inject(DestroyRef);
   /** Harvest windows from app state — exposed for pacing card template binding. */
   readonly harvestWindows = this.appState.harvestWindows;
+
+  /** The harvest windows failed to load. Pace is measured inside them, so with none the card would
+   *  say "No contract data available" about a producer who may well have contracts. */
+  readonly harvestWindowsUnavailable = computed(() =>
+    this.appState.harvestWindowsLoadFailed() && this.harvestWindows().length === 0);
+
+  /** The saved lists failed to load, so an empty Add to List menu does not mean none match. */
+  readonly savedListsLoadFailed = this.appState.savedListsLoadFailed;
 
   /**
    * Historical closed contracts from base.Contract for this customer.
@@ -604,7 +620,7 @@ export class CustomerProfileComponent {
     return this.plantingIntentions().filter(pi => years.has(pi.plantingYear));
   });
 
-  private _tabs: any[] = [];
+  private _tabs: ProfileTab[] = [];
   private _unappliedTicketCount = 0;
   private _effectiveCommodities: string[] = [];
 
@@ -723,6 +739,13 @@ export class CustomerProfileComponent {
     }
     return results;
   }
+
+  /** The current customer's ScoularView recipients, parsed once per customer for the eSign panel. */
+  readonly scoularViewRecipientList = computed(() => {
+    const raw = this.customer().scoularViewRecipients;
+    return raw ? this.parseRecipients(raw) : [];
+  });
+
   get bushelsAvailable(): number { return this.contractMetrics().bushelsAvailable; }
 
   /**
@@ -971,8 +994,9 @@ export class CustomerProfileComponent {
   }
 
   /** User-entered contacts, primary first then saved order. Older cached customers without a
-   *  contacts array fall back to a synthesized row from the legacy primary fields. */
-  getContacts(): ProducerContactItem[] {
+   *  contacts array fall back to a synthesized row from the legacy primary fields. A computed, so the
+   *  copy-and-sort runs once per customer rather than on every change-detection pass of the template. */
+  readonly sortedContacts = computed<ProducerContactItem[]>(() => {
     const c = this.customer();
     if (c.contacts && c.contacts.length > 0) {
       return [...c.contacts].sort((a, b) =>
@@ -982,7 +1006,7 @@ export class CustomerProfileComponent {
       return [{ name: c.primaryContact || 'Primary Contact', phone: c.primaryPhone, isPrimary: true }];
     }
     return [];
-  }
+  });
 
   getFormattedLocation(): string {
     const c = this.customer();

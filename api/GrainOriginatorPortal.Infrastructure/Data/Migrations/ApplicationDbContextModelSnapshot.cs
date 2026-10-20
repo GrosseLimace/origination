@@ -3312,7 +3312,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.Customer", "Customer")
                         .WithMany()
                         .HasForeignKey("CustomerId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
                     b.Navigation("Customer");

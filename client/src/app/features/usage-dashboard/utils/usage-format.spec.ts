@@ -137,7 +137,6 @@ describe('getInitials', () => {
 describe('formatFeatureLabel', () => {
   it('maps known feature codes', () => {
     expect(formatFeatureLabel('customers')).toBe('Producer Page');
-    expect(formatFeatureLabel('unshipped-bushels')).toBe('Unshipped Bushels');
   });
 
   it('title-cases an unrecognized code instead of showing it raw', () => {

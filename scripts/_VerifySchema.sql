@@ -42,15 +42,6 @@
 --   Last regenerated: 2026-09-21 against the snapshot as of migration
 --   20260921152258_AddUsageDashboardViewAllUsers (re-parsed the snapshot; every
 --   previously listed row was reproduced unchanged by the rules above).
---   Updated 2026-09-22 (bid-sheet branch): merged with this branch's objects rather than
---   regenerated. Main's baseline is kept for every table it owns -- it is AHEAD of this branch on
---   Notes, SavedLists, CustomerTradeUnit and ProducerDetails, and it backfilled the gaps this
---   file's old header apologised for. Transplanted from the branch: the five Barchart* tables,
---   BidSheets / BidSheetShares / BidSheetLocationLinks, and the reshaped BidSheetLocationBids,
---   BidSheetLocations and BidSheetPreferences (main's rows for those three predate the remodel).
---   BidSheetLocationOrders is DROPPED -- retired by 20260914131223. Regenerate properly from the
---   merged snapshot when this branch reaches main.
---
 --   Updated 2026-09-22: appended the two flax migrations (20260921202246,
 --   20260921204500). Both are data-only raw SQL, so no table, column or index
 --   row changed; only @Migrations grew.
@@ -109,6 +100,9 @@
 --   NULL, UQ_BidSheetLocations_BarchartKey, the basis/coverage bid columns, BidSheetLocationOrders
 --   retired) and the organic tables. Cross-checked against the merged model snapshot: 51 tables,
 --   529 columns and 94 migrations, all matching.
+--   Updated 2026-10-20 (main 5ed04040 merged in): main now carries the Bid Sheet remodel and BarChart
+--   (#726) and 20261013163045_RestrictCustomerTradeUnitDeleteAndValidateCustomerFks; this branch adds
+--   only the organic certification tables on top. Totals re-checked against the merged snapshot.
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -215,7 +209,6 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'UserSession'),
 ('dbo', 'UserTradeUnitSnapshot'),
 ('dbo', 'WeeklyLoginAggregate');
-
 
 -- -----------------------------------------------------------------------------
 -- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (529)
@@ -377,6 +370,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'BidSheets', 'OwnerUserId',    'nvarchar(256)', 0),
 ('dbo', 'BidSheets', 'SelectedMonths', 'nvarchar(max)', 1),
 ('dbo', 'BidSheets', 'SelectedYears',  'nvarchar(max)', 1),
+-- Commodities (Commodity entity)
 ('dbo', 'Commodities', 'Id',                       'int',           0),
 ('dbo', 'Commodities', 'BaseUOM',                  'nvarchar(10)',  1),
 ('dbo', 'Commodities', 'Category',                 'nvarchar(100)', 1),
@@ -390,6 +384,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'Commodities', 'Tier3',                    'nvarchar(100)', 1),
 ('dbo', 'Commodities', 'TradeGroupScope',          'nvarchar(100)', 1),
 ('dbo', 'Commodities', 'TradeUnitScope',           'nvarchar(200)', 1),
+-- Customer (column names overridden via HasColumnName)
 ('dbo', 'Customer', 'CustomerId',                 'bigint',        0),
 ('dbo', 'Customer', 'MerchandisingAddressLine1',  'nvarchar(255)', 1),
 ('dbo', 'Customer', 'EffectiveEndDate',           'datetime2',     1),
@@ -416,12 +411,15 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'Customer', 'ScoularId',                  'nvarchar(400)', 1),
 ('dbo', 'Customer', 'MerchandisingStateProvince', 'nvarchar(50)',  1),
 ('dbo', 'Customer', 'SupplementalEmail',          'nvarchar(255)', 1),
+-- CustomerCommodity
 ('dbo', 'CustomerCommodity', 'Id',          'int',    0),
 ('dbo', 'CustomerCommodity', 'CommodityId', 'int',    0),
 ('dbo', 'CustomerCommodity', 'CustomerId',  'bigint', 0),
+-- CustomerLink
 ('dbo', 'CustomerLink', 'Id',             'int',    0),
 ('dbo', 'CustomerLink', 'FromCustomerId', 'bigint', 0),
 ('dbo', 'CustomerLink', 'ToCustomerId',   'bigint', 0),
+-- CustomerTradeUnit
 ('dbo', 'CustomerTradeUnit', 'Id',              'int',           0),
 ('dbo', 'CustomerTradeUnit', 'CreatedAt',       'datetime2',     0),
 ('dbo', 'CustomerTradeUnit', 'CreatedBy',       'nvarchar(255)', 0),
@@ -432,15 +430,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'CustomerTradeUnit', 'ModifiedBy',      'nvarchar(255)', 1),
 ('dbo', 'CustomerTradeUnit', 'TradeUnit',       'nvarchar(100)', 0),
 ('dbo', 'CustomerTradeUnit', 'UserDeactivated', 'bit',           0),
-('dbo', 'DailyRecapGroupCcEmails', 'Id',           'int',           0),
-('dbo', 'DailyRecapGroupCcEmails', 'Email',        'nvarchar(256)', 0),
-('dbo', 'DailyRecapGroupCcEmails', 'RecapGroupId', 'int',           0),
-('dbo', 'DailyRecapGroupMembers', 'Id',           'int',           0),
-('dbo', 'DailyRecapGroupMembers', 'Email',        'nvarchar(256)', 1),
-('dbo', 'DailyRecapGroupMembers', 'MemberId',     'nvarchar(256)', 0),
-('dbo', 'DailyRecapGroupMembers', 'MemberName',   'nvarchar(256)', 0),
-('dbo', 'DailyRecapGroupMembers', 'MemberType',   'nvarchar(20)',  0),
-('dbo', 'DailyRecapGroupMembers', 'RecapGroupId', 'int',           0),
+-- DailyRecapGroups (DailyRecapGroup entity)
 ('dbo', 'DailyRecapGroups', 'Id',                'int',           0),
 ('dbo', 'DailyRecapGroups', 'CreatedAt',         'datetime2',     0),
 ('dbo', 'DailyRecapGroups', 'CreatedBy',         'nvarchar(255)', 0),
@@ -450,6 +440,18 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'DailyRecapGroups', 'ModifiedBy',        'nvarchar(255)', 1),
 ('dbo', 'DailyRecapGroups', 'Name',              'nvarchar(200)', 0),
 ('dbo', 'DailyRecapGroups', 'TeamsChannelEmail', 'nvarchar(256)', 1),
+-- DailyRecapGroupCcEmails (DailyRecapGroupCcEmail entity)
+('dbo', 'DailyRecapGroupCcEmails', 'Id',           'int',           0),
+('dbo', 'DailyRecapGroupCcEmails', 'Email',        'nvarchar(256)', 0),
+('dbo', 'DailyRecapGroupCcEmails', 'RecapGroupId', 'int',           0),
+-- DailyRecapGroupMembers (DailyRecapGroupMember entity)
+('dbo', 'DailyRecapGroupMembers', 'Id',           'int',           0),
+('dbo', 'DailyRecapGroupMembers', 'Email',        'nvarchar(256)', 1),
+('dbo', 'DailyRecapGroupMembers', 'MemberId',     'nvarchar(256)', 0),
+('dbo', 'DailyRecapGroupMembers', 'MemberName',   'nvarchar(256)', 0),
+('dbo', 'DailyRecapGroupMembers', 'MemberType',   'nvarchar(20)',  0),
+('dbo', 'DailyRecapGroupMembers', 'RecapGroupId', 'int',           0),
+-- DashboardActualHarvests (DashboardActualHarvest entity)
 ('dbo', 'DashboardActualHarvests', 'Id',           'int',           0),
 ('dbo', 'DashboardActualHarvests', 'Bushels',      'int',           0),
 ('dbo', 'DashboardActualHarvests', 'CreatedAt',    'datetime2',     0),
@@ -459,6 +461,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'DashboardActualHarvests', 'ModifiedBy',   'nvarchar(255)', 1),
 ('dbo', 'DashboardActualHarvests', 'PlantingYear', 'int',           0),
 ('dbo', 'DashboardActualHarvests', 'TradeUnitKey', 'nvarchar(500)', 0),
+-- DashboardMarketShares (DashboardMarketShare entity)
 ('dbo', 'DashboardMarketShares', 'Id',             'int',           0),
 ('dbo', 'DashboardMarketShares', 'CreatedAt',      'datetime2',     0),
 ('dbo', 'DashboardMarketShares', 'CreatedBy',      'nvarchar(255)', 0),
@@ -468,6 +471,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'DashboardMarketShares', 'ModifiedBy',     'nvarchar(255)', 1),
 ('dbo', 'DashboardMarketShares', 'PlantingYear',   'int',           0),
 ('dbo', 'DashboardMarketShares', 'TradeUnitKey',   'nvarchar(500)', 0),
+-- DashboardPlantingEstimates (DashboardPlantingEstimate entity)
 ('dbo', 'DashboardPlantingEstimates', 'Id',            'int',           0),
 ('dbo', 'DashboardPlantingEstimates', 'CreatedAt',     'datetime2',     0),
 ('dbo', 'DashboardPlantingEstimates', 'CreatedBy',     'nvarchar(255)', 0),
@@ -477,6 +481,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'DashboardPlantingEstimates', 'PlantingYear',  'int',           0),
 ('dbo', 'DashboardPlantingEstimates', 'TradeUnitKey',  'nvarchar(500)', 0),
 ('dbo', 'DashboardPlantingEstimates', 'YieldEstimate', 'decimal(10,2)', 1),
+-- ESignEnrollment (column names overridden via HasColumnName)
 ('dbo', 'ESignEnrollment', 'Id',                    'int',           0),
 ('dbo', 'ESignEnrollment', 'CustomerCode',          'nvarchar(50)',  0),
 ('dbo', 'ESignEnrollment', 'CustomerName',          'nvarchar(255)', 0),
@@ -484,6 +489,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'ESignEnrollment', 'GUID',                  'nvarchar(255)', 1),
 ('dbo', 'ESignEnrollment', 'ScoularViewRecipients', 'nvarchar(max)', 1),
 ('dbo', 'ESignEnrollment', 'UpdatedOn',             'datetime2',     0),
+-- ElevatorCache (PK is ElevatorCode, no identity)
 ('dbo', 'ElevatorCache', 'ElevatorCode',      'nvarchar(50)',  0),
 ('dbo', 'ElevatorCache', 'Address',           'nvarchar(300)', 1),
 ('dbo', 'ElevatorCache', 'City',              'nvarchar(100)', 1),
@@ -497,6 +503,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'ElevatorCache', 'State',             'nvarchar(10)',  1),
 ('dbo', 'ElevatorCache', 'TradeUnitCode',     'nvarchar(50)',  1),
 ('dbo', 'ElevatorCache', 'ZipCode',           'nvarchar(20)',  1),
+-- FeatureUsageDaily
 ('dbo', 'FeatureUsageDaily', 'Id',             'bigint',       0),
 ('dbo', 'FeatureUsageDaily', 'ActivityDate',   'date',         0),
 ('dbo', 'FeatureUsageDaily', 'ClickCount',     'int',          0),
@@ -505,6 +512,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'FeatureUsageDaily', 'SessionCount',   'int',          0),
 ('dbo', 'FeatureUsageDaily', 'SubFeatureCode', 'nvarchar(50)', 0),
 ('dbo', 'FeatureUsageDaily', 'UniqueUsers',    'int',          0),
+-- HarvestWindows (HarvestWindow entity)
 ('dbo', 'HarvestWindows', 'Id',                 'int',          0),
 ('dbo', 'HarvestWindows', 'Commodity',          'nvarchar(50)', 0),
 ('dbo', 'HarvestWindows', 'DeliveryEndDay',     'int',          0),
@@ -512,6 +520,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'HarvestWindows', 'DeliveryStartDay',   'int',          0),
 ('dbo', 'HarvestWindows', 'DeliveryStartMonth', 'int',          0),
 ('dbo', 'HarvestWindows', 'IsActive',           'bit',          0),
+-- MbpLocationSynonym (CashBidsHidden / PushNotificationsHidden are fixed-length nchar(1))
 ('dbo', 'MbpLocationSynonym', 'Id',                      'int',           0),
 ('dbo', 'MbpLocationSynonym', 'AddressLine1',            'nvarchar(200)', 1),
 ('dbo', 'MbpLocationSynonym', 'AddressLine2',            'nvarchar(200)', 1),
@@ -536,6 +545,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'MbpLocationSynonym', 'Status',                  'nvarchar(20)',  1),
 ('dbo', 'MbpLocationSynonym', 'Website',                 'nvarchar(256)', 1),
 ('dbo', 'MbpLocationSynonym', 'ZipCode',                 'nvarchar(20)',  1),
+-- Notes (Note entity; the MentionsJson property is stored in column "Mentions")
 ('dbo', 'Notes', 'Id',          'int',           0),
 ('dbo', 'Notes', 'CreatedAt',   'datetime2',     0),
 ('dbo', 'Notes', 'CreatedBy',   'nvarchar(200)', 0),
@@ -669,6 +679,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'ProducerReminders', 'Notes',          'nvarchar(2000)', 1),
 ('dbo', 'ProducerReminders', 'OutlookEventId', 'nvarchar(256)',  1),
 ('dbo', 'ProducerReminders', 'Subject',        'nvarchar(200)',  0),
+-- QueryLibrary (QueryLibraryItem entity)
 ('dbo', 'QueryLibrary', 'Id',          'int',           0),
 ('dbo', 'QueryLibrary', 'Category',    'nvarchar(100)', 0),
 ('dbo', 'QueryLibrary', 'CreatedAt',   'datetime2',     0),
@@ -679,11 +690,13 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'QueryLibrary', 'QueryText',   'nvarchar(500)', 0),
 ('dbo', 'QueryLibrary', 'SortOrder',   'int',           0),
 ('dbo', 'QueryLibrary', 'Tags',        'nvarchar(500)', 1),
+-- QuerySearchLog
 ('dbo', 'QuerySearchLog', 'Id',             'bigint',        0),
 ('dbo', 'QuerySearchLog', 'MatchedQueryId', 'int',           1),
 ('dbo', 'QuerySearchLog', 'SearchText',     'nvarchar(500)', 0),
 ('dbo', 'QuerySearchLog', 'Timestamp',      'datetime2(3)',  0),
 ('dbo', 'QuerySearchLog', 'UserId',         'nvarchar(256)', 0),
+-- SavedLists (SavedList entity)
 ('dbo', 'SavedLists', 'Id',                  'int',           0),
 ('dbo', 'SavedLists', 'AssignedTo',          'nvarchar(255)', 1),
 ('dbo', 'SavedLists', 'CreatedAt',           'datetime2',     0),
@@ -697,6 +710,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'SavedLists', 'Name',                'nvarchar(100)', 0),
 ('dbo', 'SavedLists', 'Query',               'nvarchar(500)', 0),
 ('dbo', 'SavedLists', 'TradeUnits',          'nvarchar(500)', 1),
+-- TeamsChannels (TeamsChannel entity)
 ('dbo', 'TeamsChannels', 'Id',           'int',           0),
 ('dbo', 'TeamsChannels', 'ChannelEmail', 'nvarchar(256)', 0),
 ('dbo', 'TeamsChannels', 'ChannelId',    'nvarchar(200)', 0),
@@ -705,6 +719,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'TeamsChannels', 'DisplayName',  'nvarchar(256)', 0),
 ('dbo', 'TeamsChannels', 'TeamId',       'nvarchar(100)', 0),
 ('dbo', 'TeamsChannels', 'TeamName',     'nvarchar(256)', 0),
+-- UsageDashboardExcludedUsers (UsageDashboardExcludedUser entity)
 ('dbo', 'UsageDashboardExcludedUsers', 'Id',        'int',           0),
 ('dbo', 'UsageDashboardExcludedUsers', 'CreatedAt', 'datetime2',     0),
 ('dbo', 'UsageDashboardExcludedUsers', 'CreatedBy', 'nvarchar(255)', 0),
@@ -720,6 +735,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'UserActivity', 'SubFeatureCode', 'nvarchar(50)',  1),
 ('dbo', 'UserActivity', 'Timestamp',      'datetime2',     0),
 ('dbo', 'UserActivity', 'UserId',         'nvarchar(256)', 0),
+-- UserActivityDaily
 ('dbo', 'UserActivityDaily', 'Id',                      'bigint',        0),
 ('dbo', 'UserActivityDaily', 'ActivityDate',            'date',          0),
 ('dbo', 'UserActivityDaily', 'CallClicks',              'int',           0),
@@ -734,6 +750,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'UserActivityDaily', 'SessionCount',            'int',           0),
 ('dbo', 'UserActivityDaily', 'TotalSessionMinutes',     'int',           0),
 ('dbo', 'UserActivityDaily', 'UserId',                  'nvarchar(256)', 0),
+-- UserClickEvent
 ('dbo', 'UserClickEvent', 'Id',             'bigint',        0),
 ('dbo', 'UserClickEvent', 'EventType',      'nvarchar(50)',  0),
 ('dbo', 'UserClickEvent', 'FeatureCode',    'nvarchar(50)',  0),
@@ -741,6 +758,8 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'UserClickEvent', 'TargetId',       'nvarchar(200)', 1),
 ('dbo', 'UserClickEvent', 'Timestamp',      'datetime2',     0),
 ('dbo', 'UserClickEvent', 'UserId',         'nvarchar(256)', 0),
+-- UserFeatureUsageDaily (per-user-per-feature daily rollup; backs the dashboard's
+--   feature panels for closed days and is the only usage history past raw retention)
 ('dbo', 'UserFeatureUsageDaily', 'Id',               'bigint',        0),
 ('dbo', 'UserFeatureUsageDaily', 'ActivityDate',     'date',          0),
 ('dbo', 'UserFeatureUsageDaily', 'FeatureCode',      'nvarchar(50)',  0),
@@ -749,28 +768,32 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'UserFeatureUsageDaily', 'ScreenMinutes',    'float',         0),
 ('dbo', 'UserFeatureUsageDaily', 'SubFeatureCode',   'nvarchar(50)',  0),
 ('dbo', 'UserFeatureUsageDaily', 'UserId',           'nvarchar(256)', 0),
+-- UserPreferences (UserPreference entity)
 ('dbo', 'UserPreferences', 'Id',                 'int',            0),
 ('dbo', 'UserPreferences', 'SelectedGroupNames', 'nvarchar(2000)', 0),
 ('dbo', 'UserPreferences', 'SelectedTradeUnits', 'nvarchar(2000)', 0),
 ('dbo', 'UserPreferences', 'UpdatedAt',          'datetime2',      0),
 ('dbo', 'UserPreferences', 'UserId',             'nvarchar(256)',  0),
+-- UserSession (DurationMinutes is a PERSISTED computed column; SQL Server marks
+--   computed columns as NULLABLE regardless of input nullability, so expect NULL)
 ('dbo', 'UserSession', 'Id',               'bigint',        0),
 ('dbo', 'UserSession', 'DurationMinutes',  'int',           1),
 ('dbo', 'UserSession', 'LastActivityTime', 'datetime2',     0),
 ('dbo', 'UserSession', 'LoginTime',        'datetime2',     0),
 ('dbo', 'UserSession', 'UserId',           'nvarchar(256)', 0),
+-- UserTradeUnitSnapshot (composite PK: UserId + TradeUnitCode)
 ('dbo', 'UserTradeUnitSnapshot', 'UserId',        'nvarchar(256)', 0),
 ('dbo', 'UserTradeUnitSnapshot', 'TradeUnitCode', 'nvarchar(100)', 0),
 ('dbo', 'UserTradeUnitSnapshot', 'DisplayName',   'nvarchar(255)', 0),
 ('dbo', 'UserTradeUnitSnapshot', 'GroupName',     'nvarchar(100)', 1),
 ('dbo', 'UserTradeUnitSnapshot', 'SnapshotDate',  'date',          0),
+-- WeeklyLoginAggregate
 ('dbo', 'WeeklyLoginAggregate', 'Id',              'bigint',        0),
 ('dbo', 'WeeklyLoginAggregate', 'LoginCount',      'int',           0),
 ('dbo', 'WeeklyLoginAggregate', 'SessionCount',    'int',           0),
 ('dbo', 'WeeklyLoginAggregate', 'TotalSessionMin', 'int',           0),
 ('dbo', 'WeeklyLoginAggregate', 'UserId',          'nvarchar(256)', 0),
 ('dbo', 'WeeklyLoginAggregate', 'WeekStartDate',   'date',          0);
-
 
 -- -----------------------------------------------------------------------------
 -- ### UPDATE WHEN SCHEMA CHANGES ### — CHECK constraints (0)
@@ -813,9 +836,8 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'UserPreferences',             'UQ_UserPreferences_UserId'),
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
-
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (94)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (95)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -913,7 +935,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20261009185518_MoveBinCapacityAndGrainOntoBinSites'),
 ('20261009185600_CombineGrainOnFarmAndBinSitePrompts'),
 ('20261009201625_AddBinSitesModifiedAt'),
-('20261009201700_DropProducerDetailsBinCapacity');
+('20261009201700_DropProducerDetailsBinCapacity'),
+('20261013163045_RestrictCustomerTradeUnitDeleteAndValidateCustomerFks');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.
@@ -1158,3 +1181,10 @@ ELSE
         CASE Status WHEN 'FAIL' THEN 0 WHEN 'WARN' THEN 1 ELSE 2 END,
         SortBucket,
         Item;
+--   Updated 2026-10-20 (Bid Sheet remodel + BarChart UI to PROD): the 21 bid sheet migrations from
+--   20260821124557_AddBarchartPublishableBidView to 20260923132920_AddSelectedColumnsToBidSheetPreference.
+--   BidSheetLocationOrders is retired; BidSheets, BidSheetShares and BidSheetLocationLinks are new;
+--   BidSheetLocationBids gains the basis/coverage/change-stamp columns, BidSheetPreferences the
+--   PriceMode/SelectedYears/SelectedBidSheetIds/SelectedColumns columns, BidSheetLocations.TradeUnitCode
+--   becomes NULL and its unique index is UQ_BidSheetLocations_BarchartKey. Rows for every other table
+--   are unchanged from main. Tables 47, Columns 480, Unique indexes 24, Migrations 93.

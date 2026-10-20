@@ -3,97 +3,76 @@
 Style guide: `style-guides/permissions-model.md`
 Scope: ASP.NET Core authorization, trade-unit entitlement scoping, Angular permission checks, `SECURITY-REVIEWS/ACCEPTED-RISKS.md`, `docs/application-context/SECURITY-MODEL.md`
 
-**Findings:** 1 open — 0 critical, 0 high, 1 medium, 0 low (5 resolved/accepted since the last pass)
-**Opened:** 2026-09-19 | **Last verified:** 2026-09-28
+**Findings:** 1 open — 0 critical, 0 high, 0 medium, 1 low (5 resolved/accepted since the first pass)
+**Opened:** 2026-09-19 | **Last verified:** 2026-10-13
 
-## Reconciliation notes (2026-09-28 pass)
+## Reconciliation notes (2026-10-13 pass)
 
-No permission-relevant files changed since the 2026-09-21 pass: `SECURITY-REVIEWS/ACCEPTED-RISKS.md`
-and `docs/application-context/SECURITY-MODEL.md` both still show 2026-09-21 as their last commit
-touching this area, and `git log --diff-filter=A -- '*Controller.cs'` shows no controllers added since
-then (still 27, unchanged from the last pass). Re-verified anyway rather than trusting the tracker:
+Reviewed every commit touching permission-relevant files since the 2026-09-28 pass (`SECURITY-REVIEWS/ACCEPTED-RISKS.md`, `docs/application-context/SECURITY-MODEL.md`, `**/*Controller.cs`, `UsageDashboardAccess.cs`) rather than trusting the tracker blindly:
 
-- `EnforceTradeUnitAccessAttribute.cs` still tracks the `enforced` flag and still logs
-  `ENTITLEMENTS_FILTER_NOT_APPLIED` when no scoping parameter matches — the silent-noop fix holds.
-- `SECURITY-REVIEWS/ACCEPTED-RISKS.md:53` still carries the unchanged "IT Security countersignature
-  will NOT be sought for AR-01, AR-02 or AR-08" banner from the project owner's 2026-09-21 decision.
-  No new automated re-flags of AR-02 recorded since the last pass.
-- `docs/application-context/SECURITY-MODEL.md:46` still documents the deliberate no-RBAC-model and
-  no-in-app-audit-trail deviations.
-- Spot-checked all 27 controllers for an authorization gate (`[Authorize]` or
-  `[Authorize(Policy = ...)]`); all 27 have one, including `DiagnosticsController`
-  (`[Authorize(Policy = "AdminOnly")]`, missed by an initial literal-bracket grep but present).
+- **`access-control-risk-acceptances-lack-independent-signoff` — stays accepted, not re-raised.**
+  Per the 2026-09-28 closure, the project owner directed this not be re-opened absent a change to the
+  underlying AR-01/02/08 decision; there is none. Re-verified AR-01/02/08's substance is unchanged.
+- **New finding opened — `accepted-risks-countersignature-banner-contradicts-ar10` (Low).** The
+  2026-09-21 banner in `ACCEPTED-RISKS.md` declares IT Security countersignature for AR-01/02/08
+  "closed as declined" and final. Commit `8d91ae7a` (2026-10-09) added AR-10 (Usage Dashboard
+  authorization-scope widening — see below) with a closing line stating AR-01/02/07/08 are "routed
+  ... for IT Security countersignature." The file now asserts both that this question is closed and
+  that it is actively routed, for the same risk IDs, three weeks apart. This is a documentation
+  consistency defect, not a re-litigation of whether sign-off should happen — the governance decision
+  itself is out of scope and not being questioned here.
+- **AR-10 substance (not a finding) — Usage Dashboard "ViewAll" scoping retired.** Commits `2c7df34d`
+  and `8d91ae7a` (2026-10-09) removed `UsageDashboardAccess.CanViewAll`, the
+  `dbo.UsageDashboardViewAllUsers` table, and the synthetic `UsageDashboardViewAll` role: every user
+  who can open the dashboard (Admin role via the Super Users Entra group) can now see the whole
+  organisation and pick any manager, where previously only a named allowlist could. This is a real
+  authorization-scope widening, but it is exactly the kind of decision the style guide's governance
+  model expects: recorded as AR-10 with rationale, compensating controls (data classification is
+  adoption telemetry not PII, the org chart is visible elsewhere, exclusion list still enforced,
+  `UsageDashboardViewer` policy still gates every read), explicit revisit triggers, and a documented
+  rollback path (migration `Down()` re-seeds the original five names). Not flagged as a finding on its
+  own merits — see the banner-contradiction finding above for the one defect in how it was recorded.
+- **New controller added — `BarchartIngestController.cs` (commit `b6ac2420`, 2026-10-08).** Carries
+  `[Authorize(Policy = "BarchartIngest")]`. Controller count is now 28 (was 27); the new one is
+  properly gated.
+- **Trade-unit entitlement decisions on planting-intention routes (commits `7bce8a92`, `f2d012ed`,
+  2026-09-28) — consistent with the existing accepted model, no new finding.** Both commits
+  deliberately did not add a trade-unit entitlement check to planting-intention move/retag routes,
+  citing AR-02 (originators self-assign trade units, so the check would restrict nobody) and AR-03
+  (reps need to do legitimate clean-up after a producer leaves a trade unit). This matches the
+  already-accepted AR-01/02/03 reasoning rather than introducing a new gap.
+- **CTRM per-user data-source toggle (commits `e412a5aa`, `3a461000`, `26abc762`, Sept–Oct 2026) —
+  not a permissions concern.** The toggle switches which backing data source (ODS vs. CTRM/GraphQL) a
+  request reads from; "same trade-unit entitlements on both sources, so nothing new is exposed" per
+  the commit message. No authorization boundary changed, and the toggle's server-side allowlist was
+  later removed entirely.
+- Previously-resolved findings (`enforce-trade-unit-access-silent-noop`,
+  `stored-grain-service-untested-entitlement-scoping`, `storedgrain-customer-route-missing-from-ar02-registry`)
+  and previously-accepted findings (`no-rbac-permission-data-model`, `role-change-audit-trail-gap`)
+  re-checked against the current tree: no regressions, no new facts.
 
-No new findings this pass; all six existing findings hold in their current status.
+## Low
 
-## Reconciliation notes (2026-09-21 pass)
-
-`AUDIT-TRACKING.json` statuses were already current — three findings marked `resolved`, two marked
-`accepted`, one still `open`. Re-verified each against the current tree rather than trusting the
-tracker blindly:
-
-- **`enforce-trade-unit-access-silent-noop` — confirmed resolved.** `EnforceTradeUnitAccessAttribute.cs`
-  now tracks an `enforced` flag across all three parameter patterns and logs a `LogWarning`
-  (`ENTITLEMENTS_FILTER_NOT_APPLIED`) once per action id when none match, exactly the fix this
-  finding asked for.
-- **`stored-grain-service-untested-entitlement-scoping` — confirmed resolved.**
-  `api/GrainOriginatorPortal.Api.Tests/.../Services/StoredGrainServiceTests.cs` now exists.
-- **`storedgrain-customer-route-missing-from-ar02-registry` — confirmed resolved.**
-  `StoredGrainController.cs:37` now carries an inline AR-02 citation, and AR-02 in
-  `SECURITY-REVIEWS/ACCEPTED-RISKS.md` lists `GET /api/storedgrain/customer/{customerId}` explicitly
-  (added 2026-09-21 per M-040).
-- **`no-rbac-permission-data-model` — still accepted, now formally documented.** The suggested fix
-  (record the RBAC deviation as a deliberate architectural decision) has been done:
-  `docs/application-context/SECURITY-MODEL.md` now states plainly that authorization is "two Azure AD
-  app roles plus data scoping," names every style-guide RBAC artifact the app deliberately lacks
-  (`Role`/`Permission`/`RolePermission`/`UserRole` tables, `IPermissionService`,
-  `GET /api/me/permissions`), and gives the re-evaluation triggers. No further action needed unless
-  the role surface stops being near-binary.
-- **`role-change-audit-trail-gap` — still accepted, now formally documented.** Same
-  `SECURITY-MODEL.md` doc explicitly notes role/allowlist changes live in Azure AD group membership
-  and `appsettings`, not app code, so `role_assigned`/`role_removed` can't appear in app telemetry —
-  matching this finding's original suggested disposition.
-- **`access-control-risk-acceptances-lack-independent-signoff` — still open, but the fact pattern
-  changed.** See below.
-
-## Medium
-
-### High-severity object-level-authorization risk acceptances (AR-01, AR-02, AR-08) remain self-accepted by engineering with no independent security sign-off — now a deliberate, final decision rather than a pending one (`permissions.access-control-risk-acceptances-lack-independent-signoff`)
+### ACCEPTED-RISKS.md's countersignature banner now contradicts AR-10's own closing line (`permissions.accepted-risks-countersignature-banner-contradicts-ar10`)
 - **Files:** `SECURITY-REVIEWS/ACCEPTED-RISKS.md`
-- **What changed since 2026-09-19:** the register previously described taking AR-01/AR-02/AR-08 to
-  `asksecurity@scoular.com` as still-pending action. As of 2026-09-21 it carries a banner at the top
-  of AR-01: *"IT Security countersignature will NOT be sought for AR-01, AR-02 or AR-08. Decided by
-  the project owner (CEgr) on 2026-09-21. These entries stand as Origination engineering acceptances
-  and that is their final status, not an interim one."* AR-02 alone has now been re-flagged by
-  automated scanners **nine** times since 2026-06-23 (H-059, H-067, H-069, H-073, H-075, M-040, M-042
-  among them) and re-accepted by engineering every time.
-- **Why this still matters:** the underlying governance gap this finding names — HIGH-severity
-  object-level-authorization decisions with no security-team countersignature — is unchanged; it has
-  simply moved from "awaiting an answer" to "answered no" by engineering itself, which is the same
-  self-review pattern the style guide's audit-logging/least-privilege principles caution against, not
-  a resolution of it. The technical reasoning behind AR-01/02/08 (trade units are self-assigned, so a
-  trade-unit check is not a real access boundary) is well-argued and consistently applied across every
-  re-flag, and reads as sound engineering judgment. But that judgment has never been independently
-  reviewed by IT Security, and per the org's own CLAUDE.md security policy, this class of finding
-  (Broken Access Control / missing authorization) is explicitly one asksecurity@scoular.com exists to
-  adjudicate.
-- **Suggested fix:** none required in code. This is a governance decision, already made and recorded
-  by the project owner; flagging it here is for visibility into the Code Quality Dashboard, not to
-  imply the decision was made incorrectly or without authority. If policy requires IT Security
-  sign-off on HIGH-severity accepted risks regardless of an engineering owner's decision, that's a
-  process question for the project owner and asksecurity@scoular.com, not a code fix.
+- **What:** The 2026-09-21 banner (lines 52-65) says IT Security countersignature for AR-01, AR-02,
+  and AR-08 is closed and declined, as a final decision. AR-10's entry (lines 1468-1470, added
+  2026-10-09) says those same three risks, plus AR-07, are "routed ... for IT Security
+  countersignature." A reader cannot tell from the file which statement currently holds.
+- **Suggested fix:** Reconcile the two passages — either note in the banner that AR-10/AR-07 reopen
+  the countersignature routing question notwithstanding the earlier AR-01/02/08 decision, or correct
+  AR-10's line so it doesn't claim AR-01/02/08 are "routed" when the banner says that was declined.
+  Pure documentation fix.
 
 ## Overall health
 
-This codebase's authorization implementation remains materially more mature than typical for the
-style guide's checklist items that actually apply to its access model — fail-closed entitlement
-checks, mutation-tested scope enforcement, a controller-wide `[Authorize]` regression test, and (new
-this pass) a dedicated `SECURITY-MODEL.md` that formally documents the app's deliberate, full
-deviation from the style guide's RBAC data model. All findings opened in the initial pass have now
-either been fixed in code (silent-noop filter, StoredGrainService test gap, AR-02 registry gap) or
-converted from an implicit deviation into an explicitly documented one (no-RBAC-model,
-no-in-app-audit-trail). The one remaining open item is unchanged in kind but sharper in framing: it is
-now a documented, deliberate, project-owner-level decision not to pursue independent security
-sign-off on three HIGH-severity access-control risk acceptances (AR-01, AR-02, AR-08), rather than an
-oversight. Whether that decision itself needs escalating past the project owner is outside the scope
-of a code audit.
+The authorization implementation remains materially more mature than typical for the style guide's
+applicable checklist items: fail-closed entitlement checks, mutation-tested scope enforcement, a
+controller-wide `[Authorize]` regression test (now covering 28 controllers, up from 27), and a
+`SECURITY-MODEL.md` that formally documents the app's deliberate deviation from the style guide's
+RBAC data model. The one notable change since the last pass — retiring the Usage Dashboard's
+per-caller "ViewAll" scoping (AR-10) — is a genuine authorization-scope widening, but it was handled
+the way the governance model is supposed to handle such things: documented, justified, given
+compensating controls and a rollback path, before it shipped. The only new defect this pass is a
+paperwork inconsistency in how that decision's countersignature routing was recorded against an
+unrelated, already-settled banner three weeks older than it.

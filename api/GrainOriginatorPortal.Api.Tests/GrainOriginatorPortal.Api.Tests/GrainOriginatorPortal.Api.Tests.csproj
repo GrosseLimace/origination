@@ -9,19 +9,51 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
-    <!-- §8 DEVIATION — do NOT delete this package yet. It is BANNED for DB tests by
-         style-guides/automated-testing.md §8, but .UseInMemoryDatabase is STILL IN USE by TEN
-         test files: Controllers/DiagnosticsControllerAppAccessTests.cs,
-         Controllers/NotesControllerMentionCatalogTests.cs, Repositories/CommodityTradeGroupScopeTests.cs,
-         Repositories/DailyRecapGroupRepositoryTests.cs, Repositories/PlantingIntentionSoftDeleteTests.cs,
-         Repositories/ProducerContactTests.cs, Repositories/ProducerGrainOnFarmTests.cs,
-         Repositories/ReminderRepositoryTests.cs, Repositories/SavedListRepositoryTests.cs,
-         Services/OrganicCertificationIngestServiceTests.cs.
-         Remove it only AFTER those are migrated to the real-SQL WebApplicationFactory harness
-         (plan Phase D). Deleting it now breaks the build.
-         This list previously named two files, neither of which uses the package any more, and then
-         seven when three more already did — if you add or migrate one, update this comment in the
-         same change, or the next reader inherits the same understated picture. -->
+    <!-- §8 DEVIATION: do NOT delete this package yet. It is BANNED for DB tests by
+         style-guides/automated-testing.md §8, but .UseInMemoryDatabase is STILL IN USE by the
+         33 test files listed below. Remove it only AFTER those are migrated to the real-SQL
+         WebApplicationFactory harness (plan Phase D). Deleting it now breaks the build.
+
+         This list is CHECKED BY A TEST: Infrastructure/InMemoryDatabaseDeviationTests.cs reads this
+         comment and fails when the files that call .UseInMemoryDatabase differ from the files named
+         here, in either direction. It drifted twice by hand (7 named vs 17 real on 2026-10-13), so a
+         new usage now has to be acknowledged here in the same change rather than silently added.
+
+         Files (one per line, path relative to this project):
+           Controllers/DiagnosticsControllerAppAccessTests.cs
+           EntitlementsTestDb.cs
+           Repositories/CommodityTradeGroupScopeTests.cs
+           Repositories/ContractRepositorySwitchTests.cs
+           Repositories/CtrmOutageEndToEndTests.cs
+           Repositories/CustomerRepositoryOpenActivityTests.cs
+           Repositories/CustomerRepositoryTradeUnitsTests.cs
+           Repositories/DailyRecapGroupRepositoryTests.cs
+           Repositories/PlantingIntentionRetagTests.cs
+           Repositories/PlantingIntentionScopingTests.cs
+           Repositories/PlantingIntentionSoftDeleteTests.cs
+           Repositories/ProducerBinSiteTests.cs
+           Repositories/ProducerContactTests.cs
+           Repositories/ProducerGrainOnFarmSiteLinkTests.cs
+           Repositories/ProducerGrainOnFarmTests.cs
+           Repositories/ReminderRepositoryTests.cs
+           Repositories/BarchartIngestRepositoryTests.cs
+           Repositories/CustomerSyncRepositoryTests.cs
+           Repositories/DashboardRepositoryTests.cs
+           Repositories/DisplayNameLookupRepositoryTests.cs
+           Repositories/DpContractRepositoryTests.cs
+           Repositories/EntitlementsRepositoryTests.cs
+           Repositories/MbpLocationSynonymRepositoryTests.cs
+           Repositories/NoteRepositoryTests.cs
+           Repositories/QueryLibraryRepositoryTests.cs
+           Repositories/SavedListRepositoryTests.cs
+           Repositories/StoredGrainRepositoryTests.cs
+           Repositories/TeamsChannelRepositoryTests.cs
+           Repositories/TicketRepositoryTests.cs
+           Repositories/UsageRepositoryTests.cs
+           Repositories/UserPreferenceRepositoryTests.cs
+           Services/OrganicCertificationIngestServiceTests.cs
+           Services/OrganicCertificationServiceTests.cs
+    -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Moq" Version="4.20.72" />
@@ -34,7 +66,13 @@
          CVE-2026-50648 — EncryptedXml DoS — and CVE-2026-47304 — EncryptedXml security-feature
          bypass). Patched in the .NET 10 line at 10.0.10; using that to match the net10 TFM.
          Test-only dependency; never deployed. -->
-    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.10" />
+    <!-- 2026-10-13: raised 10.0.10 -> 10.0.13 for CVE-2026-96958, CVE-2026-96959 and CVE-2026-96960
+         (SignedXml / C14N / EncryptedXml DoS, affected <= 10.0.12). The previous 10.0.10 floor had
+         itself fallen inside the new range. NOTE: this pin does NOT reach the deployed web app -
+         .NET 10 package pruning drops it, and the app loads System.Security.Cryptography.Xml and
+         System.Private.Xml from the App Service's ASP.NET Core / .NET runtime, which must be on the
+         patched October 2026 servicing release for the running app to be fixed. -->
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.13" />
   </ItemGroup>
 
   <ItemGroup>

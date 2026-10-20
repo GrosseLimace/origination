@@ -9,6 +9,13 @@ namespace GrainOriginatorPortal.Api.Models;
 /// </summary>
 public class MentionCatalogResponse
 {
+    /// <summary>
+    /// True when at least one of the sources below could not be read, so one or more lists are empty
+    /// because of an outage rather than because there is nothing to offer. The picker still opens
+    /// with whatever was gathered; this is how it tells the user something is missing.
+    /// </summary>
+    public bool Degraded { get; set; }
+
     public List<MentionCatalogPerson> People { get; set; } = [];
     public List<MentionCatalogTradeUnit> TradeUnits { get; set; } = [];
     public List<MentionCatalogGroup> TradeUnitGroups { get; set; } = [];

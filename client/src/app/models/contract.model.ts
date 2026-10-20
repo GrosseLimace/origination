@@ -19,7 +19,7 @@ export interface Contract {
   totalValue?: number;    // Total contract value from ODS
   contractDate?: Date;    // Date the contract was booked
   cropYear?: number;      // Grain crop year (e.g. 2025, 2026)
-  openBalanceQuantity?: number; // Remaining unshipped bushels
+  openBalanceQuantity?: number | null; // Remaining unshipped bushels, in the contract's unit. The API sends null when CTRM hasn't populated it.
   settledQuantity?: number;     // Bushels settled (paid). Unsettled = (quantity − openBalanceQuantity) − settledQuantity.
   deliveryStart: Date;
   deliveryEnd: Date;

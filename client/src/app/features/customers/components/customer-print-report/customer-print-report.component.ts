@@ -1,5 +1,5 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal, untracked, WritableSignal } from '@angular/core';
+import { CommonModule, CurrencyPipe, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MsalService } from '@azure/msal-angular';
 import { ToastService } from '@core/services/toast.service';
@@ -14,6 +14,9 @@ import { binSiteGrainBreakdown, formatLastBid, grainOnFarmColorKey, indexCommodi
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
 
 type PricingStatus = 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'FLAT' | 'DEFERRED' | 'LOADING';
+
+/** The report's include toggles whose default depends on the data. */
+type SectionKey = 'totalAcres' | 'totalContracted' | 'contracts' | 'tickets' | 'planting' | 'storage' | 'binSites' | 'pricingLines';
 
 interface TicketCommoditySummary {
   productCode: string;
@@ -42,12 +45,16 @@ interface TicketCommoditySummary {
     DialogFooterComponent,
     ButtonComponent
   ],
+  // The printed HTML formats pricing lines with the same pipes the preview template uses.
+  providers: [CurrencyPipe, DatePipe],
   templateUrl: './customer-print-report.component.html'
 })
 export class CustomerPrintReportComponent {
   private readonly msalService = inject(MsalService);
   private readonly toastService = inject(ToastService);
   private readonly appState = inject(AppStateService);
+  private readonly currencyPipe = inject(CurrencyPipe);
+  private readonly datePipe = inject(DatePipe);
 
   readonly noTradeUnit = computed(() => this.appState.selectedTradeUnits().length === 0);
 
@@ -89,11 +96,45 @@ export class CustomerPrintReportComponent {
   readonly accentLight = computed(() => this.accentColor() + '18');
   private _defaultsApplied = false;
 
+  /** The toggles whose default depends on the data, by the key the sidebar reports a hand edit under. */
+  private readonly _sections: Record<SectionKey, WritableSignal<boolean>> = {
+    totalAcres: this.showTotalAcres,
+    totalContracted: this.showTotalContracted,
+    contracts: this.showContracts,
+    tickets: this.showTickets,
+    planting: this.showPlanting,
+    storage: this.showStorage,
+    binSites: this.showBinSites,
+    pricingLines: this.showPricingLines,
+  };
+  /** Toggles (and the crop-year picker) the user has set by hand since the dialog opened. Defaults
+   *  keep following the data until then, so a section whose data lands after the dialog opens (the
+   *  profile loads each on its own request, and Print is clickable meanwhile) still defaults on —
+   *  but a choice the user made is never overridden. Cleared on every open. */
+  private readonly _touched = new Set<SectionKey | 'plantingYears'>();
+
+  /** Each section's default: on when it has something to show. */
+  private readonly _sectionDefaults = computed<Record<SectionKey, boolean>>(() => ({
+    totalAcres: (this.customer().totalAcres ?? 0) > 0,
+    totalContracted: this.totalContracted() > 0,
+    contracts: this.contracts().filter(c => !c.closedDate).length > 0,
+    tickets: this.tickets().filter(t => !t.isApplied).length > 0,
+    planting: this.plantingIntentions().length > 0,
+    storage: this.storedGrain().length > 0,
+    binSites: this.binSiteGroups().length > 0,
+    pricingLines: this.visiblePricingLines().length > 0,
+  }));
+
   constructor() {
     effect(() => {
       const open = this.isOpen();
-      if (open && !this._defaultsApplied) {
+      if (!open) {
+        this._defaultsApplied = false;
+        return;
+      }
+      if (!this._defaultsApplied) {
         this._defaultsApplied = true;
+        this._touched.clear();
         const account = this.msalService.instance.getActiveAccount()
           ?? this.msalService.instance.getAllAccounts()[0];
         if (account) {
@@ -103,25 +144,27 @@ export class CustomerPrintReportComponent {
             username && !username.includes('@') ? `${username}@scoular.com` : username
           );
         }
-        // Default KPI toggles off when value is 0
-        untracked(() => {
-          this.showTotalAcres.set((this.customer().totalAcres ?? 0) > 0);
-          this.showTotalContracted.set(this.totalContracted() > 0);
-          this.showContracts.set(this.contracts().filter(c => !c.closedDate).length > 0);
-          this.showTickets.set(this.tickets().filter(t => !t.isApplied).length > 0);
-          this.showPlanting.set(this.plantingIntentions().length > 0);
-          // Every year on by default, so opening the dialog reports what it always has, with the
-          // picker collapsed until the user goes looking for it.
-          this.selectedPlantingYears.set(this.plantingYears());
-          this.plantingYearsExpanded.set(false);
-          this.showStorage.set(this.storedGrain().length > 0);
-          this.showBinSites.set(this.binSiteGroups().length > 0);
-          this.showPricingLines.set(this.visiblePricingLines().length > 0);
-        });
-      } else if (!open) {
-        this._defaultsApplied = false;
+        this.plantingYearsExpanded.set(false);
       }
+      // Tracked: re-runs whenever the data behind a default changes while the dialog is open.
+      const defaults = this._sectionDefaults();
+      const years = this.plantingYears();
+      // Default a toggle off when its section has nothing to show — unless the user set it by hand.
+      untracked(() => {
+        for (const key of Object.keys(this._sections) as SectionKey[]) {
+          if (!this._touched.has(key)) this._sections[key].set(defaults[key]);
+        }
+        // Every year on by default, so opening the dialog reports what it always has, with the
+        // picker collapsed until the user goes looking for it.
+        if (!this._touched.has('plantingYears')) this.selectedPlantingYears.set(years);
+      });
     });
+  }
+
+  /** A sidebar checkbox for a section: records the hand edit so late data won't undo it. */
+  setSection(key: SectionKey, value: boolean): void {
+    this._touched.add(key);
+    this._sections[key].set(value);
   }
 
   // Pricing lines indexed by sourceContractId
@@ -252,6 +295,7 @@ export class CustomerPrintReportComponent {
   }
 
   togglePlantingYear(year: number, include: boolean): void {
+    this._touched.add('plantingYears');
     this.selectedPlantingYears.update(years =>
       include ? [...new Set([...years, year])].sort((a, b) => b - a) : years.filter(y => y !== year));
   }
@@ -288,6 +332,14 @@ export class CustomerPrintReportComponent {
     sumInBushels(this.openContracts(), buildLbsPerBushelMap(this.appState.commodityConversions())).contracted
   );
 
+  /** Open contracts left out of Total Contracted because the conversions failed to load — not
+   *  because of their unit. Zero unless the load failed; with no conversions in hand, everything
+   *  not already in bushels is left out. */
+  readonly contractsMissingConversions = computed(() => {
+    if (!this.appState.commodityConversionsLoadFailed() || this.appState.commodityConversions().length > 0) return 0;
+    return sumInBushels(this.openContracts(), new Map()).excludedContracts;
+  });
+
   readonly totalStored = computed(() =>
     this.storedGrain().reduce((sum, g) => sum + (g.quantity ?? 0), 0)
   );
@@ -316,7 +368,12 @@ export class CustomerPrintReportComponent {
     }
     if (this.showTotalContracted()) {
       const contracted = this.totalContracted();
-      items.push({ label: 'Total Contracted', value: contracted > 0 ? this.formatBu(contracted) : '0 bu', sub: '' });
+      // Rides in the tile's sub-line, so it reaches the preview and the printed page alike.
+      const missing = this.contractsMissingConversions();
+      const sub = missing > 0
+        ? `${missing} contract${missing === 1 ? '' : 's'} left out — bushel conversions couldn't be loaded`
+        : '';
+      items.push({ label: 'Total Contracted', value: contracted > 0 ? this.formatBu(contracted) : '0 bu', sub });
     }
     return items;
   });
@@ -394,10 +451,10 @@ export class CustomerPrintReportComponent {
   private readonly _commodityByCode = computed(() => indexCommoditiesByCode(this.commodities()));
   /** Band tint for a grain-on-farm row. The rows hold commodity CODES (YC, HRWW), which the keyword
    *  matcher in commodityBandColor cannot read, so resolve the code to its crop group first (YC → Corn →
-   *  yellow), then fall back to the commodity name, then the code. */
+   *  yellow), then fall back to the commodity name, then the code. The index is keyed by LOWER-cased code. */
   grainBandColor(code: string | null | undefined): string {
     const group = grainOnFarmColorKey(code, this._cropGroupLookup());
-    const name = this._commodityByCode().get((code || '').trim().toUpperCase())?.name;
+    const name = this._commodityByCode().get((code || '').trim().toLowerCase())?.name;
     return this.commodityBandColor(group !== (code || '').trim() ? group : (name || group));
   }
 
@@ -462,17 +519,15 @@ export class CustomerPrintReportComponent {
 
   // --- Delivery / status / conversion logic mirrors contracts-table.component.ts ---
 
-  private _conversionMap: Map<string, number> | null = null;
+  /** Commodity code → lbs per bushel. Derived from the signal, so any replacement of the conversion
+   *  list rebuilds it (it used to be cached until the list's length changed). */
+  private readonly _conversionMap = computed(() =>
+    new Map(this.appState.commodityConversions().map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit])));
 
   private _lookupLbsPerBushel(productCode: string | undefined | null): number | null {
     const code = (productCode || '').trim().toUpperCase();
     if (!code) return null;
-    const conversions = this.appState.commodityConversions();
-    if (conversions.length === 0) return null;
-    if (!this._conversionMap || this._conversionMap.size !== conversions.length) {
-      this._conversionMap = new Map(conversions.map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit]));
-    }
-    const lbs = this._conversionMap.get(code);
+    const lbs = this._conversionMap().get(code);
     return lbs && lbs > 0 ? lbs : null;
   }
 
@@ -743,15 +798,19 @@ export class CustomerPrintReportComponent {
         const lines = this.getPricingLinesForContract(ct);
         if (lines.length === 0) return '';
         const unit = this._esc(ct.unit || 'bu');
+        // Same columns, order and formats as the preview's pricing-line table (the same pipes and
+        // arguments), so the page matches what was previewed: up to 4 decimals, short date.
+        const linePrice = (v: number | null | undefined): string =>
+          v != null ? (this.currencyPipe.transform(v, 'USD', 'symbol', '1.2-4') ?? '—') : '—';
         return `<div style="padding:6px 8px 8px 8px;background:#f9fafb;border-top:1px solid #f3f4f6;">
           <table style="width:100%;border-collapse:collapse;font-size:10px;background:#ffffff;border:1px solid #e5e7eb;border-radius:4px;">
             <thead><tr style="background:#f3f4f6;">
               <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Seq</th>
               <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Quantity</th>
-              <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Basis</th>
               <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Hedge</th>
-              <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Flat Price</th>
+              <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Basis</th>
               <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Freight Adj</th>
+              <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Flat Price</th>
               <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Price Date</th>
               <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Confirm</th>
             </tr></thead>
@@ -759,11 +818,11 @@ export class CustomerPrintReportComponent {
               ${lines.map(line => `<tr>
                 <td style="text-align:center;padding:4px 6px;color:#6b7280;">${line.priceSequence ?? ''}</td>
                 <td style="text-align:center;padding:4px 6px;">${(line.priceQuantity ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} ${unit}</td>
-                <td style="text-align:center;padding:4px 6px;">${line.basisPrice != null ? this.formatCurrency(line.basisPrice) : '—'}</td>
-                <td style="text-align:center;padding:4px 6px;">${line.hedgePrice != null ? this.formatCurrency(line.hedgePrice) : '—'}</td>
-                <td style="text-align:center;padding:4px 6px;font-weight:600;">${line.flatPrice != null ? this.formatCurrency(line.flatPrice) : '—'}</td>
-                <td style="text-align:center;padding:4px 6px;">${line.freightAdjustment != null ? this.formatCurrency(line.freightAdjustment) : '—'}</td>
-                <td style="text-align:center;padding:4px 6px;">${line.priceDate ? this.formatDate(line.priceDate) : '—'}</td>
+                <td style="text-align:center;padding:4px 6px;">${this._esc(linePrice(line.hedgePrice))}</td>
+                <td style="text-align:center;padding:4px 6px;">${this._esc(linePrice(line.basisPrice))}</td>
+                <td style="text-align:center;padding:4px 6px;">${this._esc(linePrice(line.freightAdjustment))}</td>
+                <td style="text-align:center;padding:4px 6px;font-weight:600;">${this._esc(linePrice(line.flatPrice))}</td>
+                <td style="text-align:center;padding:4px 6px;">${line.priceDate ? this._esc(this.datePipe.transform(line.priceDate, 'M/d/yy')) : '—'}</td>
                 <td style="text-align:center;padding:4px 6px;">${this._esc(line.customerConfirmStatus || '—')}</td>
               </tr>`).join('')}
             </tbody>
@@ -888,6 +947,35 @@ export class CustomerPrintReportComponent {
               <td style="text-align:center;padding:4px 8px;border:1px solid #e5e7eb;">${g.totalDays}</td>
               <td style="text-align:center;padding:4px 8px;border:1px solid #e5e7eb;">${this.formatCurrency(g.totalCost)}</td>
             </tr>`).join('')}
+          </tbody>
+        </table></div>
+      </div>`;
+    }
+
+    // Bin Sites & Grain on Farm (a band per site, then the grain stored there — mirrors the preview)
+    const binSites = this.binSiteGroups();
+    if (this.showBinSites() && binSites.length > 0) {
+      const onFarm = this.grainOnFarmTotal();
+      const cell = 'padding:4px 8px;text-align:center;border:1px solid #e5e7eb;';
+      html += `<div class="section">
+        <div class="section-title">Bin Sites &amp; Grain on Farm${onFarm > 0 ? `<span style="font-weight:500;letter-spacing:0;text-transform:none;color:#6b7280;"> · ${this._esc(onFarm.toLocaleString())} bu on farm</span>` : ''}</div>
+        <div class="table-wrap"><table>
+          <thead><tr class="table-header">
+            <th style="text-align:left;padding:5px 8px;border:1px solid #e5e7eb;">Crop</th><th style="padding:5px 8px;border:1px solid #e5e7eb;">On Farm</th><th style="padding:5px 8px;border:1px solid #e5e7eb;">Sold</th><th style="padding:5px 8px;border:1px solid #e5e7eb;">Grade</th><th style="padding:5px 8px;border:1px solid #e5e7eb;">Target</th><th style="padding:5px 8px;border:1px solid #e5e7eb;">Last Bid</th>
+          </tr></thead>
+          <tbody>
+            ${binSites.map(site => `<tr style="background:#f9fafb;">
+              <td colspan="6" style="padding:5px 8px;text-align:left;font-weight:600;color:#374151;border:1px solid #e5e7eb;">${this._esc(site.name)}${site.capacity != null ? `<span style="font-weight:400;color:#6b7280;"> · ${this._esc(site.capacity.toLocaleString())} bu capacity</span>` : ''}</td>
+            </tr>${site.rows.length > 0
+              ? site.rows.map(g => `<tr style="background:${this.grainBandColor(g.commodityCode)};">
+                <td style="${cell}text-align:left;font-weight:500;">${this._esc(g.commodityCode)}</td>
+                <td style="${cell}">${this._esc((g.bushelsOnHand ?? 0).toLocaleString())} bu</td>
+                <td style="${cell}">${(g.bushelsSold ?? 0) > 0 ? `${this._esc((g.bushelsSold ?? 0).toLocaleString())} bu` : '—'}</td>
+                <td style="${cell}">${this._esc(g.grade?.trim() || '—')}</td>
+                <td style="${cell}">${g.targetBushels != null ? this._esc(this.formatCurrency(g.targetBushels)) : '—'}</td>
+                <td style="${cell}">${this._esc(this.formatLastBid(g.lastBid))}</td>
+              </tr>`).join('')
+              : `<tr><td colspan="6" style="padding:4px 8px;text-align:left;color:#9ca3af;font-style:italic;border:1px solid #e5e7eb;">No grain on farm recorded</td></tr>`}`).join('')}
           </tbody>
         </table></div>
       </div>`;

@@ -1,4 +1,4 @@
-import { Component, input, output, effect, inject, signal, computed } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, output, effect, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
@@ -41,7 +41,11 @@ interface TicketGroup {
     TableHeadComponent,
     TableCellComponent
   ],
-  templateUrl: './tickets-table.component.html'
+  templateUrl: './tickets-table.component.html',
+  // Every piece of view state is an input, a signal or a computed. Sort, search and expansion were
+  // plain fields; as signals, a write that is not a template event (the customer-reset and
+  // auto-expand effects, a direct handleSort call) still marks the view.
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class TicketsTableComponent {
   private readonly appState = inject(AppStateService);
@@ -64,15 +68,24 @@ export class TicketsTableComponent {
   /** Asks the parent to retry the failed read. */
   public retryLoad = output<void>();
 
-  private _conversionMap: Map<string, number> | null = null;
+  /** Commodity code → lbs per bushel. Derived from the signal, so any replacement of the conversion
+   *  list rebuilds it (it used to be cached until the list's length changed). */
+  private readonly _conversionMap = computed(() =>
+    new Map(this.appState.commodityConversions().map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit])));
 
-  currentSortColumn: SortColumn | null = null;
-  currentSortDirection: SortDirection = 'none';
-  cropSortActive = false;
-  cropRotation = 0;
+  /** The unit conversions failed to load, so every bushel figure is missing for that reason rather
+   *  than because of the ticket's commodity. */
+  readonly conversionsUnavailable = computed(() =>
+    this.appState.commodityConversionsLoadFailed() && this.appState.commodityConversions().length === 0);
+
+  readonly currentSortColumn = signal<SortColumn | null>(null);
+  readonly currentSortDirection = signal<SortDirection>('none');
+  readonly cropSortActive = signal(false);
+  readonly cropRotation = signal(0);
   showSearch = false;
-  searchQuery = '';
-  expandedCommodities = new Set<string>();
+  readonly searchQuery = signal('');
+  /** Open group keys. Replaced, never mutated in place, so every change notifies the view. */
+  readonly expandedCommodities = signal<ReadonlySet<string>>(new Set());
   readonly summaryExpanded = signal(false);
   readonly groupMode = signal<GroupMode>('both');
 
@@ -82,13 +95,13 @@ export class TicketsTableComponent {
     effect(() => {
       const cust = this.customer();
       if (this._previousCustomerId !== null && this._previousCustomerId !== cust.id) {
-        this.currentSortColumn = null;
-        this.currentSortDirection = 'none';
-        this.cropSortActive = false;
-        this.cropRotation = 0;
-        this.searchQuery = '';
+        this.currentSortColumn.set(null);
+        this.currentSortDirection.set('none');
+        this.cropSortActive.set(false);
+        this.cropRotation.set(0);
+        this.searchQuery.set('');
         this.showSearch = false;
-        this.expandedCommodities.clear();
+        this.expandedCommodities.set(new Set());
       }
       this._previousCustomerId = cust.id;
     });
@@ -107,9 +120,9 @@ export class TicketsTableComponent {
           const [productCode] = k.split('|');
           return mode === 'elevator' ? true : productCode === openCrop;
         });
-        this.expandedCommodities = new Set(matches);
+        this.expandedCommodities.set(new Set(matches));
       } else if (allGroupKeys.size === 1) {
-        this.expandedCommodities = new Set(allGroupKeys);
+        this.expandedCommodities.set(new Set(allGroupKeys));
       }
     });
   }
@@ -119,7 +132,7 @@ export class TicketsTableComponent {
   }
 
   clearSearch(): void {
-    this.searchQuery = '';
+    this.searchQuery.set('');
     this.showSearch = false;
   }
 
@@ -186,7 +199,7 @@ export class TicketsTableComponent {
   }
 
   get ticketGroups(): TicketGroup[] {
-    const q = this.searchQuery.trim().toLowerCase();
+    const q = this.searchQuery().trim().toLowerCase();
     const terms = q ? this._expandWithAliases(q) : [];
     const mode = this.groupMode();
 
@@ -260,11 +273,12 @@ export class TicketsTableComponent {
       });
     }
     // Crop rotation is independent of ticket sort — persists even when another column is active
-    if (this.cropSortActive) {
+    if (this.cropSortActive()) {
       groups.sort((a, b) =>
         a.productCode.localeCompare(b.productCode) || a.elevatorCode.localeCompare(b.elevatorCode));
-      if (this.cropRotation > 0) {
-        const offset = this.cropRotation % groups.length;
+      const rotation = this.cropRotation();
+      if (rotation > 0) {
+        const offset = rotation % groups.length;
         groups.splice(0, groups.length, ...groups.slice(offset), ...groups.slice(0, offset));
       }
     }
@@ -273,13 +287,15 @@ export class TicketsTableComponent {
   }
 
   private _sortTicketList(tickets: Ticket[]): Ticket[] {
-    if (!this.currentSortColumn || this.currentSortDirection === 'none') {
+    const column = this.currentSortColumn();
+    const direction = this.currentSortDirection();
+    if (!column || direction === 'none') {
       // Default: oldest to newest within each crop group, then smallest ticket # within a date
       return [...tickets].sort(compareTicketsByDateThenNumber);
     }
     const sorted = [...tickets].sort((a, b) => {
       let comparison = 0;
-      switch (this.currentSortColumn) {
+      switch (column) {
         case 'id': comparison = compareTicketNumbers(a, b); break;
         case 'date': comparison = (this._parseTicketDate(a.date)?.getTime() ?? 0) - (this._parseTicketDate(b.date)?.getTime() ?? 0) || compareTicketNumbers(a, b); break;
         case 'location': {
@@ -295,7 +311,7 @@ export class TicketsTableComponent {
       }
       return comparison;
     });
-    return this.currentSortDirection === 'desc' ? sorted.reverse() : sorted;
+    return direction === 'desc' ? sorted.reverse() : sorted;
   }
 
   /** Parse a ticket date string into a local-time Date, avoiding the UTC-midnight
@@ -449,13 +465,14 @@ export class TicketsTableComponent {
   }
 
   get sortedTickets(): Ticket[] {
-    if (!this.currentSortColumn || this.currentSortDirection === 'none') {
+    const column = this.currentSortColumn();
+    const direction = this.currentSortDirection();
+    if (!column || direction === 'none') {
       return this.unappliedTickets;
     }
 
     const sorted = [...this.unappliedTickets].sort((a, b) => {
       let comparison = 0;
-      const column = this.currentSortColumn!;
 
       switch (column) {
         case 'id':
@@ -483,20 +500,24 @@ export class TicketsTableComponent {
       return comparison;
     });
 
-    return this.currentSortDirection === 'desc' ? sorted.reverse() : sorted;
+    return direction === 'desc' ? sorted.reverse() : sorted;
   }
 
   setGroupMode(mode: GroupMode): void {
     if (this.groupMode() === mode) return;
     this.groupMode.set(mode);
-    this.expandedCommodities.clear();
+    this.expandedCommodities.set(new Set());
   }
 
   toggleCommodity(productCode: string): void {
-    if (this.expandedCommodities.has(productCode)) {
-      this.expandedCommodities.delete(productCode);
+    if (this.expandedCommodities().has(productCode)) {
+      this.expandedCommodities.update(open => {
+        const next = new Set(open);
+        next.delete(productCode);
+        return next;
+      });
     } else {
-      this.expandedCommodities.add(productCode);
+      this.expandedCommodities.update(open => new Set(open).add(productCode));
       this.usageTracking.trackTicketDropdownOpen();
     }
   }
@@ -508,41 +529,41 @@ export class TicketsTableComponent {
 
   isCommodityExpanded(productCode: string): boolean {
     // Auto-expand all groups when searching
-    if (this.searchQuery.trim()) return true;
-    return this.expandedCommodities.has(productCode);
+    if (this.searchQuery().trim()) return true;
+    return this.expandedCommodities().has(productCode);
   }
 
   handleSort(column: SortColumn): void {
     if (column === 'crop') {
-      if (!this.cropSortActive) {
-        this.cropSortActive = true;
-        this.cropRotation = 0;
+      if (!this.cropSortActive()) {
+        this.cropSortActive.set(true);
+        this.cropRotation.set(0);
       } else {
-        this.cropRotation++;
-        if (this.cropRotation >= this._uniqueCropCount) {
-          this.cropSortActive = false;
-          this.cropRotation = 0;
+        this.cropRotation.update(r => r + 1);
+        if (this.cropRotation() >= this._uniqueCropCount) {
+          this.cropSortActive.set(false);
+          this.cropRotation.set(0);
         }
       }
       return;
     }
 
     // Ticket-level sort — crop rotation is untouched
-    if (this.currentSortColumn === column) {
-      if (this.currentSortDirection === 'asc') {
-        this.currentSortDirection = 'desc';
+    if (this.currentSortColumn() === column) {
+      if (this.currentSortDirection() === 'asc') {
+        this.currentSortDirection.set('desc');
       } else {
-        this.currentSortDirection = 'none';
-        this.currentSortColumn = null;
+        this.currentSortDirection.set('none');
+        this.currentSortColumn.set(null);
       }
     } else {
-      this.currentSortColumn = column;
-      this.currentSortDirection = 'asc';
+      this.currentSortColumn.set(column);
+      this.currentSortDirection.set('asc');
     }
   }
 
   getSortIconClass(column: SortColumn): string {
-    if (column === 'crop' ? this.cropSortActive : this.currentSortColumn === column) {
+    if (column === 'crop' ? this.cropSortActive() : this.currentSortColumn() === column) {
       return 'text-gray-600 dark:text-gray-300';
     }
     return 'text-gray-400 dark:text-gray-600';
@@ -557,13 +578,7 @@ export class TicketsTableComponent {
     const code = (productCode || '').trim().toUpperCase();
     if (!code) return null;
 
-    const conversions = this.appState.commodityConversions();
-    if (conversions.length === 0) return null;
-
-    if (!this._conversionMap || this._conversionMap.size !== conversions.length) {
-      this._conversionMap = new Map(conversions.map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit]));
-    }
-    const lbs = this._conversionMap.get(code);
+    const lbs = this._conversionMap().get(code);
     return lbs && lbs > 0 ? lbs : null;
   }
 
