@@ -13,7 +13,6 @@ This is "what do I need to do today?" view. It's read-only, fast (no per-custome
 ## How users reach it
 
 - "Insights" link in the sidebar.
-- The standalone `/unshipped-bushels` route (covered below) is reachable from the sidebar separately and provides a deeper drill-down of the same Unshipped Bushels data.
 
 ## What it shows
 
@@ -74,7 +73,6 @@ The screen does **not** fetch its own data — it reads everything from `AppStat
 | Component | `client/src/app/features/customers/pages/insights/insights.component.ts` |
 | Template | `client/src/app/features/customers/pages/insights/insights.component.html` |
 | Data preload | `client/src/app/core/services/data-preload.service.ts` |
-| Standalone Unshipped Bushels view | `client/src/app/features/unshipped-bushels/pages/unshipped-bushels/unshipped-bushels.component.ts` |
 | AppState signals consumed | `customers`, `contracts`, `todaysTickets`, `commodities`, `commodityConversions`, `dataLoading`, `ticketsLoading` |
 | Underlying ODS views (via other screens / preload) | `base.vw_CurrentContracts`, `base.vw_CurrentTickets`, `ctrm.vw_GNP024` (commodity conversions). Customers come from app-DB `dbo.Customer`. |
 | App tables (read indirectly via cached signals) | none directly |
@@ -102,19 +100,6 @@ So an Unconfirmed Contract opens the **Contracts** tab and expands that contract
 ## Refresh behavior
 
 The "Refresh" button calls `dataPreloadService.forceReload()`. `isBackgroundRefreshing` is set true; the component subscribes to `dataLoading$` pairwise to detect the `true → false` transition and clears the spinner when core data arrives. This bypasses any client cache and re-issues bulk API fetches.
-
-## Related: standalone `/unshipped-bushels` view
-
-- **Route**: `/unshipped-bushels`
-- **Component**: [`client/src/app/features/unshipped-bushels/pages/unshipped-bushels/unshipped-bushels.component.ts`](../../client/src/app/features/unshipped-bushels/pages/unshipped-bushels/unshipped-bushels.component.ts)
-
-Shares the same data sources (customers + contracts) but presents a **broader inventory view** rather than just the past-due slice:
-
-| Aspect | Insights inline category | Standalone screen |
-| --- | --- | --- |
-| Filter | Past delivery date AND open AND remaining > residue | All contracts where `getContractDeliveryStats(c).isEffectivelyComplete === false`, regardless of delivery date |
-| Layout | Producer-grouped within a card | Per-contract table view, sortable, with name/commodity/contract# search |
-| Use case | "What's overdue right now?" | "What's the total open inventory across all my producers?" |
 
 ## Auth and feature flags
 
@@ -149,7 +134,6 @@ Shares the same data sources (customers + contracts) but presents a **broader in
 | Unshipped Bushels count includes contracts that look closed | Remaining now comes from `contract.openBalanceQuantity` (no ticket-math fallback). If the CTRM aggregate is stale, the count will be too. | Refresh; if still off, verify the CTRM read succeeded (`INFRASTRUCTURE_CTRM_UNAVAILABLE` in the API log means the pool is empty, not stale) |
 | Click-through opens wrong tab | `selectInsight` query-param wiring | `selectInsight()` body and the home page's `pendingTab` handler |
 | "Updated …" stuck on a stale time | `forceReload` failed silently | Network tab during Refresh |
-| Standalone Unshipped Bushels and inline category disagree | Inline applies past-due filter, standalone doesn't | Confirm the rule difference matches expectation |
 
 ## References
 

@@ -22,7 +22,7 @@ This folder is the canonical reference for **what each screen of the Origination
 | [Security Model](./SECURITY-MODEL.md) | _(read first)_ | Why trade-unit entitlements are a UX filter, not a per-user access boundary, and which endpoints are the exception |
 | [Customer Home Page](./Customer%20Home%20Page.md) | `/` | Day-to-day producer view — list, profile tabs, notes sidebar, deep-link query params |
 | [Build a List](./Build%20a%20List.md) | `/build-list` | NLQ-driven producer list builder, refine filters, saved lists, linked-producer entity view |
-| [Actionable Insights](./Actionable%20Insights.md) | `/insights` (+ `/unshipped-bushels`) | Three urgent-work categories: Unconfirmed Contracts, Spot Loads, Unshipped Bushels |
+| [Actionable Insights](./Actionable%20Insights.md) | `/insights` | Three urgent-work categories: Unconfirmed Contracts, Spot Loads, Unshipped Bushels |
 | [Planting Intentions Dashboard](./Planting%20Intentions%20Dashboard.md) | `/dashboard` | Yield, market share, actual harvest planning by trade unit and growing season |
 | [Bid Sheet](./Bid%20Sheet.md) | `/bid-sheet` _(env-gated)_ | Map-based competitor bid tracking and management |
 | [Usage Dashboard](./Usage%20Dashboard.md) | `/usage-dashboard` _(admin-only, env-gated)_ | Adoption metrics, originator-level activity, query-library usage and gaps |

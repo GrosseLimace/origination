@@ -1254,8 +1254,8 @@ export class HomeComponent {
           updated[index] = updatedCustomer;
           this.customers.set(updated);
           // Mirror into the shared cache too. This local signal duplicates appState.customers, and
-          // every other write site pushes both; this one didn't — so build-list, insights and
-          // unshipped-bushels kept serving the pre-merge commodity list until the next full
+          // every other write site pushes both; this one didn't — so build-list and insights
+          // kept serving the pre-merge commodity list until the next full
           // trade-unit reload happened to overwrite it.
           this.appState.setCustomers(updated);
         }
