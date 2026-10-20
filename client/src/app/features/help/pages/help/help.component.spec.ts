@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { signal } from '@angular/core';
+import { ApplicationRef, signal } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
 import { render, screen, fireEvent } from '@testing-library/angular';
 import type { HelpContent } from '@models';
 import { HelpComponent } from './help.component';
@@ -48,6 +49,32 @@ describe('HelpComponent', () => {
 
     expect(screen.queryByRole('button', { name: 'How do I build a list?' })).toBeNull();
     expect(screen.getByRole('button', { name: 'How do I set season targets?' })).toBeTruthy();
+  });
+
+  it('scrolls the chosen topic\'s questions into view, since they sit below the tiles', async () => {
+    const scrolled: Element[] = [];
+    const spy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (this: Element) { scrolled.push(this); });
+    const { fixture } = await renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /Planting dashboard/ }));
+    fixture.detectChanges();
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(scrolled.map(e => e.id)).toContain('help-cat-dash');
+    spy.mockRestore();
+  });
+
+  it('scrolls an opened answer into view', async () => {
+    const scrolled: Element[] = [];
+    const spy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (this: Element) { scrolled.push(this); });
+    const { fixture } = await renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: 'How do I build a list?' }));
+    fixture.detectChanges();
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(scrolled.map(e => e.id)).toContain('help-q-build-list');
+    spy.mockRestore();
   });
 
   it('expands an answer', async () => {

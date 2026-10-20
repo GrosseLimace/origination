@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Injector, computed, inject, input, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
@@ -9,6 +9,7 @@ import { HelpPanelService } from '@core/services/help-panel.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 import { HelpIconComponent } from '@shared/components/help-icon/help-icon.component';
+import { revealAfterRender } from '@shared/utils/help-reveal';
 
 /** The troubleshooters help-faq.json may start. help-faq.drift.spec.ts holds the content to this list. */
 export const HELP_TROUBLESHOOTERS = ['missing-producer'] as const;
@@ -47,6 +48,7 @@ export class HelpTroubleshooterComponent {
   private readonly router = inject(Router);
   private readonly usageTracking = inject(UsageTrackingService);
   private readonly userTradeUnits = inject(UserTradeUnitsService);
+  private readonly injector = inject(Injector);
 
   readonly tree = input.required<string>();
   readonly index = input.required<number>();
@@ -90,6 +92,8 @@ export class HelpTroubleshooterComponent {
       this.checking.set(false);
     }
     this.usageTracking.trackHelpTroubleshoot(this.result()!.kind);
+    // The result appears below the name box, often below the fold of the panel.
+    revealAfterRender(this.injector, () => document.getElementById(this.inputId() + '-result'));
   }
 
   /** Selects the producer's trade unit the way the selector would: its group, then the unit. */
