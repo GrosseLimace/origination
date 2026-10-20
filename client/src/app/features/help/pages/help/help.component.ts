@@ -18,6 +18,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { HelpIconComponent } from '@shared/components/help-icon/help-icon.component';
 import { filterHelpFaqs } from '@shared/utils/help-match';
 import { splitHelpText } from '@shared/utils/help-text';
+import { revealAfterRender } from '@shared/utils/help-reveal';
 
 /**
  * The full Help page (/help): every question, browsable by category or searchable, with deep links
@@ -89,15 +90,22 @@ export class HelpComponent {
     this.query.set('');
   }
 
+  /** Choosing a tile filters the list below the tiles, so bring that list up to where the user is looking. */
   toggleCategory(id: string): void {
-    this.category.set(this.category() === id ? null : id);
+    const choosing = this.category() !== id;
+    this.category.set(choosing ? id : null);
     this.openId.set(null);
+    if (choosing) revealAfterRender(this.injector, () => document.getElementById('help-cat-' + id), 'start');
   }
 
+  /** Opening a question scrolls just enough to show its whole answer. */
   toggle(faqId: string): void {
     const opening = this.openId() !== faqId;
     this.openId.set(opening ? faqId : null);
-    if (opening) this.usageTracking.trackHelpAnswer(faqId);
+    if (opening) {
+      this.usageTracking.trackHelpAnswer(faqId);
+      revealAfterRender(this.injector, () => document.getElementById('help-q-' + faqId));
+    }
   }
 
   run(action: HelpAction): void {
