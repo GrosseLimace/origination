@@ -151,6 +151,29 @@ public class CustomerRepositoryCtrmOnboardingTests
     }
 
     [Fact]
+    public async Task AssignTradeUnitsAsync_CtrmSource_UnknownPositiveIdWithoutACode_IsNeverLookedUpInTheOds()
+    {
+        var sut = Build(out var app, sync: MintingRepository());
+
+        var outcome = await sut.AssignTradeUnitsAsync(777, ["1085"], null, "rep@scoular.com", CancellationToken.None);
+
+        Assert.Equal(AssignTradeUnitsResult.CustomerNotFound, outcome.Result);
+        Assert.Equal(0, sut.IdLoads);                                    // the ODS-by-id seam was not called
+        Assert.Empty(sut.CodesAsked);
+        Assert.Empty(app.Customers);
+    }
+
+    [Fact]
+    public async Task AssignTradeUnitsAsync_OdsSource_UnknownPositiveIdWithoutACode_StillLoadsByOdsId()
+    {
+        var sut = Build(out _, source: "ods", sync: null);
+
+        await sut.AssignTradeUnitsAsync(777, ["1085"], null, "rep@scoular.com", CancellationToken.None);
+
+        Assert.Equal(1, sut.IdLoads);
+    }
+
+    [Fact]
     public async Task AssignTradeUnitsAsync_CodeUnknownToTheMaster_IsCustomerNotFound()
     {
         var sut = Build(out _, sync: MintingRepository());
