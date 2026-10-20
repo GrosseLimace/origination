@@ -253,6 +253,7 @@ Last Updated: 2026-10-20
 | Microsoft.Extensions.Http.Resilience | 10.3.0 | MIT | HTTP retry / resilience policies |
 | Microsoft.Identity.Web | 3.8.4 | MIT | Azure AD / JWT Bearer authentication |
 | System.Security.Cryptography.Xml | 10.0.13 | MIT | XML crypto — transitive (via Microsoft.Identity.Web), pinned to clear EncryptedXml advisories (GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf, CVE-2026-47302, CVE-2026-50525 & CVE-2026-50648 DoS, CVE-2026-47304 feature-bypass); raised 2026-10-13 to 10.0.13 for CVE-2026-96958/-96959/-96960 (SignedXml/C14N/EncryptedXml DoS, <= 10.0.12) — the old 10.0.10 pin had fallen inside that range. Pulls System.Security.Cryptography.Pkcs to the matching 10.0.13. Pin covers Infrastructure + tests only: .NET 10 package pruning drops it from the web app, which loads it from the App Service ASP.NET Core runtime |
+| System.Security.Cryptography.Pkcs | 10.0.13 | MIT | PKCS / CMS crypto — transitive (Microsoft.Data.SqlClient 6.1.4 pulls 9.0.11), pinned in the Api and Application projects 2026-10-20 for CVE-2026-84008 (GHSA-846f-f764-76mx, High) and CVE-2026-70162 (GHSA-2fmv-rv2c-59x7, Moderate) — .NET DoS, affected 9.0.0–9.0.20 and 10.0.0–10.0.12. The Xml pin lifts it in Infrastructure + tests but not in the web app, where package pruning drops Xml. Like the Xml pin, it does not reach the deployed app: Pkcs is not in the publish output, so the running app is fixed only once the App Service .NET 10 runtime is on the October 2026 servicing release |
 
 ### Frontend Dependencies (Angular 21 / TypeScript)
 

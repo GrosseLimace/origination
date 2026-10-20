@@ -31,6 +31,9 @@
     <PackageReference Include="Azure.Identity" Version="1.18.0" />
     <!-- Seven services catch Microsoft.Data.SqlClient.SqlException -->
     <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.4" />
+    <!-- SqlClient 6.1.4 pulls System.Security.Cryptography.Pkcs 9.0.11 (CVE-2026-84008 / CVE-2026-70162).
+         Same pin and reasoning as the Api project's; Mobile resolves through this project. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
     <!-- GraphDirectoryClient: Polly.CircuitBreaker.BrokenCircuitException (same package the host uses) -->
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.3.0" />
     <!-- OutlookCalendarService / TeamsDirectoryService: ITokenAcquisition, MicrosoftIdentityWebChallengeUserException -->
