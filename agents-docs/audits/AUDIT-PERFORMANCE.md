@@ -2,8 +2,26 @@
 
 Scope: EF Core query patterns and repositories under `api/`, Angular change-detection/template patterns under `client/`, SQL indexing
 
-**Findings:** 9 total — 4 open (1 high, 2 medium, 1 low), 2 resolved (1 critical, 1 medium), 2 wont_fix (low), 1 accepted (low)
-**Opened:** 2026-09-19 | **Last verified:** 2026-09-28
+**Findings:** 10 total — 4 open (1 high, 2 medium, 1 low), 3 resolved (1 critical, 2 medium), 2 wont_fix (low), 1 accepted (low)
+**Opened:** 2026-09-19 | **Last verified:** 2026-10-13
+
+## Reconciliation (2026-10-13)
+
+Re-verified all 4 open findings against current code; all four still hold unchanged:
+
+- `performance.contracts-table-missing-onpush-uncached-bindings` — still no `changeDetection` declared; `getAppliedTickets()` (contracts-table.component.ts:696) is still a plain unmemoized `.filter().sort()` over the full tickets input.
+- `performance.angular-template-function-calls` — unchanged.
+- `performance.angular-onpush-coverage-gap` — OnPush coverage now 23/49 components (one net-new component added, no new adopters).
+- `performance.usage-dashboard-duplicate-scope-resolution-per-widget` — `GetUserIdSetAsync` in `UsageDashboardService.cs` is still called independently from 10 call sites with no caching.
+
+Also added to the tracker since the last doc pass but previously undocumented here: `performance.ctrm-read-ahead-ungated-on-data-source` (resolved 2026-09-28, see Resolved section) — folded into this reconciliation for completeness.
+
+Sampled the largest feature work merged since 2026-09-28 (Bin Sites & Grain on Farm, Build-a-List prompt library, Usage Dashboard "manager for all", CTRM trade-unit-scoped contract reads — 105 commits touching `api/`/`client/src`):
+
+- **Bin Sites & Grain on Farm (`ProducerDetailsRepository.cs`):** the batch-read path (`GetBinSitesAsync`/grain-on-farm equivalents for a set of customer ids) groups by `CustomerId` into a dictionary before assignment — same batching discipline as the existing `pricingLinesMap` pattern elsewhere in the codebase. No per-producer loop queries found.
+- **CTRM trade-unit-scoped contract read becoming the default (`bf320130`):** a measured, deliberate performance change, not a new risk — the commit message documents a drop from 59-128 batched per-producer requests down to 6-21 pages, with live before/after timings (e.g., 34-65s → 16s). The explicit tradeoff (producer-click reads are no longer served from the warm trade-unit cache, so clicks become live per-producer reads again) is a known and accepted cost, not an oversight.
+
+No new findings opened this pass.
 
 ## Reconciliation (2026-09-28)
 
@@ -67,6 +85,10 @@ The remaining 3 open findings (contracts-table OnPush/memoization gap, template 
 - **Files:** `features/customers/components/tickets-table/tickets-table.component.html`, `.ts`
 - Was: `spotTicketIds` was a plain TS getter rebuilding a Set by iterating every ticket and scanning every contract, recomputed on every CD cycle app-wide. Now (verified 2026-09-21): `spotTicketIds` is a `computed<Set<number>>()` at `tickets-table.component.ts:132`, recomputing only when `tickets()`/`contracts()` change. Component still lacks `ChangeDetectionStrategy.OnPush`, tracked separately under `performance.angular-onpush-coverage-gap`.
 
+### Hover prefetch and the post-click convergence re-read ran regardless of whether the backend was reading CTRM or ODS (`performance.ctrm-read-ahead-ungated-on-data-source`) — medium
+- **Files:** `client/src/app/features/customers/pages/home/home.component.ts`, `client/src/environments/environment.prod.ts`
+- Was: a 350ms hover prefetch and a 4s post-click convergence re-read (built to hide CTRM GraphQL latency) ran unconditionally. Against ODS they cost extra reads for no benefit; ungated, whichever way PROD was pointed one of the two costs was paid unnecessarily. Now: both gate on a new `environment.ctrmReadAheadEnabled` flag set per-environment to match that environment's `Ctrm:Source`. Shipped ON in Production ahead of the 2026-09-29 CTRM flip, with the known/accepted cost of extra ODS reads (never stale data) in the window between deploy and flag flip.
+
 ## Won't fix / Accepted
 
 ### Redundant re-fetch in ProducerDetailsRepository.UpsertAsync (`performance.producer-details-redundant-refetch`) — low, wont_fix
@@ -80,4 +102,4 @@ The remaining 3 open findings (contracts-table OnPush/memoization gap, template 
 
 ## Overall health
 
-The codebase shows clear signs of prior, deliberate perf work — batched EF queries with in-memory dictionary joins, `AsNoTracking` on read paths, contract-scoped ticket loading with documented before/after context, memoized delivery-stats caching, and thoughtful query-narrowing comments. Both write-side and render-side critical/medium gaps found in the initial pass (the tickets-table quadratic getter and the bid-insert reconciliation N+1) are confirmed fixed in code and remain so a week later. Remaining open gaps are a cluster of Angular data-table components that never adopted OnPush or `computed()` memoization (contracts-table being the highest-traffic offender) — correctness-safe today but a compounding render-cost risk as data volume grows. The CTRM GraphQL integration merged since the last pass is, if anything, a model example of this codebase's performance discipline: every batching/concurrency/caching decision is measured and the measurements are left in the code as comments. No sync-over-async, missing-pagination, or bundle-bloat issues were found in production code. Highest-value next step unchanged: convert contracts-table to OnPush + `computed()`, closing the last high-severity gap and most of the systemic OnPush-coverage finding in one pass.
+The codebase shows clear signs of prior, deliberate perf work — batched EF queries with in-memory dictionary joins, `AsNoTracking` on read paths, contract-scoped ticket loading with documented before/after context, memoized delivery-stats caching, and thoughtful query-narrowing comments. Both write-side and render-side critical/medium gaps found in the initial pass (the tickets-table quadratic getter and the bid-insert reconciliation N+1) are confirmed fixed in code and remain so two and a half weeks later. Remaining open gaps are a cluster of Angular data-table components that never adopted OnPush or `computed()` memoization (contracts-table being the highest-traffic offender) — correctness-safe today but a compounding render-cost risk as data volume grows. The substantial feature work merged since the last pass (Bin Sites & Grain on Farm, Build-a-List, Usage Dashboard, CTRM trade-unit reads) extends the same batching discipline rather than regressing it — the CTRM trade-unit-read default flip in particular is a textbook example: measured before/after timings backing a deliberate, documented latency/cache tradeoff. No sync-over-async, missing-pagination, or bundle-bloat issues were found in production code. Highest-value next step unchanged: convert contracts-table to OnPush + `computed()`, closing the last high-severity gap and most of the systemic OnPush-coverage finding in one pass.

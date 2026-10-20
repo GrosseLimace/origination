@@ -9,17 +9,50 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
-    <!-- §8 DEVIATION — do NOT delete this package yet. It is BANNED for DB tests by
-         style-guides/automated-testing.md §8, but .UseInMemoryDatabase is STILL IN USE by SEVEN
-         test files: Controllers/DiagnosticsControllerAppAccessTests.cs,
-         Controllers/NotesControllerMentionCatalogTests.cs, Repositories/CommodityTradeGroupScopeTests.cs,
-         Repositories/DailyRecapGroupRepositoryTests.cs, Repositories/ProducerContactTests.cs,
-         Repositories/ProducerGrainOnFarmTests.cs, Repositories/SavedListRepositoryTests.cs.
-         Remove it only AFTER those are migrated to the real-SQL WebApplicationFactory harness
-         (plan Phase D). Deleting it now breaks the build.
-         This list previously named two files, neither of which uses the package any more — if you
-         migrate one, update this comment in the same change, or the next reader inherits the same
-         understated picture. -->
+    <!-- §8 DEVIATION: do NOT delete this package yet. It is BANNED for DB tests by
+         style-guides/automated-testing.md §8, but .UseInMemoryDatabase is STILL IN USE by the
+         32 test files listed below. Remove it only AFTER those are migrated to the real-SQL
+         WebApplicationFactory harness (plan Phase D). Deleting it now breaks the build.
+
+         This list is CHECKED BY A TEST: Infrastructure/InMemoryDatabaseDeviationTests.cs reads this
+         comment and fails when the files that call .UseInMemoryDatabase differ from the files named
+         here, in either direction. It drifted twice by hand (7 named vs 17 real on 2026-10-13), so a
+         new usage now has to be acknowledged here in the same change rather than silently added.
+
+         Files (one per line, path relative to this project):
+           Controllers/DiagnosticsControllerAppAccessTests.cs
+           EntitlementsTestDb.cs
+           Repositories/CommodityTradeGroupScopeTests.cs
+           Repositories/ContractRepositorySwitchTests.cs
+           Repositories/CtrmOutageEndToEndTests.cs
+           Repositories/CustomerRepositoryOpenActivityTests.cs
+           Repositories/CustomerRepositoryTradeUnitsTests.cs
+           Repositories/DailyRecapGroupRepositoryTests.cs
+           Repositories/PlantingIntentionRetagTests.cs
+           Repositories/PlantingIntentionScopingTests.cs
+           Repositories/PlantingIntentionSoftDeleteTests.cs
+           Repositories/ProducerBinSiteTests.cs
+           Repositories/ProducerContactTests.cs
+           Repositories/ProducerGrainOnFarmSiteLinkTests.cs
+           Repositories/ProducerGrainOnFarmTests.cs
+           Repositories/ReminderRepositoryTests.cs
+           Repositories/BarchartIngestRepositoryTests.cs
+           Repositories/BidSheetRepositoryTests.cs
+           Repositories/CustomerSyncRepositoryTests.cs
+           Repositories/DashboardRepositoryTests.cs
+           Repositories/DisplayNameLookupRepositoryTests.cs
+           Repositories/DpContractRepositoryTests.cs
+           Repositories/EntitlementsRepositoryTests.cs
+           Repositories/MbpLocationSynonymRepositoryTests.cs
+           Repositories/NoteRepositoryTests.cs
+           Repositories/QueryLibraryRepositoryTests.cs
+           Repositories/SavedListRepositoryTests.cs
+           Repositories/StoredGrainRepositoryTests.cs
+           Repositories/TeamsChannelRepositoryTests.cs
+           Repositories/TicketRepositoryTests.cs
+           Repositories/UsageRepositoryTests.cs
+           Repositories/UserPreferenceRepositoryTests.cs
+    -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Moq" Version="4.20.72" />

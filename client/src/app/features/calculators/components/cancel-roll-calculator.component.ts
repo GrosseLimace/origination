@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, input, output, OnInit } from '@angular/core';
+import { Component, inject, signal, computed, input, output, OnInit, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 import { InputComponent } from '@shared/components/input/input.component';
@@ -34,6 +34,7 @@ function blankForm(): CancelRollForm {
 @Component({
   selector: 'app-cancel-roll-calculator',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, AccountingCurrencyPipe, InputComponent, ButtonComponent],
   templateUrl: './cancel-roll-calculator.component.html',
 })

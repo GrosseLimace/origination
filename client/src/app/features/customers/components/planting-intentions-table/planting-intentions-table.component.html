@@ -226,14 +226,14 @@
       }
 
       <!-- Add Dialog -->
-      <app-dialog [isOpen]="showAddDialog" (close)="closeAddDialog()" size="md" [scrollBody]="true">
+      <app-dialog [isOpen]="showAddDialog()" (close)="closeAddDialog()" [closeOnEscape]="false" size="md" [scrollBody]="true">
         <app-dialog-header>
           <app-dialog-title>Add Planting Intention</app-dialog-title>
           <app-dialog-description>Record a new planting intention for {{ customer().name }}</app-dialog-description>
         </app-dialog-header>
         <app-dialog-content>
           <div class="space-y-4">
-            @if (tradeUnitOptions.length === 0 && !isLoadingProducerTradeUnits) {
+            @if (tradeUnitOptions.length === 0 && !isLoadingProducerTradeUnits()) {
               <div class="flex items-start gap-2 rounded-md border border-yellow-300 bg-yellow-50 dark:border-yellow-700 dark:bg-yellow-900/20 px-3 py-2.5 text-sm text-yellow-800 dark:text-yellow-300">
                 <svg class="mt-0.5 h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
@@ -241,7 +241,7 @@
                 <span>This producer has no trade unit assignment and none is selected at the top of the page. Select a trade unit before adding intentions.</span>
               </div>
             }
-            <div [class.pointer-events-none]="tradeUnitOptions.length === 0 && !isLoadingProducerTradeUnits" [class.opacity-40]="tradeUnitOptions.length === 0 && !isLoadingProducerTradeUnits" class="space-y-4">
+            <div [class.pointer-events-none]="tradeUnitOptions.length === 0 && !isLoadingProducerTradeUnits()" [class.opacity-40]="tradeUnitOptions.length === 0 && !isLoadingProducerTradeUnits()" class="space-y-4">
               <div class="space-y-2">
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Type <span class="text-gray-400 font-normal">(optional)</span></label>
                 <select
@@ -259,7 +259,7 @@
 
               <div class="space-y-2">
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Crop</label>
-                @if (isLoadingCommodities) {
+                @if (isLoadingCommodities()) {
                   <div class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 flex items-center gap-2 text-sm text-gray-400 dark:text-gray-500">
                     <svg class="animate-spin h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24">
                       <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -282,7 +282,8 @@
                       placeholder="Search crops by name or code..."
                       (input)="onAddCropSearch()"
                       (keydown.enter)="selectFirstAddCropSuggestion(); $event.preventDefault()"
-                      (focus)="showAddCropSuggestions = true; onAddCropSearch()"
+                      (keydown.escape)="onCropSearchEscape($event, 'add')"
+                      (focus)="showAddCropSuggestions.set(true); onAddCropSearch()"
                       (blur)="hideAddCropSuggestionsDelayed()"
                       class="w-full h-10 pl-3 pr-9 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-scoular-green"
                     />
@@ -292,7 +293,7 @@
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
                       </button>
                     }
-                    @if (showAddCropSuggestions && filteredAddCrops.length > 0) {
+                    @if (showAddCropSuggestions() && filteredAddCrops.length > 0) {
                       <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-48 overflow-y-auto">
                         @for (commodity of filteredAddCrops; track commodity.id) {
                           <button
@@ -305,7 +306,7 @@
                           </button>
                         }
                       </div>
-                    } @else if (showAddCropSuggestions && addCropSearchInput.trim() && filteredAddCrops.length === 0) {
+                    } @else if (showAddCropSuggestions() && addCropSearchInput.trim() && filteredAddCrops.length === 0) {
                       <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
                         No matching crops found.
                       </div>
@@ -342,7 +343,7 @@
                    the originator picks (preselected when exactly one is selected in the header). -->
               <div class="space-y-2">
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Trade Unit</label>
-                @if (isLoadingProducerTradeUnits && producerTradeUnits.length === 0) {
+                @if (isLoadingProducerTradeUnits() && producerTradeUnits().length === 0) {
                   <div class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 flex items-center text-sm text-gray-400 dark:text-gray-500">Loading trade units...</div>
                 } @else if (tradeUnitOptions.length === 1) {
                   <div class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 flex items-center text-sm text-gray-900 dark:text-white">{{ tradeUnitLabel(tradeUnitOptions[0]) }}</div>
@@ -372,7 +373,7 @@
       </app-dialog>
 
       <!-- Edit Dialog -->
-      <app-dialog [isOpen]="showEditDialog" (close)="closeEditDialog()" size="md" [scrollBody]="true">
+      <app-dialog [isOpen]="showEditDialog()" (close)="closeEditDialog()" [closeOnEscape]="false" size="md" [scrollBody]="true">
         <app-dialog-header>
           <app-dialog-title>Edit Planting Intention</app-dialog-title>
           <app-dialog-description>Update planting intention for {{ customer().name }}</app-dialog-description>
@@ -396,7 +397,7 @@
 
             <div class="space-y-2">
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Crop</label>
-              @if (isLoadingCommodities) {
+              @if (isLoadingCommodities()) {
                 <div class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 flex items-center gap-2 text-sm text-gray-400 dark:text-gray-500">
                   <svg class="animate-spin h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -419,7 +420,8 @@
                     placeholder="Search crops by name or code..."
                     (input)="onEditCropSearch()"
                     (keydown.enter)="selectFirstEditCropSuggestion(); $event.preventDefault()"
-                    (focus)="showEditCropSuggestions = true; onEditCropSearch()"
+                    (keydown.escape)="onCropSearchEscape($event, 'edit')"
+                    (focus)="showEditCropSuggestions.set(true); onEditCropSearch()"
                     (blur)="hideEditCropSuggestionsDelayed()"
                     class="w-full h-10 pl-3 pr-9 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green"
                   />
@@ -429,7 +431,7 @@
                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
                     </button>
                   }
-                  @if (showEditCropSuggestions && filteredEditCrops.length > 0) {
+                  @if (showEditCropSuggestions() && filteredEditCrops.length > 0) {
                     <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-48 overflow-y-auto">
                       @for (commodity of filteredEditCrops; track commodity.id) {
                         <button
@@ -442,7 +444,7 @@
                         </button>
                       }
                     </div>
-                  } @else if (showEditCropSuggestions && editCropSearchInput.trim() && filteredEditCrops.length === 0) {
+                  } @else if (showEditCropSuggestions() && editCropSearchInput.trim() && filteredEditCrops.length === 0) {
                     <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
                       No matching crops found.
                     </div>
@@ -480,7 +482,7 @@
                  belongs to is listed as "(no longer assigned)" so it can be corrected here.
                  Until the producer's own list arrives the options are the fallback (every in-scope
                  trade unit), so show the loading state rather than a list that is about to shrink. -->
-            @if (isLoadingProducerTradeUnits && producerTradeUnits.length === 0) {
+            @if (isLoadingProducerTradeUnits() && producerTradeUnits().length === 0) {
               <div class="space-y-2">
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Trade Unit</label>
                 <div class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 flex items-center text-sm text-gray-400 dark:text-gray-500">Loading trade units...</div>
@@ -519,7 +521,7 @@
       </app-dialog>
 
       <!-- Delete Confirmation Dialog -->
-      @if (showDeleteConfirm && selectedIntention) {
+      @if (showDeleteConfirm() && selectedIntention) {
         <div class="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 overflow-hidden" (click)="closeDeleteConfirm()">
           <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full p-6 overflow-y-auto max-h-[90dvh]" (click)="$event.stopPropagation()">
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Delete Planting Intention?</h3>

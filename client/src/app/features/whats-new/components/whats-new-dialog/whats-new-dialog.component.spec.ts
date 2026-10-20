@@ -78,7 +78,9 @@ describe('WhatsNewDialogComponent', () => {
 
     await userEvent.keyboard('{Escape}');
 
-    expect(onClose).toHaveBeenCalled();
+    // Exactly once: this dialog and the app-dialog inside it both used to listen for Escape, so one
+    // keypress closed it twice.
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('ignores Escape while closed', async () => {

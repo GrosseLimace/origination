@@ -40,7 +40,6 @@ public class OriginationDbContext : DbContext
 
     // Application tables - Notes and TradeUnits moved to ApplicationDbContext (Origination database)
 
-    // Farm has no ODS table yet, so there is no DbSet for it here (FarmRepository returns stubs).
     //
     // PlantingIntention and SavedList are NOT missing — they are live DbSets on ApplicationDbContext,
     // the app-owned context. StoredGrain is configured in THIS file (see OnModelCreating) and read
@@ -64,20 +63,6 @@ public class OriginationDbContext : DbContext
             // so EF queries the right column name in ODS.
             entity.Property(e => e.ScoularId).HasColumnName("SourceCustomerId");
         });
-
-        // Configure Farm entity - DISABLED: Table doesn't exist in ODS
-        // modelBuilder.Entity<Farm>(entity =>
-        // {
-        //     entity.ToTable("Farms");
-        //     entity.HasKey(e => e.Id);
-        //     entity.Property(e => e.Id).HasMaxLength(50).IsRequired();
-        //     entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
-        //     entity.Property(e => e.Location).HasMaxLength(200);
-        //     entity.Property(e => e.Acres).IsRequired();
-        //     entity.Property(e => e.BinStorageCapacity);
-        //
-        //     entity.HasIndex(e => e.Name);
-        // });
 
         // Configure Contract entity - Maps to ODS vw_CurrentContracts view in base schema
         modelBuilder.Entity<Contract>(entity =>
