@@ -3,8 +3,41 @@
 Style guide: `style-guides/logging.md`
 Scope: structured logging/correlation across `api/GrainOriginatorPortal.Api`, App Insights/Log Analytics posture, and `client/` error/telemetry handling. This pass also reviewed the new CTRM GraphQL integration (`Services/Ctrm`, `Infrastructure/Ctrm`) merged since the last pass.
 
-**Findings:** 10 total — 4 resolved, 3 accepted, 3 open (1 critical, 1 high, 1 medium)
-**Opened:** 2026-09-19 | **Last verified:** 2026-10-13 (reconciliation pass)
+**Findings:** 10 total — 7 resolved, 3 accepted, 0 open
+**Opened:** 2026-09-19 | **Last verified:** 2026-10-20 (reconciliation pass)
+
+## Reconciliation notes (2026-10-20)
+
+Re-verified all 10 findings against current repo state. `AUDIT-TRACKING.json` already recorded
+`logging.ctrm-dependency-latency-never-logged` and `logging.ctrm-keepwarm-cycles-lack-run-id` as
+`resolved` (both found and fixed same-day on 2026-09-28), but this prose doc had drifted and still
+listed them under "open" — corrected below. Confirmed directly in code:
+`CtrmContractRepository.cs`/`CtrmTicketRepository.cs` now carry `{DurationMs}` on both the success
+and failure log lines (`git show cc0e94dc`), and `CtrmKeepWarmService.WarmActiveSetsAsync` now opens
+a `BeginScope` per cycle with `ServiceName`/`Operation`/a fresh `TraceId`/set count (`git show
+772060c9`). No open findings remain; the three `accepted` findings are unchanged and still correctly
+accepted (no code changes to `RequestContextMiddleware.cs`, the three background services, or
+`GrainOriginatorPortal.Api.csproj`/`Program.cs`'s telemetry wiring since the last pass).
+
+This pass covered the `release_BidSheetBarchart_2026-10-20` merge train (PR #726: Bid Sheet remodel,
+BarChart bids feed turned on in PROD) plus two small client telemetry fixes shipped 2026-10-14/15.
+Reviewed, no new findings:
+
+- **`BidSheetService.cs`/`BarchartCatalogService.cs`/`BarchartIngestService.cs`** (BarChart feed
+  turned on in PROD this release): structured message templates throughout, no secrets or raw
+  payloads logged (zero-result catalog searches log the user-typed search term with an inline
+  comment noting it's non-sensitive; bid-sheet access-resolution failures log the user id and fail
+  closed to owner-only access, consistent with the dependency-call and access-decision rules in
+  §7.2 and §7.4).
+- **`fix(telemetry): stop the App Insights SDK fetching its CDN config, which the CSP blocks`**
+  (`549336ee`) and **`fix(telemetry): stop the App Insights SDK subscribing to unload`**
+  (`8554ae95`): both are CSP/browser-compatibility fixes to `app-insights.service.ts` (`blkCdnCfg`,
+  `disablePageUnloadEvents`) that stop two recurring CSP-violation/console-noise sources from the
+  client telemetry SDK added for `logging.client-side-telemetry-missing`. Neither changes what gets
+  reported — exceptions still flush via `pagehide`/`visibilitychange` — so no regression of that
+  finding's resolution.
+- No stray `console.log`/`console.debug`/`console.info` found under `client/src` outside test files;
+  no empty `catch` blocks found under `api/`.
 
 ## Reconciliation notes (2026-10-13)
 
@@ -51,18 +84,16 @@ Re-verified all 8 prior findings against current repo state rather than re-audit
 - **Files:** `Middleware/CorrelationIdMiddleware.cs`, `Middleware/RequestContextMiddleware.cs`, `Middleware/SecurityAuditMiddleware.cs`, `Middleware/GlobalExceptionHandler.cs`, `Middleware/CorrelationIdOutboundHandler.cs`, `Program.cs`
 - Fixed via PR #615: `CorrelationIdMiddleware` now has an internal `IsWellFormed()` check — rejects anything over `MaxLength = 64` chars or outside `[A-Za-z0-9-_.:]`, falling back to `Activity.Current?.TraceId` or a fresh GUID instead of trusting the header. Verified directly in the current file.
 
-## Medium — open
+## Medium — resolved
 
 ### No documented sampling settings, KQL queries, dashboards, or alert rules for this app (`logging.sampling-and-dashboards-undocumented`)
-- **Files:** `developer-docs/START-HERE.md`
-- Re-verified: `developer-docs/START-HERE.md` still only references generic platform-level Smart Detection; no file under `developer-docs/` documents an app-specific sampling percentage, saved KQL queries, an operational dashboard/workbook, or alert-to-on-call mapping.
-- **Suggested fix:** Add an Observability section to `developer-docs/CLAUDE.md` recording the sampling setting, a few saved KQL queries, and per-environment alert/action-group mapping.
+- **Files:** `developer-docs/START-HERE.md`, `docs/operations/OBSERVABILITY.md`
+- Fixed 2026-10-13: added `docs/operations/OBSERVABILITY.md`, linked from `developer-docs/START-HERE.md`, documenting the actual sampling setting (none configured; 100% ingested per Dev/QA), the Origination Workbench as the home for saved KQL, and every alert that exists (Failure Anomalies, the two Logic App runs-failed alerts). Re-verified 2026-10-20: still present and accurate.
 
-### CTRM dependency-call duration is computed but never reaches structured logs, only a non-prod response header (`logging.ctrm-dependency-latency-never-logged`) — new
+### CTRM dependency-call duration is computed but never reaches structured logs, only a non-prod response header (`logging.ctrm-dependency-latency-never-logged`)
 - **Files:** `Infrastructure/Ctrm/CtrmProvenance.cs`, `Middleware/CtrmProvenanceMiddleware.cs`, `Infrastructure/Ctrm/CtrmContractRepository.cs`, `Infrastructure/Ctrm/CtrmTicketRepository.cs`
-- `CtrmProvenance.RecordContracts`/`RecordTickets` stamp `ContractsMs`/`TicketsMs` via a `Stopwatch`, but the only consumers are `CtrmProvenanceMiddleware` (a `Server-Timing` header, gated to non-production) and `DiagnosticsController` (a manual, on-demand endpoint). No repository or client code passes these values into any `ILogger` call, so `durationMs` never appears on the many structured log lines already emitted for CTRM reads. The guide lists `durationMs` as required-when-applicable for dependency calls (§4.1) and calls out latency-degrading dependency calls as a required log point (§7.2). This integration has explicitly documented severe latency (a cold `contracts(customerIds:)` page for 500 producers runs 22-25s, per `CtrmServerTimeoutRetry.cs`'s own comments — right at the 30s server timeout), so a call that is slow-but-succeeds in production is invisible to Log Analytics/App Insights; only an outright failure is diagnosable from logs today.
+- Fixed same-day (`cc0e94dc`, 2026-09-28): the per-producer contract and ticket reads now carry `{DurationMs}` on both their success and failure log lines, taken from the `ContractsMs`/`TicketsMs` the provenance object already measured; on the failure path the `Record` call was moved above the log so the number is populated. Re-verified 2026-10-20 directly in `CtrmContractRepository.cs`.
 - **Related findings:** `logging.api-insights-instrumentation-unverified`
-- **Suggested fix:** Thread `provenance.ContractsMs`/`TicketsMs` (or a locally-scoped `Stopwatch`) into the existing success/failure log lines in `CtrmContractRepository`/`CtrmTicketRepository` as a structured `{DurationMs}` property.
 
 ## Medium — accepted
 
@@ -75,13 +106,12 @@ Re-verified all 8 prior findings against current repo state rather than re-audit
 - **Files:** `client/src/app/core/services/api.service.ts`, `Middleware/GlobalExceptionHandler.cs`
 - Fixed via PR #615: `ApiService.handleError` (`api.service.ts:117-118`) now reads `errObj.traceId` and attaches it to the thrown `Error`. Verified directly in the current file.
 
-## Low — open
+## Low — resolved
 
-### CtrmKeepWarmService warm cycles do not scope their logs with a per-cycle correlation id (`logging.ctrm-keepwarm-cycles-lack-run-id`) — new
+### CtrmKeepWarmService warm cycles do not scope their logs with a per-cycle correlation id (`logging.ctrm-keepwarm-cycles-lack-run-id`)
 - **Files:** `Services/CtrmKeepWarmService.cs`
-- `WarmActiveSetsAsync` runs every `Ctrm:KeepWarmMinutes` (default 5) and, per active producer set, issues a contracts read, a ticket-history read, and a Spot Loads read, logging a warning per read that doesn't complete plus a final summary line — none of it scoped with a per-cycle or per-set id the way HTTP requests get `TraceId` via `RequestContextMiddleware`, or the way `CustomerSyncBackgroundService`/`UsageAggregationBackgroundService` already got a `RunId` scope via PR #615. If two producer sets are warmed in the same cycle and one logs failures, there's no field to filter Log Analytics down to just that set/cycle's lines.
+- Fixed same-day (`772060c9`, 2026-09-28): `WarmActiveSetsAsync` now opens an `ILogger` scope per cycle carrying `ServiceName`, `Operation` (`CtrmKeepWarm.Cycle`), a fresh `TraceId`, and the set count, matching `CustomerSyncBackgroundService`/`UsageAggregationBackgroundService`. Re-verified 2026-10-20 directly in the file.
 - **Related findings:** `logging.background-job-runs-lack-correlation-id`
-- **Suggested fix:** Wrap each cycle or per-set iteration in `_logger.BeginScope(new { CycleId = Guid.NewGuid(), Producers = codes.Count })`, matching the pattern already used in the two fixed background services.
 
 ## Low — accepted
 
@@ -95,4 +125,4 @@ Re-verified all 8 prior findings against current repo state rather than re-audit
 
 ## Overall health
 
-Structured logging discipline within the .NET API itself remains genuinely good: consistent `ILogger<T>` usage, message templates with named placeholders, sensible level selection, a real `TraceId`/`ServiceName`/`Operation`/`UserId` scope threaded through every request (now with input validation on the inbound correlation id), and dedicated security-audit logging for 401/403. The new CTRM GraphQL integration continues that discipline — structured error codes/categories, CTRM's own correlation id captured and surfaced in failure details, careful separation of retryable server-side timeouts from real failures, and warnings (never silent empty results) on every read that doesn't complete — with two gaps: dependency-call latency is captured but never logged, and one new background loop lacks a per-cycle scope. The weak point is still the front half of the stack: the Angular SPA has no error/exception telemetry client at all despite the team's own documentation mandating one for any MSAL app, a prod bootstrap failure is still invisible, and nothing in the repo can confirm whether the backend's structured fields actually reach Log Analytics without direct Azure verification. Dashboards, alerts, and sampling remain undocumented for this specific app.
+Structured logging discipline within the .NET API remains genuinely good: consistent `ILogger<T>` usage, message templates with named placeholders, sensible level selection, a real `TraceId`/`ServiceName`/`Operation`/`UserId` scope threaded through every request (with input validation on the inbound correlation id), and dedicated security-audit logging for 401/403. The CTRM GraphQL integration and the newer BarChart feed subsystem both continue that discipline — structured error codes/categories, dependency-call durations now logged as `{DurationMs}`, CTRM's own correlation id captured and surfaced in failure details, careful separation of retryable server-side timeouts from real failures, and warnings (never silent empty results) on every read that doesn't complete. The front half of the stack, previously the weak point, has also closed out: the Angular SPA now reports unhandled exceptions, MSAL failures, and page views to Application Insights (`AppInsightsService`, resolved 2026-10-13, with two follow-up CSP/console-noise fixes on 2026-10-14/15), and a production bootstrap failure now always logs and shows a static fallback screen instead of a blank page. All 10 findings opened against this domain are now either resolved or formally accepted; the three accepted items (unverified codeless App Insights attach, two background services intentionally without per-run scope, and UPN logged as the user identifier — recorded as AR-09) are documented tradeoffs, not defects. The main residual gap is verification rather than code: whether the backend's `BeginScope` fields actually surface as Log Analytics custom dimensions, and production's own sampling/retention settings, still require direct Azure access this repo-only review cannot provide.
