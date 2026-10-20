@@ -3669,7 +3669,7 @@
       "id": "clean-slop.customer-print-report-duplicates-pricing-status-logic",
       "audit": "clean-slop",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "customer-print-report re-implements contracts-table's pricing-status logic and has already drifted",
       "description": "customer-print-report.component.ts:184-209 (getPricingInfo) is a hand-copied near-duplicate of contracts-table.component.ts:522-568 (_computePricingInfo), explicitly labelled by its own comment as mirroring the other file. The two copies have already diverged: contracts-table's version returns a LOADING status when pricingLinesLoaded() is false and lines are undefined, and applies a 1-bushel float-sum tolerance before flipping a U-priced contract from PARTIAL to PRICED (see the comment at contracts-table.component.ts ~line 552 explaining the epsilon case). customer-print-report's copy has neither: it treats an unloaded pricing-lines map the same as an empty one (silently defaulting to UNPRICED/PRICED instead of showing a loading state) and has no float tolerance, so a contract priced to within float epsilon of its quantity can show PARTIAL on the printed report while the live table shows PRICED. Same category as the already-fixed clean-slop.ctrm-config-reader-duplicated-six-times: a hand-copied business rule that drifts every time only one copy gets fixed.",
       "files": [
@@ -3681,7 +3681,12 @@
         "date": "2026-10-20"
       },
       "last_verified": "2026-10-20",
-      "notes": "[2026-10-20] Opened during the clean-slop reconciliation pass. Confirmed by reading both methods in full: logic is otherwise identical (same PTC branches, same sequence/quantity math) except for the two guards contracts-table has and customer-print-report lacks."
+      "notes": "[2026-10-20] Opened during the clean-slop reconciliation pass. Confirmed by reading both methods in full: logic is otherwise identical (same PTC branches, same sequence/quantity math) except for the two guards contracts-table has and customer-print-report lacks.",
+      "resolved_in": {
+        "date": "2026-10-20",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "The rule now lives once, in shared/utils/contract-pricing-status.ts (contractPricingInfo), moved verbatim from contracts-table (checked line by line). contracts-table and customer-print-report both delegate to it, so the print report gains the 1-bushel tolerance and the LOADING state. A U contract priced to 9,999.9999 of 10,000 bu now prints Priced (it printed Partial). New spec covers every branch; mutation-checked (old print-report copy fails the new print test; dropping the tolerance fails the util spec). Verified 2026-10-20."
     },
     {
       "id": "performance.ods-customer-search-unindexed-wildcard-scan",
