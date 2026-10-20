@@ -1791,7 +1791,11 @@
                   <div class="flex flex-1 overflow-hidden">
 
                     <!-- Preview (left) -->
-                    <div #printPreviewPane class="flex-1 min-w-0 p-5 overflow-auto border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                    <!-- scrollbar-gutter: stable reserves the vertical scrollbar's width even while there is nothing
+                         to scroll. Without it the pane's width changes by the scrollbar's width whenever the zoomed sheet
+                         crosses the pane's height, the ResizeObserver below re-fits the zoom to the new width, the sheet's
+                         height changes again, and the preview shakes between two zooms until something interrupts it. -->
+                    <div #printPreviewPane class="flex-1 min-w-0 p-5 overflow-auto border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50" style="scrollbar-gutter: stable">
                       <!-- The sheet is laid out at true page width and ZOOMED to fill the pane: bigger on a monitor, shrunk to fit on a laptop, identical layout either way. -->
                       <div class="bg-white rounded-lg shadow-sm p-5 mx-auto" [style.zoom]="printPreviewZoom()" [style.width.px]="printPreviewSheetPx" style="font-family:'Open Sans','Segoe UI',system-ui,sans-serif;color:#1a1a1a;line-height:1.5;">
                         <!-- Header -->
