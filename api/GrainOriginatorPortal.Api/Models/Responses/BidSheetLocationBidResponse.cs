@@ -12,6 +12,49 @@ public record BidSheetLocationBidResponse
     public int CropYear { get; init; }
     public int Month { get; init; }
     public string Bid { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Who owns this cell: <c>Manual</c> (a user typed it) or <c>Barchart</c> (fed). Both are editable —
+    /// a user may type over a fed cell, which flips it to <c>Manual</c> until the feed's next run
+    /// reclaims it.
+    /// </summary>
+    public string Source { get; init; } = "Manual";
+
+    /// <summary>
+    /// Vendor symbol behind the cash bid. Retained after a user overrides a fed cell, so it may be set
+    /// on a <c>Manual</c> row and describe a value the user replaced — read it only when
+    /// <see cref="Source"/> is <c>Barchart</c>.
+    /// </summary>
+    public string? BarchartSymbol { get; init; }
+
+    /// <summary>When the elevator last updated a fed bid — the "as of" shown in the UI.</summary>
+    public DateTime? QuoteAsOf { get; init; }
+
+    /// <summary>The basis bid for this cell, in cents against the board (negative = under).</summary>
+    public string? BasisBid { get; init; }
+
+    /// <summary>Vendor symbol behind the basis bid.</summary>
+    public string? BasisSymbol { get; init; }
+
+    /// <summary>When the elevator last updated the basis bid.</summary>
+    public DateTime? BasisQuoteAsOf { get; init; }
+
+
+    /// <summary>When set, this cell shows a LATER contract month's bid whose delivery window covers this
+    /// month (e.g. October showing the "Nov 26" bid that delivers from 1 Oct). Null = the elevator's own
+    /// bid for the month.</summary>
+    public int? CoveredByCropYear { get; init; }
+    public int? CoveredByMonth { get; init; }
+
+    /// <summary>UTC time the cash / basis value last actually changed -- not the vendor's re-post stamp.
+    /// What "moved in the last 24h" is judged by for fed cells.</summary>
+    public DateTime? CashChangedAt { get; init; }
+    public DateTime? BasisChangedAt { get; init; }
+    /// <summary>
+    /// Futures contract the bid is quoted against, e.g. <c>ZCZ26</c>. Like the symbols above, it is
+    /// retained through a user override — gate on <see cref="Source"/> before showing it.
+    /// </summary>
+    public string? UnderlyingFuture { get; init; }
     public string CreatedBy { get; init; } = string.Empty;
     public DateTime CreatedAt { get; init; }
     public string? ModifiedBy { get; init; }

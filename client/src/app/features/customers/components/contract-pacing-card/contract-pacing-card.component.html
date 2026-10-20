@@ -34,6 +34,9 @@
             <div [style]="sublabelStyle">bushels contracted in harvest window</div>
           </div>
         </div>
+        @if (harvestWindowsUnavailable()) {
+          <p class="text-sm text-white/80 mb-4">Harvest windows couldn't be loaded, so pace cannot be shown. Refresh the page to try again.</p>
+        }
 
         <!-- Commodity breakdown -->
         @if (pacingByCommodity().length > 0) {

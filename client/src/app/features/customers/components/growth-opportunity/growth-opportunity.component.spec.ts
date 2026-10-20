@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { ComponentRef } from '@angular/core';
 import { GrowthOpportunityComponent } from './growth-opportunity.component';
+import { AppStateService } from '@core/services/app-state.service';
 import { Commodity, Contract, Customer, DashboardPlantingEstimate, Note, PlantingIntention } from '@models';
 
 /**
@@ -152,5 +153,24 @@ describe('GrowthOpportunityComponent', () => {
 
     expect(component.hasNoYieldEstimates()).toBe(true);
     expect(component.coverage().byCommodity[0].projectedYield).toBeNull();
+  });
+
+  describe('excluded-contracts note', () => {
+    // A failed conversion load drops every non-bushel contract; the note must not blame their unit.
+    it('blames the failed conversion load, not the unit, when conversions failed to load', () => {
+      TestBed.inject(AppStateService).setCommodityConversionsLoadFailed(true);
+      expect(component.conversionsUnavailable()).toBe(true);
+    });
+
+    it('keeps the unit explanation when conversions loaded', () => {
+      expect(component.conversionsUnavailable()).toBe(false);
+    });
+
+    it('keeps the unit explanation once conversions are present, whatever the flag says', () => {
+      const state = TestBed.inject(AppStateService);
+      state.setCommodityConversionsLoadFailed(true);
+      state.setCommodityConversions([{ commodityCode: 'SBM', lbsPerUnit: 2000 }]);
+      expect(component.conversionsUnavailable()).toBe(false);
+    });
   });
 });

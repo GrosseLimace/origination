@@ -28,7 +28,6 @@ GrainOriginatorPortal/
         │   ├── build-list/
         │   ├── bid-sheet/
         │   ├── calculators/
-        │   ├── unshipped-bushels/
         │   ├── daily-digest/
         │   └── usage-dashboard/
         ├── shared/
@@ -158,9 +157,34 @@ All routes require Azure AD bearer token authentication. Base path: `/api/v1`
 |--------|----------|-------------|
 | GET | `/commodities` | All active commodities |
 | GET | `/storedgrain/customer/{customerId}` | Stored grain (stub, no ODS table yet) |
-| GET | `/farms/customer/{customerId}` | Farms (stub, no ODS table yet) |
 
 > Trade unit and trade-unit-group catalog lookups are sourced from the **TradeUnitPreferences** database (`dbo.vw_UserTradeUnitPreferences`, see `/usertradeunits`). Managers assign users to trade units in a separate preferences application, which owns the writes; this app only reads. Replaced the Entitlements DB 2026-08-18. The app DB no longer maintains a local TU catalog.
+
+### BarChart Bid Feed Ingestion (application DB — machine-to-machine)
+Routed at `/api/barchart-ingest` (no `/v1` segment). Requires the `BarchartIngest` policy — the data
+pipeline's managed identity holding the `Origination.Application` app role, or an Admin. See
+[Barchart Ingestion API Contract](docs/application-context/Barchart%20Ingestion%20API%20Contract.md).
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/barchart-ingest/quote-batches?batchSize=` | Active symbols, pre-grouped into request batches |
+| POST | `/barchart-ingest/instruments` | Load a vendor instrument (catalog) payload |
+| POST | `/barchart-ingest/quotes?snapshotDate=` | Load a vendor quote payload + the day's history |
+| POST | `/barchart-ingest/apply-bids?locationId=&instrumentType=` | Publish feed prices onto the Bid Sheet |
+| POST | `/barchart-ingest/deactivate-instruments?lastSeenBefore=&maxSharePercent=` | Retire catalog entries after a complete 7-day catalog cycle; refused if it would retire more than the allowed share |
+| GET | `/barchart-ingest/budget?monthlyCap=` | Month-to-date ingest usage vs the vendor cap |
+| POST | `/barchart-ingest/purge-history?auditRetentionDays=&snapshotRetentionDays=` | Trim the audit and price-history tables to their retention windows |
+
+### BarChart Catalog (application DB — read-only, user-facing)
+Routed at `/api/barchart` (no `/v1` segment). Standard signed-in user auth. Backs the "Add from
+BarChart" picker; catalog reads are not trade-unit scoped because the catalog is global vendor data.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/barchart/locations?search=&state=&commodityCode=&latitude=&longitude=&radiusMiles=&take=` | Search the vendor catalog; supplying a map centre returns nearest-first with distances |
+| GET | `/barchart/locations/{locationKey}?instrumentType=` | One listing plus the bids it publishes (the picker's preview) |
+| GET | `/barchart/coverage` | Catalog totals and per-state counts, so an empty search is explainable |
+| POST | `/barchart/locations/{locationId}/refresh-bids` | Re-publish feed prices onto one linked Bid Sheet location |
 
 ### Utilities
 | Method | Endpoint | Description |
@@ -238,14 +262,18 @@ Last Updated: 2026-10-13
 | @angular/router | 21.2.25 | MIT | Client-side routing (security fix: SSR denial of service via numeric URL matrix parameters, CVE-2026-101896 — the 21.x fix is "avoid dense elements allocation for numeric URL keys" in 21.2.24, so the ≥22.2.0 the scanner quotes is not required; not exploitable here in any case, the app has no server-side rendering, so the allocation could only run in the requesting user's own browser) |
 | @angular/forms | 21.2.25 | MIT | Reactive forms |
 | @angular/animations | 21.2.25 | MIT | Animation support |
+| @angular/cdk | 21.2.14 | MIT | Component primitives — drag-and-drop (bid sheet column/row reorder), scrolling, and Overlay (the Add-column picker, which must escape a clipping scroll container) |
 | @azure/msal-angular | 5.1.1 | MIT | Azure AD authentication (Angular) |
 | @azure/msal-browser | 5.4.0 | MIT | MSAL browser runtime |
+| @microsoft/applicationinsights-web | 3.4.5 | MIT | Browser error telemetry to Application Insights (pinned exact; loaded lazily, only when the server returns a connection string). Brings 10 transitive packages, all MIT, none with install scripts: the @microsoft/applicationinsights-* family at 3.4.5, applicationinsights-shims 3.0.1, dynamicproto-js 2.0.5, @nevware21/ts-async 0.5.5, @nevware21/ts-utils 0.16.0 |
 | @it/design-system | 0.1.1 | Internal | Scoular IT design system components |
 | leaflet | 1.9.4 | BSD-2-Clause | Interactive map rendering |
 | leaflet.markercluster | ~1.5.3 | MIT | Leaflet marker clustering |
 | rxjs | 7.8.2 | Apache-2.0 | Reactive programming (Observables) |
 | jspdf | 4.2.1 | MIT | Client-side PDF generation (Profitability calculator report) |
 | jspdf-autotable | 5.0.8 | MIT | Tabular layout for jsPDF (calculator report tables) |
+| exceljs | ^4.4.0 | MIT | Bid sheet "Export to Excel" (.xlsx workbook: grid, one-row-per-bid, locations). Lazy-loaded on first use, not in the initial bundle |
+| uuid | ≥11.1.1 <12 | MIT | UUID generation — transitive (via exceljs, which pins ^8), forced in `overrides` (security fix: missing buffer bounds check in v3/v5/v6 when `buf` is provided, GHSA-w5hq-g745-h8pq, ≥11.1.1; exceljs only calls v4). Held below 12: uuid 13+ is ESM-only and exceljs `require()`s it |
 | tslib | 2.8.1 | 0BSD | TypeScript runtime helpers |
 | zone.js | 0.15.1 | MIT | Angular change detection zone |
 | tailwindcss | 4.2.1 | MIT | Utility-first CSS framework |

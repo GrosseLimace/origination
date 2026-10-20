@@ -4,7 +4,20 @@ Style guide: `style-guides/error-handling.md`
 Scope: exception flow and API error contracts across `api/GrainOriginatorPortal.Api`, and `client/` error handling
 
 **Findings:** 2 open (1 high, 1 medium) — 6 resolved, 1 accepted
-**Opened:** 2026-09-19 | **Last verified:** 2026-09-28
+**Opened:** 2026-09-19 | **Last verified:** 2026-10-13
+
+## Reconciliation note (2026-10-13)
+
+Calibration re-run, scoped to `error-handling` only. Substantial feature work has landed since the 2026-09-28 pass (BarChart ingest feed, CTRM server-timeout retry/keep-warm backoff, planting intentions, producer details, bin sites/grain-on-farm) — roughly 80 backend files touched. Sampled the new resilience- and exception-flow-relevant code rather than the whole diff:
+
+- `CtrmServerTimeoutRetry.cs` and `CtrmKeepWarmBackoff.cs` (new): bounded, config-clamped retry/backoff with fail-safe defaults (missing config → 0 retries), structured `LogWarning` on each retry, and documented reasoning for every magic number. Matches §6.
+- `BarchartIngestController.cs` / `BarchartIngestService.cs` (new): no ad hoc try/catch in the controller — relies on `GlobalExceptionHandler`, consistent with the established pattern. Service wraps transient failures via `catch (Exception ex) when (ex is not OperationCanceledException)`, logs, and rethrows; validation failures throw a typed `ValidationException`. No swallowing found.
+- `ProducerDetailsService.GetAllAsync` and `PlantingIntentionService.CreateAsync` (changed): both catch narrowly (`SqlException`/general with rethrow), log with context, and either rethrow or wrap into a typed `InfrastructureException` with the correct 503 — exactly the §3.4 pattern.
+- `Program.cs`: `UseExceptionHandler()` and both `/health/live` + `/health/ready` endpoints confirmed still wired after the merges.
+- Re-verified both remaining open findings against current `HEAD`: unchanged (see below).
+- Checked `home.component.ts`'s silent `error: () => {}` subscriptions (flagged by the angular domain as `angular.no-typed-error-contract-silent-swallowing`, re-verified today under that domain at 10 remaining sites) — this is the same root cause as this domain's `angular-silent-swallowing` finding (no typed `ApiError` contract), not a separate error-handling gap; not duplicated here.
+
+No new findings this pass.
 
 ## Reconciliation note (2026-09-28)
 
@@ -18,14 +31,14 @@ Six of the original nine findings were fixed on `fix_AuditPhase1Findings` and me
 
 ### No client-side type models the backend's standard error contract, enabling systemic silent swallowing (`error-handling.angular-silent-swallowing`)
 - **Files:** `client/src/app/core/services/api.service.ts`
-- Re-verified 2026-09-21: `handleError()` now reads `traceId` and has both 401 and 403 branches (both previously-open gaps are fixed), but it still unwraps every `HttpErrorResponse` into a bare `Error` with unsafely-cast `.status`/`.traceId` properties — no `ApiError` class/interface exists anywhere in the Angular app, and `error.code` is still discarded. Root cause of the angular-domain finding's component-level symptom is unchanged.
+- Re-verified 2026-10-13: `handleError()` (lines 88-124) is unchanged since 2026-09-28 — still builds a bare `Error` with unsafely-cast `.status`/`.traceId` properties, no `ApiError` class/interface anywhere in `client/src`, `error.code` still discarded. Root cause of the angular-domain finding's component-level symptom is unchanged.
 - **Suggested fix:** Introduce one typed `ApiError` class built centrally in `handleError()`, make it the only error type `ApiService` ever throws, and require callers to branch on `.category`/`.code` instead of string-matching messages.
 
 ## Medium
 
 ### Catalog/lookup endpoints swallow backend dependency failures into HTTP 200 with empty or partial data (`error-handling.catalog-endpoints-fail-open-to-200-on-dependency-failure`)
 - **Files:** `Controllers/EntitlementsController.cs`, `Controllers/NotesController.cs`
-- Re-verified 2026-09-21: `GetCatalog` (`EntitlementsController.cs:155`) and the three independent `catch(Exception)` blocks in `NotesController`'s mention-catalog lookup still log at Warning and return `Ok(...)` regardless of which upstream source failed — confirmed still present, and the code comments indicate this is deliberate ("returning empty lists").
+- Re-verified 2026-10-13: `GetCatalog` (`EntitlementsController.cs:155-159`) and all three independent `catch(Exception)` blocks in `NotesController.GetMentionCatalog`'s mention lookup (TradeUnitPreferences DB, app groups, Teams channels) still log at Warning and return `Ok(...)` regardless of which upstream source failed — unchanged, still deliberate per the code comments ("returning empty lists").
 - **Suggested fix:** Add a `degraded` flag to these responses instead of silently returning indistinguishable-from-success empty/partial data. Whether the mention picker should instead return an error status is a product call, not a pure code fix.
 
 ## Accepted

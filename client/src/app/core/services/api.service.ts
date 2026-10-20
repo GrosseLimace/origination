@@ -22,10 +22,17 @@ import {
   DashboardSummary,
   ContractPricingLine,
   RefinementFilters,
+  BidSheet,
   BidSheetEntry,
+  BidSheetLayoutUpdate,
   BidSheetLocation,
   BidSheetLocationBid,
-  Elevator,
+  BidSheetPreferenceRead,
+  BidSheetPreferenceUpdate,
+  BarchartCatalogLocation,
+  BarchartCatalogLocationDetail,
+  BarchartCoverage,
+  BarchartLocationSearchParams,
   CommodityConversion,
   HarvestWindow,
   UsageDashboardSummary,
@@ -49,11 +56,22 @@ import {
 } from '@models';
 import { environment } from '@env/environment';
 import { ToastService } from '@core/services/toast.service';
+import { ApiError } from '@core/errors/api-error';
 
 /**
  * ApiService provides HTTP methods for communicating with the .NET Web API backend.
  * All methods return RxJS Observables for async data handling.
  */
+/** A recap group as the server sends it: an int id, and the CC list under ccList. */
+type RecapGroupDto = import('@features/daily-digest/models/recap-group.model').RecapGroup & { id: number | string; ccList?: string[] };
+
+/** A saved list as the server sends it: the three JSON columns arrive as strings. */
+type SavedListDto = Omit<SavedList, 'filters' | 'includedCustomerIds' | 'excludedCustomerIds'> & {
+  filters?: string | null;
+  includedCustomerIds?: string | null;
+  excludedCustomerIds?: string | null;
+};
+
 @Injectable({
   providedIn: 'root'
 })
@@ -67,7 +85,7 @@ export class ApiService {
   // slow ODS endpoint (e.g. from HomeComponent._loadAllData() and DataPreloadService).
   // When a second caller requests the same key while the first is still in-flight,
   // they share one HTTP request and both receive the same response.
-  private readonly _inFlight = new Map<string, Observable<any>>();
+  private readonly _inFlight = new Map<string, Observable<unknown>>();
 
   private _dedupe<T>(key: string, request: Observable<T>): Observable<T> {
     const cached = this._inFlight.get(key);
@@ -85,6 +103,13 @@ export class ApiService {
     return shared;
   }
 
+  /** Where the browser sends its error telemetry, or null when it is off. Swallows its own failure
+   *  without a toast: telemetry being unavailable is not something the user can act on. */
+  getClientTelemetryConfig(): Observable<{ connectionString: string | null }> {
+    return this.http.get<{ connectionString: string | null }>(`${this.baseUrl}/clienttelemetry`)
+      .pipe(catchError(() => of({ connectionString: null })));
+  }
+
   private handleError(error: unknown): Observable<never> {
     if (isDevMode()) {
       console.error('API Error:', error);
@@ -100,27 +125,14 @@ export class ApiService {
         // re-auth; this only makes sure they're told why the screen stopped working.
         this.toastService.error('Your session has expired — please refresh the page to sign in again.');
       }
-      // Surface the server's real message (falling back through the common shapes) + status, so
-      // callers can show something useful instead of a generic "Server error". For validation
-      // errors, prefer the first field-level detail (e.g. "A location named X already exists in
-      // this trade unit") over the generic top-level "One or more fields failed validation." text.
-      const errObj = (error.error as {
-        error?: { message?: string; traceId?: string; details?: Array<{ message?: string }> }
-      } | null)?.error;
-      const detailMsg = errObj?.details?.find(d => !!d?.message)?.message;
-      const serverMsg = detailMsg ?? errObj?.message ?? (error.error as { message?: string } | null)?.message ?? error.message;
-      const wrapped = new Error(serverMsg || 'Server error');
-      (wrapped as Error & { status?: number }).status = error.status;
-      // Carry the server's correlation id through to call sites. The API populates it on every
-      // error and builds a "(Ref: …)" message around it specifically so a user can quote it to
-      // support, but it was being dropped here, so no surface in the app ever showed one.
-      if (errObj?.traceId) {
-        (wrapped as Error & { traceId?: string }).traceId = errObj.traceId;
-      }
-      return throwError(() => wrapped);
+      // One typed error for every HTTP failure: the server's real message (fallback order in
+      // ApiError.fromHttpErrorResponse), status, code, field details and correlation id. The API
+      // builds a "(Ref: …)" message around that id so a user can quote it to support, so it has to
+      // survive the trip to the call site.
+      return throwError(() => ApiError.fromHttpErrorResponse(error));
     }
 
-    return throwError(() => error instanceof Error ? error : new Error('Server error'));
+    return throwError(() => ApiError.fromUnknown(error));
   }
 
   // ==========================================================================
@@ -167,7 +179,7 @@ export class ApiService {
 
   /** Shapes a server RecapGroupDto into the frontend RecapGroup (int id -> string). */
   private mapRecapGroup(
-    dto: import('@features/daily-digest/models/recap-group.model').RecapGroup & { id: number | string; ccList?: string[] },
+    dto: RecapGroupDto,
   ): import('@features/daily-digest/models/recap-group.model').RecapGroup {
     return {
       id: String(dto.id),
@@ -206,7 +218,7 @@ export class ApiService {
 
   /** Fetches the current user's recap groups. */
   getRecapGroups(): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup[]> {
-    return this.http.get<any[]>(`${this.baseUrl}/dailyrecapgroups`)
+    return this.http.get<RecapGroupDto[]>(`${this.baseUrl}/dailyrecapgroups`)
       .pipe(
         map(list => list.map(g => this.mapRecapGroup(g))),
         catchError(e => this.handleError(e)),
@@ -217,7 +229,7 @@ export class ApiService {
   createRecapGroup(
     req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest,
   ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
-    return this.http.post<any>(`${this.baseUrl}/dailyrecapgroups`, this.toRecapGroupBody(req, true))
+    return this.http.post<RecapGroupDto>(`${this.baseUrl}/dailyrecapgroups`, this.toRecapGroupBody(req, true))
       .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
   }
 
@@ -226,7 +238,7 @@ export class ApiService {
     id: string,
     req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest,
   ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
-    return this.http.put<any>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}`, this.toRecapGroupBody(req, false))
+    return this.http.put<RecapGroupDto>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}`, this.toRecapGroupBody(req, false))
       .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
   }
 
@@ -235,7 +247,7 @@ export class ApiService {
     id: string,
     enabled: boolean,
   ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
-    return this.http.put<any>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}/enabled`, { enabled })
+    return this.http.put<RecapGroupDto>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}/enabled`, { enabled })
       .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
   }
 
@@ -406,22 +418,6 @@ export class ApiService {
     let params = new HttpParams();
     if (scoularId) params = params.set('scoularId', scoularId);
     return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/customer/${customerId}`, { params })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Per-producer unapplied tickets — the fast, narrowly-scoped fetch the home page fires on
-   *  producer select. Applied tickets are loaded lazily per-contract via {@link getAppliedTicketsByContract}. */
-  getUnappliedTicketsByCustomer(customerId: number, scoularId?: string): Observable<Ticket[]> {
-    let params = new HttpParams();
-    if (scoularId) params = params.set('scoularId', scoularId);
-    return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/customer/${customerId}/unapplied`, { params })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Lazy per-contract applied-tickets fetch — fires when the contracts table expands a row.
-   *  Contract numbers may contain spaces (e.g. "PC  13042") so the id must be URL-encoded. */
-  getAppliedTicketsByContract(sourceContractId: string): Observable<Ticket[]> {
-    return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/contract/${encodeURIComponent(sourceContractId)}/applied`)
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -727,12 +723,6 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Deletes producer details for a customer */
-  deleteProducerDetails(customerId: number): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/producerdetails/customer/${customerId}`)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
   // ==========================================================================
   // Stored Grain Operations
   // ==========================================================================
@@ -852,7 +842,7 @@ export class ApiService {
     try { return JSON.parse(val) as T; } catch { return undefined; }
   }
 
-  private static hydrateSavedList(l: any): SavedList {
+  private static hydrateSavedList(l: SavedListDto): SavedList {
     return {
       ...l,
       filters: ApiService.parseSavedListJson<RefinementFilters>(l.filters),
@@ -880,7 +870,7 @@ export class ApiService {
   /** Fetches all saved customer lists — deserializes JSON strings to objects */
   getSavedLists(): Observable<SavedList[]> {
     return this._dedupe('savedlists',
-      this.http.get<any[]>(`${this.baseUrl}/savedlists`).pipe(
+      this.http.get<SavedListDto[]>(`${this.baseUrl}/savedlists`).pipe(
         map(lists => lists.map(ApiService.hydrateSavedList)),
         catchError(e => this.handleError(e))
       )
@@ -890,7 +880,7 @@ export class ApiService {
   /** Manager-only: fetches all saved lists tied to the given trade unit(s) that belong to other
    *  users, each carrying the creator's display name. Same JSON deserialization as getSavedLists. */
   getTeamSavedLists(tradeUnits: string): Observable<SavedList[]> {
-    return this.http.get<any[]>(`${this.baseUrl}/savedlists/team`, { params: { tradeUnits } }).pipe(
+    return this.http.get<SavedListDto[]>(`${this.baseUrl}/savedlists/team`, { params: { tradeUnits } }).pipe(
       map(lists => lists.map(ApiService.hydrateSavedList)),
       catchError(e => this.handleError(e))
     );
@@ -931,24 +921,6 @@ export class ApiService {
   // Bid Sheet Operations
   // =========================================================================
 
-  /** Gets elevators from ODS for a trade unit. tradeUnitCode is REQUIRED — the server rejects a
-   *  blank or missing scope with a 400 (H-066). Unlike getAllBidSheetLocations, there is no
-   *  unscoped variant: the map needs every location, but nothing needs every elevator. */
-  getElevators(tradeUnitCode: string): Observable<Elevator[]> {
-    return this._dedupe(`bidsheet-elevators-${tradeUnitCode}`,
-      this.http.get<Elevator[]>(`${this.baseUrl}/bidsheet/elevators`, { params: { tradeUnitCode } })
-        .pipe(catchError(e => this.handleError(e)))
-    );
-  }
-
-  /** Gets bid sheet locations (with nested bids) for a trade unit */
-  getBidSheetLocations(tradeUnitCode: string): Observable<BidSheetLocation[]> {
-    return this._dedupe(`bidsheet-locations-${tradeUnitCode}`,
-      this.http.get<BidSheetLocation[]>(`${this.baseUrl}/bidsheet/locations`, { params: { tradeUnitCode } })
-        .pipe(catchError(e => this.handleError(e)))
-    );
-  }
-
   /** Gets all bid sheet locations across all trade units (for map display) */
   getAllBidSheetLocations(): Observable<BidSheetLocation[]> {
     return this._dedupe('bidsheet-all-locations',
@@ -961,6 +933,8 @@ export class ApiService {
   createBidSheetLocation(location: {
     name?: string; address?: string; city?: string; state?: string;
     latitude?: number; longitude?: number; elevatorCode?: string;
+    /** Links this placement to a BarChart listing; the server prefills details and pulls its bids in. */
+    barchartLocationKey?: string;
     tradeUnitCode?: string; groupName?: string; isScoularFacility?: boolean;
     bids: Array<{ commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string }>;
   }): Observable<BidSheetLocation> {
@@ -975,78 +949,196 @@ export class ApiService {
   }
 
   /** Deletes a bid sheet location and all its bids */
-  deleteBidSheetLocation(id: number, tradeUnitCode: string): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/bidsheet/locations/${id}?tradeUnitCode=${encodeURIComponent(tradeUnitCode)}`)
+  deleteBidSheetLocation(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/bidsheet/locations/${id}`)
       .pipe(catchError(e => this.handleError(e)));
   }
 
   /** Deletes all bids for a specific commodity on a location */
-  deleteBidSheetBids(locationId: number, commodityCode: string, tradeUnitCode: string): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/bidsheet/locations/${locationId}/bids/${encodeURIComponent(commodityCode)}?tradeUnitCode=${encodeURIComponent(tradeUnitCode)}`)
+  deleteBidSheetBids(locationId: number, commodityCode: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/bidsheet/locations/${locationId}/bids/${encodeURIComponent(commodityCode)}`)
       .pipe(catchError(e => this.handleError(e)));
   }
 
   /** Bulk upserts bids (used by the edit-bids grid) */
   bulkUpsertBidSheetBids(bids: Array<{
-    name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string;
+    locationId?: number; name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string;
     latitude?: number; longitude?: number;
     commodityCode: string; commodityName?: string; commodityCategory?: string;
-    cropYear: number; bid: string; month?: number;
+    cropYear: number; bid: string; basisBid?: string; month?: number;
   }>): Observable<void> {
     return this.http.post<void>(`${this.baseUrl}/bidsheet/bids/bulk`, bids)
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Gets distinct crop years from bids for a trade unit */
-  getBidCropYears(tradeUnitCode: string): Observable<number[]> {
-    return this._dedupe(`bidsheet-cropyears-${tradeUnitCode}`,
-      this.http.get<number[]>(`${this.baseUrl}/bidsheet/cropyears`, { params: { tradeUnitCode } })
-        .pipe(catchError(e => this.handleError(e)))
-    );
-  }
-
-  /** Gets distinct commodity codes from bids for a trade unit */
-  getBidCommodities(tradeUnitCode: string): Observable<string[]> {
-    return this._dedupe(`bidsheet-commodities-${tradeUnitCode}`,
-      this.http.get<string[]>(`${this.baseUrl}/bidsheet/commodities`, { params: { tradeUnitCode } })
-        .pipe(catchError(e => this.handleError(e)))
-    );
-  }
-
-  /** Gets distinct bid months for a trade unit and crop year */
-  getBidMonths(tradeUnitCode: string, cropYear: number): Observable<number[]> {
-    return this._dedupe(`bidsheet-months-${tradeUnitCode}-${cropYear}`,
-      this.http.get<number[]>(`${this.baseUrl}/bidsheet/bidmonths`, { params: { tradeUnitCode, cropYear: cropYear.toString() } })
-        .pipe(catchError(e => this.handleError(e)))
-    );
-  }
-
-  /** Gets the saved location order for the current user and a trade unit key. Returns null if not set. */
-  getBidSheetLocationOrder(tradeUnitKey: string): Observable<{ locationOrder: string } | null> {
-    return this._dedupe(`bidsheet-location-order-${tradeUnitKey}`,
-      this.http.get<{ locationOrder: string }>(`${this.baseUrl}/bidsheet/location-order`, { params: { tradeUnitKey } })
-        .pipe(catchError(() => of(null)))
-    );
-  }
-
-  /** Saves the location order for the current user and a trade unit key. */
-  setBidSheetLocationOrder(tradeUnitKey: string, locationOrder: string): Observable<void> {
-    return this.http.put<void>(`${this.baseUrl}/bidsheet/location-order`, { tradeUnitKey, locationOrder })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
   /** Gets saved bid sheet preferences (crop, month, year) for the current user and a trade unit key. */
-  getBidSheetPreference(tradeUnitKey: string): Observable<{ tradeUnitKey: string; cropCode: string | null; month: number | null; cropYear: number | null; cropOrder: string | null; hiddenCrops: string | null; selectedMonths: string | null; printLayout: string | null } | null> {
+  getBidSheetPreference(tradeUnitKey: string): Observable<BidSheetPreferenceRead | null> {
     return this._dedupe(`bidsheet-preference-${tradeUnitKey}`,
-      this.http.get<{ tradeUnitKey: string; cropCode: string | null; month: number | null; cropYear: number | null; cropOrder: string | null; hiddenCrops: string | null; selectedMonths: string | null; printLayout: string | null }>(`${this.baseUrl}/bidsheet/preference`, { params: { tradeUnitKey } })
+      this.http.get<BidSheetPreferenceRead>(`${this.baseUrl}/bidsheet/preference`, { params: { tradeUnitKey } })
         .pipe(catchError(() => of(null)))
     );
   }
 
   /** Saves bid sheet preferences for the current user and a trade unit key. */
-  setBidSheetPreference(tradeUnitKey: string, cropCode: string | null, month: number | null, cropYear: number | null, cropOrder?: string | null, hiddenCrops?: string | null, selectedMonths?: string | null, printLayout?: string | null): Observable<void> {
-    return this.http.put<void>(`${this.baseUrl}/bidsheet/preference`, { tradeUnitKey, cropCode, month, cropYear, cropOrder, hiddenCrops, selectedMonths, printLayout })
+  /**
+   * Saves a bid sheet preference.
+   *
+   * Named fields rather than positional ones. The server assigns cropCode/month/cropYear
+   * unconditionally but only writes the JSON columns it is given, so every caller has to pass the
+   * first three even when saving something unrelated -- as nine positional arguments that was a
+   * mis-ordered call waiting to happen, and it grew every time a preference was added.
+   */
+  setBidSheetPreference(pref: BidSheetPreferenceUpdate): Observable<void> {
+    return this.http.put<void>(`${this.baseUrl}/bidsheet/preference`, pref)
       .pipe(catchError(e => this.handleError(e)));
+  }
+
+  // =========================================================================
+  // Sheets — the named, shareable working sets of locations
+  //
+  // Every write returns the whole sheet back, already ordered, so the caller never has to reload to
+  // stay in step with a colleague who changed it a moment ago.
+  // =========================================================================
+
+  /** Sheets the signed-in user owns or has been shared on. */
+  getBidSheets(): Observable<BidSheet[]> {
+    return this.http.get<BidSheet[]>(`${this.baseUrl}/bidsheet/sheets`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** One sheet with its shares and locations. 403 if it exists but is not shared with you. */
+  getBidSheet(sheetId: number): Observable<BidSheet> {
+    return this.http.get<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Creates an empty sheet owned by the signed-in user. 409 if they already have one by that name. */
+  createBidSheet(name: string): Observable<BidSheet> {
+    return this.http.post<BidSheet>(`${this.baseUrl}/bidsheet/sheets`, { name })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Renames a sheet. Owner only. */
+  renameBidSheet(sheetId: number, name: string): Observable<BidSheet> {
+    return this.http.put<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}`, { name })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Deletes a sheet. Owner only. The locations on it are company-wide and survive. */
+  deleteBidSheet(sheetId: number): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/bidsheet/sheets/${sheetId}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Replaces who a sheet is shared with. Owner only. An empty list unshares it. */
+  setBidSheetShares(sheetId: number, members: Array<{ memberType: string; memberId: string; name?: string }>): Observable<BidSheet> {
+    return this.http.put<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/shares`, { members })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Saves part of the shared column layout. Omitted fields keep their stored value. */
+  setBidSheetLayout(sheetId: number, layout: BidSheetLayoutUpdate): Observable<BidSheet> {
+    return this.http.put<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/layout`, layout)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Puts an existing location on the sheet. Idempotent. Any member. */
+  addBidSheetLocation(sheetId: number, locationId: number): Observable<BidSheet> {
+    return this.http.post<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/locations`, { locationId })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Takes a location off the sheet. The location itself is untouched — that is deleteBidSheetLocation. */
+  removeBidSheetLocation(sheetId: number, locationId: number): Observable<BidSheet> {
+    return this.http.delete<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/locations/${locationId}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /**
+   * Saves the shared row order for a sheet. Any member; the order is shared, not per-user.
+   *
+   * Named apart from setBidSheetLocationOrder above, which is the per-user, per-trade-unit JSON
+   * order this replaces. Both exist only until the screen is fully moved onto sheets.
+   */
+  setBidSheetRowOrder(sheetId: number, locationIds: number[]): Observable<BidSheet> {
+    return this.http.put<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/location-order`, { locationIds })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /**
+   * Takes several locations off a sheet in one transaction — unlinking, not deleting. The locations
+   * and their bids survive; other sheets holding them are untouched. One call rather than N so a
+   * multi-select cannot half-apply. (Deleting an elevator outright is deleteBidSheetLocation, which
+   * is restricted to its creator and warns how many sheets hold it.)
+   */
+  removeBidSheetLocations(sheetId: number, locationIds: number[]): Observable<BidSheet> {
+    return this.http.put<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/locations/remove`, { locationIds })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /**
+   * Renames a location ON ONE SHEET. Locations are company-wide, so updateBidSheetLocation's rename
+   * lands on every sheet holding that elevator; this stores the sheet's own display name and leaves
+   * the canonical row alone. A null or blank name clears the override, back to the canonical name.
+   */
+  setBidSheetLocationName(sheetId: number, locationId: number, name: string | null): Observable<BidSheet> {
+    return this.http.put<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/locations/${locationId}/name`, { name })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /**
+   * How many sheets hold this location. Deleting a location is company-wide now, so the confirmation
+   * says the number out loud before it takes the elevator off everybody else's sheet.
+   */
+  getBidSheetLocationSheetCount(locationId: number): Observable<number> {
+    return this.http.get<number>(`${this.baseUrl}/bidsheet/locations/${locationId}/sheet-count`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  // =========================================================================
+  // BarChart Catalog (read-only vendor data behind the "Add from BarChart" picker)
+  // =========================================================================
+
+  /**
+   * Searches the vendor catalog. Pass latitude+longitude (and optionally radiusMiles) for the
+   * map-driven path; results then come back nearest-first with a distance on each one.
+   *
+   * Not de-duplicated on purpose: the caller varies these params as the user pans and types, so a
+   * cached first response would be the wrong answer for every later call.
+   */
+  searchBarchartLocations(params: BarchartLocationSearchParams): Observable<BarchartCatalogLocation[]> {
+    let httpParams = new HttpParams();
+    if (params.search) httpParams = httpParams.set('search', params.search);
+    if (params.state) httpParams = httpParams.set('state', params.state);
+    if (params.commodityCode) httpParams = httpParams.set('commodityCode', params.commodityCode);
+    if (params.cropYear != null) httpParams = httpParams.set('cropYear', String(params.cropYear));
+    if (params.month != null) httpParams = httpParams.set('month', String(params.month));
+    if (params.instrumentType) httpParams = httpParams.set('instrumentType', params.instrumentType);
+    if (params.latitude != null && params.longitude != null) {
+      httpParams = httpParams.set('latitude', String(params.latitude))
+                             .set('longitude', String(params.longitude));
+      if (params.radiusMiles != null) httpParams = httpParams.set('radiusMiles', String(params.radiusMiles));
+    }
+    if (params.take != null) httpParams = httpParams.set('take', String(params.take));
+    return this.http.get<BarchartCatalogLocation[]>(`${this.baseUrl}/barchart/locations`, { params: httpParams })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /**
+   * One catalog listing plus the bids it currently publishes -- what clicking an un-added pin on the
+   * bid sheet map fetches, so the user sees real prices before deciding to add it.
+   */
+  getBarchartLocationDetail(locationKey: string): Observable<BarchartCatalogLocationDetail> {
+    return this.http.get<BarchartCatalogLocationDetail>(`${this.baseUrl}/barchart/locations/${encodeURIComponent(locationKey)}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Catalog totals and per-state counts. De-duplicated: it changes only when the feed reloads. */
+  getBarchartCoverage(): Observable<BarchartCoverage> {
+    return this._dedupe('barchart-coverage',
+      this.http.get<BarchartCoverage>(`${this.baseUrl}/barchart/coverage`)
+        .pipe(catchError(e => this.handleError(e)))
+    );
   }
 
   // =========================================================================

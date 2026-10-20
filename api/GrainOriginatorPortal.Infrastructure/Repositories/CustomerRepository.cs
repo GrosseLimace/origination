@@ -95,29 +95,24 @@ public class CustomerRepository : ICustomerRepository
         return customers;
     }
 
-    public async Task<List<Customer>> SearchAsync(string searchTerm, List<string>? tradeUnits, CancellationToken cancellationToken)
+    // ── Search SQL builders ────────────────────────────────────────────────────
+    // Raw SQL because the phone match strips punctuation inside SQL and the relevance shape is
+    // easier to read as SQL. The rule that keeps it safe: the TEXT is assembled only from fixed
+    // fragments and generated parameter names (@w0, @d0, @tradeUnits); every value a user typed
+    // travels as a SqlParameter. CustomerSearchSqlTests feeds hostile input through both builders
+    // and fails if any of it reaches the text, so an edit that interpolates a value breaks the build.
+
+    /// <summary>The dbo.Customer search: every word must match one searchable field. Public so the
+    /// injection guard test can call it; <paramref name="tradeUnitsCsv"/> must already be sanitised
+    /// (null = no trade-unit filter).</summary>
+    public static (string Sql, SqlParameter[] Parameters) BuildSearchSql(IReadOnlyList<string> searchWords, string? tradeUnitsCsv)
     {
-        var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
-
-        var searchWords = searchTerm.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
-                                    .Select(w => w.Trim())
-                                    .Where(w => w.Length > 0)
-                                    .ToList();
-
-        if (searchWords.Count == 0)
-            return [];
-
-        // Reads dbo.Customer (one row per CustomerId — no ROW_NUMBER dedup needed) with
-        // a parameterized LIKE-per-word AND-across-words match. TU scope is applied via
-        // EXISTS against dbo.CustomerTradeUnit. PrimaryContact match is still a correlated
-        // subquery against dbo.ProducerDetails — that's an app-DB join that EF LINQ would
-        // generate inefficiently, so we keep raw SQL.
         var whereClauses = new List<string> { "c.IsActive = 1" };
         var parameters = new List<SqlParameter>();
 
-        if (hasTradeUnitFilter)
+        if (tradeUnitsCsv is not null)
         {
-            var csv = SanitizeCsv(tradeUnits!);
+            var csv = tradeUnitsCsv;
             whereClauses.Add(@"EXISTS (
                 SELECT 1 FROM dbo.CustomerTradeUnit ctu
                 WHERE ctu.CustomerId = c.CustomerId
@@ -170,29 +165,7 @@ public class CustomerRepository : ICustomerRepository
         var sql = $@"
             SELECT c.* FROM dbo.Customer c
             WHERE {where}";
-
-        var customers = await _appContext.Customers
-            .FromSqlRaw(sql, parameters.ToArray())
-            .AsNoTracking()
-            .ToListAsync(cancellationToken);
-
-        // Score by relevance so best matches appear first
-        var scoredCustomers = customers.Select(c => new
-        {
-            Customer = c,
-            Score = CalculateRelevanceScore(c.Name, searchWords, searchTerm)
-        })
-        .OrderByDescending(x => x.Score)
-        .ThenBy(x => x.Customer.Name)
-        .Select(x => x.Customer)
-        .ToList();
-
-        await EnrichCustomersWithESignAsync(scoredCustomers, cancellationToken);
-        await EnrichCustomersWithAchAsync(scoredCustomers, cancellationToken);
-        await EnrichCustomersWithTradeUnitsAsync(scoredCustomers, cancellationToken);
-        // Do not log the raw search term — it may contain producer name/phone/email (PII). Log metadata only.
-        _logger.LogInformation("Customer search returned {Count} customers from Customer", scoredCustomers.Count);
-        return scoredCustomers;
+        return (sql, parameters.ToArray());
     }
 
     /// <summary>Onboarding search: producers in base.vw_CurrentCustomers that are not already
@@ -260,6 +233,19 @@ public class CustomerRepository : ICustomerRepository
                                     .ToList();
         if (searchWords.Count == 0) return [];
 
+        var (sql, parameters) = BuildOdsSearchSql(searchWords);
+
+        var rows = await _context.Database
+            .SqlQueryRaw<OdsCustomerRow>(sql, parameters)
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(MapOdsRowToCustomer).ToList();
+    }
+
+    /// <summary>The onboarding search against base.vw_CurrentCustomers. Same rule as
+    /// <see cref="BuildSearchSql"/>: only generated parameter names reach the text.</summary>
+    public static (string Sql, SqlParameter[] Parameters) BuildOdsSearchSql(IReadOnlyList<string> searchWords)
+    {
         // Mirror the quality filters baked into originations.vw_CustomerTradeUnits so the
         // onboarding search never surfaces junk master-data records (placeholder /
         // duplicate / do-not-use rows) the sync would also reject.
@@ -297,12 +283,50 @@ public class CustomerRepository : ICustomerRepository
             FROM base.vw_CurrentCustomers c
             WHERE {where}
             ORDER BY c.CustomerName";
+        return (sql, parameters.ToArray());
+    }
 
-        var rows = await _context.Database
-            .SqlQueryRaw<OdsCustomerRow>(sql, parameters.ToArray())
+    public async Task<List<Customer>> SearchAsync(string searchTerm, List<string>? tradeUnits, CancellationToken cancellationToken)
+    {
+        var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
+
+        var searchWords = searchTerm.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                                    .Select(w => w.Trim())
+                                    .Where(w => w.Length > 0)
+                                    .ToList();
+
+        if (searchWords.Count == 0)
+            return [];
+
+        // Reads dbo.Customer (one row per CustomerId — no ROW_NUMBER dedup needed) with
+        // a parameterized LIKE-per-word AND-across-words match. TU scope is applied via
+        // EXISTS against dbo.CustomerTradeUnit. PrimaryContact match is still a correlated
+        // subquery against dbo.ProducerDetails — that's an app-DB join that EF LINQ would
+        // generate inefficiently, so we keep raw SQL.
+        var (sql, parameters) = BuildSearchSql(searchWords, hasTradeUnitFilter ? SanitizeCsv(tradeUnits!) : null);
+
+        var customers = await _appContext.Customers
+            .FromSqlRaw(sql, parameters)
+            .AsNoTracking()
             .ToListAsync(cancellationToken);
 
-        return rows.Select(MapOdsRowToCustomer).ToList();
+        // Score by relevance so best matches appear first
+        var scoredCustomers = customers.Select(c => new
+        {
+            Customer = c,
+            Score = CalculateRelevanceScore(c.Name, searchWords, searchTerm)
+        })
+        .OrderByDescending(x => x.Score)
+        .ThenBy(x => x.Customer.Name)
+        .Select(x => x.Customer)
+        .ToList();
+
+        await EnrichCustomersWithESignAsync(scoredCustomers, cancellationToken);
+        await EnrichCustomersWithAchAsync(scoredCustomers, cancellationToken);
+        await EnrichCustomersWithTradeUnitsAsync(scoredCustomers, cancellationToken);
+        // Do not log the raw search term — it may contain producer name/phone/email (PII). Log metadata only.
+        _logger.LogInformation("Customer search returned {Count} customers from Customer", scoredCustomers.Count);
+        return scoredCustomers;
     }
 
     /// <summary>The CTRM half of the onboarding search (plan E3). Each candidate carries a NEGATIVE placeholder

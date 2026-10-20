@@ -1,28 +1,34 @@
-import { Component, inject, signal, computed, DestroyRef, effect, untracked, isDevMode } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal, computed, DestroyRef, effect, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import { forkJoin, of, Subject, timer } from 'rxjs';
+import { forkJoin, of, timer } from 'rxjs';
 import { mergeProducerRows } from './merge-producer-rows';
 import { applyAdoptedCustomerId } from './adopt-assigned-customer';
 import { applyProducerDetails } from '@shared/utils/apply-producer-details';
-import { catchError, map, takeUntil } from 'rxjs/operators';
-import { MsalService } from '@azure/msal-angular';
+import { catchError, takeUntil } from 'rxjs/operators';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
-import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { UserRolesService } from '@core/services/user-roles.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, Reminder, ReminderDue, StoredGrain, DpContract, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity, NoteMention } from '@models';
+import { Customer, Contract, Ticket, Note, Reminder, StoredGrain, DpContract, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity, NoteMention } from '@models';
 import { CustomerListComponent } from '../../components/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
 import { CustomerNotesComponent } from '../../components/customer-notes/customer-notes.component';
 import { CustomerRemindersComponent, ReminderDraft } from '../../components/customer-reminders/customer-reminders.component';
-import { OutlookCalendarService } from '@core/services/outlook-calendar.service';
-import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent } from '@shared/components/card/card.component';
 import { CalculatorLauncherComponent } from '@features/calculators/components/calculator-launcher.component';
 import { environment } from '@env/environment';
+import {
+  commodityCodesFrom, describeLastContacted, linkedGroupOf, mergeIncomingById, mergeYieldEstimates,
+  producerContractsAndTickets, readFailureMessage, yieldEstimateYears
+} from './home-derivations';
+import { HomeBackgroundFailures } from './home-background-failures';
+import { HomePageState } from './home-page.state';
+import { HomeRemindersStore } from './home-reminders.store';
+import { HomeNotesStore } from './home-notes.store';
+import { HomeSavedListsStore } from './home-saved-lists.store';
+import { HomeLinkedProducersStore } from './home-linked-producers.store';
+import { HomePlantingStore } from './home-planting.store';
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -38,72 +44,49 @@ import { environment } from '@env/environment';
     CalculatorLauncherComponent
   ],
   templateUrl: './home.component.html',
+  // Page-scoped state and behaviour, one instance per visit to the page.
+  providers: [HomePageState, HomeBackgroundFailures, HomeRemindersStore, HomeNotesStore, HomeSavedListsStore, HomeLinkedProducersStore, HomePlantingStore],
+  // The template reads only signals, computeds, getLinkedGroup() (which reads signals) and two
+  // constant flags, and every async writer (API callbacks, effects, the resize listener, the
+  // deep-link poll) writes signals - home.component.render.spec.ts renders each of those paths.
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class HomeComponent {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
-  private readonly msalService = inject(MsalService);
   private readonly toastService = inject(ToastService);
-  private readonly nlqFilterService = inject(NlqFilterService);
   private readonly usageTracking = inject(UsageTrackingService);
-  private readonly userRoles = inject(UserRolesService);
   private readonly destroyRef = inject(DestroyRef);
 
-  /** When a background load or save on this page fails, say so. These subscriptions used to
-   *  carry `error: () => {}`, so an API outage showed up only as panels that were quietly empty
-   *  or stale, with nothing in the console for support to go on (audit finding
-   *  angular.home-component-silent-error-swallowing).
-   *
-   *  Nothing here was asked for by the user: these are background loads and refreshes, so the
-   *  bar for interrupting is high and repetition buys nothing. Once someone has been told the
-   *  data is stale, telling them again does not help them. So a sustained outage is worth at
-   *  most one message a minute, and the same failing source stays quiet for five minutes after
-   *  it has spoken. The wording is deliberately vague about scope, because the toast that gets
-   *  through may be standing in for several failures that were suppressed behind it.
-   *
-   *  Dev builds still log every failure, unthrottled, so local debugging sees everything. */
-  private static readonly BackgroundFailureQuietMs = 60_000;
-  private static readonly BackgroundFailurePerSourceQuietMs = 5 * 60_000;
-  private readonly _backgroundFailureToastAt = new Map<string, number>();
-  private _lastBackgroundFailureToastAt = 0;
-  private _reportBackgroundFailure(what: string, err: unknown): void {
-    if (isDevMode()) console.error(`[Home] failed to ${what}`, err);
-    const now = Date.now();
-    const lastForSource = this._backgroundFailureToastAt.get(what) ?? 0;
-    if (now - lastForSource < HomeComponent.BackgroundFailurePerSourceQuietMs) return;
-    if (now - this._lastBackgroundFailureToastAt < HomeComponent.BackgroundFailureQuietMs) return;
-    this._backgroundFailureToastAt.set(what, now);
-    this._lastBackgroundFailureToastAt = now;
-    this.toastService.error(`Failed to ${what}. Some data may be missing or out of date.`);
-  }
+  /** Throttled toast + dev log for background loads that fail (see HomeBackgroundFailures). */
+  private readonly backgroundFailures = inject(HomeBackgroundFailures);
+  /** Signals shared with the page-scoped stores (see HomePageState). */
+  private readonly page = inject(HomePageState);
+  /** Personal follow-up reminders (see HomeRemindersStore). */
+  private readonly reminders = inject(HomeRemindersStore);
+  /** Notes cache, notes panel and last-contact badge feed (see HomeNotesStore). */
+  private readonly notes = inject(HomeNotesStore);
+  /** Own and team saved lists, their resolution and Add-to-List saves (see HomeSavedListsStore). */
+  private readonly lists = inject(HomeSavedListsStore);
+  /** Cross-trade-unit linked producers and the walk that fetches them (see HomeLinkedProducersStore). */
+  private readonly linked = inject(HomeLinkedProducersStore);
+  /** The selected producer's planting intentions and their handlers (see HomePlantingStore). */
+  private readonly planting = inject(HomePlantingStore);
 
-  /** Manager = holds the "Admin" app role (same gate as the Usage Dashboard). Enables the
-   *  "Team Lists" tab in the Add-to-List dropdown. */
-  readonly isManager = this.userRoles.isAdmin;
+  /** Manager = holds the "Admin" app role. Enables the "Team Lists" tab in the Add-to-List dropdown. */
+  readonly isManager = this.lists.isManager;
   /** Gates the floating calculator launcher (Profitability calc + future calculators). */
   readonly calculatorEnabled = environment.calculatorEnabled;
-  /** Gates the personal follow-up reminders card and the producer-list reminder badge. Off until
-   *  the API app registration has delegated Calendars.ReadWrite with admin consent — the API calls
-   *  Graph on-behalf-of the user, so the permission lives there rather than on the SPA. */
-  readonly remindersEnabled = environment.remindersEnabled;
-  private readonly outlookCalendar = inject(OutlookCalendarService);
+  /** Gates the personal follow-up reminders card and the producer-list reminder badge. */
+  readonly remindersEnabled = this.reminders.remindersEnabled;
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
   private readonly _resizeHandler = () => this._checkMobile();
   private _isLoading = false;
   private _customerRequestId = 0;
-  private _piRequestId = 0;
-  /** Emits whenever the user picks a new customer. Every async call kicked off by
-   *  handleSelectCustomer is piped through takeUntil(this) so the prior selection's
-   *  in-flight HTTP requests are cancelled the moment a new producer is clicked —
-   *  stops stale linked-producer / notes / planting calls from clogging the browser's
-   *  connection pool while the newly-selected customer waits for free sockets. */
-  private readonly _cancelSelection$ = new Subject<void>();
-  /** Customers whose linked-producer BFS has already completed in this session.
-   *  Re-clicking a producer that's in this set skips the entire BFS — the cache
-   *  is already correct, so there's nothing new to fetch. */
-  private readonly _linkedFetchDone = new Set<number>();
+  /** Cancels the prior selection's in-flight requests (see HomePageState.cancelSelection$). */
+  private readonly _cancelSelection$ = this.page.cancelSelection$;
   /** Customers whose contracts / tickets / pricing-lines / stored-grain have
    *  already been fetched, and WHEN.
    *
@@ -144,10 +127,6 @@ export class HomeComponent {
    *  Keyed on the previous ids rather than on customerCode on purpose: an applied split-load row can carry
    *  another producer's code, so filtering by code would drop rows this producer legitimately owns. */
   private readonly _customerRowIds = new Map<number, { contracts: Set<number>; tickets: Set<number> }>();
-  /** Per-customer planting-intentions cache. Hydrated from the first visit's
-   *  fetch; kept in sync by the add/edit/delete handlers. Subsequent visits to
-   *  the same producer skip the network entirely. */
-  private readonly _customerPlantingCache = new Map<number, PlantingIntention[]>();
   /** Per-customer pricing-lines cache keyed by scoularId. Pricing lines are
    *  hydrated OUTSIDE the _customerLoadedAt short-circuit so that every click
    *  swaps to the right producer's lines (the contracts/tickets/grain short-
@@ -159,42 +138,24 @@ export class HomeComponent {
    *  age, a contract priced after the first click kept its UNPRICED badge for the rest of the session,
    *  which is a wrong number on screen rather than merely an old one. */
   private readonly _customerPricingLoadedAt = new Map<string, number>();
-  /** Per-customer full-notes cache (Tier 2). Notes are no longer bulk-downloaded; the
-   *  selected producer's linked group is fetched via getNotesByCustomer on selection and
-   *  cached here for the session. Map.has distinguishes "fetched, zero notes" from "not
-   *  fetched yet"; a failed fetch is NOT cached so the next selection retries. Kept in
-   *  sync by the note CRUD handlers; cleared on TU change with the other caches. */
-  private readonly _customerNotesCache = new Map<number, Note[]>();
-  /** Guards the one-per-session background full-notes fetch used by saved-list enrichment. */
-  private _notesFetchInFlight = false;
-  /** Producer ids whose notes have already been re-fetched during the CURRENT selection.
-   *  Reset when a new producer is selected. Lets _ensureCustomerNotes refresh each producer
-   *  once per selection (so notes added by other reps show on re-click — stale-while-revalidate)
-   *  without the several internal calls per selection (details-arrival, BFS) re-fetching. */
-  private readonly _notesRefreshedThisSelection = new Set<number>();
 
   // Public signals — template binds directly to these
-  readonly customers = signal<Customer[]>([]);
-  readonly contracts = signal<Contract[]>([]);
-  readonly tickets = signal<Ticket[]>([]);
-  readonly plantingIntentions = signal<PlantingIntention[]>([]);
-  /** Per-customer "last contacted" aggregate — the badge feed for the customer list.
-   *  Covers ALL trade units (entitlement-filtered server-side) so linked producers in
-   *  unselected TUs are represented without downloading any note bodies. Full notes are
-   *  fetched per-producer on selection into _customerNotesCache. */
-  readonly noteLastContacts = signal<NoteLastContact[]>([]);
-  /** The signed-in user's own OPEN follow-ups across all producers — feeds the list badge.
-   *  Private per user: the API only ever returns the caller's own. */
-  readonly myReminders = signal<ReminderDue[]>([]);
-  readonly storedGrain = signal<StoredGrain[]>([]);
-  readonly dpContracts = signal<DpContract[]>([]);
-  readonly savedLists = signal<SavedList[]>([]);
-  /** Manager-only: saved lists tied to the selected TU(s) created by other users (overlap-matched
-   *  server-side, enriched locally). Powers the Add-to-List "Team Lists" tab. */
-  readonly teamSavedLists = signal<SavedList[]>([]);
-  readonly producerDetailsMap = signal<Map<number, ProducerDetails>>(new Map());
+  readonly customers = this.page.customers;
+  readonly contracts = this.page.contracts;
+  readonly tickets = this.page.tickets;
+  readonly plantingIntentions = this.page.plantingIntentions;
+  /** Per-customer "last contacted" aggregate, all trade units — the list's badge feed (see HomeNotesStore). */
+  readonly noteLastContacts = this.notes.noteLastContacts;
+  /** The signed-in user's own open follow-ups across all producers (see HomeRemindersStore). */
+  readonly myReminders = this.reminders.myReminders;
+  readonly storedGrain = this.page.storedGrain;
+  readonly dpContracts = this.page.dpContracts;
+  /** The user's own lists and a manager's team lists, resolved (see HomeSavedListsStore). */
+  readonly savedLists = this.lists.savedLists;
+  readonly teamSavedLists = this.lists.teamSavedLists;
+  readonly producerDetailsMap = this.page.producerDetailsMap;
 
-  readonly selectedCustomer = signal<Customer | null>(null);
+  readonly selectedCustomer = this.page.selectedCustomer;
   /** True when the open-contracts table has its extra columns expanded — drops the Notes
    *  sidebar below the profile so the table gets the full page width. */
   readonly contractsWide = signal(false);
@@ -202,36 +163,32 @@ export class HomeComponent {
   readonly pendingTab = signal<string | null>(null);
   readonly pendingPlantingYear = signal<number | null>(null);
   readonly pendingTicketCrop = signal<string | null>(null);
-  readonly selectedTradeUnits = signal<string[]>([]);
-  /** Saved lists sharing at least one trade unit with the current selection — the lists a producer
-   *  can be quick-added to from the profile header. Reads the enriched savedLists() so the
-   *  Add-to-List checkboxes stay reactive after a toggle. */
-  readonly savedListsForSelectedCustomer = computed<SavedList[]>(() =>
-    filterSavedListsByTradeUnitOverlap(this.savedLists(), this.selectedTradeUnits()));
-  /** Manager-only team lists the producer can be quick-added to. Already TU-scoped (overlap) by the
-   *  server; enriched locally so the checkboxes reflect query-derived membership too. */
-  readonly teamListsForSelectedCustomer = computed<SavedList[]>(() =>
-    this.selectedTradeUnits().length === 0 ? [] : this.teamSavedLists());
+  readonly selectedTradeUnits = this.page.selectedTradeUnits;
+  /** The own and team lists the selected producer can be quick-added to from the profile header. */
+  readonly savedListsForSelectedCustomer = this.lists.savedListsForSelectedCustomer;
+  readonly teamListsForSelectedCustomer = this.lists.teamListsForSelectedCustomer;
   readonly customerContracts = signal<Contract[]>([]);
   readonly customerTickets = signal<Ticket[]>([]);
   readonly customerPricingLines = signal<ContractPricingLine[]>([]);
-  readonly customerNotes = signal<Note[]>([]);
-  /** The signed-in user's open follow-ups for the SELECTED producer only. Unlike notes this is
-   *  not walked across the linked-producer group: a follow-up is about the one producer it was
-   *  set on, and showing a linked producer's reminders here would make "complete" ambiguous. */
-  readonly customerReminders = signal<Reminder[]>([]);
-  readonly isLoadingReminders = signal(false);
-  readonly isSavingReminder = signal(false);
-  /** Incremented on each successful reminder save so the card closes and resets its form. */
-  readonly reminderSaveSucceededCounter = signal(0);
+  /** The selected producer's notes panel and the note form's state (see HomeNotesStore). */
+  readonly customerNotes = this.notes.customerNotes;
+  readonly isLoadingNotes = this.notes.isLoadingNotes;
+  readonly isSavingNote = this.notes.isSavingNote;
+  readonly noteSaveSucceededCounter = this.notes.noteSaveSucceededCounter;
+  /** The selected producer's follow-ups and the reminder card's state (see HomeRemindersStore). */
+  readonly customerReminders = this.reminders.customerReminders;
+  readonly isLoadingReminders = this.reminders.isLoadingReminders;
+  readonly isSavingReminder = this.reminders.isSavingReminder;
+  readonly reminderSaveSucceededCounter = this.reminders.reminderSaveSucceededCounter;
   readonly customerCodeMap = signal<Map<number, string>>(new Map());
-  readonly customerPlantingIntentions = signal<PlantingIntention[]>([]);
+  /** The selected producer's planting intentions (see HomePlantingStore). */
+  readonly customerPlantingIntentions = this.planting.customerPlantingIntentions;
   readonly customerStoredGrain = signal<StoredGrain[]>([]);
   readonly customerDpContracts = signal<DpContract[]>([]);
 
   readonly allCustomerContracts = signal<Contract[]>([]);
   readonly allCustomerTickets = signal<Ticket[]>([]);
-  readonly allCustomerPlantingIntentions = signal<PlantingIntention[]>([]);
+  readonly allCustomerPlantingIntentions = this.planting.allCustomerPlantingIntentions;
   readonly allCustomerStoredGrain = signal<StoredGrain[]>([]);
   readonly allCustomerDpContracts = signal<DpContract[]>([]);
 
@@ -259,45 +216,18 @@ export class HomeComponent {
   readonly isLoadingStoredGrain = signal(false);
   readonly isLoadingDpContracts = signal(false);
   readonly isLoadingPlanting = signal(true);
-  /** True while the selected producer's (and linked group's) notes are being fetched.
-   *  Drives the notes panel's loading state so a producer with notes doesn't flash
-   *  "No notes yet" during the per-customer fetch. */
-  readonly isLoadingNotes = signal(false);
 
   readonly isMobile = signal(false);
   readonly loading = signal(false);
 
-  readonly lastContactedDate = computed(() => {
-    const notes = this.customerNotes();
-    if (notes.length === 0) return 'Never';
-    // Find the most recently CREATED note — don't use notes[0] since pinned notes sort
-    // to the top but may have an old createdAt. modifiedAt reflects edits/pins, not contact.
-    const lastNote = notes.reduce((latest, note) =>
-      this._parseNoteTime(note.createdAt) > this._parseNoteTime(latest.createdAt) ? note : latest,
-      notes[0]
-    );
-    const raw = typeof lastNote.createdAt === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(lastNote.createdAt as any)
-      ? (lastNote.createdAt as any) + 'Z' : lastNote.createdAt;
-    const date = new Date(raw);
-    const todayMidnight = new Date();
-    todayMidnight.setHours(0, 0, 0, 0);
-    const noteMidnight = new Date(date);
-    noteMidnight.setHours(0, 0, 0, 0);
-    const days = Math.max(0, Math.round((todayMidnight.getTime() - noteMidnight.getTime()) / (1000 * 60 * 60 * 24)));
-    if (days === 0) return 'Today';
-    if (days === 1) return 'Yesterday';
-    if (days < 7) return `${days} days ago`;
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  });
+  readonly lastContactedDate = computed(() => describeLastContacted(this.customerNotes()));
 
 
   private _pendingProducerDetails: ProducerDetails[] | null = null;
   // Customers fetched from outside the current trade unit filter (e.g. linked producers in other TUs)
-  private readonly _crossTradeUnitCustomers = signal<Map<number, Customer>>(new Map());
-  /** Flat array of cross-TU/linked producers fetched for the selected customer. Exposed so the
-   *  customer list can resolve last-contacted dates through incoming linked producers when no TU
-   *  is selected and the main customer roster is empty. */
-  readonly crossTradeUnitCustomers = computed<Customer[]>(() => [...this._crossTradeUnitCustomers().values()]);
+  private readonly _crossTradeUnitCustomers = this.linked.crossTradeUnitCustomersById;
+  /** Flat array of the cross-TU/linked producers (see HomeLinkedProducersStore). */
+  readonly crossTradeUnitCustomers = this.linked.crossTradeUnitCustomers;
 
   // Track last trade unit key to avoid duplicate loads triggered by the effect
   private _lastTradeUnitKey = '';
@@ -344,11 +274,11 @@ export class HomeComponent {
     });
 
     // (Re)load the manager team lists whenever admin status resolves (/api/me) or the TU selection
-    // changes. Guarded inside _loadTeamLists so non-managers / empty selections clear the set.
+    // changes. Guarded inside loadTeamLists so non-managers / empty selections clear the set.
     effect(() => {
       this.isManager();
       this.selectedTradeUnits();
-      untracked(() => this._loadTeamLists());
+      untracked(() => this.lists.loadTeamLists());
     });
 
     this.route.queryParams.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
@@ -384,7 +314,7 @@ export class HomeComponent {
       this.storedGrain.set(this.appState.storedGrain());
       this.dpContracts.set(this.appState.dpContracts());
       this.savedLists.set(this.appState.savedLists());
-      this._enrichSavedLists();
+      this.lists.enrichSavedLists();
 
       // Stored grain may not have been preloaded yet — fetch if empty
       if (this.appState.storedGrain().length === 0) {
@@ -393,7 +323,7 @@ export class HomeComponent {
             this.storedGrain.set(data);
             this.appState.setStoredGrain(data);
           },
-          error: (err) => this._reportBackgroundFailure('load stored grain', err)
+          error: (err) => this.backgroundFailures.report('load stored grain', err)
         });
       }
 
@@ -406,7 +336,7 @@ export class HomeComponent {
             this.dpContracts.set(data);
             this.appState.setDpContracts(data);
           },
-          error: (err) => this._reportBackgroundFailure('load DP contracts', err)
+          error: (err) => this.backgroundFailures.report('load DP contracts', err)
         });
       }
 
@@ -421,23 +351,11 @@ export class HomeComponent {
         // Re-fetch the producer's (and linked group's) notes — the per-customer notes
         // cache is component-local, so navigation back must repopulate it (same pattern
         // as the tickets / planting re-fetch on restore).
-        this._notesRefreshedThisSelection.clear();
+        this.notes.startSelection();
         this._ensureCustomerNotes(stateSelectedCustomer);
         // Re-fetch per-customer planting intentions on navigation back —
         // these are not stored in appState so they must be reloaded.
-        this.allCustomerPlantingIntentions.set([]);
-        this.customerPlantingIntentions.set([]);
-        const piRequestId = ++this._piRequestId;
-        this.apiService.getPlantingIntentionsByCustomer(stateSelectedCustomer.id)
-          .pipe(takeUntilDestroyed(this.destroyRef))
-          .subscribe({
-            next: (intentions) => {
-              if (piRequestId !== this._piRequestId) return;
-              this.allCustomerPlantingIntentions.set(intentions);
-              this.customerPlantingIntentions.set(intentions);
-            },
-            error: (err) => this._reportBackgroundFailure('load planting intentions', err)
-          });
+        this.planting.loadWithoutCache(stateSelectedCustomer.id);
       }
       // Reload yield estimates and commodities — not stored in appState so
       // they are lost on navigation away and must be re-fetched on return.
@@ -480,9 +398,10 @@ export class HomeComponent {
         const list = data ?? [];
         this.customers.set(list);
         this.appState.setCustomers(list);
+        this.appState.setCustomersLoadFailed(false);
         this.loading.set(false);
         this._isLoading = false;
-        this._enrichSavedLists();
+        this.lists.enrichSavedLists();
 
         const pdMap = this.producerDetailsMap();
         if (this._pendingProducerDetails) {
@@ -494,6 +413,8 @@ export class HomeComponent {
       },
       error: () => {
         if (requestId !== this._customerRequestId) return;
+        // The producer list shows "Couldn't load producers" from this rather than "No producers found".
+        this.appState.setCustomersLoadFailed(true);
         this.loading.set(false);
         this._isLoading = false;
       }
@@ -508,9 +429,9 @@ export class HomeComponent {
         this.appState.setContracts(this.contracts());
         // Re-enrich saved lists now that contracts are loaded — the initial enrichment
         // may have run before contracts arrived, producing wrong customerIds.
-        this._enrichSavedLists(true);
+        this.lists.enrichSavedLists(true);
       },
-      error: (err) => this._reportBackgroundFailure('load contracts', err)
+      error: (err) => this.backgroundFailures.report('load contracts', err)
     });
 
     // Tickets are no longer bulk-loaded here. They're fetched per-producer on select (applied +
@@ -522,27 +443,25 @@ export class HomeComponent {
         const list = data ?? [];
         this.plantingIntentions.set(list);
         this.appState.setPlantingIntentions(list);
+        this.appState.setPlantingIntentionsLoadFailed(false);
         this.isLoadingPlanting.set(false);
       },
-      error: () => { this.isLoadingPlanting.set(false); }
+      error: () => { this.appState.setPlantingIntentionsLoadFailed(true); this.isLoadingPlanting.set(false); }
     });
 
     // Last-contact aggregate instead of the full note download — the selected producer's
     // full notes load separately via _ensureCustomerNotes on selection.
-    this._refreshLastContacts();
+    this.notes.refreshLastContacts();
 
     this.apiService.getStoredGrain(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
-        const incoming = data ?? [];
-        const existing = this.storedGrain();
-        const seen = new Set(incoming.map(s => s.id));
-        const merged = [...incoming, ...existing.filter(s => !seen.has(s.id))];
+        const merged = mergeIncomingById(data ?? [], this.storedGrain());
         this.storedGrain.set(merged);
         this.appState.setStoredGrain(merged);
         const sel = this.selectedCustomer();
         if (sel) this._loadCustomerData(sel.id);
       },
-      error: (err) => this._reportBackgroundFailure('load stored grain', err)
+      error: (err) => this.backgroundFailures.report('load stored grain', err)
     });
 
     // Merge (not replace) for the same reason storage does: the TU-wide fetch and the per-producer
@@ -550,43 +469,18 @@ export class HomeComponent {
     // selected producer.
     this.apiService.getDpContracts(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
-        const incoming = data ?? [];
-        const existing = this.dpContracts();
-        const seen = new Set(incoming.map(d => d.id));
-        const merged = [...incoming, ...existing.filter(d => !seen.has(d.id))];
+        const merged = mergeIncomingById(data ?? [], this.dpContracts());
         this.dpContracts.set(merged);
         this.appState.setDpContracts(merged);
         const sel = this.selectedCustomer();
         if (sel) this._loadCustomerData(sel.id);
       },
-      error: (err) => this._reportBackgroundFailure('load DP contracts', err)
+      error: (err) => this.backgroundFailures.report('load DP contracts', err)
     });
 
     this._loadYieldData();
 
-    this.apiService.getSavedLists().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (data) => {
-        const list = data ?? [];
-        this.savedLists.set(list);
-        this.appState.setSavedLists(list);
-        // Always ensure the query library is in appState so customer-list (which renders the
-        // saved list dropdown on this page) can resolve a saved list's prompt category by
-        // queryText match. Cached after first fetch — both home and build-list reuse it.
-        if (this.appState.queryLibrary().length === 0) {
-          this.apiService.getQueryLibrary().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-            next: (items) => {
-              this.appState.queryLibrary.set(items);
-              // Re-evaluate saved lists with the now-available category fallback.
-              this._enrichSavedLists(true);
-            },
-            error: () => this._enrichSavedLists()
-          });
-        } else {
-          this._enrichSavedLists();
-        }
-      },
-      error: (err) => this._reportBackgroundFailure('load saved lists', err)
-    });
+    this.lists.loadSavedLists();
   }
 
   private _loadProducerDetails(): void {
@@ -603,7 +497,7 @@ export class HomeComponent {
           this._pendingProducerDetails = list;
         }
       },
-      error: (err) => this._reportBackgroundFailure('load producer details', err)
+      error: (err) => this.backgroundFailures.report('load producer details', err)
     });
   }
 
@@ -656,31 +550,15 @@ export class HomeComponent {
 
     // Gather all unique planting years from intentions + contracts so we fetch
     // yield estimates for every year the user might select.
-    const yearSet = new Set<number>();
-    const currentYear = new Date().getFullYear();
-    yearSet.add(currentYear);
-    yearSet.add(currentYear - 1);
-    for (const pi of this.plantingIntentions()) {
-      if (pi.plantingYear) yearSet.add(pi.plantingYear);
-    }
-    for (const c of this.contracts()) {
-      if (c.cropYear) yearSet.add(c.cropYear);
-    }
+    const years = yieldEstimateYears(new Date().getFullYear(), this.plantingIntentions(), this.contracts());
 
-    const yearCalls = [...yearSet].map(y =>
+    const yearCalls = years.map(y =>
       this.apiService.getDashboardPlantingEstimates(key, y).pipe(catchError(() => of([] as DashboardPlantingEstimate[])))
     );
     forkJoin(yearCalls).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (results) => {
         // Merge all years — later years overwrite earlier for same crop key
-        const map = new Map<string, DashboardPlantingEstimate>();
-        for (const batch of results) {
-          for (const est of batch) {
-            // Key by crop + year to keep per-year estimates separate
-            map.set(`${est.crop}|${est.plantingYear}`, est);
-          }
-        }
-        this.yieldEstimates.set([...map.values()]);
+        this.yieldEstimates.set(mergeYieldEstimates(results));
         done();
       },
       error: () => done()
@@ -692,200 +570,10 @@ export class HomeComponent {
     });
   }
 
-  private _enrichSavedLists(forceRefresh = false): void {
-    if (!this.customers().length) return;
-    // Own lists: skip if all already have cached customerIds — unless forceRefresh (e.g. when
-    // contracts/tickets/stored grain arrive after initial enrichment).
-    const ownNeeds = forceRefresh || this.savedLists().some(l => !l.customerIds?.length);
-    if (this.savedLists().length && ownNeeds) {
-      this.savedLists.set(this._enrichLists(this.savedLists(), forceRefresh));
-    }
-    // Team lists (manager) follow the same enrichment so their checkboxes reflect query membership.
-    const teamNeeds = forceRefresh || this.teamSavedLists().some(l => !l.customerIds?.length);
-    if (this.teamSavedLists().length && teamNeeds) {
-      this.teamSavedLists.set(this._enrichLists(this.teamSavedLists(), forceRefresh));
-    }
-    // The full note set (bodies/authors) is only needed for saved lists whose query or refine
-    // filters actually read note CONTENT/authors/pinned/counts — recency lists ("not contacted…")
-    // and every non-note list resolve from the last-contact aggregate. Only kick off the
-    // background full-notes fetch when at least one UNRESOLVED list genuinely needs it, so a user
-    // whose lists are all contracts/tickets/etc. never pays the notes download on home load.
-    const listNeedsFullNotes = (l: SavedList) =>
-      (forceRefresh || !l.customerIds?.length)
-      && (this.nlqFilterService.queryNeedsFullNotes(l.query)
-          || this.nlqFilterService.refineFiltersNeedFullNotes(l.filters));
-    const anyNeedsFullNotes =
-      this.savedLists().some(listNeedsFullNotes) || this.teamSavedLists().some(listNeedsFullNotes);
-    if (anyNeedsFullNotes && !this.appState.notesLoaded()) {
-      this._loadFullNotesForEnrichment();
-    }
-  }
-
-  /** Background one-shot fetch of the full note set for saved-list NLQ enrichment. */
-  private _loadFullNotesForEnrichment(): void {
-    if (this._notesFetchInFlight || this.appState.notesLoaded()) return;
-    this._notesFetchInFlight = true;
-    this.apiService.getNotes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (data) => {
-        this._notesFetchInFlight = false;
-        this.appState.setNotes(data ?? []);
-        // Re-evaluate saved lists now that note-based queries have their data.
-        this._enrichSavedLists(true);
-      },
-      error: () => { this._notesFetchInFlight = false; }
-    });
-  }
-
-  /** Resolve each list's NLQ query + filters + included/excluded overrides into a cached
-   *  `customerIds` array, using the page's currently-loaded data. Returns a new array. */
-  private _enrichLists(lists: SavedList[], forceRefresh: boolean): SavedList[] {
-    if (!lists.length || !this.customers().length) return lists;
-    const account = this.msalService.instance.getActiveAccount()
-      ?? this.msalService.instance.getAllAccounts()[0];
-    const context: NlqFilterContext = {
-      customers: this.customers(),
-      contracts: this.contracts(),
-      tickets: this.tickets(),
-      // Full note set from the lazy NLQ cache — empty until a note-based list triggers
-      // _loadFullNotesForEnrichment, which re-enriches once it lands.
-      notes: this.appState.notes(),
-      // Last-contact aggregate (always loaded) — powers recency/"never contacted" resolution
-      // without the full note set.
-      noteLastContacts: this.appState.noteLastContacts(),
-      myReminders: this.appState.myReminders(),
-      plantingIntentions: this.plantingIntentions(),
-      storedGrain: this.storedGrain(),
-      dpContracts: this.dpContracts(),
-      commodities: this.appState.commodities(),
-      commodityConversions: this.appState.commodityConversions(),
-      // Thread identity through so saved-list "by me" filters work even when notes' CreatedBy
-      // wasn't resolved to a display name on the API side.
-      currentUserDisplayName: account?.name ?? '',
-      currentUserUsername: account?.username ?? ''
-    };
-    const queryLibrary = this.appState.queryLibrary();
-    return lists.map(list => {
-      if (!forceRefresh && list.customerIds?.length) return list; // Already resolved
-      // Resolve "I"/"me"/"my" to the user's name so author-based queries work
-      const resolvedQuery = this.nlqFilterService.resolveUserReferences(list.query, account?.name ?? '', account?.username ?? '');
-      const result = this.nlqFilterService.parseAndFilter(resolvedQuery, context);
-      // If no patterns matched, the NLQ returned all customers — don't cache that as valid
-      if (result.matchedPatterns.length === 0) return list;
-      // Backfill _promptCategory if the saved list pre-dates the hint AND the query library
-      // has a match for its queryText. Lets the dimension-aware crops filter in the service
-      // still find the right category for older saved lists without requiring a re-save.
-      let listFilters = list.filters;
-      if (listFilters && !listFilters._promptCategory && queryLibrary.length > 0) {
-        const qLower = list.query.trim().toLowerCase();
-        const matched = queryLibrary.find(q => q.queryText.trim().toLowerCase() === qLower);
-        if (matched?.category) listFilters = { ...listFilters, _promptCategory: matched.category };
-      }
-      const refined = listFilters
-        ? this.nlqFilterService.applyRefinementFilters(result.customers, listFilters, this.contracts(), this.appState.notes(), {
-            tickets: this.tickets(),
-            storedGrain: this.storedGrain(),
-            dpContracts: this.dpContracts(),
-            plantingIntentions: this.plantingIntentions(),
-            commodityConversions: this.appState.commodityConversions(),
-            noteLastContacts: this.appState.noteLastContacts(),
-            commodities: this.appState.commodities()
-          })
-        : result.customers;
-      const ids = this.nlqFilterService.applyCustomerOverrides(
-        refined.map(c => c.id), list.includedCustomerIds, list.excludedCustomerIds
-      );
-      return { ...list, customerIds: ids };
-    });
-  }
-
-  /** Manager-only: fetch the team lists tied to the selected TU(s) and enrich them. Clears the set
-   *  for non-managers or when no TU is selected. */
-  private _loadTeamLists(): void {
-    const tus = this.selectedTradeUnits();
-    if (!this.isManager() || tus.length === 0) {
-      this.teamSavedLists.set([]);
-      return;
-    }
-    this.apiService.getTeamSavedLists(tus.join(',')).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (data) => this.teamSavedLists.set(this._enrichLists(data ?? [], true)),
-      error: () => { /* supplementary view — leave the prior set in place */ }
-    });
-  }
-
-  /**
-   * Apply staged saved-list membership changes for the selected producer (from the profile
-   * header's Save). Membership lives in each list's included/excluded arrays; we mutate those
-   * (build-list rules), optimistically update + re-enrich locally, then persist each changed list
-   * via a full PUT (updateSavedList blanks omitted fields, so every field is sent). One success
-   * notification when all succeed; reverts everything on any error.
-   */
+  /** Applies the profile header's staged Add-to-List changes for the selected producer
+   *  (see HomeSavedListsStore.saveMembership). */
   handleSaveSavedListMembership(changes: { listId: number; add: boolean }[]): void {
-    const customer = this.selectedCustomer();
-    if (!customer || changes.length === 0) return;
-    const cid = customer.id;
-    // A change may target the user's own list OR (for a manager) a team list — snapshot both for
-    // revert and resolve each change against whichever set owns the id.
-    const ownOriginals = this.savedLists();
-    const teamOriginals = this.teamSavedLists();
-    const ownWorking = [...ownOriginals];
-    const teamWorking = [...teamOriginals];
-    let ownChanged = false;
-    let teamChanged = false;
-    const updates$ = [];
-
-    for (const ch of changes) {
-      let working = ownWorking;
-      let idx = ownWorking.findIndex(l => l.id === ch.listId);
-      let isTeam = false;
-      if (idx === -1) {
-        idx = teamWorking.findIndex(l => l.id === ch.listId);
-        working = teamWorking;
-        isTeam = true;
-      }
-      if (idx === -1) continue;
-      const list = working[idx];
-      const included = new Set(list.includedCustomerIds ?? []);
-      const excluded = new Set(list.excludedCustomerIds ?? []);
-      if (ch.add) {
-        excluded.delete(cid);
-        included.add(cid);
-      } else {
-        // Mirror build-list: drop a manual add if present, else exclude a query-matched member.
-        if (included.has(cid)) included.delete(cid);
-        else excluded.add(cid);
-      }
-      const newIncluded = [...included];
-      const newExcluded = [...excluded];
-      // Drop cached customerIds so _enrichSavedLists rebuilds this list's membership.
-      working[idx] = { ...list, includedCustomerIds: newIncluded, excludedCustomerIds: newExcluded, customerIds: undefined };
-      if (isTeam) teamChanged = true; else ownChanged = true;
-      updates$.push(this.apiService.updateSavedList(list.id, {
-        name: list.name,
-        query: list.query,
-        tradeUnits: list.tradeUnits,
-        filters: list.filters,
-        includedCustomerIds: newIncluded,
-        excludedCustomerIds: newExcluded,
-      }));
-    }
-    if (updates$.length === 0) return;
-
-    // Optimistic local apply, then persist all changed lists together.
-    if (ownChanged) { this.savedLists.set(ownWorking); this.appState.setSavedLists(ownWorking); }
-    if (teamChanged) { this.teamSavedLists.set(teamWorking); }
-    this._enrichSavedLists(true);
-
-    forkJoin(updates$).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: () => this.toastService.success(
-        updates$.length === 1 ? 'Saved list updated' : `${updates$.length} saved lists updated`
-      ),
-      error: () => {
-        if (ownChanged) { this.savedLists.set(ownOriginals); this.appState.setSavedLists(ownOriginals); }
-        if (teamChanged) { this.teamSavedLists.set(teamOriginals); }
-        this._enrichSavedLists(true);
-        this.toastService.error('Failed to save list changes');
-      }
-    });
+    this.lists.saveMembership(changes);
   }
 
   handleClearSelection(): void {
@@ -919,10 +607,9 @@ export class HomeComponent {
     this._customerRowIds.clear();
     this._customerPricingCache.clear();
     this._customerPricingLoadedAt.clear();
-    this._customerPlantingCache.clear();
-    this._customerNotesCache.clear();
-    this._notesRefreshedThisSelection.clear();
-    this._linkedFetchDone.clear();
+    this.planting.forgetAll();
+    this.notes.forgetAll();
+    this.linked.forgetWalks();
     // Cancel any in-flight per-customer requests (pricing lines, contracts, tickets,
     // grain, planting, notes, linked-producers) tied to the prior customer so they
     // don't write into signals after the new TU has loaded. Also clears the loading
@@ -942,245 +629,43 @@ export class HomeComponent {
       // this state, so refresh the last-contact aggregate here so customer list cards
       // show correct "last contacted" dates in search results. The aggregate spans all
       // trade units, so the same call serves the no-TU flow.
-      this._refreshLastContacts();
+      this.notes.refreshLastContacts();
     }
-  }
-
-  /** Refreshes the per-customer last-contact aggregate (deduped in ApiService, so a
-   *  concurrent data-preload request shares one HTTP call). Tiny payload — one row per
-   *  customer with notes, no note bodies. */
-  private _refreshLastContacts(): void {
-    this.apiService.getNotesLastContact().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (rows) => {
-        const list = rows ?? [];
-        this.noteLastContacts.set(list);
-        this.appState.setNoteLastContacts(list);
-      },
-      error: (err) => this._reportBackgroundFailure('load last-contacted dates', err)
-    });
   }
 
   /**
    * Ensures the full notes for `customer` AND its currently-known linked group are loaded and
-   * fresh, then recomputes the selected producer's notes panel + last-contact badges.
-   *
-   * Stale-while-revalidate: any cached notes render immediately (re-clicking a producer is
-   * instant — no spinner flash), and every group member is re-fetched once per selection via
-   * the per-customer endpoint so notes added by OTHER reps appear on re-click. The
-   * _notesRefreshedThisSelection guard means the several internal calls per selection
-   * (producer-details arrival, BFS completion) don't each re-fetch. The endpoint has no TU
-   * filter, so linked producers in unselected trade units are fully covered. Failed fetches
-   * aren't cached (and aren't marked refreshed), so they retry on the next trigger.
+   * fresh, then recomputes the selected producer's notes panel + last-contact badges. The caching
+   * (stale-while-revalidate, once per selection, failures not cached) is HomeNotesStore's.
    */
   private _ensureCustomerNotes(customer: Customer): void {
     const groupIds = [...new Set([customer.id, ...this.getLinkedGroup(customer).map(c => c.id)])];
-
-    // Show whatever's already cached right away — instant re-click, no spinner if we have data.
-    const haveAnyCached = groupIds.some(id => this._customerNotesCache.has(id));
-    if (haveAnyCached) {
-      this.isLoadingNotes.set(false);
+    this.notes.ensureCustomerNotes(groupIds, () => {
       const sel = this.selectedCustomer();
       if (sel) this._loadCustomerData(sel.id);
-    }
-
-    // Refresh each group member at most once per selection.
-    const toFetch = groupIds.filter(id => !this._notesRefreshedThisSelection.has(id));
-    if (toFetch.length === 0) {
-      this.isLoadingNotes.set(false);
-      return;
-    }
-    toFetch.forEach(id => this._notesRefreshedThisSelection.add(id));
-
-    // Only show the spinner on a cold selection (nothing cached to display meanwhile).
-    if (!haveAnyCached) this.isLoadingNotes.set(true);
-
-    forkJoin(toFetch.map(id =>
-      this.apiService.getNotesByCustomer(id).pipe(catchError(() => of(null as Note[] | null)))
-    )).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (lists) => {
-        lists.forEach((list, i) => {
-          if (!list) {
-            // Fetch failed — allow a later retry rather than caching a wrong empty.
-            this._notesRefreshedThisSelection.delete(toFetch[i]);
-            return;
-          }
-          this._customerNotesCache.set(toFetch[i], list);
-          // Keep the list badge in step with the freshly-fetched notes (picks up other reps'
-          // adds/deletes for this producer, consistent with the panel).
-          this._recomputeLastContactFor(toFetch[i]);
-        });
-        this.isLoadingNotes.set(false);
-        const sel = this.selectedCustomer();
-        if (sel) this._loadCustomerData(sel.id);
-      },
-      error: () => this.isLoadingNotes.set(false)
     });
   }
 
   // ==========================================================================
-  // Personal follow-up reminders
+  // Personal follow-up reminders — delegated to HomeRemindersStore
   // ==========================================================================
-  // Every reminder here belongs to the signed-in user — the API returns nobody else's. The
-  // running theme in these handlers: the DATABASE is the source of truth and the Outlook event
-  // is a best-effort mirror. A calendar failure never blocks or rolls back the reminder; it just
-  // leaves outlookEventId null, which surfaces as an "Add to Outlook" retry on the row.
-
-  /** Loads the caller's reminders for one producer. No cache: the list is small, and a stale
-   *  due date is worse than a re-fetch. */
-  private _loadCustomerReminders(customerId: number): void {
-    if (!this.remindersEnabled) return;
-
-    this.customerReminders.set([]);
-    this.isLoadingReminders.set(true);
-    this.apiService.getRemindersByCustomer(customerId)
-      .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (reminders) => {
-          if (this.selectedCustomer()?.id !== customerId) return;
-          this.customerReminders.set(reminders);
-          this.isLoadingReminders.set(false);
-        },
-        error: () => this.isLoadingReminders.set(false)
-      });
-  }
 
   /** Create or edit, depending on whether the draft carries an id. */
   saveReminder(draft: ReminderDraft): void {
-    const customer = this.selectedCustomer();
-    if (!customer) return;
-
-    this.isSavingReminder.set(true);
-
-    if (draft.id === undefined) {
-      this.apiService.createReminder(customer.id, draft.dueAt, draft.subject || undefined, draft.notes)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe({
-          next: (created) => {
-            this.customerReminders.update(list => this._sortReminders([...list, created]));
-            this._addMyReminder(created);
-            this.isSavingReminder.set(false);
-            this.reminderSaveSucceededCounter.update(n => n + 1);
-            this.toastService.success('Follow-up added');
-            this._syncReminderToOutlook(created);
-          },
-          error: () => this.isSavingReminder.set(false)
-        });
-      return;
-    }
-
-    const id = draft.id;
-    this.apiService.updateReminder(id, draft.dueAt, draft.subject || undefined, draft.notes,
-      OutlookCalendarService.currentTimeZone())
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (updated) => {
-          this.customerReminders.update(list => this._sortReminders(list.map(r => r.id === id ? updated : r)));
-          this._addMyReminder(updated);
-          this.isSavingReminder.set(false);
-          this.reminderSaveSucceededCounter.update(n => n + 1);
-          this.toastService.success('Follow-up updated');
-
-          // The API moved the calendar event in the same call — it patches the window rather than
-          // recreating the event, because a delete-and-recreate shows the original slot as
-          // "Canceled". All that is left here is to report a move that did not take.
-          if (updated.outlookEventId) {
-            if (updated.outlookEventMoved === false) {
-              this.toastService.info('Saved, but the Outlook event could not be moved.');
-            }
-          } else {
-            this._syncReminderToOutlook(updated);
-          }
-        },
-        error: () => this.isSavingReminder.set(false)
-      });
+    this.reminders.saveReminder(draft);
   }
 
   toggleReminderComplete(reminder: Reminder): void {
-    const next = !reminder.isCompleted;
-    this.apiService.setReminderCompleted(reminder.id, next)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(updated => {
-        // A completed reminder stays on the calendar on purpose: deleting the event makes Outlook
-        // render it as "Canceled", which reads as "this never happened" rather than "done".
-        this.customerReminders.update(list => this._sortReminders(list.map(r => r.id === reminder.id ? updated : r)));
-        if (next) {
-          this._removeMyReminder(reminder.id);
-        } else {
-          this._addMyReminder(updated);
-        }
-      });
+    this.reminders.toggleReminderComplete(reminder);
   }
 
   deleteReminder(reminder: Reminder): void {
-    this.apiService.deleteReminder(reminder.id)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => {
-        this.customerReminders.update(list => list.filter(r => r.id !== reminder.id));
-        this._removeMyReminder(reminder.id);
-        this.toastService.success('Follow-up deleted');
-        // The API removes the calendar event in the same call. Deleting is the only path that does
-        // so: completing a reminder deliberately leaves the event, because removing it makes Outlook
-        // render the slot as "Canceled", which reads as "this never happened" rather than "done".
-      });
+    this.reminders.deleteReminder(reminder);
   }
 
   /** Retry path for a reminder saved while Outlook was unavailable or consent was declined. */
   addReminderToOutlook(reminder: Reminder): void {
-    this._syncReminderToOutlook(reminder, true);
-  }
-
-  /**
-   * Writes the reminder to the user's own calendar and records the event id. Silent on failure
-   * during an automatic save (the row already offers a retry); explicit about it when the user
-   * pressed "Add to Outlook" and is waiting for an answer.
-   */
-  private _syncReminderToOutlook(reminder: Reminder, userInitiated = false): void {
-    const link = `${window.location.origin}/?customerId=${reminder.customerId}`;
-
-    // One call now: the API writes the event on-behalf-of the user AND records the id, so there is
-    // no window where the event exists but the row does not know about it.
-    this.outlookCalendar.addToOutlook(reminder, link)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(updated => {
-        // A null event id means the calendar could not be written; the row keeps its retry button.
-        if (!updated?.outlookEventId) {
-          this.toastService.info(
-            userInitiated
-              ? 'Could not add this to Outlook. Your follow-up is still saved here.'
-              : 'Follow-up saved. It could not be added to Outlook — use "Add to Outlook" to retry.'
-          );
-          return;
-        }
-
-        this.customerReminders.update(list => list.map(r => r.id === updated.id ? updated : r));
-        if (userInitiated) this.toastService.success('Added to your Outlook calendar');
-      });
-  }
-
-  private _sortReminders(list: Reminder[]): Reminder[] {
-    return [...list].sort((a, b) => {
-      if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
-      return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime();
-    });
-  }
-
-  /** Keeps the badge feed in step locally so the list updates without a round trip. */
-  private _addMyReminder(reminder: Reminder): void {
-    const row: ReminderDue = {
-      id: reminder.id,
-      customerId: reminder.customerId,
-      customerCode: reminder.customerCode,
-      dueAt: reminder.dueAt,
-    };
-    const next = [...this.myReminders().filter(r => r.id !== reminder.id), ...(reminder.isCompleted ? [] : [row])];
-    this.myReminders.set(next);
-    this.appState.setMyReminders(next);
-  }
-
-  private _removeMyReminder(reminderId: number): void {
-    const next = this.myReminders().filter(r => r.id !== reminderId);
-    this.myReminders.set(next);
-    this.appState.setMyReminders(next);
+    this.reminders.addReminderToOutlook(reminder);
   }
 
   handleSelectCustomer(customer: Customer, fromDeepLink = false): void {
@@ -1189,7 +674,7 @@ export class HomeComponent {
     // planting calls when the user clicks through producers quickly.
     this._cancelSelection$.next();
     // New selection — allow each producer's notes to be re-fetched once so other reps' adds show.
-    this._notesRefreshedThisSelection.clear();
+    this.notes.startSelection();
     // Reset navigation context when user manually selects (but NOT when coming from a deep link)
     if (!fromDeepLink) {
       this.pendingContractId.set(null);
@@ -1219,7 +704,7 @@ export class HomeComponent {
             this._ensureCustomerNotes(updated);
           }
         },
-        error: (err) => this._reportBackgroundFailure('refresh producer details', err)
+        error: (err) => this.backgroundFailures.report('refresh producer details', err)
       });
     }
 
@@ -1238,48 +723,17 @@ export class HomeComponent {
     // Fetch this producer's (and known linked group's) full notes — notes are no longer
     // bulk-downloaded, so selection is what hydrates the notes panel. Cache-hit = instant.
     this._ensureCustomerNotes(customer);
-    this._loadCustomerReminders(customer.id);
+    this.reminders.loadCustomerReminders(customer.id);
 
     // Fetch planting intentions exactly once per customer selection.
     // _loadCustomerData is called multiple times (contracts, tickets, storedGrain callbacks),
     // so the fetch lives here instead to avoid triple API calls.
-    // Cached on _customerPlantingCache after the first visit; subsequent clicks
-    // hydrate from cache instead of re-fetching. add/edit/deletePlantingIntention
-    // updates the cache alongside the live signals so it stays in sync.
-    const cachedPi = this._customerPlantingCache.get(customer.id);
-    if (cachedPi) {
-      // Bump the counter on the cache-hit path too. The miss path below increments it so an
-      // older in-flight fetch recognises itself as stale; restoring from cache without bumping
-      // left a previous fetch's captured id still matching, so it could land afterwards and
-      // overwrite the freshly-restored data.
-      ++this._piRequestId;
-      this.allCustomerPlantingIntentions.set(cachedPi);
-      this.customerPlantingIntentions.set(cachedPi);
-    } else {
-      this.allCustomerPlantingIntentions.set([]);
-      this.customerPlantingIntentions.set([]);
-      const piRequestId = ++this._piRequestId;
-      this.apiService.getPlantingIntentionsByCustomer(customer.id)
-        .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
-        .subscribe({
-          next: (intentions) => {
-            if (piRequestId !== this._piRequestId) return;
-            this.allCustomerPlantingIntentions.set(intentions);
-            this.customerPlantingIntentions.set(intentions);
-            this._customerPlantingCache.set(customer.id, intentions);
-          },
-          error: (err) => this._reportBackgroundFailure('load planting intentions', err)
-        });
-    }
+    // Cached after the first visit; subsequent clicks hydrate from cache instead of re-fetching
+    // (see HomePlantingStore.loadForSelection).
+    this.planting.loadForSelection(customer.id);
 
     // (No-TU special case removed: the selected producer's notes come from the per-customer
     // fetch above, and the badge aggregate spans all trade units — both are TU-independent.)
-  }
-
-  /** Applies ProducerDetails enrichment onto a freshly-fetched Customer. */
-  private _enrichCustomer(fetched: Customer): Customer {
-    const pd = this.producerDetailsMap().get(fetched.id);
-    return pd ? applyProducerDetails(fetched, pd) : fetched;
   }
 
   /**
@@ -1306,84 +760,16 @@ export class HomeComponent {
           }
         }
       },
-      error: (err) => this._reportBackgroundFailure('refresh producer details', err)
+      error: (err) => this.backgroundFailures.report('refresh producer details', err)
     });
   }
 
   /**
-   * Fetches every producer transitively linked to `customer` (forward + reverse) and
-   * populates `_crossTradeUnitCustomers` with the full group so `getLinkedGroup()` can
-   * surface the whole chain — e.g. if A→B and A→C, viewing B still shows C via A.
-   *
-   * BFS walks the graph one hop at a time; each newly discovered customer's own links
-   * are fetched recursively. `visited` guards against cycles. `MAX_GROUP_SIZE` is a
-   * safety cap in case a customer is part of an unexpectedly large link web.
+   * Fetches every producer transitively linked to `customer` that isn't loaded yet (see
+   * HomeLinkedProducersStore), topping up the selected producer's notes as each level lands.
    */
-  private _fetchMissingLinkedProducers(customer: Customer, visited: Set<number> = new Set()): void {
-    const MAX_GROUP_SIZE = 25;
-    if (visited.has(customer.id) || visited.size >= MAX_GROUP_SIZE) return;
-    // Already fetched this producer's linked group earlier in the session — the
-    // cache is correct, so skip the network round-trip entirely. This is what
-    // makes re-clicking a producer (or hopping back and forth in a saved list)
-    // instant after the first visit.
-    if (this._linkedFetchDone.has(customer.id)) return;
-    visited.add(customer.id);
-
-    const linkedIds = customer.linkedProducerIds || [];
-    const allCustomers = [...this.customers(), ...this._crossTradeUnitCustomers().values()];
-    const missing = linkedIds.filter(sourceId =>
-      !allCustomers.some(c => c.scoularId === sourceId)
-    );
-
-    // Outgoing: fetch each linked producer id this customer points to.
-    const outgoingRequests = missing.map(sourceId =>
-      this.apiService.getCustomerBySourceId(sourceId).pipe(catchError(() => of(null as Customer | null)))
-    );
-
-    // Incoming: fetch customers that link TO this one (reverse links). Needed so non-
-    // loaded producers who reverse-link to this customer still appear in the dropdown.
-    const incoming$ = customer.scoularId
-      ? this.apiService.getCustomersLinkedTo(customer.scoularId)
-      : of([] as Customer[]);
-
-    // Nothing to fetch — skip network entirely.
-    if (outgoingRequests.length === 0 && !customer.scoularId) return;
-
-    forkJoin({
-      outgoing: outgoingRequests.length > 0 ? forkJoin(outgoingRequests) : of([] as (Customer | null)[]),
-      incoming: incoming$
-    }).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe(({ outgoing, incoming }) => {
-      // BFS finished for this customer — mark done so re-selecting skips the network.
-      this._linkedFetchDone.add(customer.id);
-      // Merge new fetches into the cache. Use .update() so concurrent BFS branches
-      // from different customers don't clobber each other's additions.
-      this._crossTradeUnitCustomers.update(current => {
-        const next = new Map(current);
-        for (const fetched of outgoing) {
-          if (!fetched) continue;
-          if (!next.has(fetched.id)) next.set(fetched.id, this._enrichCustomer(fetched));
-        }
-        for (const fetched of incoming) {
-          if (!fetched || fetched.id === customer.id) continue;
-          if (!next.has(fetched.id)) next.set(fetched.id, this._enrichCustomer(fetched));
-        }
-        return next;
-      });
-
-      const discovered = [...outgoing, ...incoming]
-        .filter((c): c is Customer => !!c && !visited.has(c.id));
-
-      // Recurse into each newly-discovered customer so their own links (both
-      // directions) get fetched too — completes the transitive closure.
-      for (const next of discovered) {
-        this._fetchMissingLinkedProducers(next, visited);
-      }
-
-      // The selected producer's linked group may have just expanded — top up the
-      // per-customer notes cache for any newly-known members (the per-customer
-      // endpoint has no TU filter, so linked producers in unselected trade units
-      // are fully covered) and recompute the panel. Cache hits skip the network,
-      // so BFS levels with no new members cost nothing.
+  private _fetchMissingLinkedProducers(customer: Customer): void {
+    this.linked.fetchMissingLinkedProducers(customer, () => {
       const sel = this.selectedCustomer();
       if (sel) this._ensureCustomerNotes(sel);
     });
@@ -1428,7 +814,7 @@ export class HomeComponent {
           this._crossTradeUnitCustomers.set(cache);
         }
       },
-      error: (err) => this._reportBackgroundFailure('update the linked producer contact', err)
+      error: (err) => this.backgroundFailures.report('update the linked producer contact', err)
     });
   }
 
@@ -1500,7 +886,7 @@ export class HomeComponent {
         error: (err) => {
           this.customerPricingLines.set([]);
           this.isLoadingPricingLines.set(false);
-          this.pricingLinesLoadError.set(this._readFailureMessage(err));
+          this.pricingLinesLoadError.set(readFailureMessage(err));
         }
       });
   }
@@ -1601,7 +987,7 @@ export class HomeComponent {
         },
         error: (err) => {
           this.isLoadingContracts.set(false);
-          this.contractsLoadError.set(this._readFailureMessage(err));
+          this.contractsLoadError.set(readFailureMessage(err));
         }
       });
     }
@@ -1745,27 +1131,6 @@ export class HomeComponent {
     this._customerRowIds.set(customerId, entry);
   }
 
-  /** Loads one producer's tickets (applied + unapplied) into the LOCAL ticket signal and re-filters
-   *  the per-customer views. Used on producer select and on navigation-restore. Deliberately does
-   *  NOT write to appState.tickets — that signal is the TU-wide cache for list/NLQ queries only;
-   *  polluting it with one producer's tickets would make the customer-list/build-list NLQ guard
-   *  think the full TU set is loaded. Applied tickets are matched server-side by the customer's open
-   *  contract numbers, so split / cross-CustomerCode applied tickets are included. */
-  /**
-   * Turns a failed HTTP response into something an originator can act on.
-   *
-   * The API answers a failed CTRM read with a 503 and ProblemDetails carrying
-   * INFRASTRUCTURE_CTRM_UNAVAILABLE, which is the case worth naming: the data exists, we could not reach
-   * it, and retrying is the right move. Anything else gets a generic line rather than a raw status.
-   */
-  private _readFailureMessage(err: unknown): string {
-    const e = err as { status?: number; error?: { code?: string; message?: string } } | null;
-    if (e?.error?.code === 'INFRASTRUCTURE_CTRM_UNAVAILABLE')
-      return e.error.message ?? 'CTRM is temporarily unavailable. Please retry shortly.';
-    if (e?.status === 503) return 'The data source is temporarily unavailable. Please retry shortly.';
-    return 'Something went wrong loading this data. Please retry.';
-  }
-
   /** Retries the producer's contract read after a failure, from the table's Retry button. */
   retryCustomerContracts(): void {
     const customer = this.selectedCustomer();
@@ -1778,7 +1143,7 @@ export class HomeComponent {
         next: (contracts) => this._applyCustomerContracts(customer.id, contracts),
         error: (err) => {
           this.isLoadingContracts.set(false);
-          this.contractsLoadError.set(this._readFailureMessage(err));
+          this.contractsLoadError.set(readFailureMessage(err));
         }
       });
   }
@@ -1792,6 +1157,12 @@ export class HomeComponent {
     this._loadCustomerTickets(customer.id, customer.scoularId);
   }
 
+  /** Loads one producer's tickets (applied + unapplied) into the LOCAL ticket signal and re-filters
+   *  the per-customer views. Used on producer select and on navigation-restore. Deliberately does
+   *  NOT write to appState.tickets — that signal is the TU-wide cache for list/NLQ queries only;
+   *  polluting it with one producer's tickets would make the customer-list/build-list NLQ guard
+   *  think the full TU set is loaded. Applied tickets are matched server-side by the customer's open
+   *  contract numbers, so split / cross-CustomerCode applied tickets are included. */
   private _loadCustomerTickets(customerId: number, scoularId: string | undefined, onDone?: () => void): void {
     this.apiService.getTicketsByCustomer(customerId, scoularId)
       .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
@@ -1802,7 +1173,7 @@ export class HomeComponent {
         },
         error: (err) => {
           this.isLoadingUnappliedTickets.set(false);
-          this.ticketsLoadError.set(this._readFailureMessage(err));
+          this.ticketsLoadError.set(readFailureMessage(err));
         }
       });
   }
@@ -1811,18 +1182,8 @@ export class HomeComponent {
     const currentCustomer = customer || this.selectedCustomer();
     if (!currentCustomer) return;
 
-    const allContracts = this.contracts().filter(c => c.ctrmCustomerId === currentCustomer.scoularId);
-    // Include tickets whose CustomerCode matches the customer (covers unapplied + same-customer
-    // applied) AND tickets whose CtrmContractNumber is on one of this customer's contracts
-    // (covers cross-entity / split-load tickets where the ticket's CustomerCode differs from
-    // the contract's CtrmCustomerId — the backend now returns these; this filter must let them through).
-    const customerContractIds = new Set(
-      allContracts.map(c => c.sourceContractId).filter((s): s is string => !!s)
-    );
-    const allTickets = this.tickets().filter(t =>
-      t.customerCode === currentCustomer.scoularId
-      || (!!t.ctrmContractNumber && customerContractIds.has(t.ctrmContractNumber))
-    );
+    const { contracts: allContracts, tickets: allTickets } =
+      producerContractsAndTickets(currentCustomer, this.contracts(), this.tickets());
     this.allCustomerContracts.set([...allContracts]);
     this.allCustomerTickets.set([...allTickets]);
     this.customerContracts.set([...allContracts]);
@@ -1843,9 +1204,7 @@ export class HomeComponent {
     this.customerCodeMap.set(codeMap);
     // Pure recompute from the per-customer notes cache (hydrated by _ensureCustomerNotes) —
     // safe to call from every data-arrival callback, exactly like the filters above.
-    this.customerNotes.set(this._sortNotes(
-      [...linkedIds].flatMap(id => this._customerNotesCache.get(id) ?? [])
-    ));
+    this.notes.showNotesFor(linkedIds);
   }
 
   /** Producer ids with an auto-save PUT currently in flight — prevents the concurrent double-save race. */
@@ -1854,11 +1213,7 @@ export class HomeComponent {
   private readonly _autoSavePending = new Set<number>();
 
   private _autoSaveCommodities(customer: Customer, customerTickets: Ticket[]): void {
-    const ticketCommodities = [...new Set(customerTickets.map(t => t.productCode || '').filter(Boolean))];
-    const contractCommodities = [...new Set(
-      this.allCustomerContracts().map(c => c.commodityCode || '').filter(Boolean)
-    )];
-    const sourceCommodities = [...new Set([...ticketCommodities, ...contractCommodities])];
+    const sourceCommodities = commodityCodesFrom(customerTickets, this.allCustomerContracts());
     if (sourceCommodities.length === 0) return;
 
     const storedCommodities = customer.commodities || [];
@@ -1900,8 +1255,8 @@ export class HomeComponent {
           updated[index] = updatedCustomer;
           this.customers.set(updated);
           // Mirror into the shared cache too. This local signal duplicates appState.customers, and
-          // every other write site pushes both; this one didn't — so build-list, insights and
-          // unshipped-bushels kept serving the pre-merge commodity list until the next full
+          // every other write site pushes both; this one didn't — so build-list and insights
+          // kept serving the pre-merge commodity list until the next full
           // trade-unit reload happened to overwrite it.
           this.appState.setCustomers(updated);
         }
@@ -1953,57 +1308,14 @@ export class HomeComponent {
             this.selectedCustomer.set({ ...sel, ...customer, isManual: true, isOnboardCandidate: false });
           }
           this._saveProducerDetailsAndLinks(effective);
-          this._movePlantingIntentions(effective.customerId, effective.intentionMoves ?? []);
+          this.planting.movePlantingIntentions(effective.customerId, effective.intentionMoves ?? []);
         },
         error: () => this.toastService.error('Failed to update trade units')
       });
     } else {
       this._saveProducerDetailsAndLinks(data);
-      this._movePlantingIntentions(data.customerId, data.intentionMoves ?? []);
+      this.planting.movePlantingIntentions(data.customerId, data.intentionMoves ?? []);
     }
-  }
-
-  /**
-   * Re-homes planting intentions whose trade unit the user just removed, then reloads this
-   * producer's intentions so the profile and the dashboards show the new trade unit. Without the
-   * reload the move lands in the database while the cached rows still read the old trade unit.
-   */
-  private _movePlantingIntentions(customerId: number, moves: { from: string; to: string }[]): void {
-    if (moves.length === 0) return;
-    forkJoin(
-      moves.map(m => this.apiService.retagPlantingIntentions(customerId, m.from, m.to).pipe(
-        map(result => ({ ...m, moved: result.moved })),
-        catchError(() => {
-          this.toastService.error(`Couldn't move planting intentions from ${m.from} to ${m.to} — they're still recorded against ${m.from}.`);
-          return of({ ...m, moved: 0 });
-        })
-      ))
-    ).subscribe(results => {
-      const moved = results.reduce((sum, r) => sum + r.moved, 0);
-      if (moved > 0) {
-        const destinations = [...new Set(results.filter(r => r.moved > 0).map(r => r.to))].join(', ');
-        this.toastService.success(`Moved ${moved} planting intention${moved === 1 ? '' : 's'} to ${destinations}.`);
-        this._reloadCustomerPlantingIntentions(customerId);
-      }
-    });
-  }
-
-  /** Refetches one producer's planting intentions into every store that renders them. */
-  private _reloadCustomerPlantingIntentions(customerId: number): void {
-    this.apiService.getPlantingIntentionsByCustomer(customerId).subscribe({
-      next: (rows) => {
-        this._customerPlantingCache.set(customerId, rows);
-        if (this.selectedCustomer()?.id === customerId) {
-          this.allCustomerPlantingIntentions.set(rows);
-          this.customerPlantingIntentions.set(rows);
-        }
-        // Swap this producer's rows in the app-wide list the dashboard and Build-A-List read.
-        const merged = [...this.plantingIntentions().filter(p => p.customerId !== customerId), ...rows];
-        this.plantingIntentions.set(merged);
-        this.appState.setPlantingIntentions(merged);
-      },
-      error: () => this.toastService.error('Planting intentions moved, but the list couldn\'t be refreshed — reload the page to see them.')
-    });
   }
 
   private _saveProducerDetailsAndLinks(data: { customerId: number; acres: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { siteKey: string; name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; grainOnFarm: { binSiteKey?: string; commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[] }): void {
@@ -2013,9 +1325,9 @@ export class HomeComponent {
       || (sel?.id === data.customerId ? sel : null);
     if (!customer) return;
 
-    const ticketCommodities = [...new Set(this.allCustomerTickets().map(t => t.productCode || '').filter(Boolean))];
-    const contractCommodities = [...new Set(this.allCustomerContracts().map(c => c.commodityCode || '').filter(Boolean))];
-    const allCommodities = [...new Set([...ticketCommodities, ...contractCommodities, ...data.commodities])].sort();
+    const allCommodities = [...new Set([
+      ...commodityCodesFrom(this.allCustomerTickets(), this.allCustomerContracts()), ...data.commodities
+    ])].sort();
 
     const optimisticContacts = data.contacts.map((c, i) => ({ ...c, sortOrder: i }));
     const optimisticBinSites = data.binSites.map((b, i) => ({ ...b, sortOrder: i }));
@@ -2061,7 +1373,7 @@ export class HomeComponent {
     // next visit to the affected customers re-walks the graph. We don't know the
     // full transitive set without re-walking, so the safest cheap fix is to clear
     // everything; the cache will rebuild lazily as the user clicks through.
-    this._linkedFetchDone.clear();
+    this.linked.forgetWalks();
 
     this.apiService.saveProducerDetails(data.customerId, savePayload).subscribe({
       next: (pd) => {
@@ -2118,7 +1430,7 @@ export class HomeComponent {
             });
           }
         },
-        error: (err) => this._reportBackgroundFailure('update the linked producer', err)
+        error: (err) => this.backgroundFailures.report('update the linked producer', err)
       });
     }
 
@@ -2141,7 +1453,7 @@ export class HomeComponent {
               this._crossTradeUnitCustomers.set(cache);
               this._propagatePrimaryContact(fetched, primaryRow);
             },
-            error: (err) => this._reportBackgroundFailure('load a linked producer', err)
+            error: (err) => this.backgroundFailures.report('load a linked producer', err)
           });
         }
       }
@@ -2181,53 +1493,13 @@ export class HomeComponent {
   }
 
   /**
-   * Returns every producer transitively linked to `customer` — both forward (customers
-   * in `customer.linkedProducerIds`) and reverse (customers whose own `linkedProducerIds`
-   * includes `customer.scoularId`) — walked until the connected component is
-   * exhausted. Prevents infinite loops with a visited set. Caps at 50 members to avoid
-   * worst-case fanout. Relies on `_fetchMissingLinkedProducers` having populated the
-   * cache; if a transitively-linked producer isn't loaded yet, it's silently excluded
+   * Every producer transitively linked to `customer`, forward and reverse (see linkedGroupOf), among
+   * the roster and the cross-trade-unit cache. Relies on `_fetchMissingLinkedProducers` having
+   * populated the cache; if a transitively-linked producer isn't loaded yet, it's silently excluded
    * until its fetch completes and triggers a re-render.
    */
   getLinkedGroup(customer: Customer): Customer[] {
-    const MAX_GROUP_SIZE = 50;
-    const all = [...this.customers(), ...this._crossTradeUnitCustomers().values()];
-    const bySourceId = new Map<string, Customer>();
-    for (const c of all) {
-      if (c.scoularId) bySourceId.set(c.scoularId, c);
-    }
-
-    const visited = new Set<number>([customer.id]);
-    const result = new Map<number, Customer>();
-    const queue: Customer[] = [customer];
-
-    while (queue.length > 0 && visited.size < MAX_GROUP_SIZE) {
-      const cur = queue.shift()!;
-
-      // Forward: follow each id in the current customer's linkedProducerIds
-      for (const sourceId of cur.linkedProducerIds || []) {
-        const neighbor = bySourceId.get(sourceId);
-        if (neighbor && !visited.has(neighbor.id)) {
-          visited.add(neighbor.id);
-          result.set(neighbor.id, neighbor);
-          queue.push(neighbor);
-        }
-      }
-
-      // Reverse: find anyone whose linkedProducerIds mentions the current customer
-      const curSource = cur.scoularId || '';
-      if (curSource) {
-        for (const other of all) {
-          if (visited.has(other.id)) continue;
-          if ((other.linkedProducerIds || []).includes(curSource)) {
-            visited.add(other.id);
-            result.set(other.id, other);
-            queue.push(other);
-          }
-        }
-      }
-    }
-    return [...result.values()];
+    return linkedGroupOf(customer, [...this.customers(), ...this._crossTradeUnitCustomers().values()]);
   }
 
   handleSelectLinkedCustomer(customerId: number): void {
@@ -2238,7 +1510,7 @@ export class HomeComponent {
     // overwritten with B's contracts/tickets/notes.
     this._cancelSelection$.next();
     // New selection — allow each producer's notes to be re-fetched once (other reps' adds show).
-    this._notesRefreshedThisSelection.clear();
+    this.notes.startSelection();
     // Reset navigation context — user is manually selecting a linked producer
     this.pendingContractId.set(null);
     this.pendingTab.set(null);
@@ -2258,19 +1530,7 @@ export class HomeComponent {
       this._loadCustomerContractsAndTickets(customer.id, customer.scoularId);
       this._loadCustomerData(customer.id);
       this._ensureCustomerNotes(customer);
-      this.allCustomerPlantingIntentions.set([]);
-      this.customerPlantingIntentions.set([]);
-      const piRequestId = ++this._piRequestId;
-      this.apiService.getPlantingIntentionsByCustomer(customer.id)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe({
-          next: (intentions) => {
-            if (piRequestId !== this._piRequestId) return;
-            this.allCustomerPlantingIntentions.set(intentions);
-            this.customerPlantingIntentions.set(intentions);
-          },
-          error: (err) => this._reportBackgroundFailure('load planting intentions', err)
-        });
+      this.planting.loadWithoutCache(customer.id);
     } else {
       // Linked customer is in a different trade unit — fetch them from the API
       this.apiService.getCustomerById(customerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -2287,289 +1547,48 @@ export class HomeComponent {
           this._loadCustomerContractsAndTickets(fetched.id, fetched.scoularId);
           this._loadCustomerData(fetched.id);
           this._ensureCustomerNotes(fetched);
-          this.allCustomerPlantingIntentions.set([]);
-          this.customerPlantingIntentions.set([]);
-          const piRequestId = ++this._piRequestId;
-          this.apiService.getPlantingIntentionsByCustomer(fetched.id)
-            .pipe(takeUntilDestroyed(this.destroyRef))
-            .subscribe({
-              next: (intentions) => {
-                if (piRequestId !== this._piRequestId) return;
-                this.allCustomerPlantingIntentions.set(intentions);
-                this.customerPlantingIntentions.set(intentions);
-              },
-              error: (err) => this._reportBackgroundFailure('load planting intentions', err)
-            });
+          this.planting.loadWithoutCache(fetched.id);
         },
-        error: (err) => this._reportBackgroundFailure('load the selected producer', err)
+        error: (err) => this.backgroundFailures.report('load the selected producer', err)
       });
     }
     // (No-TU special case removed: _ensureCustomerNotes above hydrates the linked
     // customer's notes via the per-customer endpoint, which is TU-independent.)
   }
 
+  // ==========================================================================
+  // Planting intentions — delegated to HomePlantingStore
+  // ==========================================================================
+
   addPlantingIntention(data: {crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}): void {
-    const sel = this.selectedCustomer();
-    // Make a premature add (before a producer is selected/loaded) visible instead of a silent
-    // no-op that reads as "the save did nothing / took two clicks".
-    if (!sel) {
-      console.warn('[PlantingIntentions] Add attempted with no producer selected — ignoring.');
-      this.toastService.error('Select a producer before adding a planting intention.');
-      return;
-    }
-    this.apiService.createPlantingIntention({
-      customerId: sel.id, customerName: sel.name, customerCode: sel.scoularId || '',
-      tradeUnit: data.tradeUnit, crop: data.crop, category: data.category, type: data.type,
-      description: data.description, acres: data.acres, plantingYear: data.plantingYear
-    }).subscribe({
-      next: (intention) => {
-        this.plantingIntentions.update(arr => [...arr, intention]);
-        this.appState.setPlantingIntentions(this.plantingIntentions());
-        this.customerPlantingIntentions.update(arr => [...arr, intention]);
-        this.allCustomerPlantingIntentions.update(arr => [...arr, intention]);
-        const cached = this._customerPlantingCache.get(sel.id);
-        if (cached) this._customerPlantingCache.set(sel.id, [...cached, intention]);
-        this.toastService.success('Planting intention added');
-        this._ensureCommodityOnProducerDetails(sel, data.crop);
-      },
-      error: (e: Error) => this.toastService.error(e?.message || 'Failed to add planting intention')
-    });
+    this.planting.addPlantingIntention(data);
   }
 
   editPlantingIntention(data: {intentionId: number, crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit?: string}): void {
-    const sel = this.selectedCustomer();
-    this.apiService.updatePlantingIntention(data.intentionId, {
-      crop: data.crop, category: data.category, type: data.type, description: data.description, acres: data.acres, plantingYear: data.plantingYear,
-      tradeUnit: data.tradeUnit
-    }).subscribe({
-      next: (updated) => {
-        const update = (arr: PlantingIntention[]) => arr.map(p => p.id === data.intentionId ? updated : p);
-        this.plantingIntentions.update(update);
-        this.appState.setPlantingIntentions(this.plantingIntentions());
-        this.customerPlantingIntentions.update(update);
-        this.allCustomerPlantingIntentions.update(update);
-        if (sel) {
-          const cached = this._customerPlantingCache.get(sel.id);
-          if (cached) this._customerPlantingCache.set(sel.id, update(cached));
-        }
-        this.toastService.success('Planting intention updated');
-        if (sel) this._ensureCommodityOnProducerDetails(sel, data.crop);
-      },
-      error: (e: Error) => this.toastService.error(e?.message || 'Failed to update planting intention')
-    });
-  }
-
-  /**
-   * If the just-saved planting intention's crop isn't already on the producer's
-   * details, persist it there so the producer's commodities list stays in sync.
-   * Silent: any failure here is logged but doesn't surface to the user — the
-   * intention itself was already saved successfully.
-   */
-  private _ensureCommodityOnProducerDetails(customer: Customer, cropCode: string): void {
-    if (!cropCode) return;
-    const existing = customer.commodities ?? [];
-    const codeUpper = cropCode.trim().toUpperCase();
-    const alreadyPresent = existing.some(c => c.trim().toUpperCase() === codeUpper);
-    if (alreadyPresent) return;
-
-    const updated = [...existing, cropCode.trim()];
-    this.apiService.saveProducerDetails(customer.id, {
-      scoularId: customer.scoularId ?? null,
-      customerName: customer.name,
-      totalAcres: customer.totalAcres ?? null,
-      primaryContact: customer.primaryContact ?? null,
-      primaryPhone: customer.primaryPhone ?? null,
-      commodities: updated.join(','),
-      linkedProducerIds: (customer.linkedProducerIds ?? []).join(','),
-      // grainOnFarm intentionally omitted — this save isn't editing grain on farm, and the server
-      // preserves the existing rows when it is absent (a cached copy could be older than a teammate's edit).
-    }).subscribe({
-      next: (savedDetails) => {
-        // Reflect the new commodity in local state so the UI updates without a refresh.
-        const updatedCustomer = { ...customer, commodities: updated };
-        this.selectedCustomer.set(updatedCustomer);
-        this.customers.update(arr => arr.map(c => c.id === customer.id ? updatedCustomer : c));
-        // Keep the producer-details map in sync — same pattern as handleSaveCustomer.
-        const map = new Map(this.producerDetailsMap());
-        map.set(savedDetails.customerId, savedDetails);
-        this.producerDetailsMap.set(map);
-      },
-      error: () => { /* non-blocking — intention saved successfully */ }
-    });
+    this.planting.editPlantingIntention(data);
   }
 
   deletePlantingIntention(intentionId: number): void {
-    this.apiService.deletePlantingIntention(intentionId).subscribe({
-      next: () => {
-        const remove = (arr: PlantingIntention[]) => arr.filter(p => p.id !== intentionId);
-        this.plantingIntentions.update(remove);
-        this.appState.setPlantingIntentions(this.plantingIntentions());
-        this.customerPlantingIntentions.update(remove);
-        this.allCustomerPlantingIntentions.update(remove);
-        const sel = this.selectedCustomer();
-        if (sel) {
-          const cached = this._customerPlantingCache.get(sel.id);
-          if (cached) this._customerPlantingCache.set(sel.id, remove(cached));
-        }
-        this.toastService.success('Planting intention deleted');
-      },
-      error: () => this.toastService.error('Failed to delete planting intention')
-    });
+    this.planting.deletePlantingIntention(intentionId);
   }
 
-  /** True while a createNote request is in flight. Bound to <app-customer-notes
-   *  [isSavingNote]> so the textarea + button show a "Saving..." state and ignore
-   *  repeat clicks during the round trip. */
-  readonly isSavingNote = signal(false);
-  /** Increments after each successful createNote. <app-customer-notes> watches
-   *  this counter and clears its textarea only when it increments — so if the save
-   *  fails, the user's typed content survives and they can retry. */
-  readonly noteSaveSucceededCounter = signal(0);
+  // ==========================================================================
+  // Notes — delegated to HomeNotesStore
+  // ==========================================================================
 
   addNote(payload: { content: string; mentions: NoteMention[] }): void {
-    const { content, mentions } = payload;
-    const sel = this.selectedCustomer();
-    if (!sel) return;
-    // Not-yet-onboarded producer: there's no dbo.Customer row for a note to attach to
-    // (it FKs to Customer). Make them assign a trade unit + Save Changes first.
-    if (sel.isOnboardCandidate) {
-      this.toastService.error('Assign a trade unit and save this producer before adding notes.');
-      return;
-    }
-    // Guard against overlapping submits at the parent layer too — covers any caller
-    // that didn't honor the child's own isSavingNote disable.
-    if (this.isSavingNote()) return;
-    const tradeUnit = this.selectedTradeUnits().length === 1 ? this.selectedTradeUnits()[0] : undefined;
-    this.isSavingNote.set(true);
-    this.apiService.createNote(sel.id, content, tradeUnit, mentions).subscribe({
-      next: (note) => {
-        this._applyNoteToCache(note);
-        this.customerNotes.update(arr => this._sortNotes([...arr, note]));
-        this._recomputeLastContactFor(note.customerId);
-        this.toastService.success('Note added');
-        // Increment FIRST so the child clears its textarea, then drop the flag.
-        this.noteSaveSucceededCounter.update(n => n + 1);
-        this.isSavingNote.set(false);
-      },
-      error: (err: Error) => {
-        // Surface the server's reason (e.g. a mentioned group that's no longer available) —
-        // the generic message gives the user nothing to act on.
-        this.toastService.error(err?.message || 'Failed to add note');
-        // Leave the success counter alone — the child keeps the text so the user
-        // can retry. Just clear the in-flight flag so the button re-enables.
-        this.isSavingNote.set(false);
-      }
-    });
-  }
-
-  /** Inserts or replaces `note` in the per-customer notes cache and, when the full
-   *  TU-wide NLQ cache has been lazily loaded, mirrors the change there so saved-list /
-   *  build-list queries keep seeing fresh data. */
-  private _applyNoteToCache(note: Note): void {
-    const cached = this._customerNotesCache.get(note.customerId);
-    if (cached) {
-      const idx = cached.findIndex(n => n.id === note.id);
-      this._customerNotesCache.set(note.customerId,
-        idx >= 0 ? cached.map(n => n.id === note.id ? note : n) : [...cached, note]);
-    } else {
-      this._customerNotesCache.set(note.customerId, [note]);
-    }
-    if (this.appState.notesLoaded()) {
-      const all = this.appState.notes();
-      const idx = all.findIndex(n => n.id === note.id);
-      this.appState.setNotes(idx >= 0 ? all.map(n => n.id === note.id ? note : n) : [...all, note]);
-    }
-  }
-
-  /** Removes a note from the per-customer cache and (if loaded) the NLQ cache. */
-  private _removeNoteFromCache(noteId: number, customerId: number): void {
-    const cached = this._customerNotesCache.get(customerId);
-    if (cached) this._customerNotesCache.set(customerId, cached.filter(n => n.id !== noteId));
-    if (this.appState.notesLoaded()) {
-      this.appState.setNotes(this.appState.notes().filter(n => n.id !== noteId));
-    }
-  }
-
-  /** Recomputes the last-contact aggregate entry for one customer from the per-customer
-   *  notes cache (which the CRUD handlers keep current). A customer whose last note was
-   *  deleted drops back to "Never contacted"; a new note raises the badge date. */
-  private _recomputeLastContactFor(customerId: number): void {
-    const cached = this._customerNotesCache.get(customerId) ?? [];
-    this.noteLastContacts.update(rows => {
-      const rest = rows.filter(r => r.customerId !== customerId);
-      if (cached.length === 0) return rest;
-      const lastMs = cached.reduce((m, n) => Math.max(m, this._parseNoteTime(n.createdAt)), 0);
-      const row: NoteLastContact = {
-        customerId,
-        customerCode: cached[0].customerCode,
-        lastNoteAt: new Date(lastMs)
-      };
-      return [...rest, row];
-    });
-    this.appState.setNoteLastContacts(this.noteLastContacts());
-  }
-
-  private _parseNoteTime(ts: string | Date): number {
-    if (!ts) return 0;
-    // API returns bare ISO strings without Z suffix — treat as UTC consistently
-    const raw = typeof ts === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
-    return new Date(raw).getTime();
-  }
-
-  private _sortNotes(notes: Note[]): Note[] {
-    return notes.sort((a, b) => {
-      if (a.isPinned && !b.isPinned) return -1;
-      if (!a.isPinned && b.isPinned) return 1;
-      const aTime = this._parseNoteTime(a.modifiedAt || a.createdAt);
-      const bTime = this._parseNoteTime(b.modifiedAt || b.createdAt);
-      return bTime - aTime;
-    });
+    this.notes.addNote(payload);
   }
 
   toggleNotePin(note: Note): void {
-    this.apiService.toggleNotePin(note.id).subscribe({
-      next: (updated) => {
-        // Pin/unpin doesn't change createdAt, so the last-contact aggregate is untouched.
-        this._applyNoteToCache(updated);
-        this.customerNotes.update(arr =>
-          this._sortNotes(arr.map(n => n.id === updated.id ? updated : n))
-        );
-        this.toastService.success(updated.isPinned ? 'Note pinned' : 'Note unpinned');
-      },
-      error: () => this.toastService.error('Failed to update note')
-    });
+    this.notes.toggleNotePin(note);
   }
 
   editNote(data: { noteId: number; content: string; mentions: NoteMention[] }): void {
-    this.apiService.updateNote(data.noteId, data.content, data.mentions).subscribe({
-      next: (updated) => {
-        // Content edits don't change createdAt, so the last-contact aggregate is untouched.
-        this._applyNoteToCache(updated);
-        this.customerNotes.update(arr =>
-          this._sortNotes(arr.map(n => n.id === updated.id ? updated : n))
-        );
-        this.toastService.success('Note updated');
-      },
-      // Surface the server's reason (e.g. a group that's no longer available) instead of a
-      // generic failure — the message is actionable and the generic one isn't.
-      error: (err: Error) => this.toastService.error(err?.message || 'Failed to update note')
-    });
+    this.notes.editNote(data);
   }
 
   deleteNote(noteId: number): void {
-    // Resolve the note's owning customer BEFORE the delete — deletes come from the panel,
-    // so the note is in customerNotes (possibly belonging to a linked producer).
-    const target = this.customerNotes().find(n => n.id === noteId);
-    this.apiService.deleteNote(noteId).subscribe({
-      next: () => {
-        if (target) {
-          this._removeNoteFromCache(noteId, target.customerId);
-          this._recomputeLastContactFor(target.customerId);
-        }
-        this.customerNotes.update(arr => arr.filter(n => n.id !== noteId));
-        this.toastService.success('Note deleted');
-      },
-      error: () => this.toastService.error('Failed to delete note')
-    });
+    this.notes.deleteNote(noteId);
   }
 }

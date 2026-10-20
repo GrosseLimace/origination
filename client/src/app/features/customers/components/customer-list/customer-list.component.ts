@@ -2,10 +2,10 @@ import { Component, input, output, effect, inject, untracked, ChangeDetectionStr
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Subject, of, forkJoin, takeUntil } from 'rxjs';
+import { Observable, Subject, of, forkJoin, takeUntil } from 'rxjs';
 import { catchError, debounceTime, switchMap, map, tap } from 'rxjs/operators';
 import { StoredGrain, DpContract, Ticket, PlantingIntention, Contract } from '@models';
-import { Customer, SavedList, Note, NoteLastContact, ReminderDue, ProducerDetails } from '@models';
+import { Customer, SavedList, Note, NoteLastContact, ReminderDue, ProducerDetails, QueryLibraryItem } from '@models';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
@@ -28,6 +28,18 @@ interface LastContactInfo {
   daysAgo: number;
   cssClass: string;
 }
+
+/** What a saved list's prefetch can bring back. Each key is present only when the query needed
+ *  that data and it was not loaded yet. */
+type SavedListPrefetch = Partial<{
+  storedGrain: StoredGrain[];
+  dpContracts: DpContract[];
+  tickets: Ticket[];
+  plantingIntentions: PlantingIntention[];
+  contracts: Contract[];
+  notes: Note[];
+  queryLibrary: QueryLibraryItem[];
+}>;
 
 @Component({
   selector: 'app-customer-list',
@@ -78,6 +90,10 @@ export class CustomerListComponent {
   selectedListId = signal('all');
   savedListLoading = signal(false);
   searchLoading = signal(false);
+  /** The last producer search errored. The list shows a "search failed" state instead of rows —
+   *  never the loaded roster, which would read as everyone matching the term. Cleared by the next
+   *  successful search or by leaving search. */
+  searchFailed = signal(false);
   filteredCustomers = signal<Customer[]>([]);
 
   /** Roster size when the active saved list's customerIds were last resolved. Guards the
@@ -88,6 +104,14 @@ export class CustomerListComponent {
   );
   /** "All Producers" mode — search spans every producer (our table + ODS onboarding fallback). */
   readonly allProducersMode = computed(() => this.appStateService.allProducersMode());
+  /** The trade-unit producer read failed and nothing has replaced it, so an empty list is an outage,
+   *  not "no producers". */
+  readonly customersLoadFailed = computed(() =>
+    this.appStateService.customersLoadFailed() && this.customers().length === 0);
+  /** The last-contact aggregate failed to load and nothing replaced it, so "no contact on record" is
+   *  unknown rather than "Never contacted". */
+  readonly contactHistoryUnavailable = computed(() =>
+    this.appStateService.noteLastContactsLoadFailed() && this.noteLastContacts().length === 0);
 
   // Performance optimization: Cache last contact info to avoid repeated filtering/sorting
   // Signal so the OnPush template re-renders automatically when the cache is rebuilt.
@@ -144,12 +168,20 @@ export class CustomerListComponent {
             }
             return of(results);
           }),
-          catchError(() => of([...this.customers()]))
+          // null marks a failed search. ApiService already toasts 401/403, so the failure is
+          // shown inline in the list rather than with a second toast.
+          catchError(() => of(null))
         );
       }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe(customers => {
       this.searchLoading.set(false);
+      if (customers === null) {
+        this.searchFailed.set(true);
+        this.filteredCustomers.set([]);
+        return;
+      }
+      this.searchFailed.set(false);
       let result = customers.map(c => {
         const pd = this.producerDetailsMap().get(c.id);
         if (pd) {
@@ -314,7 +346,7 @@ export class CustomerListComponent {
           this._cancelSavedList$.next();
           if (this.getVisibleSavedLists().some(l => String(l.id) === currentList)) {
             const savedList = this.savedLists().find(l => String(l.id) === currentList);
-            if (savedList) savedList.customerIds = undefined as any;
+            if (savedList) savedList.customerIds = undefined;
             this.savedListLoading.set(true);
           } else {
             this.savedListLoading.set(false);
@@ -413,6 +445,7 @@ export class CustomerListComponent {
     }
 
     // No search term — client-side filter on loaded customers
+    this.searchFailed.set(false);
     let result = [...this.customers()];
 
     // Apply saved list filter (skip for "all" which means show all customers).
@@ -473,7 +506,7 @@ export class CustomerListComponent {
       // an immutable swap on appState wouldn't propagate to our input, but a mutation on the
       // shared object reference is visible everywhere that holds it.
       const savedList = this.savedLists().find(l => String(l.id) === id);
-      if (savedList) savedList.customerIds = undefined as any;
+      if (savedList) savedList.customerIds = undefined;
       // Clear any active producer-search term so applyFilters() resolves the saved list through
       // the fast LOCAL NLQ path. With a term present, applyFilters() diverts to the search
       // pipeline (and the slow ODS fallback in All-Producers mode) and that path never clears
@@ -509,7 +542,7 @@ export class CustomerListComponent {
     const tuParam = selectedTU.length > 0 ? selectedTU : undefined;
 
     // Only fetch data types the query actually needs — skip unnecessary slow fetches
-    const missing: Record<string, any> = {};
+    const missing: Record<string, Observable<unknown>> = {};
     if (this.nlqFilterService.queryInvolvesStorage(query) && this.appStateService.storedGrain().length === 0) {
       missing['storedGrain'] = this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[])));
     }
@@ -558,8 +591,8 @@ export class CustomerListComponent {
 
     if (Object.keys(missing).length > 0) {
       this.savedListLoading.set(true);
-      forkJoin(missing).pipe(takeUntil(this._cancelSavedList$), takeUntilDestroyed(this.destroyRef)).subscribe({
-        next: (results: any) => {
+      (forkJoin(missing) as Observable<SavedListPrefetch>).pipe(takeUntil(this._cancelSavedList$), takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: results => {
           // Stale-response guard — ignore callbacks from a superseded selection.
           if (runId !== this._activeSavedListRunId) return;
           if (results.storedGrain) this.appStateService.setStoredGrain(results.storedGrain);
@@ -568,7 +601,7 @@ export class CustomerListComponent {
           if (results.plantingIntentions) this.appStateService.setPlantingIntentions(results.plantingIntentions);
           if (results.contracts) this.appStateService.setContracts(results.contracts);
           if (results.notes) this.appStateService.setNotes(results.notes);
-          if (results.queryLibrary) this.appStateService.queryLibrary.set(results.queryLibrary);
+          if (results.queryLibrary) this.appStateService.setQueryLibrary(results.queryLibrary);
           this._executeNlq(savedList);
           this.savedListLoading.set(false);
           this.applyFilters();
@@ -663,6 +696,7 @@ export class CustomerListComponent {
     this.appStateService.setSelectedSavedListId('all');
     this.appStateService.setTradeUnits([]);
     this.appStateService.setSelectedGroupNames([]);
+    this.searchFailed.set(false);
     this.filteredCustomers.set([]);
     this.clearSelection.emit();
   }

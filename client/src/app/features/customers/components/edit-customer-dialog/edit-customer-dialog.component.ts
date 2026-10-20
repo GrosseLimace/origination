@@ -1,4 +1,5 @@
-import { Component, input, output, effect, inject, signal, computed, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, input, output, effect, inject, signal, computed, untracked, DestroyRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
@@ -57,12 +58,19 @@ const binSiteRowHasData = (r: BinSiteEditRow): boolean =>
     DialogContentComponent,
     DialogFooterComponent
   ],
-  templateUrl: './edit-customer-dialog.component.html'
+  templateUrl: './edit-customer-dialog.component.html',
+  // View state is signals and computeds, apart from editAcres (a plain field behind ngModel) and the
+  // private change snapshots hasChanges() reads. Those are written from template events, from the
+  // open effect (inside the refresh the isOpen input schedules), and from the details re-read, which
+  // marks the view itself.
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class EditCustomerDialogComponent {
   private readonly apiService = inject(ApiService);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly toast = inject(ToastService);
   private readonly appState = inject(AppStateService);
+  private readonly cdr = inject(ChangeDetectorRef);
 
   public isOpen = input(false);
   public customer = input<Customer | null>(null);
@@ -618,7 +626,7 @@ export class EditCustomerDialogComponent {
    */
   private _refreshFromServer(customer: Customer): void {
     const openedFor = customer.id;
-    this.apiService.getProducerDetails(openedFor).subscribe({
+    this.apiService.getProducerDetails(openedFor).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (details) => {
         if (!this.isOpen() || !this._initialized || this.customer()?.id !== openedFor) return;
         const fresh = applyProducerDetails(customer, details);
@@ -644,6 +652,9 @@ export class EditCustomerDialogComponent {
           this.editLinkedProducerIds.set([...(fresh.linkedProducerIds || [])]);
           this._originalLinkedProducerIds = [...(fresh.linkedProducerIds || [])];
         }
+        // editAcres and the change snapshots are plain fields, and this is a response, not a
+        // template event: when only the acres changed, nothing above has marked the view.
+        this.cdr.markForCheck();
       },
       error: () => { /* keep the page's copy */ },
     });
@@ -669,8 +680,9 @@ export class EditCustomerDialogComponent {
   }
 
   // Producer search
-  // _allProducersForSearch caches the full cross-trade-unit list (only loaded when no trade units selected)
-  private _allProducersForSearch: Customer[] = [];
+  // _allProducersForSearch caches the full cross-trade-unit list (only loaded when no trade units selected).
+  // A signal: it arrives in the background, and linked producers are named from it.
+  private readonly _allProducersForSearch = signal<Customer[]>([]);
   newProducerSearch = signal('');
   filteredProducers = signal<Customer[]>([]);
   showProducerSuggestions = signal(false);
@@ -695,7 +707,7 @@ export class EditCustomerDialogComponent {
     // is empty/errors so the dropdown never goes blank. Already-selected / ticket-derived
     // commodities display as their own code chips, so they show regardless of this list.
     this.isLoadingCommodities.set(true);
-    this.apiService.getPlantingCommodities().subscribe({
+    this.apiService.getPlantingCommodities().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (commodities) => {
         if (commodities.length > 0) {
           this.allCommodities.set(commodities);
@@ -712,7 +724,7 @@ export class EditCustomerDialogComponent {
       const tradeUnits = this.selectedTradeUnits();
       // Eagerly load all producers whenever selectedTradeUnits becomes empty so the cache is
       // ready before the user opens the link search. Cached — only fetches once per session.
-      if (tradeUnits.length === 0 && this._allProducersForSearch.length === 0 && !this.isLoadingProducers()) {
+      if (tradeUnits.length === 0 && untracked(this._allProducersForSearch).length === 0 && !this.isLoadingProducers()) {
         this._loadAllProducersForSearch();
       }
     });
@@ -753,7 +765,7 @@ export class EditCustomerDialogComponent {
 
         // If no trade units and the cache still isn't loaded (edge case: first open before effect
         // on selectedTradeUnits fired), kick off the load now.
-        if (this.selectedTradeUnits().length === 0 && this._allProducersForSearch.length === 0 && !this.isLoadingProducers()) {
+        if (this.selectedTradeUnits().length === 0 && untracked(this._allProducersForSearch).length === 0 && !this.isLoadingProducers()) {
           this._loadAllProducersForSearch();
         }
 
@@ -774,7 +786,7 @@ export class EditCustomerDialogComponent {
         this.tuRemovalTarget.set('');
         if (this.allTradeUnits().length === 0 && !this.isLoadingTradeUnits()) {
           this.isLoadingTradeUnits.set(true);
-          this.apiService.getAllTradeUnits().subscribe({
+          this.apiService.getAllTradeUnits().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
             next: (tus) => { this.allTradeUnits.set(tus); this.isLoadingTradeUnits.set(false); },
             error: () => { this.isLoadingTradeUnits.set(false); }
           });
@@ -831,7 +843,7 @@ export class EditCustomerDialogComponent {
   private _loadCurrentTradeUnits(customerId: number): void {
     this.isLoadingCurrentTradeUnits.set(true);
     this.currentTradeUnitsError.set(null);
-    this.apiService.getCustomerTradeUnits(customerId).subscribe({
+    this.apiService.getCustomerTradeUnits(customerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (tus) => {
         this.currentTradeUnits.set(tus);
         // Only ACTIVE manual memberships prefill the editable set — removed ones (isActive=false)
@@ -909,7 +921,7 @@ export class EditCustomerDialogComponent {
       return;
     }
     this.isCheckingPlantingIntentions.set(true);
-    this.apiService.getPlantingIntentionsByCustomer(customer.id).subscribe({
+    this.apiService.getPlantingIntentionsByCustomer(customer.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: rows => {
         const byTu = new Map<string, { count: number; acres: number; years: number[] }>();
         for (const row of rows) {
@@ -1077,7 +1089,7 @@ export class EditCustomerDialogComponent {
   /** Safety net: load the full commodity list if the curated list is empty/unavailable, so the
    *  picker never blanks. */
   private _loadCommoditiesFallback(): void {
-    this.apiService.getCommodities().subscribe({
+    this.apiService.getCommodities().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (commodities) => {
         this.allCommodities.set(commodities);
         this.isLoadingCommodities.set(false);
@@ -1163,9 +1175,9 @@ export class EditCustomerDialogComponent {
     // when the parameter is null/empty (see SqlDataService.cs). Previously this called
     // getTradeUnits() first just to round-trip the codes back as a scope, which was
     // dead weight once the local TU catalog was retired.
-    this.apiService.getCustomers().subscribe({
+    this.apiService.getCustomers().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (customers) => {
-        this._allProducersForSearch = customers;
+        this._allProducersForSearch.set(customers);
         this.isLoadingProducers.set(false);
         // If the user already typed in the search box, refresh results now that data is loaded
         if (this.newProducerSearch().trim()) {
@@ -1182,7 +1194,7 @@ export class EditCustomerDialogComponent {
     // No trade units selected → use the full cross-trade-unit cache
     // Trade units selected → use the already-loaded filtered list (instant, no extra API call)
     return this.selectedTradeUnits().length === 0
-      ? this._allProducersForSearch
+      ? this._allProducersForSearch()
       : this.allCustomers();
   }
 
@@ -1282,7 +1294,7 @@ export class EditCustomerDialogComponent {
       // wasn't committed; reopening the dialog will show it again from the refreshed list).
       const dormantRemovals = this.removedDormantTuCodes();
       for (const code of dormantRemovals) {
-        this.apiService.removeDormantTradeUnit(customer.id, code).subscribe({
+        this.apiService.removeDormantTradeUnit(customer.id, code).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
           error: () => this.toast.error(`Couldn't remove trade unit ${code} — the producer may still have an open contract or ticket there.`)
         });
       }

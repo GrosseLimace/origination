@@ -76,8 +76,7 @@ export class UserTradeUnitsService {
   }
 
   private clearForNoAssignments(): void {
-    this.appState.userGroups.set([]);
-    this.appState.noTradeUnitAssignments.set(true);
+    this.appState.markNoTradeUnitAssignments();
     if (this.appState.selectedGroupNames().length > 0) this.appState.setSelectedGroupNames([]);
     if (this.appState.selectedTradeUnits().length > 0) this.appState.setTradeUnits([]);
   }
