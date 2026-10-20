@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { FieldSeason } from '@models';
 import { estimateCi, fdCicCropFor, missingInputs, nationalAverage, summarizeIntention, yieldUsed } from './ci-illustrative';
+import { emptyIntake } from './ci-enrollment';
 
 function season(overrides: Partial<FieldSeason> = {}): FieldSeason {
   return {
     id: 's1', fieldKey: 'f1', plantingIntentionId: 1, year: 2026, cropLabel: 'Corn', acres: 100,
     expectedYield: 200, actualYield: null, syntheticN: 195.48, niFraction: 0,
-    tillage: 'Conventional', coverCrop: 'None', manure: [], status: 'Draft',
+    tillage: 'Conventional', coverCrop: 'None', manure: [], status: 'Draft', ...emptyIntake(),
     ...overrides,
   };
 }

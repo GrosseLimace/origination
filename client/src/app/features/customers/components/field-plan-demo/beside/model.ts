@@ -1,6 +1,7 @@
 /* DEMO ONLY (demo_FieldPlanCompare): a frozen copy of an earlier prototype's model, so the three
  * field-plan options can be compared side by side. Delete this folder with the comparison switch. */
 export * from '@models';
+import type { CiIntakeFields } from '@models';
 
 /**
  * 45Z field-level data capture and USDA FD-CIC carbon intensity (CI).
@@ -44,7 +45,7 @@ export interface ManureApplication {
   nContent: number | null;
 }
 
-export interface FieldSeason {
+export interface FieldSeason extends CiIntakeFields {
   id: string;
   fieldKey: string;
   plantingIntentionId: number;

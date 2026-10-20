@@ -1,6 +1,7 @@
 import { Injectable, computed, signal } from '@angular/core';
 import { FALLOW, FieldSeason, PlantingIntention, ProducerField, SeasonStatus } from './model';
 import { missingInputs } from '@shared/utils/ci-illustrative';
+import { cloneIntake, emptyIntake } from '@shared/utils/ci-enrollment';
 import { PlanKey, nextTotal, planKeyId, resolveKey } from './field-plan-rollup';
 
 /** One simulated intention total: what the intention row would read once the plan is saved. */
@@ -201,7 +202,7 @@ export class ByFieldMockService {
     const current = this.season(season.id);
     const field = current && this.field(current.fieldKey);
     if (!current || !field || current.status === 'Final') return;
-    const next = { ...season, manure: season.manure.map(m => ({ ...m })) };
+    const next = { ...season, manure: season.manure.map(m => ({ ...m })), ...cloneIntake(season) };
     next.status = this._derivedStatus(next);
     this._applyAcres(field.customerId, season.year, () => this.seasons.update(ss => ss.map(s => (s.id === season.id ? next : s))));
   }
@@ -289,6 +290,7 @@ export class ByFieldMockService {
       acres: crop === FALLOW ? null : field.acres, sortOrder,
       expectedYield: null, actualYield: null, syntheticN: null, niFraction: 0, tillage: null, coverCrop: null, manure: [],
       status: 'Draft',
+      ...emptyIntake(),
     };
   }
 

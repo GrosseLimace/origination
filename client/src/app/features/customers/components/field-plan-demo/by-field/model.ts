@@ -1,6 +1,7 @@
 /* DEMO ONLY (demo_FieldPlanCompare): a frozen copy of an earlier prototype's model, so the three
  * field-plan options can be compared side by side. Delete this folder with the comparison switch. */
 export * from '@models';
+import type { CiIntakeFields } from '@models';
 
 /**
  * Field-level planting plans, with the 45Z (USDA FD-CIC carbon intensity) layer on top.
@@ -53,7 +54,7 @@ export interface ManureApplication {
 }
 
 /** One field planted to one crop in one year (a double crop is a second season with sortOrder 2). */
-export interface FieldSeason {
+export interface FieldSeason extends CiIntakeFields {
   id: string;
   fieldKey: string;
   year: number;

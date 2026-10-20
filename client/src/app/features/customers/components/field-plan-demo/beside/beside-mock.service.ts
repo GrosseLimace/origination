@@ -1,6 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import { FdCicCrop, FieldSeason, ProducerField, SeasonStatus } from './model';
 import { missingInputs } from '@shared/utils/ci-illustrative';
+import { cloneIntake, emptyIntake } from '@shared/utils/ci-enrollment';
 import { CopyablePractices, practicesToCopy } from '@shared/utils/ci-copy-forward';
 
 /** Last season's practices on a field, offered by "Copy last year's practices". */
@@ -122,6 +123,8 @@ export class BesideMockService {
       coverCrop: prior?.coverCrop ?? null,
       manure: prior?.manure ?? [],
       status: 'Draft',
+      ...emptyIntake(),
+      ...prior,
     };
     season.status = this._derivedStatus(season);
     this.seasons.update(ss => [...ss, season]);
@@ -130,7 +133,7 @@ export class BesideMockService {
 
   updateSeason(season: FieldSeason): void {
     if (season.status === 'Final') return;
-    const next = { ...season, manure: season.manure.map(m => ({ ...m })) };
+    const next = { ...season, manure: season.manure.map(m => ({ ...m })), ...cloneIntake(season) };
     next.status = this._derivedStatus(next);
     this.seasons.update(ss => ss.map(s => (s.id === season.id ? next : s)));
   }

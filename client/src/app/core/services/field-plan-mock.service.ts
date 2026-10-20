@@ -1,6 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import { FieldSeason, ProducerField, SeasonStatus } from '@models';
 import { missingInputs } from '@shared/utils/ci-illustrative';
+import { cloneIntake, emptyIntake } from '@shared/utils/ci-enrollment';
 
 /**
  * PROTOTYPE ONLY: in-memory stand-in for the fields API, so "fields under each crop row" can be
@@ -70,7 +71,7 @@ export class FieldPlanMockService {
 
   updateSeason(season: FieldSeason): void {
     if (this.season(season.id)?.status === 'Final') return;
-    const next = { ...season, manure: season.manure.map(m => ({ ...m })) };
+    const next = { ...season, manure: season.manure.map(m => ({ ...m })), ...cloneIntake(season) };
     next.status = missingInputs(next).length === 0 ? 'Projected' : 'Draft';
     this.seasons.update(ss => ss.map(s => (s.id === season.id ? next : s)));
   }
@@ -99,6 +100,7 @@ export class FieldPlanMockService {
       id: `s${this._nextId++}`, fieldKey, plantingIntentionId: intentionId, year, cropLabel, acres,
       expectedYield: null, actualYield: null, syntheticN: null, niFraction: 0, tillage: null, coverCrop: null, manure: [],
       status: 'Draft',
+      ...emptyIntake(),
     };
   }
 }
