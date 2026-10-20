@@ -1,7 +1,8 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { FdCicCrop, FieldSeason, ProducerField, SeasonStatus } from './model';
 import { missingInputs } from '@shared/utils/ci-illustrative';
 import { CALCULATOR_VERSION, cloneIntake, emptyIntake, finalizeBlockers } from '@shared/utils/ci-enrollment';
+import { CiEnrollmentMockService } from '@core/services/ci-enrollment-mock.service';
 import { CopyablePractices, practicesToCopy } from '@shared/utils/ci-copy-forward';
 
 /** Last season's practices on a field, offered by "Copy last year's practices". */
@@ -23,6 +24,7 @@ export interface PriorPractices {
 export class BesideMockService {
   readonly fields = signal<ProducerField[]>([]);
   readonly seasons = signal<FieldSeason[]>([]);
+  private readonly _enrollments = inject(CiEnrollmentMockService);
   private readonly _prior = new Map<string, PriorPractices>();
   private readonly _seeded = new Set<number>();
   private _nextId = 1;
@@ -152,7 +154,9 @@ export class BesideMockService {
       : s)));
   }
 
+  /** Refused while an attested 45Z enrollment holds the season: withdraw the enrollment first. */
   reopenSeason(seasonId: string): void {
+    if (this._enrollments.lockedBy(seasonId)) return;
     this.seasons.update(ss => ss.map(s => {
       if (s.id !== seasonId) return s;
       const reopened: FieldSeason = { ...s, status: 'Draft', finalizedBy: undefined, finalizedAt: undefined, finalCiGPerBu: undefined, calculatorVersion: undefined };

@@ -10,6 +10,7 @@ import { copiesAllPractices, practicesToCopy } from '@shared/utils/ci-copy-forwa
 import { CiPreviewPanelComponent } from './ci-preview-panel.component';
 import { CiIntakeSectionsComponent } from './ci-intake-sections.component';
 import { cloneIntake, finalizeBlockers } from '@shared/utils/ci-enrollment';
+import { CiEnrollmentMockService } from '@core/services/ci-enrollment-mock.service';
 import { environment } from '@env/environment';
 
 /**
@@ -60,6 +61,9 @@ export class FieldSeasonDialogComponent {
     return s && crop ? estimateCi(crop, s) : null;
   });
   readonly isFinal = computed(() => this.season()?.status === 'Final');
+  private readonly enrollments = inject(CiEnrollmentMockService);
+  /** The attested 45Z enrollment holding this season: while it stands, the season can't be reopened. */
+  readonly lockedBy = computed(() => this.enrollments.lockedBy(this.season()?.id ?? ''));
   readonly prior = computed(() => {
     const s = this.season();
     return s ? this.plan.lastSeason(s.fieldKey, s.year) : undefined;

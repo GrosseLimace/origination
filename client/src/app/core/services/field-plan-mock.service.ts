@@ -1,7 +1,8 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { FieldSeason, ProducerField, SeasonStatus } from '@models';
 import { missingInputs } from '@shared/utils/ci-illustrative';
 import { CALCULATOR_VERSION, cloneIntake, emptyIntake, finalizeBlockers } from '@shared/utils/ci-enrollment';
+import { CiEnrollmentMockService } from '@core/services/ci-enrollment-mock.service';
 
 /**
  * PROTOTYPE ONLY: in-memory stand-in for the fields API, so "fields under each crop row" can be
@@ -12,6 +13,7 @@ import { CALCULATOR_VERSION, cloneIntake, emptyIntake, finalizeBlockers } from '
 export class FieldPlanMockService {
   readonly fields = signal<ProducerField[]>([]);
   readonly seasons = signal<FieldSeason[]>([]);
+  private readonly _enrollments = inject(CiEnrollmentMockService);
   private _nextId = 1;
 
   /** A short county list per state; the real list comes from the FD-CIC county table. */
@@ -90,7 +92,9 @@ export class FieldPlanMockService {
       : s)));
   }
 
+  /** Refused while an attested 45Z enrollment holds the season: withdraw the enrollment first. */
   reopenSeason(seasonId: string): void {
+    if (this._enrollments.lockedBy(seasonId)) return;
     this.seasons.update(ss => ss.map(s => {
       if (s.id !== seasonId) return s;
       const reopened: FieldSeason = { ...s, status: 'Draft', finalizedBy: undefined, finalizedAt: undefined, finalCiGPerBu: undefined, calculatorVersion: undefined };

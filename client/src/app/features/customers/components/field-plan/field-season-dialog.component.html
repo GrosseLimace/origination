@@ -16,7 +16,11 @@
         @if (isFinal()) {
           <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 px-4 py-3 text-sm text-blue-900 dark:text-blue-200">
             <span>🔒 Finalized by {{ season()?.finalizedBy }} with an actual yield of {{ season()?.actualYield }} bu/ac, final CI {{ season()?.finalCiGPerBu | number:'1.0-0' }} g/bu ({{ season()?.calculatorVersion }}). Locked for audit.</span>
-            <button type="button" class="underline bg-transparent border-0 p-0" (click)="showReopen = true">Reopen to correct…</button>
+            @if (lockedBy(); as enrolled) {
+              <span>In enrollment {{ enrolled.enrollmentId }}. Withdraw the enrollment to correct this field.</span>
+            } @else {
+              <button type="button" class="underline bg-transparent border-0 p-0" (click)="showReopen = true">Reopen to correct…</button>
+            }
           </div>
         }
 

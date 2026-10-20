@@ -10,6 +10,7 @@ import { COVER_LABELS, TILLAGE_LABELS, estimateCi, missingInputs, nationalAverag
 import { CiPreviewPanelComponent } from '../../field-plan/ci-preview-panel.component';
 import { CiIntakeSectionsComponent } from '../../field-plan/ci-intake-sections.component';
 import { cloneIntake, finalizeBlockers } from '@shared/utils/ci-enrollment';
+import { CiEnrollmentMockService } from '@core/services/ci-enrollment-mock.service';
 
 /**
  * The "45Z Field Data" dialog for one planting intention: the producer's fields assigned to it
@@ -83,6 +84,9 @@ export class BesideFieldDialogComponent {
   readonly unassignedAcres = computed(() => this.intention().acres - this.summary().assignedAcres);
   readonly national = computed(() => nationalAverage(this.crop()));
   readonly isFinal = computed(() => this.selectedSeason()?.status === 'Final');
+  private readonly enrollments = inject(CiEnrollmentMockService);
+  /** The attested 45Z enrollment holding this season: while it stands, the season can't be reopened. */
+  readonly lockedBy = computed(() => this.enrollments.lockedBy(this.selectedSeason()?.id ?? ''));
 
   constructor() {
     // On open, seed the producer and select the first field; keep the drafts in step with the selection.

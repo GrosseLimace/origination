@@ -1,11 +1,11 @@
-import { Component, input, output, inject, DestroyRef } from '@angular/core';
+import { Component, input, output, inject, DestroyRef, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
 import { InputComponent } from '@shared/components/input/input.component';
-import { Customer, PlantingIntention, Commodity, FdCicCrop } from '@models';
+import { Customer, PlantingIntention, Commodity, FdCicCrop, EnrollableSeason } from '@models';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { AppStateService } from '@core/services/app-state.service';
@@ -14,11 +14,15 @@ import { plantingCategory, commodityPlantingCategory } from '@shared/utils/plant
 import { fdCicCropFor } from '@shared/utils/ci-illustrative';
 import { environment } from '@env/environment';
 import { CropFieldsPanelComponent } from '../field-plan/crop-fields-panel.component';
+import { CiEnrollmentCardComponent } from '../field-plan/ci-enrollment-card.component';
+import { FieldPlanMockService } from '@core/services/field-plan-mock.service';
 // DEMO ONLY: the two earlier prototypes, for the A/B/C comparison switch.
 import { BesideStripComponent } from '../field-plan-demo/beside/ci-intention-strip.component';
 import { BesideFieldDialogComponent } from '../field-plan-demo/beside/ci-field-dialog.component';
 import { ByFieldViewComponent } from '../field-plan-demo/by-field/field-plan-view.component';
 import { ByFieldLineComponent } from '../field-plan-demo/by-field/field-plan-intention-line.component';
+import { BesideMockService } from '../field-plan-demo/beside/beside-mock.service';
+import { ByFieldMockService } from '../field-plan-demo/by-field/by-field-mock.service';
 
 type DemoOption = 'A' | 'B' | 'C';
 /** DEMO ONLY: which prototype is showing; module state so it outlives the component. */
@@ -54,7 +58,8 @@ type PlantingRow = PlantingIntention;
     BesideStripComponent,
     BesideFieldDialogComponent,
     ByFieldViewComponent,
-    ByFieldLineComponent
+    ByFieldLineComponent,
+    CiEnrollmentCardComponent
   ],
   templateUrl: './planting-intentions-table.component.html'
 })
@@ -309,8 +314,45 @@ export class PlantingIntentionsTableComponent {
     { id: 'B', label: 'B · Plan by field' },
     { id: 'C', label: 'C · Fields under each crop' },
   ] as const;
-  get demoOption(): DemoOption { return demoState.option; }
-  set demoOption(value: DemoOption) { demoState.option = value; }
+  private readonly _demoOption = signal<DemoOption>(demoState.option);
+  get demoOption(): DemoOption { return this._demoOption(); }
+  set demoOption(value: DemoOption) { demoState.option = value; this._demoOption.set(value); }
+
+  private readonly besidePlan = inject(BesideMockService);
+  private readonly byFieldPlan = inject(ByFieldMockService);
+  private readonly cropPlan = inject(FieldPlanMockService);
+
+  /** The producer's scored field seasons for the plan year, from whichever option is showing, for the enrollment card. */
+  readonly enrollableSeasons = computed<EnrollableSeason[]>(() => {
+    const customerId = this.customer().id;
+    const year = this.fieldPlanYear;
+    const scored = (label: string) => this.carbonIntensityEnabled && fdCicCropFor(label) !== null;
+    const toRow = (s: { id: string; fieldKey: string; acres: number | null; actualYield: number | null; status: EnrollableSeason['status']; finalCiGPerBu?: number },
+                   field: { name: string; fsaFarmNo?: string; fsaTractNo?: string; fsaFieldNo?: string }, cropLabel: string): EnrollableSeason => ({
+      seasonId: s.id, fieldKey: s.fieldKey, fieldName: field.name,
+      fsaFarmNo: field.fsaFarmNo, fsaTractNo: field.fsaTractNo, fsaFieldNo: field.fsaFieldNo,
+      cropLabel, cropYear: year, acres: s.acres, actualYield: s.actualYield, status: s.status, finalCiGPerBu: s.finalCiGPerBu,
+    });
+
+    if (this._demoOption() === 'A') {
+      const fields = new Map(this.besidePlan.fields().filter(f => f.customerId === customerId).map(f => [f.fieldKey, f]));
+      const intentions = new Map(this.plantingIntentions().filter(pi => pi.plantingYear === year).map(pi => [pi.id, pi]));
+      return this.besidePlan.seasons().flatMap(s => {
+        const field = fields.get(s.fieldKey);
+        const pi = intentions.get(s.plantingIntentionId);
+        const label = pi ? this.rowCropLabel(pi) : '';
+        return field && pi && scored(label) ? [toRow(s, field, label)] : [];
+      });
+    }
+    const plan = this._demoOption() === 'B' ? this.byFieldPlan : this.cropPlan;
+    const fields = new Map<string, { name: string; customerId: number; fsaFarmNo?: string; fsaTractNo?: string; fsaFieldNo?: string }>(
+      plan.fields().filter(f => f.customerId === customerId).map(f => [f.fieldKey, f]));
+    return (plan.seasons() as { id: string; fieldKey: string; year: number; cropLabel: string; acres: number | null; actualYield: number | null; status: EnrollableSeason['status']; finalCiGPerBu?: number }[])
+      .flatMap(s => {
+        const field = fields.get(s.fieldKey);
+        return field && s.year === year && scored(s.cropLabel) ? [toRow(s, field, s.cropLabel)] : [];
+      });
+  });
 
   // Option A
   besideIntention: PlantingIntention | null = null;

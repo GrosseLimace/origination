@@ -1,7 +1,8 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { Injectable, inject, computed, signal } from '@angular/core';
 import { FALLOW, FieldSeason, PlantingIntention, ProducerField, SeasonStatus } from './model';
 import { missingInputs } from '@shared/utils/ci-illustrative';
 import { CALCULATOR_VERSION, cloneIntake, emptyIntake, finalizeBlockers } from '@shared/utils/ci-enrollment';
+import { CiEnrollmentMockService } from '@core/services/ci-enrollment-mock.service';
 import { PlanKey, nextTotal, planKeyId, resolveKey } from './field-plan-rollup';
 
 /** One simulated intention total: what the intention row would read once the plan is saved. */
@@ -30,6 +31,7 @@ export type CropResolver = (label: string) => { code: string; label: string } | 
 export class ByFieldMockService {
   readonly fields = signal<ProducerField[]>([]);
   readonly seasons = signal<FieldSeason[]>([]);
+  private readonly _enrollments = inject(CiEnrollmentMockService);
   readonly totals = signal<Record<string, SimulatedTotal>>({});
   private _intentions: PlantingIntention[] = [];
   private readonly _seeded = new Set<number>();
@@ -233,7 +235,9 @@ export class ByFieldMockService {
       : s)));
   }
 
+  /** Refused while an attested 45Z enrollment holds the season: withdraw the enrollment first. */
   reopenSeason(seasonId: string): void {
+    if (this._enrollments.lockedBy(seasonId)) return;
     this.seasons.update(ss => ss.map(s => {
       if (s.id !== seasonId) return s;
       const reopened: FieldSeason = { ...s, status: 'Draft', finalizedBy: undefined, finalizedAt: undefined, finalCiGPerBu: undefined, calculatorVersion: undefined };

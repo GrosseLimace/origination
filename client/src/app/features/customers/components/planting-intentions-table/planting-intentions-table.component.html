@@ -32,6 +32,11 @@
             }
           </div>
         }
+
+        <!-- 45Z enrollment for the plan year: the producer attestation and the ID delivery lots carry -->
+        @if (carbonIntensityEnabled) {
+          <app-ci-enrollment-card class="mb-3 block" [customerId]="customer().id" [cropYear]="fieldPlanYear" [seasons]="enrollableSeasons()" />
+        }
       }
 
       @if (fieldPlanningEnabled && demoOption === 'B' && planView === 'field') {
