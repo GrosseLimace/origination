@@ -3634,7 +3634,7 @@
       "id": "angular.home-stores-raw-signals-no-asreadonly",
       "audit": "angular",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "title": "Two new Home page-stores expose raw WritableSignal fields with no .asReadonly()",
       "description": "home-notes.store.ts (isLoadingNotes, isSavingNote, noteSaveSucceededCounter) and home-reminders.store.ts (isLoadingReminders, isSavingReminder, reminderSaveSucceededCounter) declare their public signal fields as \"readonly\" (preventing property reassignment) but never call .asReadonly() on the WritableSignal itself, so any consumer with a reference can still call .set()/.update() on them. This is the same anti-pattern already flagged and resolved for AppStateService (angular.components-bypass-app-state-service) during the 2026-10-14..10-19 Home decomposition that created these two stores.",
       "files": [
@@ -3646,7 +3646,12 @@
         "date": "2026-10-20"
       },
       "last_verified": "2026-10-20",
-      "notes": "[2026-10-20] Found during angular-domain reconciliation pass; the other three Home stores created in the same refactor (home-linked-producers, home-planting, home-saved-lists) do not have raw public signal fields, so this is isolated to these two files rather than a systemic regression."
+      "notes": "[2026-10-20] Found during angular-domain reconciliation pass; the other three Home stores created in the same refactor (home-linked-producers, home-planting, home-saved-lists) do not have raw public signal fields, so this is isolated to these two files rather than a systemic regression.",
+      "resolved_in": {
+        "date": "2026-10-20",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "home-notes.store and home-reminders.store keep their six flags as private writable signals and expose asReadonly() views, the AppStateService pattern. The one outside writer (home.component clearing isLoadingNotes when it cancels in-flight reads) now calls notes.stopLoading(); the one test that set isSavingNote directly now fails the pending save instead. Guard tests assert no set/update on the public flags; mutation-checked (the old store fails them). Verified 2026-10-20."
     },
     {
       "id": "angular.sheet-multi-select-missing-spec",

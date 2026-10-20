@@ -59,6 +59,14 @@ describe('HomeRemindersStore', () => {
     page.selectedCustomer.set(P1);
   });
 
+  it('exposes its loading and saving flags read-only, so only the store can change them', () => {
+    // Same rule as AppStateService: the page and the panels read these; only the store writes them.
+    for (const flag of [store.isLoadingReminders, store.isSavingReminder, store.reminderSaveSucceededCounter]) {
+      expect('set' in flag).toBe(false);
+      expect('update' in flag).toBe(false);
+    }
+  });
+
   describe('loading a producer\'s follow-ups', () => {
     it('shows a spinner, then the producer\'s list', () => {
       const answer = new Subject<Reminder[]>();
