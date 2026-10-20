@@ -4019,6 +4019,11 @@ export class BidSheetComponent {
     const el = this.printPreviewPane()?.nativeElement;
     if (!el) { this.printPreviewPaneWidth.set(0); return; }
     // contentRect excludes the pane's padding, which is exactly the width the sheet may fill.
+    //
+    // The pane reserves its scrollbar gutter (see the template), and that is load-bearing here: the
+    // zoom this observer feeds changes the sheet's height, which can toggle the pane's vertical
+    // scrollbar, which would otherwise change the very width being observed -- a loop that showed up
+    // as the preview shaking between two zoom levels (found on the 2026-10-20 release check).
     const observer = new ResizeObserver(entries => {
       const width = entries[0]?.contentRect.width ?? el.clientWidth;
       this.printPreviewPaneWidth.set(Math.round(width));
