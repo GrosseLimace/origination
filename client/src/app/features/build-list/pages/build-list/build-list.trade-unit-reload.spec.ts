@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { MsalService } from '@azure/msal-angular';
 import { Observable, Subject, of } from 'rxjs';
 import { BuildListComponent } from './build-list.component';
@@ -98,6 +98,8 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
         { provide: UserRolesService, useValue: { isAdmin: () => false } },
         { provide: MsalService, useValue: { instance: { getActiveAccount: () => null, getAllAccounts: () => [] } } },
         { provide: Router, useValue: { navigate: vi.fn() } },
+        // No ?query= example link from the Help panel.
+        { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap({})) } },
       ],
     });
     // The template is 1,800 lines of real DOM; the behaviour under test is class-level.

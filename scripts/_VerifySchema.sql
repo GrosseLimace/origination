@@ -40,7 +40,6 @@
 --     * @CheckConstraints       = every t.HasCheckConstraint(...) (none today).
 --
 --   Last regenerated: 2026-09-21 against the snapshot as of migration
---   20260921152258_AddUsageDashboardViewAllUsers (re-parsed the snapshot; every
 --   previously listed row was reproduced unchanged by the rules above).
 --   Updated 2026-09-22: appended the two flax migrations (20260921202246,
 --   20260921204500). Both are data-only raw SQL, so no table, column or index
@@ -52,8 +51,6 @@
 --   dbo.CtrmSourceToggleUsers tester table and 20261005131626_DropCtrmSourceToggleUsers drops it at
 --   the CTRM go-live, so neither the table nor its columns or index are expected; only @Migrations
 --   grew, by both ids.
---   Updated 2026-10-09: 20261009145425_DropUsageDashboardViewAllUsers drops
---   dbo.UsageDashboardViewAllUsers (the usage dashboard's "who sees the whole org" list, retired
 --   when the manager dropdown was opened to everyone), so its table, five columns and unique index
 --   are no longer expected; @Migrations grew by that id.
 --   Updated 2026-09-23: 20260923124207_RenameGrainOnFarmGroupToCommodityCode renamed
@@ -145,7 +142,7 @@ DECLARE @Findings TABLE (
 );
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Tables (47)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Tables (51)
 -- -----------------------------------------------------------------------------
 INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'BarchartApiCallAudit'),
@@ -176,6 +173,10 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'HarvestWindows'),
 ('dbo', 'MbpLocationSynonym'),
 ('dbo', 'Notes'),
+('dbo', 'OrganicCertification'),
+('dbo', 'OrganicCertificationItem'),
+('dbo', 'OrganicCertificationLoad'),
+('dbo', 'OrganicCertificationScope'),
 ('dbo', 'ProducerBinSite'),
 ('dbo', 'ProducerContact'),
 ('dbo', 'ProducerDetails'),
@@ -197,7 +198,7 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (481)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (530)
 -- Format: (schema, table, column, sql_type, is_nullable)
 -- sql_type format must match what this script reconstructs from sys.columns:
 --   int, bigint, bit, datetime2, datetime2(N), date, float, uniqueidentifier
@@ -547,6 +548,58 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'Notes', 'ModifiedBy',  'nvarchar(200)', 1),
 ('dbo', 'Notes', 'Subject',     'nvarchar(500)', 1),
 ('dbo', 'Notes', 'TradeUnit',   'nvarchar(100)', 1),
+-- OrganicCertification — NOP certification feed landing tables.
+-- Contact name / phone / email are present in the source payload and deliberately NOT stored;
+-- see MigrationSnapshotConsistencyTests.CertificationDoesNotStoreContactPii.
+('dbo', 'OrganicCertification', 'Id',                   'int',            0),
+('dbo', 'OrganicCertification', 'AnniversaryDate',      'date',           1),
+('dbo', 'OrganicCertification', 'CertifierName',        'nvarchar(255)',  1),
+('dbo', 'OrganicCertification', 'ClientOperationId',    'nvarchar(100)',  1),
+('dbo', 'OrganicCertification', 'CustomerId',           'bigint',         1),
+('dbo', 'OrganicCertification', 'DeactivatedOn',        'datetime2',      1),
+('dbo', 'OrganicCertification', 'IsActive',             'bit',            0),
+('dbo', 'OrganicCertification', 'LoadBatchId',          'uniqueidentifier', 1),
+('dbo', 'OrganicCertification', 'Nopid',                'nvarchar(50)',   0),
+('dbo', 'OrganicCertification', 'OperationName',        'nvarchar(255)',  1),
+('dbo', 'OrganicCertification', 'OperationOtherNames',  'nvarchar(500)',  1),
+('dbo', 'OrganicCertification', 'OperationStatus',      'nvarchar(50)',   1),
+('dbo', 'OrganicCertification', 'PreviousStatus',       'nvarchar(50)',   1),
+('dbo', 'OrganicCertification', 'ScoularId',            'nvarchar(50)',   1),
+('dbo', 'OrganicCertification', 'SourceLastUpdateDate', 'date',           1),
+('dbo', 'OrganicCertification', 'StatusChangedOn',      'datetime2',      1),
+('dbo', 'OrganicCertification', 'StatusEffectiveDate',  'date',           1),
+('dbo', 'OrganicCertification', 'TotalAcreage',         'decimal(18,2)',  1),
+('dbo', 'OrganicCertification', 'UpdatedOn',            'datetime2',      0),
+('dbo', 'OrganicCertificationItem', 'Id',                     'int',           0),
+('dbo', 'OrganicCertificationItem', 'CategoryId',             'int',           1),
+('dbo', 'OrganicCertificationItem', 'CategoryName',           'nvarchar(255)', 1),
+('dbo', 'OrganicCertificationItem', 'CertificateNumber',      'nvarchar(255)', 1),
+('dbo', 'OrganicCertificationItem', 'ItemId',                 'int',           1),
+('dbo', 'OrganicCertificationItem', 'ItemName',               'nvarchar(255)', 1),
+('dbo', 'OrganicCertificationItem', 'Varieties',              'nvarchar(4000)', 1),
+('dbo', 'OrganicCertificationItem', 'Organic',                'bit',           0),
+('dbo', 'OrganicCertificationItem', 'Organic100',             'bit',           0),
+('dbo', 'OrganicCertificationItem', 'OrganicCertificationId', 'int',           0),
+('dbo', 'OrganicCertificationItem', 'OtherItems',             'nvarchar(4000)', 1),
+('dbo', 'OrganicCertificationItem', 'Scope',                  'nvarchar(50)',  1),
+('dbo', 'OrganicCertificationItem', 'Status',                 'nvarchar(50)',  1),
+('dbo', 'OrganicCertificationItem', 'StatusEffectiveDate',    'date',          1),
+('dbo', 'OrganicCertificationItem', 'UpdatedOn',              'datetime2',     0),
+('dbo', 'OrganicCertificationLoad', 'Id',                'int',            0),
+('dbo', 'OrganicCertificationLoad', 'Accepted',          'int',            0),
+('dbo', 'OrganicCertificationLoad', 'BatchId',           'uniqueidentifier', 0),
+('dbo', 'OrganicCertificationLoad', 'Message',           'nvarchar(1000)', 1),
+('dbo', 'OrganicCertificationLoad', 'Nopid',             'nvarchar(50)',   1),
+('dbo', 'OrganicCertificationLoad', 'ReceivedOn',        'datetime2',      0),
+('dbo', 'OrganicCertificationLoad', 'Rejected',          'int',            0),
+('dbo', 'OrganicCertificationLoad', 'Status',            'nvarchar(50)',   0),
+('dbo', 'OrganicCertificationLoad', 'UnmatchedCustomer', 'int',            0),
+('dbo', 'OrganicCertificationScope', 'Id',                     'int',          0),
+('dbo', 'OrganicCertificationScope', 'OrganicCertificationId', 'int',          0),
+('dbo', 'OrganicCertificationScope', 'Scope',                  'nvarchar(50)', 0),
+('dbo', 'OrganicCertificationScope', 'ScopeStatus',            'nvarchar(50)', 1),
+('dbo', 'OrganicCertificationScope', 'StatusEffectiveDate',    'date',         1),
+('dbo', 'OrganicCertificationScope', 'UpdatedOn',              'datetime2',    0),
 -- ProducerPlantingIntentions (PlantingIntention entity)
 ('dbo', 'ProducerPlantingIntentions', 'Id',           'int',           0),
 ('dbo', 'ProducerPlantingIntentions', 'Acres',        'int',           0),
@@ -738,7 +791,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 -- (no rows)
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Unique indexes (24)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Unique indexes (26)
 -- EF Core auto-names single-property unique indexes as IX_<table>_<column>;
 -- this project uses explicit names (IX_*/UQ_*/UX_*) for most indexes.
 -- (NON-unique indexes such as IX_*_Timestamp are intentionally NOT listed.)
@@ -764,13 +817,15 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'ProducerGrainOnFarm',         'UQ_ProducerGrainOnFarm_Customer_Site_Commodity'),
 ('dbo', 'TeamsChannels',               'UX_TeamsChannels_ChannelId'),
 ('dbo', 'UsageDashboardExcludedUsers', 'IX_UsageDashboardExcludedUsers_UserId'),
+('dbo', 'OrganicCertification',        'UQ_OrganicCertification_Nopid'),
+('dbo', 'OrganicCertificationScope',   'UQ_OrganicCertificationScope_Certification_Scope'),
 ('dbo', 'UserActivityDaily',           'UQ_UserActivityDaily_UserId_Date'),
 ('dbo', 'UserFeatureUsageDaily',       'UQ_UserFeatureUsageDaily'),
 ('dbo', 'UserPreferences',             'UQ_UserPreferences_UserId'),
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (97)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (99)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -850,9 +905,11 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260921204500_SplitFlaxPlantingCategoryByColour'),
 ('20260923124207_RenameGrainOnFarmGroupToCommodityCode'),
 ('20260923132920_AddSelectedColumnsToBidSheetPreference'),
+('20260923152000_AddOrganicCertificationTables'),
 ('20261001133422_AddCtrmSourceToggleUsers'),
 ('20261005131626_DropCtrmSourceToggleUsers'),
 ('20261006150349_AddCustomerIdSequence'),
+('20261007120000_WidenOrganicCertificationItemText'),
 ('20261007133856_AddCustomerPaymentMethod'),
 ('20261007145119_AddProducerBinSite'),
 ('20261007152343_WidenProducerBinSiteCoordinatePrecision'),

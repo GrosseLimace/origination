@@ -1880,6 +1880,302 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.ToTable("Notes", "dbo");
                 });
 
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.OrganicCertification", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("AnniversaryDate")
+                        .HasColumnType("date")
+                        .HasColumnName("AnniversaryDate");
+
+                    b.Property<string>("CertifierName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("CertifierName");
+
+                    b.Property<string>("ClientOperationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("ClientOperationId");
+
+                    b.Property<long?>("CustomerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CustomerId");
+
+                    b.Property<DateTime?>("DeactivatedOn")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("DeactivatedOn");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("IsActive");
+
+                    b.Property<Guid?>("LoadBatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("LoadBatchId");
+
+                    b.Property<string>("Nopid")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("Nopid");
+
+                    b.Property<string>("OperationName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("OperationName");
+
+                    b.Property<string>("OperationOtherNames")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("OperationOtherNames");
+
+                    b.Property<string>("OperationStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("OperationStatus");
+
+                    b.Property<string>("PreviousStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("PreviousStatus");
+
+                    b.Property<string>("ScoularId")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("ScoularId");
+
+                    b.Property<DateTime?>("SourceLastUpdateDate")
+                        .HasColumnType("date")
+                        .HasColumnName("SourceLastUpdateDate");
+
+                    b.Property<DateTime?>("StatusChangedOn")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("StatusChangedOn");
+
+                    b.Property<DateTime?>("StatusEffectiveDate")
+                        .HasColumnType("date")
+                        .HasColumnName("StatusEffectiveDate");
+
+                    b.Property<decimal?>("TotalAcreage")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("TotalAcreage");
+
+                    b.Property<DateTime>("UpdatedOn")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()")
+                        .HasColumnName("UpdatedOn");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId")
+                        .HasDatabaseName("IX_OrganicCertification_CustomerId");
+
+                    b.HasIndex("Nopid")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_OrganicCertification_Nopid");
+
+                    b.ToTable("OrganicCertification", "dbo");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.OrganicCertificationItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("CategoryId")
+                        .HasColumnType("int")
+                        .HasColumnName("CategoryId");
+
+                    b.Property<string>("CategoryName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("CategoryName");
+
+                    b.Property<string>("CertificateNumber")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("CertificateNumber");
+
+                    b.Property<int?>("ItemId")
+                        .HasColumnType("int")
+                        .HasColumnName("ItemId");
+
+                    b.Property<string>("ItemName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("ItemName");
+
+                    b.Property<bool>("Organic")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("Organic");
+
+                    b.Property<bool>("Organic100")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("Organic100");
+
+                    b.Property<int>("OrganicCertificationId")
+                        .HasColumnType("int")
+                        .HasColumnName("OrganicCertificationId");
+
+                    b.Property<string>("OtherItems")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)")
+                        .HasColumnName("OtherItems");
+
+                    b.Property<string>("Scope")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("Scope");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("Status");
+
+                    b.Property<DateTime?>("StatusEffectiveDate")
+                        .HasColumnType("date")
+                        .HasColumnName("StatusEffectiveDate");
+
+                    b.Property<DateTime>("UpdatedOn")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()")
+                        .HasColumnName("UpdatedOn");
+
+                    b.Property<string>("Varieties")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)")
+                        .HasColumnName("Varieties");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganicCertificationId")
+                        .HasDatabaseName("IX_OrganicCertificationItem_CertificationId");
+
+                    b.ToTable("OrganicCertificationItem", "dbo");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.OrganicCertificationLoad", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Accepted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0)
+                        .HasColumnName("Accepted");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("BatchId");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("Message");
+
+                    b.Property<string>("Nopid")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("Nopid");
+
+                    b.Property<DateTime>("ReceivedOn")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()")
+                        .HasColumnName("ReceivedOn");
+
+                    b.Property<int>("Rejected")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0)
+                        .HasColumnName("Rejected");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("Status");
+
+                    b.Property<int>("UnmatchedCustomer")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0)
+                        .HasColumnName("UnmatchedCustomer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReceivedOn")
+                        .HasDatabaseName("IX_OrganicCertificationLoad_ReceivedOn");
+
+                    b.ToTable("OrganicCertificationLoad", "dbo");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.OrganicCertificationScope", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("OrganicCertificationId")
+                        .HasColumnType("int")
+                        .HasColumnName("OrganicCertificationId");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("Scope");
+
+                    b.Property<string>("ScopeStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("ScopeStatus");
+
+                    b.Property<DateTime?>("StatusEffectiveDate")
+                        .HasColumnType("date")
+                        .HasColumnName("StatusEffectiveDate");
+
+                    b.Property<DateTime>("UpdatedOn")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()")
+                        .HasColumnName("UpdatedOn");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganicCertificationId", "Scope")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_OrganicCertificationScope_Certification_Scope");
+
+                    b.ToTable("OrganicCertificationScope", "dbo");
+                });
+
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.PlantingIntention", b =>
                 {
                     b.Property<int>("Id")
@@ -3064,6 +3360,41 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.Navigation("Customer");
                 });
 
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.OrganicCertification", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("FK_OrganicCertification_Customer");
+
+                    b.Navigation("Customer");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.OrganicCertificationItem", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.OrganicCertification", "OrganicCertification")
+                        .WithMany("Items")
+                        .HasForeignKey("OrganicCertificationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_OrganicCertificationItem_OrganicCertification");
+
+                    b.Navigation("OrganicCertification");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.OrganicCertificationScope", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.OrganicCertification", "OrganicCertification")
+                        .WithMany("Scopes")
+                        .HasForeignKey("OrganicCertificationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_OrganicCertificationScope_OrganicCertification");
+
+                    b.Navigation("OrganicCertification");
+                });
+
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.PlantingIntention", b =>
                 {
                     b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.Customer", "Customer")
@@ -3161,6 +3492,13 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.Navigation("CcEmails");
 
                     b.Navigation("Members");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.OrganicCertification", b =>
+                {
+                    b.Navigation("Items");
+
+                    b.Navigation("Scopes");
                 });
 #pragma warning restore 612, 618
         }

@@ -47,7 +47,8 @@
 
       <!-- Loading skeletons -->
       } @else if (isLoading()) {
-        @for (skeletonCategory of skeletonCategories; track skeletonCategory.color) {
+        @for (category of visibleCategories(); track category) {
+          @let skeletonCategory = skeletonCategories[category];
           <app-card class="overflow-hidden">
             <!-- Skeleton header -->
             <div [class]="skeletonCategory.headerClass" class="p-4">
@@ -94,9 +95,9 @@
         </div>
 
         <!-- Category cards -->
-        @for (category of categories; track category; let i = $index) {
+        @for (category of visibleCategories(); track category) {
           @if (isCategoryLoading(category)) {
-            @let sk = skeletonCategories[i];
+            @let sk = skeletonCategories[category];
             <app-card class="overflow-hidden">
               <div [class]="sk.headerClass" class="p-4">
                 <div class="flex items-center justify-between">
@@ -146,6 +147,28 @@
                       <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="meta.iconClass">
                         <circle cx="12" cy="12" r="10"/>
                         <polyline points="12 6 12 12 16 14"/>
+                      </svg>
+                    }
+                    <!-- All three organic categories share the leaf, matching the badge on the
+                         producer profile, so they read as one feature. They are told apart by
+                         their heading and by colour — amber where we hold open contracts, grey
+                         where we do not. -->
+                    @case ('OrganicStatusChanges') {
+                      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="meta.iconClass">
+                        <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/>
+                        <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
+                      </svg>
+                    }
+                    @case ('OrganicUncontracted') {
+                      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="meta.iconClass">
+                        <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/>
+                        <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
+                      </svg>
+                    }
+                    @case ('OrganicMissingCertificate') {
+                      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="meta.iconClass">
+                        <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/>
+                        <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
                       </svg>
                     }
                   }

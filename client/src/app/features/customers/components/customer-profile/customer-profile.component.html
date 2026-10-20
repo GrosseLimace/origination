@@ -57,8 +57,14 @@
                     (click)="showOrganicDetail.update(v => !v)"
                     [attr.aria-expanded]="showOrganicDetail()"
                     aria-controls="organic-certification-panel"
-                    title="Organic producer"
-                    class="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green border border-green-200 dark:border-green-800 hover:bg-scoular-green/20 dark:hover:bg-scoular-green/20 transition-colors cursor-pointer"
+                    [title]="organicBadgeTitle()"
+                    [attr.aria-label]="'Organic producer. ' + organicBadgeTitle()"
+                    class="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors cursor-pointer"
+                    [class]="organicSurrendered()
+                      ? 'bg-scoular-red/10 text-scoular-red-accessible dark:bg-scoular-red/20 dark:text-scoular-red border-red-200 dark:border-red-800 hover:bg-scoular-red/20 dark:hover:bg-scoular-red/20'
+                      : organicNeedsAttention()
+                      ? 'bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200 border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/30'
+                      : 'bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green border-green-200 dark:border-green-800 hover:bg-scoular-green/20 dark:hover:bg-scoular-green/20'"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
@@ -66,6 +72,11 @@
                     <!-- Short label in a narrow column so the badges stay on the name's row. -->
                     <span class="@4xl/profile:hidden">Organic</span>
                     <span class="hidden @4xl/profile:inline">Organic Producer</span>
+                    <!-- The whole badge carries the signal — green, amber or red. It replaced a 6px
+                         amber dot on 2026-10-07: the dot was easy to miss on a scan, and two of the
+                         four amber conditions (a stale certifier record, a past-due annual update)
+                         were not represented on the badge at all and could only be found by opening
+                         the panel. See organicAmberReasons for the full list and the hover text. -->
                   </button>
                 }
                 </div>
@@ -91,19 +102,14 @@
               @if (showOrganicBadge() && showOrganicDetail()) {
                 <div id="organic-certification-panel" class="mt-2">
                   <p class="text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-1.5">Organic</p>
-                  @if (customer().nopId) {
-                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                      <span class="inline-flex items-center gap-1.5">
-                        <span class="text-gray-500 dark:text-gray-400 @4xl/profile:hidden">NOPID</span>
-                        <span class="text-gray-500 dark:text-gray-400 hidden @4xl/profile:inline">NOP ID</span>
-                        <span class="font-medium text-gray-900 dark:text-gray-100">{{ customer().nopId }}</span>
-                      </span>
-                    </div>
-                  } @else {
-                    <p class="text-sm text-gray-500 dark:text-gray-400 italic">No NOP ID on file for this producer.</p>
-                  }
-                  <!-- Certification status, expiry date and certified commodities arrive with the
-                       NOP certification feed; until then this panel carries the id alone. -->
+                  <!-- The NOP id comes from the customer record so it renders immediately, without
+                       waiting on the certification fetch. The panel shows the id alone if that
+                       fetch has not landed or failed — the same thing it showed before
+                       certification data existed. -->
+                  <app-organic-certification-panel
+                    [nopId]="customer().nopId"
+                    [certification]="organicCertification()"
+                  />
                 </div>
               }
               @if (customer().farm) {

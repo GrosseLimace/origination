@@ -27,6 +27,10 @@ public class ApplicationDbContext : DbContext
     public DbSet<DashboardActualHarvest> DashboardActualHarvests => Set<DashboardActualHarvest>();
     public DbSet<SavedList> SavedLists => Set<SavedList>();
     public DbSet<ESignEnrollment> ESignEnrollments => Set<ESignEnrollment>();
+    public DbSet<OrganicCertification> OrganicCertifications => Set<OrganicCertification>();
+    public DbSet<OrganicCertificationScope> OrganicCertificationScopes => Set<OrganicCertificationScope>();
+    public DbSet<OrganicCertificationItem> OrganicCertificationItems => Set<OrganicCertificationItem>();
+    public DbSet<OrganicCertificationLoad> OrganicCertificationLoads => Set<OrganicCertificationLoad>();
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<CustomerTradeUnit> CustomerTradeUnits => Set<CustomerTradeUnit>();
     public DbSet<CustomerLink> CustomerLinks => Set<CustomerLink>();
@@ -325,6 +329,138 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Guild).HasColumnName("GUID").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.UpdatedOn).HasColumnName("UpdatedOn").HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.HasIndex(e => e.CustomerCode).IsUnique().HasDatabaseName("UQ_eSignEnrollment_CustomerCode");
+        });
+
+        // -------------------------------------------------------------------------
+        // Organic (NOP) certification — landing tables for the certification feed.
+        // Sits beside ESignEnrollment because both are fed by an external integration, but note
+        // the difference: the eSign table is written by a Power Automate flow directly, whereas
+        // this application is the only writer here — the feed POSTs to an ingest endpoint we own.
+        // -------------------------------------------------------------------------
+        modelBuilder.Entity<OrganicCertification>(entity =>
+        {
+            entity.ToTable("OrganicCertification", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.Nopid).HasColumnName("Nopid").HasMaxLength(50).IsRequired();
+            entity.Property(e => e.ScoularId).HasColumnName("ScoularId").HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired(false);
+            entity.Property(e => e.OperationName).HasColumnName("OperationName").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.OperationOtherNames).HasColumnName("OperationOtherNames").HasMaxLength(500).IsRequired(false);
+            entity.Property(e => e.ClientOperationId).HasColumnName("ClientOperationId").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.CertifierName).HasColumnName("CertifierName").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.OperationStatus).HasColumnName("OperationStatus").HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.StatusEffectiveDate).HasColumnName("StatusEffectiveDate").HasColumnType("date").IsRequired(false);
+            entity.Property(e => e.PreviousStatus).HasColumnName("PreviousStatus").HasMaxLength(50).IsRequired(false);
+            // datetime2, not date: this is an observation timestamp, unlike the calendar dates around it.
+            entity.Property(e => e.StatusChangedOn).HasColumnName("StatusChangedOn").IsRequired(false);
+            entity.Property(e => e.AnniversaryDate).HasColumnName("AnniversaryDate").HasColumnType("date").IsRequired(false);
+            entity.Property(e => e.SourceLastUpdateDate).HasColumnName("SourceLastUpdateDate").HasColumnType("date").IsRequired(false);
+            entity.Property(e => e.TotalAcreage).HasColumnName("TotalAcreage").HasColumnType("decimal(18,2)").IsRequired(false);
+            entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
+            entity.Property(e => e.DeactivatedOn).HasColumnName("DeactivatedOn").IsRequired(false);
+            entity.Property(e => e.UpdatedOn).HasColumnName("UpdatedOn").HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.Property(e => e.LoadBatchId).HasColumnName("LoadBatchId").IsRequired(false);
+
+            // NoAction, not Cascade: removing a customer must never silently drop certification
+            // evidence. Nullable because a NOP id can legitimately arrive for a producer we have
+            // not onboarded — it is stored and counted, never rejected.
+            entity.HasOne(e => e.Customer)
+                  .WithMany()
+                  .HasForeignKey(e => e.CustomerId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_OrganicCertification_Customer");
+
+            // The upsert key. One row per NOP id, shared by every customer record carrying it.
+            entity.HasIndex(e => e.Nopid).IsUnique().HasDatabaseName("UQ_OrganicCertification_Nopid");
+
+            // Supports the ingest-side resolution report; not the display join.
+            entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_OrganicCertification_CustomerId");
+        });
+
+        modelBuilder.Entity<OrganicCertificationScope>(entity =>
+        {
+            entity.ToTable("OrganicCertificationScope", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.OrganicCertificationId).HasColumnName("OrganicCertificationId").IsRequired();
+            entity.Property(e => e.Scope).HasColumnName("Scope").HasMaxLength(50).IsRequired();
+            entity.Property(e => e.ScopeStatus).HasColumnName("ScopeStatus").HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.StatusEffectiveDate).HasColumnName("StatusEffectiveDate").HasColumnType("date").IsRequired(false);
+            entity.Property(e => e.UpdatedOn).HasColumnName("UpdatedOn").HasDefaultValueSql("GETUTCDATE()").IsRequired();
+
+            // Cascade here, unlike the Customer FK above: a scope has no meaning without its
+            // parent certification, and the set is replaced wholesale on every ingest.
+            entity.HasOne(e => e.OrganicCertification)
+                  .WithMany(c => c.Scopes)
+                  .HasForeignKey(e => e.OrganicCertificationId)
+                  .OnDelete(DeleteBehavior.Cascade)
+                  .HasConstraintName("FK_OrganicCertificationScope_OrganicCertification");
+
+            entity.HasIndex(e => new { e.OrganicCertificationId, e.Scope })
+                  .IsUnique()
+                  .HasDatabaseName("UQ_OrganicCertificationScope_Certification_Scope");
+        });
+
+        modelBuilder.Entity<OrganicCertificationItem>(entity =>
+        {
+            entity.ToTable("OrganicCertificationItem", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.OrganicCertificationId).HasColumnName("OrganicCertificationId").IsRequired();
+            entity.Property(e => e.ItemId).HasColumnName("ItemId").IsRequired(false);
+            entity.Property(e => e.Scope).HasColumnName("Scope").HasMaxLength(50).IsRequired(false);
+            // 255/4000/4000 rather than 100/1000/2000: measured by the integration team across the
+            // whole USDA data set on 2026-10-07 (certificateNumber 194, varieties 3,998,
+            // otherItems 3,996), not across the two samples we happened to hold. ~4,000 is USDA's
+            // own ceiling. Widened by 20261007_WidenOrganicCertificationItemText.
+            entity.Property(e => e.CertificateNumber).HasColumnName("CertificateNumber").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.Status).HasColumnName("Status").HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.StatusEffectiveDate).HasColumnName("StatusEffectiveDate").HasColumnType("date").IsRequired(false);
+            entity.Property(e => e.ItemName).HasColumnName("ItemName").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.CategoryName).HasColumnName("CategoryName").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.CategoryId).HasColumnName("CategoryId").IsRequired(false);
+            entity.Property(e => e.Varieties).HasColumnName("Varieties").HasMaxLength(4000).IsRequired(false);
+            // 2000, not 1000: this carries whole free-text crop lists, and one captured sample is a
+            // full sentence about carryover bushels rather than a short list.
+            entity.Property(e => e.OtherItems).HasColumnName("OtherItems").HasMaxLength(4000).IsRequired(false);
+            entity.Property(e => e.Organic).HasColumnName("Organic").HasDefaultValue(false).IsRequired();
+            entity.Property(e => e.Organic100).HasColumnName("Organic100").HasDefaultValue(false).IsRequired();
+            entity.Property(e => e.UpdatedOn).HasColumnName("UpdatedOn").HasDefaultValueSql("GETUTCDATE()").IsRequired();
+
+            entity.HasOne(e => e.OrganicCertification)
+                  .WithMany(c => c.Items)
+                  .HasForeignKey(e => e.OrganicCertificationId)
+                  .OnDelete(DeleteBehavior.Cascade)
+                  .HasConstraintName("FK_OrganicCertificationItem_OrganicCertification");
+
+            // NO unique index. There is no natural key: ItemId is null on every free-text item, and
+            // entire operations arrive that way, so a unique index on (certification, item) would
+            // reject them — SQL Server treats repeated NULLs in a unique index as duplicates.
+            // Uniqueness is guaranteed structurally instead: the set is deleted and rebuilt on
+            // every ingest, so duplicates cannot accumulate across messages. Duplicates WITHIN one
+            // message are still detected and reported, on a fingerprint rather than an id.
+            entity.HasIndex(e => e.OrganicCertificationId)
+                  .HasDatabaseName("IX_OrganicCertificationItem_CertificationId");
+        });
+
+        modelBuilder.Entity<OrganicCertificationLoad>(entity =>
+        {
+            entity.ToTable("OrganicCertificationLoad", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.BatchId).HasColumnName("BatchId").IsRequired();
+            entity.Property(e => e.Nopid).HasColumnName("Nopid").HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.ReceivedOn).HasColumnName("ReceivedOn").HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.Property(e => e.Status).HasColumnName("Status").HasMaxLength(50).IsRequired();
+            entity.Property(e => e.Accepted).HasColumnName("Accepted").HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.Rejected).HasColumnName("Rejected").HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.UnmatchedCustomer).HasColumnName("UnmatchedCustomer").HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.Message).HasColumnName("Message").HasMaxLength(1000).IsRequired(false);
+
+            // Did the feed arrive last night? — the question this table exists to answer, so the
+            // index is on arrival time rather than on the batch id.
+            entity.HasIndex(e => e.ReceivedOn).HasDatabaseName("IX_OrganicCertificationLoad_ReceivedOn");
         });
 
         modelBuilder.Entity<ProducerDetails>(entity =>
