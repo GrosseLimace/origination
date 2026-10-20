@@ -112,7 +112,7 @@
 
           @if (isFinal()) {
             <div class="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 px-4 py-3 text-sm text-blue-900 dark:text-blue-200">
-              <span>🔒 Finalized{{ selectedSeason()?.finalizedBy ? ' by ' + selectedSeason()?.finalizedBy : '' }} with an actual yield of {{ selectedSeason()?.actualYield }} bu/ac. Locked for audit.</span>
+              <span>🔒 Finalized{{ selectedSeason()?.finalizedBy ? ' by ' + selectedSeason()?.finalizedBy : '' }} with an actual yield of {{ selectedSeason()?.actualYield }} bu/ac, final CI {{ selectedSeason()?.finalCiGPerBu | number:'1.0-0' }} g/bu ({{ selectedSeason()?.calculatorVersion }}). Locked for audit.</span>
               <button type="button" class="underline bg-transparent border-0 p-0" (click)="showReopen = true">Reopen to correct…</button>
             </div>
           }
@@ -408,6 +408,11 @@
         <div class="text-sm text-gray-700 dark:text-gray-300">
           Final CI <span class="font-semibold">{{ fp.ciGPerBu | number:'1.0-0' }} g/bu</span>
           @if (selectedResult(); as projected) { (projected {{ projected.ciGPerBu | number:'1.0-0' }}) }
+        </div>
+      }
+      @if (finalizeBlockerList.length) {
+        <div class="rounded-md bg-amber-50 dark:bg-amber-900/30 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
+          Still needed for the audit: {{ finalizeBlockerList.join(', ') }}.
         </div>
       }
       <label class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">

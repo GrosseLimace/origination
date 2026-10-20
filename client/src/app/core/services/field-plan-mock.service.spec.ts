@@ -1,6 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { FieldPlanMockService } from './field-plan-mock.service';
+import { CALCULATOR_VERSION } from '@shared/utils/ci-enrollment';
+
+const FSA = { fsaFarmNo: '1234', fsaTractNo: '5678', fsaFieldNo: '3' };
+const AUDIT_READY = {
+  nApplications: [{ product: 'Anhydrous' as const, lbsN: 180, timing: 'Preplant' as const, efficiency: 'None' as const }],
+  evidence: [
+    { id: 'e1', kind: 'NInvoice' as const, reference: 'Co-op 48812', addedBy: 'you', addedAt: '2026-11-01' },
+    { id: 'e2', kind: 'YieldRecord' as const, reference: 'FSA-578', addedBy: 'you', addedAt: '2026-11-01' },
+  ],
+};
 
 const CUSTOMER = 9;
 
@@ -12,7 +22,7 @@ describe('FieldPlanMockService (prototype)', () => {
   });
 
   function field(name: string) {
-    return plan.createField({ customerId: CUSTOMER, name, state: 'KS', county: 'Pratt' });
+    return plan.createField({ customerId: CUSTOMER, name, state: 'KS', county: 'Pratt', ...FSA });
   }
 
   it('should keep a field once and reuse it on another crop row', () => {
@@ -36,9 +46,23 @@ describe('FieldPlanMockService (prototype)', () => {
     plan.updateSeason({ ...s, expectedYield: 210, syntheticN: 180, tillage: 'NoTill', coverCrop: 'None' });
     expect(plan.season(s.id)?.status).toBe('Projected');
 
-    plan.finalizeSeason(s.id, 205);
+    plan.updateSeason({ ...plan.season(s.id)!, ...AUDIT_READY });
+    plan.finalizeSeason(s.id, 205, 4100);
+    expect(plan.season(s.id)).toMatchObject({ status: 'Final', finalCiGPerBu: 4100, calculatorVersion: CALCULATOR_VERSION });
     plan.updateSeason({ ...plan.season(s.id)!, acres: 1 });
     plan.removeSeason(s.id);
     expect(plan.season(s.id)?.acres).toBe(80);
+  });
+
+  it('should refuse to finalize without the audit records, and drop the frozen CI on reopen', () => {
+    const s = plan.addSeason(field('North 80').fieldKey, 1, 2026, 'Corn', 80);
+    plan.updateSeason({ ...s, expectedYield: 210, tillage: 'NoTill', coverCrop: 'None', nApplications: AUDIT_READY.nApplications, syntheticN: 180 });
+    plan.finalizeSeason(s.id, 205, 4100);
+    expect(plan.season(s.id)?.status).toBe('Projected');
+
+    plan.updateSeason({ ...plan.season(s.id)!, evidence: AUDIT_READY.evidence });
+    plan.finalizeSeason(s.id, 205, 4100);
+    plan.reopenSeason(s.id);
+    expect(plan.season(s.id)).toMatchObject({ status: 'Projected', finalCiGPerBu: undefined, calculatorVersion: undefined });
   });
 });

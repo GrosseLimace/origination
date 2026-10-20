@@ -9,7 +9,7 @@ import { COVER_LABELS, TILLAGE_LABELS, estimateCi, fdCicCropFor, missingInputs }
 import { copiesAllPractices, practicesToCopy } from '@shared/utils/ci-copy-forward';
 import { CiPreviewPanelComponent } from './ci-preview-panel.component';
 import { CiIntakeSectionsComponent } from './ci-intake-sections.component';
-import { cloneIntake } from '@shared/utils/ci-enrollment';
+import { cloneIntake, finalizeBlockers } from '@shared/utils/ci-enrollment';
 import { environment } from '@env/environment';
 
 /**
@@ -164,14 +164,20 @@ export class FieldSeasonDialogComponent {
     return estimateCi(crop, { ...s, actualYield: this.finalizeYield });
   }
 
+  /** What the audit still needs before this field can be finalized (see finalizeBlockers). */
+  get finalizeBlockerList(): string[] {
+    const s = this.season();
+    return s && this.draftField ? finalizeBlockers(s, this.draftField, this.finalizeYield) : [];
+  }
+
   get canFinalize(): boolean {
-    return !!this.finalizeYield && this.finalizeYield > 0 && this.finalizeAttested && !!this.result();
+    return !!this.finalizeYield && this.finalizeYield > 0 && this.finalizeAttested && !!this.result() && this.finalizeBlockerList.length === 0;
   }
 
   confirmFinalize(): void {
     const s = this.season();
     if (!s || !this.canFinalize) return;
-    this.plan.finalizeSeason(s.id, this.finalizeYield!);
+    this.plan.finalizeSeason(s.id, this.finalizeYield!, this.finalizePreview!.ciGPerBu);
     this.showFinalize = false;
   }
 

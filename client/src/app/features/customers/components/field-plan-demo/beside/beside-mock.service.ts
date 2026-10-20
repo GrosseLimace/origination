@@ -1,7 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import { FdCicCrop, FieldSeason, ProducerField, SeasonStatus } from './model';
 import { missingInputs } from '@shared/utils/ci-illustrative';
-import { cloneIntake, emptyIntake } from '@shared/utils/ci-enrollment';
+import { CALCULATOR_VERSION, cloneIntake, emptyIntake, finalizeBlockers } from '@shared/utils/ci-enrollment';
 import { CopyablePractices, practicesToCopy } from '@shared/utils/ci-copy-forward';
 
 /** Last season's practices on a field, offered by "Copy last year's practices". */
@@ -142,16 +142,20 @@ export class BesideMockService {
     this.seasons.update(ss => ss.filter(s => s.id !== seasonId || s.status === 'Final'));
   }
 
-  finalizeSeason(seasonId: string, actualYield: number): void {
+  /** Locks the season with its actual yield and freezes the CI it was finalized at. Refused while the audit records are incomplete. */
+  finalizeSeason(seasonId: string, actualYield: number, finalCiGPerBu: number): void {
+    const season = this.seasons().find(s => s.id === seasonId);
+    const field = season && this.fields().find(f => f.fieldKey === season.fieldKey);
+    if (!season || !field || finalizeBlockers(season, field, actualYield).length > 0) return;
     this.seasons.update(ss => ss.map(s => (s.id === seasonId
-      ? { ...s, actualYield, status: 'Final' as SeasonStatus, finalizedBy: 'you', finalizedAt: new Date().toISOString() }
+      ? { ...s, actualYield, finalCiGPerBu, calculatorVersion: CALCULATOR_VERSION, status: 'Final' as SeasonStatus, finalizedBy: 'you', finalizedAt: new Date().toISOString() }
       : s)));
   }
 
   reopenSeason(seasonId: string): void {
     this.seasons.update(ss => ss.map(s => {
       if (s.id !== seasonId) return s;
-      const reopened: FieldSeason = { ...s, status: 'Draft', finalizedBy: undefined, finalizedAt: undefined };
+      const reopened: FieldSeason = { ...s, status: 'Draft', finalizedBy: undefined, finalizedAt: undefined, finalCiGPerBu: undefined, calculatorVersion: undefined };
       reopened.status = this._derivedStatus(reopened);
       return reopened;
     }));

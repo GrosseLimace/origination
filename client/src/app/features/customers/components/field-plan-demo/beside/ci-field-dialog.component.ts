@@ -9,7 +9,7 @@ import { CoverCrop, Customer, FdCicCrop, FieldSeason, ManureApplication, Plantin
 import { COVER_LABELS, TILLAGE_LABELS, estimateCi, missingInputs, nationalAverage, seasonStatus, summarizeIntention } from '@shared/utils/ci-illustrative';
 import { CiPreviewPanelComponent } from '../../field-plan/ci-preview-panel.component';
 import { CiIntakeSectionsComponent } from '../../field-plan/ci-intake-sections.component';
-import { cloneIntake } from '@shared/utils/ci-enrollment';
+import { cloneIntake, finalizeBlockers } from '@shared/utils/ci-enrollment';
 
 /**
  * The "45Z Field Data" dialog for one planting intention: the producer's fields assigned to it
@@ -290,14 +290,20 @@ export class BesideFieldDialogComponent {
     return estimateCi(this.crop(), { ...s, actualYield: this.finalizeYield });
   }
 
+  /** What the audit still needs before this field can be finalized (see finalizeBlockers). */
+  get finalizeBlockerList(): string[] {
+    const s = this.selectedSeason();
+    return s && this.draftField ? finalizeBlockers(s, this.draftField, this.finalizeYield) : [];
+  }
+
   get canFinalize(): boolean {
-    return !!this.finalizeYield && this.finalizeYield > 0 && this.finalizeAttested && !!this.selectedResult();
+    return !!this.finalizeYield && this.finalizeYield > 0 && this.finalizeAttested && !!this.selectedResult() && this.finalizeBlockerList.length === 0;
   }
 
   confirmFinalize(): void {
     const s = this.selectedSeason();
     if (!s || !this.canFinalize) return;
-    this.ci.finalizeSeason(s.id, this.finalizeYield!);
+    this.ci.finalizeSeason(s.id, this.finalizeYield!, this.finalizePreview!.ciGPerBu);
     this.draft = null; // force a fresh copy of the now-locked season
     this.showFinalize = false;
   }
