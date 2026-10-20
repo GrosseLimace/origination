@@ -618,7 +618,7 @@ export class HomeComponent {
     this._cancelSelection$.next();
     this.isLoadingPricingLines.set(false);
     this.isLoadingUnappliedTickets.set(false);
-    this.isLoadingNotes.set(false);
+    this.notes.stopLoading();
     // Reset loading flag so an explicit user selection is never blocked by a
     // background load that may still be in-flight.
     this._isLoading = false;

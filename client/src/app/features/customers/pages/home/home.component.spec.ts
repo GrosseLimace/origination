@@ -1347,7 +1347,8 @@ describe('HomeComponent', () => {
     it('ignores a second add while one is saving, and refuses an onboarding candidate', () => {
       const h = setup();
       const api = withNoteApi(h);
-      api.createNote.mockReturnValue(NEVER);
+      const pending = new Subject<never>();
+      api.createNote.mockReturnValue(pending);
       h.c.handleSelectCustomer(A);
 
       h.c.addNote({ content: 'one', mentions: [] });
@@ -1357,7 +1358,8 @@ describe('HomeComponent', () => {
 
       h.c.handleSelectCustomer(customer(4, { isOnboardCandidate: true }));
       api.createNote.mockClear();
-      h.c.isSavingNote.set(false);
+      pending.error(new Error('first save failed')); // ends the first save, which clears the flag
+      expect(h.c.isSavingNote()).toBe(false);
       h.c.addNote({ content: 'three', mentions: [] });
       expect(api.createNote).not.toHaveBeenCalled();
       expect(h.toast.error).toHaveBeenCalledWith('Assign a trade unit and save this producer before adding notes.');

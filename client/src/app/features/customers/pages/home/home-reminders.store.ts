@@ -42,10 +42,13 @@ export class HomeRemindersStore {
    *  not walked across the linked-producer group: a follow-up is about the one producer it was
    *  set on, and showing a linked producer's reminders here would make "complete" ambiguous. */
   readonly customerReminders = signal<Reminder[]>([]);
-  readonly isLoadingReminders = signal(false);
-  readonly isSavingReminder = signal(false);
+  private readonly _isLoadingReminders = signal(false);
+  readonly isLoadingReminders = this._isLoadingReminders.asReadonly();
+  private readonly _isSavingReminder = signal(false);
+  readonly isSavingReminder = this._isSavingReminder.asReadonly();
   /** Incremented on each successful reminder save so the card closes and resets its form. */
-  readonly reminderSaveSucceededCounter = signal(0);
+  private readonly _reminderSaveSucceededCounter = signal(0);
+  readonly reminderSaveSucceededCounter = this._reminderSaveSucceededCounter.asReadonly();
 
   /** Loads the caller's reminders for one producer. No cache: the list is small, and a stale
    *  due date is worse than a re-fetch. */
@@ -53,16 +56,16 @@ export class HomeRemindersStore {
     if (!this.remindersEnabled) return;
 
     this.customerReminders.set([]);
-    this.isLoadingReminders.set(true);
+    this._isLoadingReminders.set(true);
     this.apiService.getRemindersByCustomer(customerId)
       .pipe(takeUntil(this.page.cancelSelection$), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (reminders) => {
           if (this.page.selectedCustomer()?.id !== customerId) return;
           this.customerReminders.set(reminders);
-          this.isLoadingReminders.set(false);
+          this._isLoadingReminders.set(false);
         },
-        error: () => this.isLoadingReminders.set(false)
+        error: () => this._isLoadingReminders.set(false)
       });
   }
 
@@ -71,7 +74,7 @@ export class HomeRemindersStore {
     const customer = this.page.selectedCustomer();
     if (!customer) return;
 
-    this.isSavingReminder.set(true);
+    this._isSavingReminder.set(true);
 
     if (draft.id === undefined) {
       this.apiService.createReminder(customer.id, draft.dueAt, draft.subject || undefined, draft.notes)
@@ -80,12 +83,12 @@ export class HomeRemindersStore {
           next: (created) => {
             this.customerReminders.update(list => sortReminders([...list, created]));
             this._addMyReminder(created);
-            this.isSavingReminder.set(false);
-            this.reminderSaveSucceededCounter.update(n => n + 1);
+            this._isSavingReminder.set(false);
+            this._reminderSaveSucceededCounter.update(n => n + 1);
             this.toastService.success('Follow-up added');
             this._syncReminderToOutlook(created);
           },
-          error: () => this.isSavingReminder.set(false)
+          error: () => this._isSavingReminder.set(false)
         });
       return;
     }
@@ -98,8 +101,8 @@ export class HomeRemindersStore {
         next: (updated) => {
           this.customerReminders.update(list => sortReminders(list.map(r => r.id === id ? updated : r)));
           this._addMyReminder(updated);
-          this.isSavingReminder.set(false);
-          this.reminderSaveSucceededCounter.update(n => n + 1);
+          this._isSavingReminder.set(false);
+          this._reminderSaveSucceededCounter.update(n => n + 1);
           this.toastService.success('Follow-up updated');
 
           // The API moved the calendar event in the same call — it patches the window rather than
@@ -113,7 +116,7 @@ export class HomeRemindersStore {
             this._syncReminderToOutlook(updated);
           }
         },
-        error: () => this.isSavingReminder.set(false)
+        error: () => this._isSavingReminder.set(false)
       });
   }
 

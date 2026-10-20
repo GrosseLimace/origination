@@ -55,15 +55,24 @@ export class HomeNotesStore {
   /** True while the selected producer's (and linked group's) notes are being fetched.
    *  Drives the notes panel's loading state so a producer with notes doesn't flash
    *  "No notes yet" during the per-customer fetch. */
-  readonly isLoadingNotes = signal(false);
+  private readonly _isLoadingNotes = signal(false);
+  readonly isLoadingNotes = this._isLoadingNotes.asReadonly();
   /** True while a createNote request is in flight. Bound to <app-customer-notes
    *  [isSavingNote]> so the textarea + button show a "Saving..." state and ignore
    *  repeat clicks during the round trip. */
-  readonly isSavingNote = signal(false);
+  private readonly _isSavingNote = signal(false);
+  readonly isSavingNote = this._isSavingNote.asReadonly();
   /** Increments after each successful createNote. <app-customer-notes> watches
    *  this counter and clears its textarea only when it increments — so if the save
    *  fails, the user's typed content survives and they can retry. */
-  readonly noteSaveSucceededCounter = signal(0);
+  private readonly _noteSaveSucceededCounter = signal(0);
+  readonly noteSaveSucceededCounter = this._noteSaveSucceededCounter.asReadonly();
+
+  /** The page cancelled the in-flight per-customer reads (trade-unit change): no notes are on their
+   *  way any more, so the panel must not stay in its loading state. */
+  stopLoading(): void {
+    this._isLoadingNotes.set(false);
+  }
 
   /** A new producer was selected: allow each producer's notes to be re-fetched once, so other
    *  reps' adds show. */
@@ -126,7 +135,7 @@ export class HomeNotesStore {
     // Show whatever's already cached right away — instant re-click, no spinner if we have data.
     const haveAnyCached = groupIds.some(id => this._customerNotesCache.has(id));
     if (haveAnyCached) {
-      this.isLoadingNotes.set(false);
+      this._isLoadingNotes.set(false);
       refreshPanel();
     }
 
@@ -134,13 +143,13 @@ export class HomeNotesStore {
     const toFetch = groupIds.filter(id => !this._notesRefreshedThisSelection.has(id));
     if (toFetch.length === 0) {
       // An earlier read of this selection may still be on its way with nothing shown yet.
-      if (this._notesInFlight === 0) this.isLoadingNotes.set(false);
+      if (this._notesInFlight === 0) this._isLoadingNotes.set(false);
       return;
     }
     toFetch.forEach(id => this._notesRefreshedThisSelection.add(id));
 
     // Only show the spinner on a cold selection (nothing cached to display meanwhile).
-    if (!haveAnyCached) this.isLoadingNotes.set(true);
+    if (!haveAnyCached) this._isLoadingNotes.set(true);
 
     const generation = this._selectionGeneration;
     this._notesInFlight++;
@@ -154,7 +163,7 @@ export class HomeNotesStore {
       if (generation !== this._selectionGeneration) return;
       this._notesInFlight = Math.max(0, this._notesInFlight - 1);
       const showing = groupIds.some(id => (this._customerNotesCache.get(id)?.length ?? 0) > 0);
-      if (this._notesInFlight === 0 || showing) this.isLoadingNotes.set(false);
+      if (this._notesInFlight === 0 || showing) this._isLoadingNotes.set(false);
     };
 
     forkJoin(toFetch.map(id =>
@@ -196,7 +205,7 @@ export class HomeNotesStore {
     // that didn't honor the child's own isSavingNote disable.
     if (this.isSavingNote()) return;
     const tradeUnit = this.page.selectedTradeUnits().length === 1 ? this.page.selectedTradeUnits()[0] : undefined;
-    this.isSavingNote.set(true);
+    this._isSavingNote.set(true);
     this.apiService.createNote(sel.id, content, tradeUnit, mentions).subscribe({
       next: (note) => {
         this._applyNoteToCache(note);
@@ -204,8 +213,8 @@ export class HomeNotesStore {
         this._recomputeLastContactFor(note.customerId);
         this.toastService.success('Note added');
         // Increment FIRST so the child clears its textarea, then drop the flag.
-        this.noteSaveSucceededCounter.update(n => n + 1);
-        this.isSavingNote.set(false);
+        this._noteSaveSucceededCounter.update(n => n + 1);
+        this._isSavingNote.set(false);
       },
       error: (err: Error) => {
         // Surface the server's reason (e.g. a mentioned group that's no longer available) —
@@ -213,7 +222,7 @@ export class HomeNotesStore {
         this.toastService.error(err?.message || 'Failed to add note');
         // Leave the success counter alone — the child keeps the text so the user
         // can retry. Just clear the in-flight flag so the button re-enables.
-        this.isSavingNote.set(false);
+        this._isSavingNote.set(false);
       }
     });
   }
