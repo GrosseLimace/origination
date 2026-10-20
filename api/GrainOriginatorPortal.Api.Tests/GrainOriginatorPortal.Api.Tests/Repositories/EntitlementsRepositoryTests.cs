@@ -42,28 +42,21 @@ public class EntitlementsRepositoryTests
         }
     }
 
-    private sealed class SeedableOds(DbContextOptions<OriginationDbContext> options) : OriginationDbContext(options)
-    {
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
-        {
-            base.OnModelCreating(modelBuilder);
-            modelBuilder.Entity<CustomerTradeUnitView>(e =>
-            {
-                e.ToTable("CustomerTradeUnits");
-                e.Property<int>("RowId").ValueGeneratedOnAdd();
-                e.HasKey("RowId");
-            });
-        }
-    }
-
-    private static (EntitlementsRepository Sut, TradeUnitPreferencesDbContext Ent, OriginationDbContext Ods) Build()
+    // The producer -> trade-unit read comes from the app's own dbo.CustomerTradeUnit (customers off the
+    // ODS), a real keyed table, so it needs no seeding subclass.
+    private static (EntitlementsRepository Sut, TradeUnitPreferencesDbContext Ent, ApplicationDbContext App) Build()
     {
         var ent = new SeedableEntitlements(new DbContextOptionsBuilder<TradeUnitPreferencesDbContext>()
             .UseInMemoryDatabase($"ent-{Guid.NewGuid()}").Options);
-        var ods = new SeedableOds(new DbContextOptionsBuilder<OriginationDbContext>()
-            .UseInMemoryDatabase($"ent-ods-{Guid.NewGuid()}").Options);
-        return (new EntitlementsRepository(ent, ods), ent, ods);
+        var app = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"ent-app-{Guid.NewGuid()}").Options);
+        return (new EntitlementsRepository(ent, app), ent, app);
     }
+
+    private static CustomerTradeUnit Link(long customerId, string tradeUnit, bool isActive = true) => new()
+    {
+        CustomerId = customerId, TradeUnit = tradeUnit, IsActive = isActive, CreatedAt = DateTime.UtcNow, CreatedBy = "test"
+    };
 
     private static UserTradeUnitPreference Pref(string user, string tradeUnit, string? group = null) => new()
     {
@@ -130,16 +123,17 @@ public class EntitlementsRepositoryTests
 
     // -------------------------------------------------------------------------
     [Fact]
-    public async Task GetCustomerTradeUnitCodesAsync_DistinctNonNullCodesForThatCustomer()
+    public async Task GetCustomerTradeUnitCodesAsync_DistinctNonBlankActiveCodesForThatCustomer()
     {
-        var (sut, _, ods) = Build();
-        ods.CustomerTradeUnits.AddRange(
-            new CustomerTradeUnitView { CustomerId = 1, TradeUnit = "4056" },
-            new CustomerTradeUnitView { CustomerId = 1, TradeUnit = "4056" },
-            new CustomerTradeUnitView { CustomerId = 1, TradeUnit = null },
-            new CustomerTradeUnitView { CustomerId = 1, TradeUnit = "2190" },
-            new CustomerTradeUnitView { CustomerId = 2, TradeUnit = "9999" });
-        await ods.SaveChangesAsync();
+        var (sut, _, app) = Build();
+        app.CustomerTradeUnits.AddRange(
+            Link(1, "4056"),
+            Link(1, "4056 "),                          // trailing space: the same unit, counted once
+            Link(1, "  "),                             // blank: dropped
+            Link(1, "2190"),
+            Link(1, "3811", isActive: false),          // removed membership: not a current unit
+            Link(2, "9999"));
+        await app.SaveChangesAsync();
 
         var codes = await sut.GetCustomerTradeUnitCodesAsync(1, CancellationToken.None);
 

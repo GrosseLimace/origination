@@ -22,7 +22,9 @@ namespace GrainOriginatorPortal.Api.Tests.Controllers;
 /// </summary>
 public class DiagnosticsControllerRouteContractTests
 {
-    /// <summary>The 16 routes and verbs that existed on the controller before the extraction.</summary>
+    /// <summary>The routes and verbs that existed on the controller before the extraction, less POST customer-sync/run,
+    /// which moved to CustomerSyncDiagnosticsController (same URL, now with dryRun / force / source) - see
+    /// <see cref="CustomerSyncRun_IsServedByCustomerSyncDiagnosticsController_AtTheSameUrl"/>.</summary>
     private static readonly (string Verb, string Template, string Action, int Status)[] ExpectedRoutes =
     [
         ("GET",  "connections",                    nameof(DiagnosticsController.CheckConnections),           StatusCodes.Status200OK),
@@ -33,7 +35,6 @@ public class DiagnosticsControllerRouteContractTests
         ("GET",  "tables",                         nameof(DiagnosticsController.GetTables),                  StatusCodes.Status200OK),
         ("GET",  "tableschema/{tableName}",        nameof(DiagnosticsController.GetTableWithSchema),         StatusCodes.Status200OK),
         ("GET",  "schema/{tableName}",             nameof(DiagnosticsController.GetTableSchema),             StatusCodes.Status200OK),
-        ("POST", "customer-sync/run",              nameof(DiagnosticsController.RunCustomerSync),            StatusCodes.Status200OK),
         ("POST", "usage-rollups/backfill",         nameof(DiagnosticsController.BackfillUsageRollups),       StatusCodes.Status200OK),
         ("GET",  "app-access-group-members",       nameof(DiagnosticsController.GetAppAccessGroupMembers),   StatusCodes.Status200OK),
         ("POST", "commodities/seed",               nameof(DiagnosticsController.SeedCommodities),            StatusCodes.Status200OK),
@@ -70,7 +71,7 @@ public class DiagnosticsControllerRouteContractTests
             (missing.Count > 0 ? "\n  Missing: " + string.Join(", ", missing) : "") +
             (unexpected.Count > 0 ? "\n  Unexpected: " + string.Join(", ", unexpected) : "") +
             "\n  Update ExpectedRoutes only for a deliberate route change.");
-        Assert.Equal(16, actual.Count);
+        Assert.Equal(15, actual.Count);
     }
 
     // -------------------------------------------------------------------------
@@ -87,13 +88,26 @@ public class DiagnosticsControllerRouteContractTests
 
     // -------------------------------------------------------------------------
     [Fact]
+    public void CustomerSyncRun_IsServedByCustomerSyncDiagnosticsController_AtTheSameUrl()
+    {
+        var controller = typeof(CustomerSyncDiagnosticsController);
+        Assert.Equal("api/diagnostics/customer-sync", controller.GetCustomAttribute<RouteAttribute>()!.Template);
+        var run = controller.GetMethod(nameof(CustomerSyncDiagnosticsController.Run))!;
+        var post = Assert.IsType<HttpPostAttribute>(Assert.Single(run.GetCustomAttributes<HttpMethodAttribute>()));
+        Assert.Equal("run", post.Template);
+        Assert.Contains(run.GetCustomAttributes<ProducesResponseTypeAttribute>(), a => a.StatusCode == StatusCodes.Status200OK && a.Type == typeof(CustomerSyncResult));
+        // Not also on DiagnosticsController: two actions on one route fail every call as an ambiguous match.
+        Assert.Null(typeof(DiagnosticsController).GetMethod("RunCustomerSync"));
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
     public void TypedResponseDeclarations_AreUnchanged()
     {
         static Type DeclaredType(string action) =>
             typeof(DiagnosticsController).GetMethod(action)!
                 .GetCustomAttribute<ProducesResponseTypeAttribute>()!.Type;
 
-        Assert.Equal(typeof(CustomerSyncResult), DeclaredType(nameof(DiagnosticsController.RunCustomerSync)));
         Assert.Equal(typeof(AppAccessGroupMembersResponse), DeclaredType(nameof(DiagnosticsController.GetAppAccessGroupMembers)));
     }
 

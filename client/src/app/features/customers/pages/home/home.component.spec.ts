@@ -1106,7 +1106,9 @@ describe('HomeComponent', () => {
         grainOnFarm: [], intentionMoves: [{ from: 'TU1', to: 'TU2' }],
       });
 
-      expect(api.assignTradeUnits).toHaveBeenCalledWith(1, ['TU2']);
+      // Third argument: the producer code, sent only for an onboarding candidate (plan E4); an
+      // existing producer's save carries none.
+      expect(api.assignTradeUnits).toHaveBeenCalledWith(1, ['TU2'], undefined);
       expect(api.retagPlantingIntentions).toHaveBeenCalledWith(1, 'TU1', 'TU2');
       expect(h.toast.success).toHaveBeenCalledWith('Moved 2 planting intentions to TU2.');
       expect(h.c.customerPlantingIntentions()[0].tradeUnit).toBe('TU2');

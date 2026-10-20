@@ -102,7 +102,15 @@ public class CustomerSyncBackgroundService : BackgroundService
 
         try
         {
-            await _sync.SyncAsync(stoppingToken);
+            var result = await _sync.SyncAsync(new CustomerSyncOptions { Trigger = reason }, stoppingToken);
+            // The alertable line: an aborted run wrote nothing (source failure or the mass-deactivation
+            // guard), so the customer list stays stale until a good run. Recovery: the outage playbook.
+            if (result.Aborted)
+            {
+                _logger.LogError(
+                    "[{ErrorCode}] [{ErrorCategory}] CustomerSync {Reason} aborted: {Detail}",
+                    result.AbortCode, "Integration", reason, result.AbortReason);
+            }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
