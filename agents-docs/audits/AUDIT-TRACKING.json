@@ -807,8 +807,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed. Blocked on a fact nobody recorded: has B4_migrate_createdby.sql run in each environment? If PROD is still pending, the non-unique DisplayName join must be fixed first; if it has run, the script should be archived.\n[2026-09-28] Re-verified: script and its ambiguous DisplayName joins are unchanged. Same operational blind spot -- no record in-repo of whether this has run per environment.\n[2026-10-13] Re-verified: script unchanged, still joins Notes/ProducerPlantingIntentions/ProducerDetails/SavedLists/Dashboard* CreatedBy/ModifiedBy to UserTradeUnitSnapshot.DisplayName with no COUNT(DISTINCT UserId) guard. Same operational blind spot.",
+      "last_verified": "2026-10-20",
+      "notes": "[2026-09-21] Confirmed. Blocked on a fact nobody recorded: has B4_migrate_createdby.sql run in each environment? If PROD is still pending, the non-unique DisplayName join must be fixed first; if it has run, the script should be archived.\n[2026-09-28] Re-verified: script and its ambiguous DisplayName joins are unchanged. Same operational blind spot -- no record in-repo of whether this has run per environment.\n[2026-10-13] Re-verified: script unchanged, still joins Notes/ProducerPlantingIntentions/ProducerDetails/SavedLists/Dashboard* CreatedBy/ModifiedBy to UserTradeUnitSnapshot.DisplayName with no COUNT(DISTINCT UserId) guard. Same operational blind spot.\n[2026-10-20] Re-verified 2026-10-20: SECURITY-REVIEWS/scripts/B4_migrate_createdby.sql still carries the COUNT(DISTINCT UserId) = 1 guard on every one of its CreatedBy/ModifiedBy joins (Notes, ProducerPlantingIntentions, ProducerDetails, SavedLists, DashboardPlantingEstimates, DashboardMarketShares, DashboardActualHarvests, BidSheetLocations, BidSheetLocationBids). AUDIT-SQL.md had drifted (still listed this under Open) -- corrected to match this resolved status.",
       "resolved_in": {
         "date": "2026-10-13",
         "detected_by": "manual"
@@ -870,8 +870,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed and TIME-SENSITIVE. Inert today (all rows come from the ODS sync) but feature_NewCustomerTradeUnits introduces manually curated rows, after which a Customer rebuild silently destroys hand-entered membership. Decide before that feature starts.\n[2026-09-28] Re-verified via a sub-agent trace of the write path: the manual-onboarding feature this finding warned about is already live (AssignTradeUnitsAsync sets IsManual = true on real requests), so this is no longer a future risk gated on a feature landing -- manually-curated rows exist in the table now. Severity raised medium -> high on that basis. Confirmed there is still no hard-delete/rebuild path for Customer (soft-delete only), so no data has actually been destroyed by this misconfiguration yet; the gap is the FK shape, not an observed incident.\n[2026-10-13] Re-verified: ApplicationDbContext.cs:588-591 still configures CustomerTradeUnit's Customer FK as OnDelete(DeleteBehavior.Cascade), uncommented, while every sibling FK to Customer remains explicit NoAction with a rationale comment. No new migration or code change touches this FK since the last pass.",
+      "last_verified": "2026-10-20",
+      "notes": "[2026-09-21] Confirmed and TIME-SENSITIVE. Inert today (all rows come from the ODS sync) but feature_NewCustomerTradeUnits introduces manually curated rows, after which a Customer rebuild silently destroys hand-entered membership. Decide before that feature starts.\n[2026-09-28] Re-verified via a sub-agent trace of the write path: the manual-onboarding feature this finding warned about is already live (AssignTradeUnitsAsync sets IsManual = true on real requests), so this is no longer a future risk gated on a feature landing -- manually-curated rows exist in the table now. Severity raised medium -> high on that basis. Confirmed there is still no hard-delete/rebuild path for Customer (soft-delete only), so no data has actually been destroyed by this misconfiguration yet; the gap is the FK shape, not an observed incident.\n[2026-10-13] Re-verified: ApplicationDbContext.cs:588-591 still configures CustomerTradeUnit's Customer FK as OnDelete(DeleteBehavior.Cascade), uncommented, while every sibling FK to Customer remains explicit NoAction with a rationale comment. No new migration or code change touches this FK since the last pass.\n[2026-10-20] Re-verified 2026-10-20: ApplicationDbContextModelSnapshot.cs still shows CustomerTradeUnit->Customer as a plain HasForeignKey with no OnDelete override (default Restrict/NoAction), matching the Oct 13 fix; migration 20261013163045 remains the latest migration in the repo (no migrations added since). AUDIT-SQL.md had drifted (still listed this under Open) -- corrected to match this resolved status.",
       "resolved_in": {
         "date": "2026-10-13",
         "detected_by": "manual"
@@ -909,8 +909,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-14",
-      "notes": "[2026-09-21] Confirmed — values are correctly parameterised today, so no live injection path; converting to FromSqlInterpolated is still worth doing.\n[2026-09-28] Re-verified: CustomerRepository.SearchAsync (line ~155) still builds the WHERE text via C# $\"...\" interpolation of parameter names only, then calls FromSqlRaw with a matching SqlParameter[]. Unchanged since last pass.\n[2026-10-13] Re-verified: CustomerRepository.cs:140-156 unchanged -- whereClauses/paramName fragments are still interpolated into the `sql` string, actual values only ever reach SqlParameter objects (@w{i}, @d{i}, @tradeUnits) built via the SqlSanitization.SanitizeCsv allow-list. Still no live injection path, still the same style-guide-letter violation.",
+      "last_verified": "2026-10-20",
+      "notes": "[2026-09-21] Confirmed — values are correctly parameterised today, so no live injection path; converting to FromSqlInterpolated is still worth doing.\n[2026-09-28] Re-verified: CustomerRepository.SearchAsync (line ~155) still builds the WHERE text via C# $\"...\" interpolation of parameter names only, then calls FromSqlRaw with a matching SqlParameter[]. Unchanged since last pass.\n[2026-10-13] Re-verified: CustomerRepository.cs:140-156 unchanged -- whereClauses/paramName fragments are still interpolated into the `sql` string, actual values only ever reach SqlParameter objects (@w{i}, @d{i}, @tradeUnits) built via the SqlSanitization.SanitizeCsv allow-list. Still no live injection path, still the same style-guide-letter violation.\n[2026-10-20] Re-verified 2026-10-20: CustomerRepository.BuildSearchSql/BuildOdsSearchSql (static, still present) interpolate only fixed fragments and generated parameter names (@w{i}, @d{i}, @tradeUnits); every typed value travels as a SqlParameter via SqlSanitization.SanitizeCsv. AUDIT-SQL.md had drifted (still listed this under Open) -- corrected to match this resolved status.",
       "resolved_in": {
         "date": "2026-10-14",
         "detected_by": "manual"
@@ -931,8 +931,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Confirmed — three FKs added WITH NOCHECK and never revalidated; the only occurrence of WITH CHECK CHECK CONSTRAINT in the repo is the comment saying to do it. Next step is a read-only orphan count per environment, not a code change.\n[2026-09-28] Re-verified: migration file unchanged, no later migration revalidates these three FKs.\n[2026-10-13] Re-verified: migration file unchanged; grepped the full api/ tree for \"WITH CHECK CHECK CONSTRAINT\" and the only hit is still the comment in this same file. None of the 15 migrations added since 09-28 touch these three FKs.",
+      "last_verified": "2026-10-20",
+      "notes": "[2026-09-21] Confirmed — three FKs added WITH NOCHECK and never revalidated; the only occurrence of WITH CHECK CHECK CONSTRAINT in the repo is the comment saying to do it. Next step is a read-only orphan count per environment, not a code change.\n[2026-09-28] Re-verified: migration file unchanged, no later migration revalidates these three FKs.\n[2026-10-13] Re-verified: migration file unchanged; grepped the full api/ tree for \"WITH CHECK CHECK CONSTRAINT\" and the only hit is still the comment in this same file. None of the 15 migrations added since 09-28 touch these three FKs.\n[2026-10-20] Re-verified 2026-10-20: migration 20261013163045_RestrictCustomerTradeUnitDeleteAndValidateCustomerFks still contains the WITH CHECK CHECK CONSTRAINT statements for all three FKs (Notes, ProducerDetails, ProducerPlantingIntentions); no later migration touches them. AUDIT-SQL.md had drifted (still listed this under Open) -- corrected to match this resolved status.",
       "resolved_in": {
         "date": "2026-10-13",
         "detected_by": "manual"
@@ -975,8 +975,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-14",
-      "notes": "[2026-09-21] Half addressed: CheckMbpLocationCoverage.sql was deleted as a spent one-off. PopulateMbpLocationSynonym.sql stays (it is the live QA/PROD load path) and gained a row-count guard on its MERGE.\n[2026-09-28] Re-verified: CheckMbpLocationCoverage.sql confirmed still absent (deleted); dropped it from files since the finding is now solely about PopulateMbpLocationSynonym.sql's ~1,000+ embedded literal rows. No functional change to that script this pass.\n[2026-10-13] Re-verified: script unchanged, still embeds literal rows and still has the @maxDeletePct ROLLBACK/RAISERROR guard on the MERGE.",
+      "last_verified": "2026-10-20",
+      "notes": "[2026-09-21] Half addressed: CheckMbpLocationCoverage.sql was deleted as a spent one-off. PopulateMbpLocationSynonym.sql stays (it is the live QA/PROD load path) and gained a row-count guard on its MERGE.\n[2026-09-28] Re-verified: CheckMbpLocationCoverage.sql confirmed still absent (deleted); dropped it from files since the finding is now solely about PopulateMbpLocationSynonym.sql's ~1,000+ embedded literal rows. No functional change to that script this pass.\n[2026-10-13] Re-verified: script unchanged, still embeds literal rows and still has the @maxDeletePct ROLLBACK/RAISERROR guard on the MERGE.\n[2026-10-20] Re-verified 2026-10-20: no code or script change touches this since the 2026-10-14 acceptance. AUDIT-SQL.md had drifted (still listed this under Open instead of Accepted) -- corrected.",
       "resolution_notes": "Accepted by the owner 2026-10-14. The duplication half is gone (CheckMbpLocationCoverage.sql deleted 2026-09-21). PopulateMbpLocationSynonym.sql is a pasted export of TSCPRDLIB.MBPLOCSYN (2026-07-30) and the live load path for QA/PROD, guarded by @maxDeletePct. The remaining risk is staleness, not security; the real fix is a scheduled load from the source system (needs the data team), worth revisiting when code starts reading dbo.MbpLocationSynonym."
     },
     {
@@ -1907,8 +1907,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
-      "notes": "[2026-09-21] Re-verified. SECURITY-REVIEWS/ACCEPTED-RISKS.md now records that the project owner (CEgr) decided on 2026-09-21 that IT Security countersignature will NOT be sought for AR-01/AR-02/AR-08 -- superseding the prior pending-countersignature-request note, which is now stale. Kept open: the underlying no-independent-signoff fact is unchanged, only its finality. [2026-09-28] Re-checked: SECURITY-REVIEWS/ACCEPTED-RISKS.md:53 still carries the unchanged 2026-09-21 banner; no new re-flags of AR-02 recorded and no controllers were added since the last pass that would touch this. Still open, unchanged.\n[2026-09-28] Closed as accepted at the project owner's direction. It had been re-verified and re-opened by three consecutive audit runs without the underlying decision changing; leaving it open was costing attention on every run without adding information. Do not re-raise.\n[2026-10-13] Re-verified per the project owner's direction not to re-raise this one -- still accepted, no change to the AR-01/02/08 substance. Note a related but distinct new issue filed separately this pass: AR-10 (added 2026-10-09) now says it is 'routed with AR-01/02/07/08 for IT Security countersignature,' which textually contradicts the still-unchanged 2026-09-21 banner declaring that countersignature closed/declined for AR-01/02/08. See permissions.accepted-risks-countersignature-banner-contradicts-ar10.",
+      "last_verified": "2026-10-20",
+      "notes": "[2026-09-21] Re-verified. SECURITY-REVIEWS/ACCEPTED-RISKS.md now records that the project owner (CEgr) decided on 2026-09-21 that IT Security countersignature will NOT be sought for AR-01/AR-02/AR-08 -- superseding the prior pending-countersignature-request note, which is now stale. Kept open: the underlying no-independent-signoff fact is unchanged, only its finality. [2026-09-28] Re-checked: SECURITY-REVIEWS/ACCEPTED-RISKS.md:53 still carries the unchanged 2026-09-21 banner; no new re-flags of AR-02 recorded and no controllers were added since the last pass that would touch this. Still open, unchanged.\n[2026-09-28] Closed as accepted at the project owner's direction. It had been re-verified and re-opened by three consecutive audit runs without the underlying decision changing; leaving it open was costing attention on every run without adding information. Do not re-raise.\n[2026-10-13] Re-verified per the project owner's direction not to re-raise this one -- still accepted, no change to the AR-01/02/08 substance. Note a related but distinct new issue filed separately this pass: AR-10 (added 2026-10-09) now says it is 'routed with AR-01/02/07/08 for IT Security countersignature,' which textually contradicts the still-unchanged 2026-09-21 banner declaring that countersignature closed/declined for AR-01/02/08. See permissions.accepted-risks-countersignature-banner-contradicts-ar10.\n[2026-10-20] Re-checked against commits since 2026-10-13 (entitlements picker fix, diagnostics-controller service extraction, new ClientTelemetryController, telemetry work). None touch SECURITY-REVIEWS/ACCEPTED-RISKS.md or the AR-01/02/08 decision. Still accepted per project owner direction, unchanged.",
       "accepted_rationale": "No code fix applies, and the finding's own suggested_fix says so. SECURITY-REVIEWS/ACCEPTED-RISKS.md records the project owner's decision of 2026-09-21 that IT Security countersignature will not be sought for AR-01, AR-02 and AR-08. That decision was reconfirmed on 2026-09-28. The underlying fact the finding describes, that these acceptances carry no independent sign-off, is accurate and unchanged; it is a deliberate governance position rather than an oversight, so the finding is accepted rather than left open. Re-raising it does not surface new information. If org policy later requires independent sign-off on high-severity accepted risks regardless of an engineering owner's decision, that is a process change to take up with asksecurity@scoular.com, not a code change here."
     },
     {
@@ -1949,8 +1949,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-28",
-      "notes": "[2026-09-21] Deliberate: authorization is two Azure AD app roles plus trade-unit data scoping. Adding a permissions table would mean a second source of truth beside AAD group membership, which is where access is actually administered. Documented in docs/application-context/SECURITY-MODEL.md. [2026-09-28] Re-checked: docs/application-context/SECURITY-MODEL.md:46 still documents the deviation and no Role/Permission/RolePermission/UserRole entities have appeared since. Still accepted, unchanged."
+      "last_verified": "2026-10-20",
+      "notes": "[2026-09-21] Deliberate: authorization is two Azure AD app roles plus trade-unit data scoping. Adding a permissions table would mean a second source of truth beside AAD group membership, which is where access is actually administered. Documented in docs/application-context/SECURITY-MODEL.md. [2026-09-28] Re-checked: docs/application-context/SECURITY-MODEL.md:46 still documents the deviation and no Role/Permission/RolePermission/UserRole entities have appeared since. Still accepted, unchanged.\n[2026-10-20] Re-checked: new ClientTelemetryController (commit 9d6c3469, 2026-10-14) uses plain [Authorize], same pattern as the rest of the app -- no RBAC entities introduced. docs/application-context/SECURITY-MODEL.md still documents the deviation. Still accepted, unchanged."
     },
     {
       "id": "permissions.role-change-audit-trail-gap",
@@ -1967,8 +1967,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-28",
-      "notes": "[2026-09-21] Follows from the above: Admin membership lives in an AAD group and the ViewAll list in config, so neither is ever mutated through app code and these events cannot exist in our telemetry. That history is in Azure AD's audit log. Documented in SECURITY-MODEL.md. [2026-09-28] Re-checked: SecurityAuditMiddleware.cs still the only in-app audit trail (401/403 events); no role/access-list mutation path has been added to app code since. Still accepted, unchanged."
+      "last_verified": "2026-10-20",
+      "notes": "[2026-09-21] Follows from the above: Admin membership lives in an AAD group and the ViewAll list in config, so neither is ever mutated through app code and these events cannot exist in our telemetry. That history is in Azure AD's audit log. Documented in SECURITY-MODEL.md. [2026-09-28] Re-checked: SecurityAuditMiddleware.cs still the only in-app audit trail (401/403 events); no role/access-list mutation path has been added to app code since. Still accepted, unchanged.\n[2026-10-20] Re-checked: no role/access-list mutation path added to app code since the last pass. Still accepted, unchanged."
     },
     {
       "id": "test-gaps.angular-god-components",
@@ -3629,6 +3629,78 @@
         "detected_by": "manual"
       },
       "resolution_notes": "Amber notice above the four headline cards when planting failed; the without-intentions view shows the planting failure instead of listing the whole roster; Contract Coverage notes contracts not counted when conversions failed; reloadPlantingIntentions sets/clears the planting load-failed flag like the preload. Owner approved 2026-10-14; new tests failed on the old code."
+    },
+    {
+      "id": "angular.home-stores-raw-signals-no-asreadonly",
+      "audit": "angular",
+      "severity": "low",
+      "status": "open",
+      "title": "Two new Home page-stores expose raw WritableSignal fields with no .asReadonly()",
+      "description": "home-notes.store.ts (isLoadingNotes, isSavingNote, noteSaveSucceededCounter) and home-reminders.store.ts (isLoadingReminders, isSavingReminder, reminderSaveSucceededCounter) declare their public signal fields as \"readonly\" (preventing property reassignment) but never call .asReadonly() on the WritableSignal itself, so any consumer with a reference can still call .set()/.update() on them. This is the same anti-pattern already flagged and resolved for AppStateService (angular.components-bypass-app-state-service) during the 2026-10-14..10-19 Home decomposition that created these two stores.",
+      "files": [
+        "client/src/app/features/customers/pages/home/home-notes.store.ts",
+        "client/src/app/features/customers/pages/home/home-reminders.store.ts"
+      ],
+      "suggested_fix": "Expose these as plain signal fields internally and return .asReadonly() views (or rename the public fields to end in a convention like *Readonly) consistent with how AppStateService was fixed.",
+      "opened_in": {
+        "date": "2026-10-20"
+      },
+      "last_verified": "2026-10-20",
+      "notes": "[2026-10-20] Found during angular-domain reconciliation pass; the other three Home stores created in the same refactor (home-linked-producers, home-planting, home-saved-lists) do not have raw public signal fields, so this is isolated to these two files rather than a systemic regression."
+    },
+    {
+      "id": "angular.sheet-multi-select-missing-spec",
+      "audit": "angular",
+      "severity": "low",
+      "status": "open",
+      "title": "sheet-multi-select.component.ts is the one remaining component with no .spec.ts",
+      "description": "The broad unit-test coverage gap (angular.broad-unit-test-coverage-gap, resolved 2026-10-14..19) closed from 28/49 to 48/49 components covered during the Home/Dashboard/Build-List/Bid-Sheet decomposition. sheet-multi-select.component.ts is the sole remaining component without a matching .spec.ts.",
+      "files": [
+        "client/src/app/features/bid-sheet/components/sheet-multi-select/sheet-multi-select.component.ts"
+      ],
+      "suggested_fix": "Add a .spec.ts for this component to close out the last gap from the broader coverage finding.",
+      "opened_in": {
+        "date": "2026-10-20"
+      },
+      "last_verified": "2026-10-20",
+      "notes": "[2026-10-20] Found during angular-domain reconciliation pass while re-counting component spec coverage."
+    },
+    {
+      "id": "clean-slop.customer-print-report-duplicates-pricing-status-logic",
+      "audit": "clean-slop",
+      "severity": "medium",
+      "status": "open",
+      "title": "customer-print-report re-implements contracts-table's pricing-status logic and has already drifted",
+      "description": "customer-print-report.component.ts:184-209 (getPricingInfo) is a hand-copied near-duplicate of contracts-table.component.ts:522-568 (_computePricingInfo), explicitly labelled by its own comment as mirroring the other file. The two copies have already diverged: contracts-table's version returns a LOADING status when pricingLinesLoaded() is false and lines are undefined, and applies a 1-bushel float-sum tolerance before flipping a U-priced contract from PARTIAL to PRICED (see the comment at contracts-table.component.ts ~line 552 explaining the epsilon case). customer-print-report's copy has neither: it treats an unloaded pricing-lines map the same as an empty one (silently defaulting to UNPRICED/PRICED instead of showing a loading state) and has no float tolerance, so a contract priced to within float epsilon of its quantity can show PARTIAL on the printed report while the live table shows PRICED. Same category as the already-fixed clean-slop.ctrm-config-reader-duplicated-six-times: a hand-copied business rule that drifts every time only one copy gets fixed.",
+      "files": [
+        "client/src/app/features/customers/components/customer-print-report/customer-print-report.component.ts",
+        "client/src/app/features/customers/components/contracts-table/contracts-table.component.ts"
+      ],
+      "suggested_fix": "Extract the pricing-status computation into a shared util or injectable service both components call, the same way getDeliveryStats already delegates to the shared getContractDeliveryStats util used by contracts-table, activity-summary and insights.",
+      "opened_in": {
+        "date": "2026-10-20"
+      },
+      "last_verified": "2026-10-20",
+      "notes": "[2026-10-20] Opened during the clean-slop reconciliation pass. Confirmed by reading both methods in full: logic is otherwise identical (same PTC branches, same sequence/quantity math) except for the two guards contracts-table has and customer-print-report lacks."
+    },
+    {
+      "id": "performance.ods-customer-search-unindexed-wildcard-scan",
+      "audit": "performance",
+      "severity": "low",
+      "status": "open",
+      "title": "Onboarding search against the ODS customer master runs a leading-wildcard LIKE scan across three columns with no supporting index",
+      "description": "CustomerRepository.BuildOdsSearchSql (introduced 2026-10-14, not covered by the prior performance pass) builds raw SQL against base.vw_CurrentCustomers with, per search word, a 3-column OR of LIKE '%'+term+'%' predicates ANDed together across words, ordered by CustomerName, then capped with TOP 50. A leading '%' makes every one of those predicates non-sargable, so SQL Server cannot seek an index for any of them and the view has to be scanned for every onboarding search. Mitigated on several sides -- the controller enforces a 3-char minimum server-side (SearchOdsAsync's MinOdsSearchLength), the client only fires this fallback when no trade-unit/group scope is selected AND the primary dbo.Customer search already returned zero rows, and the search input itself is debounced 150ms with switchMap cancelling stale requests -- so this is a bounded, infrequent, already-recognised cost (the client's own test comment calls it 'the slow master scan') rather than a proven hot path. Flagged as an inferred risk because no query-plan or timing evidence was available locally, and because a 3-character common term (e.g. a frequent surname fragment) against a producer-master view described elsewhere as holding on the order of 10^5 rows could still cost a full scan per searching rep.",
+      "files": [
+        "api/GrainOriginatorPortal.Infrastructure/Repositories/CustomerRepository.cs",
+        "api/GrainOriginatorPortal.Api/Controllers/CustomersController.cs",
+        "client/src/app/features/customers/components/customer-list/customer-list.component.ts"
+      ],
+      "suggested_fix": "If this ever shows up in Query Store as a real cost, consider a filtered/trigram-style index on base.vw_CurrentCustomers (CustomerName, ScoularId, SourceCustomerId) for IndustryCode1='PR' AND IsActive=1 rows, or move the match to a full-text/contains predicate the engine can seek. Not urgent given the existing gating; record for the next time Query Store is reviewed.",
+      "opened_in": {
+        "date": "2026-10-20"
+      },
+      "last_verified": "2026-10-20",
+      "notes": "[2026-10-20] Found during the performance reconciliation pass while sampling code added since the last performance audit (2026-10-14): the BarChart catalog/picker subsystem and the Bid Sheet map clustering were also reviewed and found already well-optimized (batched price lookups, computed()-memoized bid lookups, marker clustering for the ~4,000-pin catalog layer, bulk diff-based CustomerSyncService with no per-row DB calls). All 9 other performance findings already on file (tickets-table, contracts-table, angular-template-function-calls, angular-onpush-coverage-gap, usage-dashboard scope caching, bidsheet-reconcile N+1, producer-details re-fetch, grouptradeunits index, producerdetails child-table rebuild, ctrm-read-ahead-gating) remain resolved/wont_fix/accepted on spot-check; no regressions found in the sampled code."
     }
   ]
 }

@@ -2,8 +2,41 @@
 
 Scope: dead code, duplication, and stale artifacts across `api/`, `client/`, `scripts/`, and `SECURITY-REVIEWS/scripts/`
 
-**Findings:** 27 total — 19 resolved, 4 open, 1 wont_fix, 1 accepted, 2 resolved (CTRM copy-paste drift) (0 critical, 5 high, 13 medium, 7 low by original severity, plus 2 new low/medium findings opened 2026-10-13)
-**Opened:** 2026-09-19 | **Last verified:** 2026-10-13
+**Findings:** 29 total — 1 open (medium), 1 wont_fix, 1 accepted, 26 resolved
+**Opened:** 2026-09-19 | **Last verified:** 2026-10-20
+
+## 2026-10-20 reconciliation
+
+Corrected a stale summary in this document rather than trusting its own prior text: the "Open (2)"
+section below had listed `clean-slop.dead-farms-api-vertical` and `clean-slop.duplicated-commodity-taxonomy`
+as still open as of 2026-10-13, but `AUDIT-TRACKING.json` already recorded both `resolved` (2026-10-13 and
+2026-10-14 respectively). Re-verified both directly against the tree rather than trusting either source
+blindly: `find api -iname "*Farm*"` returns zero `FarmsController`/`FarmService`/`FarmRepository` matches
+(only the unrelated `ProducerGrainOnFarm` feature, a different noun), confirming commit `6aa88c21`
+(2026-10-13, dropping the stray `/api/farms` usage-mapping leftover) was the tail end of a real deletion,
+not evidence the vertical still exists. `commodity-aliases.ts` now imports `CROP_CODE_MAP` from
+`crop-group-match.ts` and derives its corn/wheat/soy/sorghum codes from it (`withCodes()` helper),
+confirming the two taxonomies were actually unified rather than just marked resolved. Both findings are
+closed out below; this document's open count is now corrected to match the tracker.
+
+Reviewed every commit touching `api/`, `client/src`, `scripts/`, and `SECURITY-REVIEWS/scripts/` since the
+last real clean-slop pass (2026-10-14) — a large batch of perf/OnPush conversions and "move logic into a
+feature util" refactors (home page split into page-scoped stores, build-list and bid-sheet split into
+`utils/*`, dashboard split into pure-formatter utils). Swept the new/changed files for the same four
+categories as prior passes: no new stale `TODO`/`FIXME` markers (the three hits are the same phone-format
+placeholder false positive as every prior pass), no new commented-out code blocks (the `// ---` banner
+hits are all section headers, not dead logic — checked each of the 14 files that matched), and the
+56-ish single-implementation-interface count is unchanged (still the deliberate DI/mocking convention,
+not AI ceremony). The extraction refactors themselves are clean: `getDeliveryStats` in
+`customer-print-report.component.ts` already delegates to the shared `getContractDeliveryStats` util used
+by `contracts-table`/`activity-summary`/`insights`, and the new `utils/*` files created by the bid-sheet
+and build-list splits aren't duplicated elsewhere. Found one new copy-paste-drift item instead, in the one
+method `customer-print-report.component.ts` does *not* delegate out:
+
+### `customer-print-report` re-implements `contracts-table`'s pricing-status logic and has already drifted (`clean-slop.customer-print-report-duplicates-pricing-status-logic`) — medium
+- **Files:** `client/src/app/features/customers/components/customer-print-report/customer-print-report.component.ts` (`getPricingInfo`, ~lines 184-209), `client/src/app/features/customers/components/contracts-table/contracts-table.component.ts` (`_computePricingInfo`, ~lines 522-568)
+- `customer-print-report`'s `getPricingInfo` is a hand-copied near-duplicate of `contracts-table`'s pricing-status method, labelled by its own comment as mirroring it (`// --- Pricing logic mirrors contracts-table.component.ts getPricingInfo ---`). Read both in full: same PTC branches, same sequence/quantity math — but the copies have already diverged. `contracts-table`'s version returns a `LOADING` status when `pricingLinesLoaded()` is false and lines are undefined, and applies a 1-bushel float-sum tolerance before flipping a `U`-priced contract from `PARTIAL` to `PRICED` (explained in its own comment as guarding against float epsilon on summed `priceQuantity`). `customer-print-report`'s copy has neither guard: an unloaded pricing-lines map is silently treated as an empty one, and a contract priced to within float epsilon of its quantity can show `PARTIAL` on the printed report while the live table shows `PRICED`. Same pattern as the already-fixed `clean-slop.ctrm-config-reader-duplicated-six-times`.
+- **Suggested fix:** Extract the pricing-status computation into a shared util or injectable service both components call, the same way `getDeliveryStats` here already delegates to the shared `getContractDeliveryStats` util.
 
 ## 2026-10-13 reconciliation
 
@@ -27,30 +60,21 @@ Re-verified the two findings still open from the 2026-09-21 pass (dead Farms API
 
 Also reviewed the new CTRM GraphQL integration (`Services/Ctrm/`, `Infrastructure/Ctrm/`, `CtrmKeepWarmService.cs` — roughly 5,300 lines across 16 files) merged since the last pass, since it's the only material change to the repo in that window. It's well-engineered: nearly every non-obvious method carries a WHY comment (e.g. `ContractRepositorySwitch`'s doc comment explains *why* the source flag is read per-call instead of captured at construction), and the `ContractRepositorySwitch`/`TicketRepositorySwitch` pair's structural duplication is deliberate and explicitly cross-referenced in their doc comments, not slop. Found two new copy-paste-drift findings instead: the same `ReadInt`/`ReadBool` config-parsing helper is independently reimplemented six times across the vertical (and the copies have already started to diverge — different `CultureInfo` handling, one dropped the fallback parameter), and `ResolveScoularIdAsync` is duplicated near-verbatim between the Contract and Ticket repositories. Both were subsequently fixed the same day — see `AUDIT-TRACKING.json` (`clean-slop.ctrm-config-reader-duplicated-six-times`, `clean-slop.ctrm-resolve-scoularid-duplicated`) for resolution detail.
 
-## Open (2)
+## Open (1)
 
-### Entire Farms REST API is a non-functional stub with no caller (`clean-slop.dead-farms-api-vertical`) — high
-- **Files:** `Controllers/FarmsController.cs`, `Services/FarmService.cs`, `Services/IFarmService.cs`, `Repositories/FarmRepository.cs`, `Interfaces/IFarmRepository.cs`
-- Re-verified 2026-10-13: all five files still exist unchanged, no real callers. Unchanged since 2026-09-21.
-- **Suggested fix:** Remove the whole Farms vertical, or explicitly return 501/404. Keep-or-delete is a product call.
-
-### Independently-maintained commodity taxonomy/alias maps overlap but disagree (`clean-slop.duplicated-commodity-taxonomy`) — medium
-- **Files:** `shared/utils/commodity-aliases.ts`, `shared/utils/crop-group-match.ts`, `shared/utils/contract-status.ts`, `shared/utils/production-coverage.ts`
-- Re-verified 2026-10-13: still separate, still disagree on corn/wheat/milo groupings. Unchanged since 2026-09-21.
-- **Related findings:** `angular.duplicated-commodity-taxonomy-logic`
-- **Suggested fix:** Extract one shared builder/lookup table, but only as a product decision on which taxonomy wins.
-
-## Open — new 2026-10-13 (2)
-
-See the "2026-10-13 reconciliation" section above for `clean-slop.dead-commented-pricing-logic` (low) and `clean-slop.orphaned-api-service-methods` (medium).
+See the "2026-10-20 reconciliation" section above for `clean-slop.customer-print-report-duplicates-pricing-status-logic` (medium).
 
 ## 2026-09-21 reconciliation
 
 Independently re-verified all 23 findings against the current repo state (not just the tracker's prior "Fixed on branch fix_AuditPhase1Findings" notes) by reading or grepping every file each finding names. All 19 prior "resolved" claims held up under direct inspection — most were fixed by outright deletion (`qa-setup.sql`, `migrate-bid-sheet.sql`, the six stale `Scripts/` files, `CheckMbpLocationCoverage.sql`, `admin.guard.ts`, the footer/tabs/textarea components, the duplicate `customer-map` folder, `core/services/index.ts`) or by call sites being repointed at the surviving shared implementation (`buildLbsPerBushelMap`, `IRequestContextService`, `IGeocodeService`, `formatAccountingMoney`, `toSavedListPayload`). Two are notable because the actual fix took a different shape than the suggested one: `commodityRowClass()` was kept and the dashboard call site was changed to use it (rather than deleting the wrapper), and the customers-signal drift bug was fixed by adding the missing `appState.setCustomers(...)` call rather than removing the duplicate local signal entirely. The two still-open items (dead Farms API vertical, disagreeing commodity taxonomies) were re-confirmed unchanged and still require a product decision, not a mechanical cleanup. `wont_fix` and `accepted` items are unchanged. No corrections to prior status were needed and no new clean-slop findings were added in this pass; see `AUDIT-TRACKING.json` for per-finding re-verification notes.
 
-## Resolved (21)
+## Resolved (26)
 
-19 fixed on branch `fix_AuditPhase1Findings`, merged to main 2026-09-21 via PR #615, and independently re-confirmed 2026-09-21 by reading the current file contents (not just trusting the merge). 2 more (the CTRM config-reader and ResolveScoularIdAsync duplication) fixed same-day on 2026-09-28 — see that section above.
+19 fixed on branch `fix_AuditPhase1Findings`, merged to main 2026-09-21 via PR #615, and independently re-confirmed 2026-09-21 by reading the current file contents (not just trusting the merge). 2 more (the CTRM config-reader and ResolveScoularIdAsync duplication) fixed same-day on 2026-09-28 — see that section above. The 2026-10-13 pass added 2 more resolved same-day (`dead-commented-pricing-logic`, `orphaned-api-service-methods`) plus a third (`dead-confirm-dialog`, fixed same day in commit `7c7769d6`). 2 more — `dead-farms-api-vertical` and `duplicated-commodity-taxonomy` — were long-open items finally resolved 2026-10-13/14 at the product owner's direction; see the 2026-10-20 reconciliation note above for how each was verified.
+
+- **`clean-slop.dead-farms-api-vertical`** (high) — whole vertical deleted 2026-10-13 at the product owner's direction (no ODS Farms table is planned): controller, service, repository, interfaces, entity, DTOs, DI registrations, and the stray `/api/farms` usage-mapping leftover (commit `6aa88c21`) all removed. Re-verified 2026-10-20: zero `*Farm*` matches remain under `api/` besides the unrelated `ProducerGrainOnFarm` feature.
+- **`clean-slop.duplicated-commodity-taxonomy`** (medium) — `commodity-aliases.ts` now derives its corn/wheat/soy/sorghum codes from `crop-group-match.ts`'s `CROP_CODE_MAP` via a `withCodes()` helper, so the two can no longer disagree on codes (owner-approved 2026-10-14, deliberately excludes barley/canola/oats/sunflower to avoid substring false-matches). Re-verified 2026-10-20 by reading the import and helper directly.
+- **`clean-slop.dead-confirm-dialog`** (low) — dead confirm dialog deleted alongside a stray-backslash fix in commit `7c7769d6` (2026-10-13).
 
 - **`clean-slop.qa-setup-resurrects-removed-tradeunit-catalog`** (high) — `scripts/qa-setup.sql` deleted outright.
 - **`clean-slop.dead-shared-ui-components`** (high) — `shared/components/footer/`, `tabs/`, `textarea/` all deleted.
@@ -88,4 +112,4 @@ Independently re-verified all 23 findings against the current repo state (not ju
 
 ## Verification
 
-No build/tests run in the 2026-10-13 pass (out of scope per the invoking instructions — a separate baseline step covers it). Both new findings are read-only observations; no source files were modified.
+No build/tests run in the 2026-10-13 or 2026-10-20 passes (out of scope per the invoking instructions — a separate baseline step covers it). All 2026-10-20 findings are read-only observations; no source files were modified.
