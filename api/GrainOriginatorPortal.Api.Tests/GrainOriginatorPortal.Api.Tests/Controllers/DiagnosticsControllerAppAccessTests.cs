@@ -58,7 +58,6 @@ public class DiagnosticsControllerAppAccessTests
 
         return new DiagnosticsController(
             env.Object,
-            new CustomerSyncService(new Mock<IServiceScopeFactory>().Object, new Mock<ILogger<CustomerSyncService>>().Object),
             new SchemaDiagnosticsService(ods, app, ent),
             new CtrmDiagnosticsService(
                 ctrmClient,

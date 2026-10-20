@@ -267,9 +267,12 @@ export class ApiService {
       .pipe(catchError(() => of([] as Customer[])));
   }
 
-  /** Assigns trade units to a producer, onboarding them into our tables if not present. */
-  assignTradeUnits(customerId: number, tradeUnitCodes: string[]): Observable<Customer> {
-    return this.http.put<Customer>(`${this.baseUrl}/customers/${customerId}/trade-units`, { tradeUnitCodes })
+  /** Assigns trade units to a producer, onboarding them into our tables if not present. For a
+   *  candidate the CTRM onboarding search returned, `customerId` is a negative placeholder and
+   *  `scoularId` is what the server onboards by (it mints the real id). */
+  assignTradeUnits(customerId: number, tradeUnitCodes: string[], scoularId?: string): Observable<Customer> {
+    const body = scoularId ? { tradeUnitCodes, scoularId } : { tradeUnitCodes };
+    return this.http.put<Customer>(`${this.baseUrl}/customers/${customerId}/trade-units`, body)
       .pipe(catchError(e => this.handleError(e)));
   }
 

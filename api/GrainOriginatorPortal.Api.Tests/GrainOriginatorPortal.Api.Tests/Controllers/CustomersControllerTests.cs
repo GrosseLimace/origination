@@ -8,6 +8,7 @@ using Moq;
 using GrainOriginatorPortal.Api.Controllers;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models;
+using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Abstractions;
@@ -192,5 +193,64 @@ public class CustomersControllerTests
 
         // Act & Assert
         await Assert.ThrowsAsync<NotFoundException>(() => _sut.RemoveDormantTradeUnit(9, "9999"));
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task AssignTradeUnits_AdoptedOutcome_ReturnsTheAdoptedCustomer()
+    {
+        // Arrange — the repository adopted the row the sync already holds (minted id) instead of
+        // inserting the requested ODS id, so the requested id does not exist in dbo.Customer.
+        const long adoptedId = 5_000_000_000_000_042;
+        var adopted = new CustomerResponse { Id = adoptedId, Name = "Smith Farms", Location = "Omaha, NE" };
+        _serviceMock.Setup(s => s.AssignTradeUnitsAsync(777, It.IsAny<List<string>>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AssignTradeUnitsOutcome.Ok(adoptedId, adopted: true));
+        _serviceMock.Setup(s => s.GetByIdAsync(adoptedId, It.IsAny<CancellationToken>())).ReturnsAsync(adopted);
+
+        // Act
+        var result = await _sut.AssignTradeUnits(777, new AssignTradeUnitsRequest { TradeUnitCodes = ["1085"] });
+
+        // Assert
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Same(adopted, ok.Value);
+        _serviceMock.Verify(s => s.GetByIdAsync(777, It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task AssignTradeUnits_PassesTheScoularIdThrough_AndReturnsTheMintedCustomer()
+    {
+        // Arrange — a CTRM onboarding candidate: negative placeholder id in the URL, the code in the body.
+        const long placeholder = -1_234_567_890_123_456;
+        const long mintedId = 5_000_000_000_000_777;
+        var minted = new CustomerResponse { Id = mintedId, Name = "Jones Farms", Location = "Iuka, KS" };
+        _serviceMock.Setup(s => s.AssignTradeUnitsAsync(placeholder, It.IsAny<List<string>>(), "JONESFA", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AssignTradeUnitsOutcome.Ok(mintedId));
+        _serviceMock.Setup(s => s.GetByIdAsync(mintedId, It.IsAny<CancellationToken>())).ReturnsAsync(minted);
+
+        // Act
+        var result = await _sut.AssignTradeUnits(placeholder, new AssignTradeUnitsRequest { TradeUnitCodes = ["1085"], ScoularId = "JONESFA" });
+
+        // Assert
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Same(minted, ok.Value);
+        _serviceMock.Verify(s => s.AssignTradeUnitsAsync(placeholder, It.IsAny<List<string>>(), "JONESFA", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task AssignTradeUnits_NoCodes_Returns400_And_CustomerNotFound_Throws()
+    {
+        // Arrange
+        _serviceMock.Setup(s => s.AssignTradeUnitsAsync(1, It.IsAny<List<string>>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AssignTradeUnitsOutcome.NoCodes(1));
+        _serviceMock.Setup(s => s.AssignTradeUnitsAsync(2, It.IsAny<List<string>>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AssignTradeUnitsOutcome.CustomerNotFound(2));
+
+        // Act & Assert
+        var noCodes = await _sut.AssignTradeUnits(1, new AssignTradeUnitsRequest { TradeUnitCodes = [] });
+        Assert.IsType<BadRequestObjectResult>(noCodes.Result);
+        await Assert.ThrowsAsync<NotFoundException>(() => _sut.AssignTradeUnits(2, new AssignTradeUnitsRequest { TradeUnitCodes = ["1085"] }));
+        _serviceMock.Verify(s => s.GetByIdAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

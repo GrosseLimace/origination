@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Infrastructure.Sync;
 
 namespace GrainOriginatorPortal.Infrastructure.Data;
 
@@ -76,6 +77,12 @@ public class ApplicationDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        // Ids for producers the customer sync finds only in CTRM (they have no ODS surrogate id), drawn from the
+        // reserved band [5e15, 6e15). The AddCustomerIdSequence migration creates the real sequence with a start
+        // computed from the live MAX(CustomerId); StartsAt here is only the model default. See D5 of
+        // agents-docs/plans/customers-from-graphql-design_2026-10-06.md and CustomerIdMinting.
+        modelBuilder.HasSequence<long>(CustomerIdMinting.SequenceName, CustomerIdMinting.SequenceSchema).StartsAt(CustomerIdMinting.ReservedBase).IncrementsBy(1);
 
         modelBuilder.Entity<Commodity>(entity =>
         {
@@ -689,6 +696,9 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ExtendedPostalCode).HasColumnName("ExtendedPostalCode").HasMaxLength(20).IsRequired(false);
             entity.Property(e => e.ExtendedStateProvince).HasColumnName("ExtendedStateProvince").HasMaxLength(50).IsRequired(false);
             entity.Property(e => e.ExtendedCountry).HasColumnName("ExtendedCountry").HasMaxLength(255).IsRequired(false);
+
+            // CTRM payment method code ('H' = ACH) — filled by the ctrm customer sync (plan E2); null on ods.
+            entity.Property(e => e.PaymentMethod).HasColumnName("PaymentMethod").HasMaxLength(Customer.PaymentMethodMaxLength).IsRequired(false);
 
             // DTO-only fields — populated by service layer enrichment, not stored on the table.
             entity.Ignore(e => e.CustomerCode);

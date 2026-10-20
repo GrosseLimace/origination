@@ -125,7 +125,7 @@ Posts click-event telemetry to `/api/usage-dashboard/click-event`. Methods like 
 
 | `DbSet` | Backing view | Schema |
 | --- | --- | --- |
-| `CustomerTradeUnits` (`CustomerTradeUnitView`) | `vw_CustomerTradeUnits` | `originations` (no key — view only; drives the dbo.Customer / dbo.CustomerTradeUnit sync) |
+| `CustomerTradeUnits` (`CustomerTradeUnitView`) | `vw_CustomerTradeUnits` | `originations` (no key — view only; drives the dbo.Customer / dbo.CustomerTradeUnit sync when `CustomerSync:Source` is not `ctrm`) |
 | `Contracts` | `vw_CurrentContracts` | `base` |
 | `Tickets` | `vw_CurrentTickets` | `base` |
 | `TicketQualities` | `vw_TicketQuality` | `base` |
@@ -133,7 +133,7 @@ Posts click-event telemetry to `/api/usage-dashboard/click-event`. Methods like 
 | `Elevators` | `vw_GNP026` | `ctrm` |
 | `CommodityConversions` | `vw_GNP024` | `ctrm` |
 
-**Customer data is no longer in `OriginationDbContext`.** The previous `Customers` DbSet on `vw_CurrentCustomers` was removed when `dbo.CustomerSnapshot` was dropped (migration `20260513185441`). Customers and their TU mappings are now app-owned (`dbo.Customer` + `dbo.CustomerTradeUnit` on `ApplicationDbContext`), populated by `CustomerSyncBackgroundService`. The remaining ODS-side `vw_CustomerTradeUnits` view is still consulted for per-request access checks in `UserEntitlementService.ValidateCustomerAccessAsync`.
+**Customer data is no longer in `OriginationDbContext`.** The previous `Customers` DbSet on `vw_CurrentCustomers` was removed when `dbo.CustomerSnapshot` was dropped (migration `20260513185441`). Customers and their TU mappings are now app-owned (`dbo.Customer` + `dbo.CustomerTradeUnit` on `ApplicationDbContext`), populated by `CustomerSyncBackgroundService` from ODS or from the CTRM GraphQL API, per `CustomerSync:Source` (see [CTRM GraphQL Data Source](./CTRM%20GraphQL%20Data%20Source.md)). The access check in `UserEntitlementService.ValidateCustomerAccessAsync` now reads `dbo.CustomerTradeUnit` (active rows, manual ones included), not the live ODS view.
 
 **Storage data** (`StoredGrain`) is **not** a DbSet — it's queried as raw SQL against `ctrm.vw_GNTA39D1` from `SqlDataService.GetStoredGrainAsync` (see Customer Home Page doc).
 
@@ -147,7 +147,7 @@ All app-owned tables, all in `dbo`:
 
 | Table | Purpose |
 | --- | --- |
-| `Customer` | App-owned customer master (one row per customer, synced from ODS `vw_CustomerTradeUnits` by `CustomerSyncBackgroundService`). Replaces the old read-from-ODS pattern + `CustomerSnapshot` cache. `IsManual` flags producers onboarded by hand (no contract/ticket) so the nightly sync's soft-delete pass won't deactivate them. |
+| `Customer` | App-owned customer master (one row per customer, synced from ODS `vw_CustomerTradeUnits` or from CTRM GraphQL, per `CustomerSync:Source`, by `CustomerSyncBackgroundService`). Replaces the old read-from-ODS pattern + `CustomerSnapshot` cache. `IsManual` flags producers onboarded by hand (no contract/ticket) so the nightly sync's soft-delete pass won't deactivate them. |
 | `CustomerTradeUnit` | Customer ↔ trade-unit junction (multi-TU producers get multiple rows). Synced alongside `Customer`. `IsManual` marks TU assignments made by a user in the Edit Producer dialog (vs sync-sourced from a contract/ticket) — manual ones are user-removable; sync ones are locked. |
 | `CustomerLink` | Linked-producer edges (formerly `ProducerDetails.LinkedProducerIds` CSV; now a proper relationship table). |
 | `CustomerCommodity` | Per-customer commodity list (formerly `ProducerDetails.Commodities` CSV). |
@@ -197,7 +197,7 @@ All controllers depend on `IDataService` (DI'd as `SqlDataService` today, with `
 | --- | --- |
 | `GetAllowedTradeUnitCodesAsync()` | Returns the set of trade-unit codes the user is entitled to. Loads from `UserTradeUnitAccess` once per request and caches. **Fails open** on entitlement-DB outage (returns empty set, sets `EntitlementsAvailable = false`). |
 | `ValidateTradeUnitsOrThrowAsync(codes)` | Throws `ForbiddenException` if any requested code isn't entitled. Used by controllers that take a `tradeUnits` query param. |
-| `ValidateCustomerAccessAsync(customerId)` | Looks up the customer's TUs from `originations.vw_CustomerTradeUnits` and checks against the user's entitled set. |
+| `ValidateCustomerAccessAsync(customerId)` | Looks up the customer's TUs from `dbo.CustomerTradeUnit` (`IsActive = 1`, manual rows included) and checks against the user's entitled set. |
 
 **Important:** Most customer-bound *read* and *write* endpoints **deliberately do not call `ValidateCustomerAccessAsync`**. See [SECURITY-MODEL.md](./SECURITY-MODEL.md) — trade units are a UX filter, not an access boundary.
 

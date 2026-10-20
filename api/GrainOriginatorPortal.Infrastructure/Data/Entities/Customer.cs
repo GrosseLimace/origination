@@ -46,9 +46,21 @@ public class Customer
     public bool ESignEnabled { get; set; }
     public string? ScoularViewRecipients { get; set; }  // Comma-separated "Name | email/phone", populated from dbo.eSignEnrollment
     public string? Guild { get; set; }                   // Guild name, populated from dbo.eSignEnrollment
-    // ACH-enabled = base.Customer.PaymentMethod == 'H'. Transient (not a dbo.Customer column);
-    // enriched at read time from ODS, like ESignEnabled.
+    // ACH-enabled = PaymentMethod code 'H'. Transient (not a dbo.Customer column); enriched at read
+    // time like ESignEnabled — from ODS base.Customer on the ods sync source, from the PaymentMethod
+    // column below on the ctrm source (plan E2).
     public bool AchEnabled { get; set; }
+
+    /// <summary>
+    /// The CTRM payment method code (dbo.Customer.PaymentMethod, nvarchar(10)), written by the customer sync on
+    /// the ctrm source only while CustomerSync:CtrmExtendedFields is on; otherwise null (or the value of the last
+    /// extended run), and never written by the ods source. Server-side only: the client reads <see cref="AchEnabled"/>.
+    /// </summary>
+    [JsonIgnore]
+    public string? PaymentMethod { get; set; }
+
+    /// <summary>Length of dbo.Customer.PaymentMethod.</summary>
+    public const int PaymentMethodMaxLength = 10;
     // The producer's active trade-unit codes, from dbo.CustomerTradeUnit. Transient; enriched on the
     // list reads so the planting dialog can offer them without a request of its own.
     public List<string> ActiveTradeUnits { get; set; } = new();
