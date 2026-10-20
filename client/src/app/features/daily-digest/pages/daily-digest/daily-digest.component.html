@@ -205,8 +205,9 @@
 
 <!-- Create / Edit Dialog -->
 <!-- closeOnBackdrop=false: this add/edit form must not close on an accidental outside click —
-     only the X or Cancel dismiss it (avoids losing in-progress group edits). -->
-<app-dialog [isOpen]="dialogOpen()" size="lg" [closeOnBackdrop]="false" [scrollBody]="true" (close)="closeDialog()">
+     only the X or Cancel dismiss it (avoids losing in-progress group edits). Escape is off for the
+     same reason. -->
+<app-dialog [isOpen]="dialogOpen()" size="lg" [closeOnBackdrop]="false" [closeOnEscape]="false" [scrollBody]="true" (close)="closeDialog()">
   <div class="shrink-0 px-6 py-5 border-b border-gray-200 dark:border-gray-700">
     <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
       {{ isEditing() ? 'Edit Group' : 'Create Group' }}
@@ -412,6 +413,11 @@
             @if (catalogError()) {
               <div class="m-3 py-3 px-3 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300">
                 {{ catalogError() }}
+              </div>
+            }
+            @if (catalogDegraded() && !catalogLoading()) {
+              <div role="status" class="m-3 py-3 px-3 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-800 dark:text-amber-200">
+                The directory couldn't be loaded, so these lists are empty for now. Close and reopen the editor to try again.
               </div>
             }
 

@@ -55,6 +55,13 @@ function loc(name: string, groups: PrintCropGroup[], value = '-30', isScoular = 
 /** A realistic seven-character basis/flat value. */
 const REAL_VALUE = '-0.4500';
 
+/** Board-symbol labels and values, e.g. "Aug 26 · ZCU26" over "-0.4500 (ZCZ26)". */
+const BOARD_LABELS = ['O/C 26 · ZCU26', 'N/C 26 · ZCZ26', 'May 26 · ZCK26', 'Jun 26 · ZCN26'];
+function boardGroup(crop: string, n: number): PrintCropGroup {
+  return { crop, columns: BOARD_LABELS.slice(0, n).map(l => col(crop, l)) };
+}
+const BOARD_VALUE = '-0.4500 (ZCZ26)';
+
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
 const cropsIn = (t: PrintTable) => t.headerRows[0].length - 1;
@@ -214,6 +221,20 @@ describe('buildLocationsDown', () => {
     expect(t.bodyRows[0][1]).toMatchObject({ text: '-30', mono: true, align: 'center' });
   });
 
+  // Board symbols made every header and value markedly wider. Column widths are clamped UP to what
+  // the content needs, so a wide-enough sheet could push the table past the page and clip on the
+  // right — silently, because nothing asserted the upper bound for this layout.
+  it('never exceeds the page width, even with board symbols in every header and value', () => {
+    const groups = Array.from({ length: 4 }, (_, i) => boardGroup(`Crop${i}`, 4));
+    const locs = Array.from({ length: 12 }, (_, i) =>
+      loc(`Farmers Cooperative Dorchester - Site ${i}`, groups, BOARD_VALUE));
+
+    for (const t of buildLocationsDown({ groups, locations: locs, cropColors })) {
+      expect(t.widthPct).toBeLessThanOrEqual(100 + 1e-6);
+      expect(sum(t.colWidthsIn)).toBeLessThanOrEqual(G.PAGE_WIDTH_IN + 1e-6);
+    }
+  });
+
   it('lists each location ONCE per band, in grid order, even when a location bids only one crop', () => {
     const groups = [group('Corn', 1), group('Wheat', 1)];
     const cornOnly: PrintLocation = { name: 'Corn Only', isScoular: false, values: { 'Corn#P1': '-40' } };
@@ -229,6 +250,43 @@ describe('buildLocationsDown', () => {
     expect(tables).toHaveLength(1);
     expect(tables[0].fontPx).toBe(G.FONT_LADDER_PX[0]);
     expect(cropsIn(tables[0])).toBe(4);
+  });
+
+  // ── uneven and repeated runs ────────────────────────────────────────────────────────────────
+  // Groups are contiguous runs of one crop now, not one group per crop, so their sizes are arbitrary
+  // and the same crop can appear more than once. Neither was possible under the cross product, where
+  // every group had exactly months x years columns.
+
+  it('keeps a wide run and a lone column on ONE band when the columns fit', () => {
+    // The regression the old banding produced: dividing the page budget by the WIDEST group made a
+    // group of 6 beside a group of 1 look like it needed two bands, for seven columns that fit on one.
+    const groups = [realGroup('Corn', 6), realGroup('Soy', 1)];
+    const tables = buildLocationsDown({ groups, locations: [loc('Scoular Pratt', groups, REAL_VALUE, true)], cropColors });
+    expect(tables).toHaveLength(1);
+    expect(cropsIn(tables[0])).toBe(2);
+  });
+
+  it('still splits when the columns genuinely do not fit', () => {
+    const groups = Array.from({ length: 8 }, (_, i) => realGroup(`Crop${i}`, 6));
+    const tables = buildLocationsDown({ groups, locations: [loc('Scoular Pratt', groups, REAL_VALUE, true)], cropColors });
+    expect(tables.length).toBeGreaterThan(1);
+    // Whatever the split, no band may exceed the page.
+    for (const t of tables) expect(sum(t.colWidthsIn)).toBeLessThanOrEqual(G.PAGE_WIDTH_IN + 1e-6);
+  });
+
+  it('draws the same crop twice when it appears in two non-adjacent runs', () => {
+    // The grid's order is the user's and print matches it, so YC | SB | YC is three bands, not two.
+    // Merging the two YC runs would silently reorder the printed sheet away from the screen.
+    const groups = [realGroup('Corn', 1), realGroup('Soy', 1), realGroup('Corn', 1)];
+    const [t] = buildLocationsDown({ groups, locations: [loc('Scoular Pratt', groups, REAL_VALUE, true)], cropColors });
+    expect(cropsIn(t)).toBe(3);
+    expect(t.headerRows[0].slice(1).map(c => c.text)).toEqual(['Corn', 'Soy', 'Corn']);
+  });
+
+  it('never lets an uneven band exceed the page width', () => {
+    const groups = [realGroup('Corn', 5), realGroup('Soy', 1), realGroup('Milo', 3), realGroup('Wheat', 2)];
+    const tables = buildLocationsDown({ groups, locations: [loc('Scoular Pratt', groups, REAL_VALUE, true), loc('CHS Cullison', groups, REAL_VALUE)], cropColors });
+    for (const t of tables) expect(sum(t.colWidthsIn)).toBeLessThanOrEqual(G.PAGE_WIDTH_IN + 1e-6);
   });
 
   it('steps the type size down rather than splitting when four crops × four periods only fit smaller', () => {
@@ -381,6 +439,19 @@ describe('buildLocationsDown', () => {
 describe('buildLocationsAcross', () => {
   const manyLocs = (count: number, groups: PrintCropGroup[], nameLen = 6) =>
     Array.from({ length: count }, (_, i) => loc(`L${String(i + 1).padStart(2, '0')}`.padEnd(nameLen, 'x'), groups));
+
+  // Companion to the Down-layout bound: Across puts locations in the columns, so a board symbol on
+  // every value widens every column rather than just a few.
+  it('never exceeds the page width with board symbols in every value', () => {
+    const groups = [boardGroup('Corn', 4), boardGroup('Soybeans', 4)];
+    const locs = Array.from({ length: 10 }, (_, i) =>
+      loc(`Farmers Cooperative Dorchester - Site ${i}`, groups, BOARD_VALUE));
+
+    for (const t of buildLocationsAcross({ groups, locations: locs, cropColors })) {
+      expect(t.widthPct).toBeLessThanOrEqual(100 + 1e-6);
+      expect(sum(t.colWidthsIn)).toBeLessThanOrEqual(G.PAGE_WIDTH_IN + 1e-6);
+    }
+  });
 
   it('puts locations across the top and a tinted band row + one row per period under each crop', () => {
     const groups = [group('Corn', 2), group('Wheat', 1)];
@@ -689,7 +760,8 @@ describe('renderPrintDocument', () => {
     address: '123 Test Road <Anytown>',
     phone: '(555) 123-4567',
     dateText: 'Friday, August 21, 2026',
-    logoUrl: 'https://app.example.com/assets/images/scoular-logo-dark.webp'
+    logoUrl: 'https://app.example.com/assets/images/scoular-logo-dark.webp',
+    priceModeLabel: 'Cash bids'
   };
 
   it('escapes user text, carries the page setup and chrome, and never prints dashes for blanks', () => {
@@ -706,6 +778,8 @@ describe('renderPrintDocument', () => {
     expect(html).toContain(`@page { margin: ${G.PAGE_MARGIN_IN}in; size: landscape; }`);
     expect(html).toContain('print-color-adjust:exact');
     expect(html).toContain('Confidential');
+    // A printed basis sheet must not read as a cash sheet.
+    expect(html).toContain('Cash bids');
     expect(html).not.toContain('&mdash;</td>');
     expect(html).not.toContain('&nbsp;');
   });
@@ -713,9 +787,10 @@ describe('renderPrintDocument', () => {
   it('omits empty address/phone lines and sizes a partial band below 100%', () => {
     const wide = Array.from({ length: 5 }, (_, i) => realGroup(`Crop${i}`, 4));
     const model = buildPrintLayout({ style: 'locationsDown', groups: wide, locations: [loc('Short', wide, REAL_VALUE)], cropColors });
-    const html = renderPrintDocument(model, { ...chrome, address: '  ', phone: '' });
+    const html = renderPrintDocument(model, { ...chrome, address: '  ', phone: '', priceModeLabel: 'Basis bids' });
 
     expect(html).not.toContain('<p></p>');
+    expect(html).toContain('Basis bids');
     expect(html).toContain('width:100.000%');
     expect(html).toMatch(/<table style="width:(?!100\.000%)\d+\.\d{3}%/);
     expect(html).toContain('page-break-inside:avoid');

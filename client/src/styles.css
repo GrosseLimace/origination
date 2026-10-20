@@ -74,6 +74,19 @@
    overflow-hidden and there is no scrollbar to recover it. Every current menu is
    left-anchored in a filter bar, which is why this has not bitten. */
 
+/* CDK Overlay sits ABOVE all of the above.
+
+   @angular/cdk/overlay-prebuilt.css puts .cdk-overlay-container at z-index 1000. That is below the
+   bid sheet's own Leaflet-era tiers -- the Edit Bids panel alone is z-[1100] -- so a CDK-positioned
+   popover opened from inside Edit Bids renders BEHIND it and reads as simply missing. 1350 clears
+   the highest tier in use (z-[1300]).
+
+   CDK overlays are the exception to the note above about collision detection: they reposition
+   themselves, which is why the Add-column picker uses one. It hangs off a sticky <th> inside an
+   overflow-auto scroller, and a plain absolutely-positioned panel is clipped there whatever its
+   z-index. */
+.cdk-overlay-container { z-index: 1350; }
+
 /* Base styles */
 html {
   scrollbar-gutter: stable;
@@ -126,4 +139,58 @@ body {
 @layer utilities {
   .smooth-scroll { scroll-behavior: smooth; }
   .min-readable { min-width: 280px; }
+}
+
+/* ---------------------------------------------------------------------------
+   Bid Sheet map: "this bid moved in the last 24 hours"
+
+   A slow brightness-and-glow pulse on the pin. Motion is the signal because the
+   pin's fill is already bid status (reference / beating / matching) and a solid
+   ring is already Scoular, so both of those idioms were taken.
+
+   Global rather than component-scoped on purpose: Leaflet builds marker elements
+   itself, outside the component template, so Angular's emulated encapsulation
+   never tags them and a scoped rule would silently never apply.
+
+   Everything animates through `filter`, deliberately NOT `transform`. Leaflet
+   positions every marker with `transform: translate3d(...)` on this very element
+   (the divIcon root carries our class), so animating transform here would
+   overwrite the position and send pins jumping around on every keyframe. A scale
+   "breathe", and an expanding ::after ring, are the obvious next ideas — the ring
+   was tried and rejected: the user wanted this pulse, not a radar ping.
+
+   `brightness` DOES slightly wash the white bid number while it peaks, which is
+   why the pills carry `text-shadow` (see _buildCatalogPriceMarker and the
+   added-location pill): the dark halo holds the digits' edges through the bright
+   half of the cycle. Removing brightness instead was tried and made the pulse
+   invisible — a white glow alone has nothing to read against on light map tiles.
+
+   Tuned over three passes: 1.35/0.95 read as too bright a white, 1.14/0.5 was then too subtle to
+   spot, and 1.24/0.75 still read dark. Settled at brightness 1.4 with a 0.9 glow at 9px. The fills
+   were darkened a step at the same time (see the pin colours in the component), which gives the
+   brightness more headroom before it washes the white bid number -- that, plus the pills'
+   text-shadow, is what keeps the digits readable even at this peak.
+
+   Paced to stay calm: 1.8s ease-in-out, swelling softly rather than snapping.
+   The ask was "easy to tell but not so bad that the screen is flashing
+   distractingly" — a slow swell reads as a heartbeat, not a strobe.
+--------------------------------------------------------------------------- */
+@keyframes bid-moved-pulse {
+  0%, 100% { filter: brightness(1)    drop-shadow(0 0 0   rgba(255, 255, 255, 0)); }
+  50%      { filter: brightness(1.4) drop-shadow(0 0 9px rgba(255, 255, 255, 0.9)); }
+}
+
+.bid-moved-pulse {
+  animation: bid-moved-pulse 1.8s ease-in-out infinite;
+}
+
+/* Motion can be genuinely unpleasant (vestibular disorders), and this animation is
+   decorative — the price and its status colour still say everything that matters.
+   Falls back to the glow held STEADY at its peak: the pin stays just as easy to
+   pick out of a crowd, it simply doesn't move. */
+@media (prefers-reduced-motion: reduce) {
+  .bid-moved-pulse {
+    animation: none;
+    filter: brightness(1.4) drop-shadow(0 0 9px rgba(255, 255, 255, 0.9));
+  }
 }

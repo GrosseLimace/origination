@@ -82,6 +82,13 @@
     </div>
   } @else {
 
+    @if (plantingIntentionsUnavailable()) {
+      <!-- All four cards are planting figures: zeros here are an outage, not an empty season. -->
+      <div class="mb-4 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+        Planting intentions for {{ selectedPlantingYear() }} could not be loaded, so the acres, production, yield and grower figures below are empty. Refresh the page to try again.
+      </div>
+    }
+
     <!-- 4 Stat Cards -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 
@@ -186,7 +193,12 @@
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
               <h3 class="text-base font-semibold text-gray-900 dark:text-white">Acres by Crop</h3>
               <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 mb-5">Planned acres by crop type for {{ selectedPlantingYear() }}</p>
-              @if (breakdown.length === 0) {
+              @if (breakdown.length === 0 && plantingIntentionsUnavailable()) {
+                <!-- An outage must not read as a season with no planting. -->
+                <div class="flex items-center justify-center h-48 text-sm text-amber-700 dark:text-amber-300 text-center px-4">
+                  Planting intentions for {{ selectedPlantingYear() }} could not be loaded, so this chart is empty. Refresh the page to try again.
+                </div>
+              } @else if (breakdown.length === 0) {
                 <div class="flex items-center justify-center h-48 text-sm text-gray-400 dark:text-gray-500 italic">
                   No planting data for {{ selectedPlantingYear() }}
                 </div>
@@ -215,7 +227,11 @@
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
               <h3 class="text-base font-semibold text-gray-900 dark:text-white">Crop Distribution</h3>
               <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 mb-5">Share of total acres by crop type</p>
-              @if (breakdown.length === 0) {
+              @if (breakdown.length === 0 && plantingIntentionsUnavailable()) {
+                <div class="flex items-center justify-center h-48 text-sm text-amber-700 dark:text-amber-300 text-center px-4">
+                  Planting intentions for {{ selectedPlantingYear() }} could not be loaded, so this chart is empty. Refresh the page to try again.
+                </div>
+              } @else if (breakdown.length === 0) {
                 <div class="flex items-center justify-center h-48 text-sm text-gray-400 dark:text-gray-500 italic">
                   No planting data for {{ selectedPlantingYear() }}
                 </div>
@@ -380,7 +396,17 @@
 
             <!-- Results table -->
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-              @if (producersTabRows().length === 0) {
+              @if (producersTabRows().length === 0 && customersUnavailable()) {
+                <!-- An outage must not read as an empty trade unit. -->
+                <div class="flex items-center justify-center py-16 px-5 text-sm text-amber-700 dark:text-amber-300 text-center">
+                  Producers for the selected trade units could not be loaded. Refresh the page to try again.
+                </div>
+              } @else if (plantingIntentionsUnavailable() && (producerView() === 'without' || producersTabRows().length === 0)) {
+                <!-- With no intentions loaded, "without intentions" would list the whole roster. -->
+                <div class="flex items-center justify-center py-16 px-5 text-sm text-amber-700 dark:text-amber-300 text-center">
+                  Planting intentions for {{ selectedPlantingYear() }} could not be loaded. Refresh the page to try again.
+                </div>
+              } @else if (producersTabRows().length === 0) {
                 <div class="flex items-center justify-center py-16 px-5 text-sm text-gray-400 dark:text-gray-500 italic text-center">
                   @if (producerView() === 'with') {
                     No producers match your search for {{ selectedPlantingYear() }}.
@@ -481,7 +507,7 @@
                                 @for (chip of row.plantingChips; track chip.text) {
                                   <span
                                     class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium"
-                                    [ngClass]="commodityChipClass(chip.colorKey)"
+                                    [ngClass]="chip.colorKey | commodityChipClass"
                                     [class.ring-2]="row.highlightedCrops?.has(chip.display)"
                                     [class.ring-scoular-green-accessible]="row.highlightedCrops?.has(chip.display)">
                                     {{ chip.text }}
@@ -632,6 +658,12 @@
                         </div>
                       </div>
                     }
+                    @if (salesOpportunityExcluded() > 0 && conversionsUnavailable()) {
+                      <!-- Contracted bushels are short by these contracts; same set Sales Opportunities counts. -->
+                      <p class="text-xs text-gray-500 dark:text-gray-400">
+                        {{ salesOpportunityExcluded() }} contract{{ salesOpportunityExcluded() !== 1 ? 's' : '' }} not counted: the bushel conversions couldn't be loaded. Refresh the page to try again.
+                      </p>
+                    }
                   }
                 </div>
               </div>
@@ -647,6 +679,11 @@
                        no contracts. Missed on the first pass because this panel has its own empty state. -->
                   <div class="flex items-center justify-center py-16 text-sm text-amber-700 dark:text-amber-300 text-center px-4">
                     Contract data for {{ selectedPlantingYear() }} could not be loaded from CTRM, so these figures are incomplete. Please retry shortly.
+                  </div>
+                } @else if (salesOpportunityRows().length === 0 && salesOpportunityExcluded() > 0 && conversionsUnavailable()) {
+                  <!-- Every contract was dropped for want of a conversion, so this is an outage, not a year with no contracts. -->
+                  <div class="flex items-center justify-center py-16 text-sm text-amber-700 dark:text-amber-300 text-center px-4">
+                    {{ salesOpportunityExcluded() }} contract{{ salesOpportunityExcluded() !== 1 ? 's' : '' }} for {{ selectedPlantingYear() }} not shown: the bushel conversions couldn't be loaded. Refresh the page to try again.
                   </div>
                 } @else if (salesOpportunityRows().length === 0) {
                   <div class="flex items-center justify-center py-16 text-sm text-gray-400 dark:text-gray-500 italic">No contract data for {{ selectedPlantingYear() }}</div>
@@ -698,6 +735,16 @@
                         }
                       </tbody>
                     </table>
+                    @if (salesOpportunityExcluded() > 0 && conversionsUnavailable()) {
+                      <!-- The unit is not to blame when the conversions themselves failed to load. -->
+                      <p class="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700/60">
+                        {{ salesOpportunityExcluded() }} contract{{ salesOpportunityExcluded() !== 1 ? 's' : '' }} not shown: the bushel conversions couldn't be loaded. Refresh the page to try again.
+                      </p>
+                    } @else if (salesOpportunityExcluded() > 0) {
+                      <p class="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700/60">
+                        {{ salesOpportunityExcluded() }} contract{{ salesOpportunityExcluded() !== 1 ? 's' : '' }} not shown: {{ salesOpportunityExcluded() !== 1 ? 'their units' : 'its unit' }} can't be converted to bushels.
+                      </p>
+                    }
                   </div>
                 }
               </div>
@@ -761,7 +808,9 @@
                               </td>
                             </tr>
                           }
-                          @if (yieldRows().length === 0) {
+                          @if (yieldRows().length === 0 && plantingIntentionsUnavailable()) {
+                            <tr><td colspan="2" class="py-5 px-4 text-center text-xs text-amber-700 dark:text-amber-300">Planting intentions for {{ selectedPlantingYear() }} could not be loaded, so there are no crops to set targets for. Refresh the page to try again.</td></tr>
+                          } @else if (yieldRows().length === 0) {
                             <tr><td colspan="2" class="py-5 text-center text-xs text-gray-400 dark:text-gray-500 italic">No planting intentions for {{ selectedPlantingYear() }}</td></tr>
                           }
                         </tbody>
