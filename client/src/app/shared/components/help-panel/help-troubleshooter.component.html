@@ -55,7 +55,7 @@
   </div>
 
   <!-- Step 3: what we found -->
-  <div aria-live="polite">
+  <div aria-live="polite" [id]="inputId() + '-result'">
     <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Step 3 · What I found</p>
     @if (!result() && !checking()) {
       <p class="text-sm text-gray-500 dark:text-gray-400">The answer will appear here.</p>

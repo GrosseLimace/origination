@@ -1,10 +1,11 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Injector, computed, inject, input, signal } from '@angular/core';
 import { Router } from '@angular/router';
 
 import { HelpFaq } from '@models';
 import { HelpPanelService } from '@core/services/help-panel.service';
 import { HelpService } from '@core/services/help.service';
 import { splitHelpText } from '@shared/utils/help-text';
+import { revealAfterRender } from '@shared/utils/help-reveal';
 import { HelpIconComponent } from '@shared/components/help-icon/help-icon.component';
 
 /**
@@ -24,6 +25,7 @@ export class HelpAnswerCardComponent {
   private readonly panel = inject(HelpPanelService);
   private readonly help = inject(HelpService);
   private readonly router = inject(Router);
+  private readonly injector = inject(Injector);
 
   readonly faq = input.required<HelpFaq>();
   /** Position in the panel thread, so feedback lands on the right answer. */
@@ -45,6 +47,22 @@ export class HelpAnswerCardComponent {
 
   toggleSteps(): void {
     this.stepsToggled.set(!this.stepsOpen());
+    if (this.stepsOpen()) this.reveal('steps');
+  }
+
+  toggleExamples(): void {
+    this.examplesOpen.set(!this.examplesOpen());
+    if (this.examplesOpen()) this.reveal('examples');
+  }
+
+  toggleTrouble(): void {
+    this.troubleOpen.set(!this.troubleOpen());
+    if (this.troubleOpen()) this.reveal('trouble');
+  }
+
+  /** Whatever just expanded is often below the fold of the panel, so scroll it into view. */
+  private reveal(part: string): void {
+    revealAfterRender(this.injector, () => document.getElementById(`${this.headingId()}-${part}`));
   }
 
   run(index: number): void {

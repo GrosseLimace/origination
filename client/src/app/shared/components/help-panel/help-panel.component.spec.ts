@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { signal } from '@angular/core';
+import { ApplicationRef, signal } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
 import { render, screen, fireEvent } from '@testing-library/angular';
 import type { HelpContent } from '@models';
 import { HelpPanelComponent } from './help-panel.component';
@@ -69,6 +70,21 @@ describe('HelpPanelComponent', () => {
     expect(screen.getByText('Build a List', { selector: 'strong' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Show steps' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Saved list not in dropdown' })).toBeTruthy();
+  });
+
+  it('scrolls expanded steps into view, so the change is not missed below the fold', async () => {
+    const scrolled: Element[] = [];
+    const spy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (this: Element) { scrolled.push(this); });
+    const { fixture, panel } = await renderPanel();
+
+    panel.askFaq('build-list');
+    fixture.detectChanges();
+    fireEvent.click(screen.getByRole('button', { name: 'Show steps' }));
+    fixture.detectChanges();
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(scrolled.some(e => e.id.endsWith('-steps'))).toBe(true);
+    spy.mockRestore();
   });
 
   it('falls back to browse and report when nothing matches', async () => {
