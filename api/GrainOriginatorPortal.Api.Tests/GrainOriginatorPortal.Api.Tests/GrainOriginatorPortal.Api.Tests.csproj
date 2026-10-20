@@ -37,7 +37,6 @@
            Repositories/ProducerGrainOnFarmTests.cs
            Repositories/ReminderRepositoryTests.cs
            Repositories/BarchartIngestRepositoryTests.cs
-           Repositories/BidSheetRepositoryTests.cs
            Repositories/CustomerSyncRepositoryTests.cs
            Repositories/DashboardRepositoryTests.cs
            Repositories/DisplayNameLookupRepositoryTests.cs

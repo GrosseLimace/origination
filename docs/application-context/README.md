@@ -25,6 +25,8 @@ This folder is the canonical reference for **what each screen of the Origination
 | [Actionable Insights](./Actionable%20Insights.md) | `/insights` | Three urgent-work categories: Unconfirmed Contracts, Spot Loads, Unshipped Bushels |
 | [Planting Intentions Dashboard](./Planting%20Intentions%20Dashboard.md) | `/dashboard` | Yield, market share, actual harvest planning by trade unit and growing season |
 | [Bid Sheet](./Bid%20Sheet.md) | `/bid-sheet` _(env-gated)_ | Map-based competitor bid tracking and management |
+| [BarChart Bid Feed — Database Plan](./Barchart%20Bid%20Feed%20-%20Database%20Plan.md) | _(backend)_ | Vendor bid feed: landing tables, load and bridge SQL, and the feed-vs-manual bid ownership rules |
+| [BarChart Ingestion API Contract](./Barchart%20Ingestion%20API%20Contract.md) | `/api/barchart-ingest` | The contract handed to the data-pipeline team: endpoints, auth, payload rules, daily call sequence |
 | [Usage Dashboard](./Usage%20Dashboard.md) | `/usage-dashboard` _(admin-only, env-gated)_ | Adoption metrics, originator-level activity, query-library usage and gaps |
 | [App Access Graph Check](./App%20Access%20Graph%20Check.md) | _(backend + diagnostic)_ | Entra access group read via managed identity; usage-dashboard/digest filtering; IT grants + outcome table |
 | [Producer Reminders](./Producer%20Reminders.md) | `/` _(env-gated)_ | Personal follow-up reminders on the producer pane and list badge, mirrored to the user's own Outlook calendar |

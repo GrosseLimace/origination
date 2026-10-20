@@ -327,6 +327,7 @@ builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IBidSheetService, BidSheetService>();
 builder.Services.AddScoped<IBarchartIngestService, BarchartIngestService>();
+builder.Services.AddScoped<IBarchartCatalogService, BarchartCatalogService>();
 builder.Services.AddScoped<IUserPreferenceService, UserPreferenceService>();
 builder.Services.AddScoped<IUserTradeUnitService, UserTradeUnitService>();
 builder.Services.AddScoped<ITradeUnitService, TradeUnitService>();
