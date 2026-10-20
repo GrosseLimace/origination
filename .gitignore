@@ -5,7 +5,6 @@ obj/
 
 # Angular
 client/node_modules/
-**/node_modules/
 client/dist/
 client/.angular/
 
@@ -37,7 +36,6 @@ client/coverage/
 .vscode/
 .claude/
 
-.fake
-
 # Built by .github/workflows/deploy-workbook.yml (and local what-if runs); never committed.
 infra/workbooks/**/azuredeploy.parameters.generated.json
+.fake
