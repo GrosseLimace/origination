@@ -2048,9 +2048,22 @@ export class BidSheetComponent {
     this.apiService.setBidSheetShares(sheet.id, members).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (updated) => {
         this.savingShares.set(false);
-        this._applySheet(updated);
         this.showShareSheet.set(false);
-        this.toastService.success('Sharing updated');
+        if (updated) {
+          this._applySheet(updated);
+          this.toastService.success('Sharing updated');
+          return;
+        }
+        // No sheet back: the caller took themselves off someone else's sheet and can no longer see
+        // it. Same local clean-up as a delete, since from here on it is gone for them.
+        this.sheets.update(list => list.filter(s => s.id !== sheet.id));
+        this.setSelectedSheets(this.selectedSheetIds().filter(id => id !== sheet.id));
+        this.sheetActionTargetId.set(null);
+        if (this.editBidsMode()) this.closeEditBids();
+        this.toastService.success(`You've left "${sheet.name}"`);
+        this._applyBidFilterSources();
+        this.filterBids();
+        this._refreshMapMarkers();
       },
       error: () => {
         this.savingShares.set(false);

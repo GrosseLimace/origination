@@ -487,7 +487,14 @@ public class BidSheetService : IBidSheetService
         _ = await _repository.SetSheetSharesAsync(sheetId, shares, cancellationToken)
             ?? throw new NotFoundException("Bid sheet", sheetId);
 
-        return await ReloadSheetAsync(sheetId, cancellationToken);
+        // Taking yourself off a sheet someone shared with you is the one write after which the caller
+        // can no longer see the result. Re-reading through the visibility check would then report "not
+        // found" for a change that has already been saved -- the screen said "Failed to update sharing"
+        // while the share was in fact gone (found in QA, 2026-10-20). Null means "saved, and you have
+        // left"; the controller answers 204 and the client drops the sheet from its list.
+        var access = await GetAccessAsync(cancellationToken);
+        var reloaded = await _repository.GetVisibleSheetAsync(sheetId, access, cancellationToken);
+        return reloaded?.ToResponse(access.PersonId);
     }
 
     /// <inheritdoc />
