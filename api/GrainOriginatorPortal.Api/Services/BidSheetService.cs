@@ -253,6 +253,18 @@ public class BidSheetService : IBidSheetService
     {
         // Destructive and company-wide: creator or Admin only.
         if (!await AuthorizeDestructiveLocationChangeAsync(id, cancellationToken)) return;
+
+        // A location linked to the BarChart feed is never deleted through the app, by anyone (business
+        // rule, 2026-10-20). It is a link to a vendor listing that other desks' sheets may also hold,
+        // and its bids are the feed's, not anyone's typing; what a user wants is to take it off their
+        // sheet, which removeBidSheetLocations does without touching the location or its bids. Manual
+        // locations keep the creator-or-Admin delete above.
+        var location = await _repository.GetLocationAsync(id, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(location?.BarchartLocationKey))
+            throw new ForbiddenException(
+                "BarChart locations can't be deleted. Remove it from your bid sheet instead; "
+              + "the location and its bids stay for everyone else.");
+
         await _repository.DeleteLocationAsync(id, cancellationToken);
     }
 
