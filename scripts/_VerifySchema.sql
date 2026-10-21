@@ -837,7 +837,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (95)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (96)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
