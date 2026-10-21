@@ -5,15 +5,25 @@ namespace GrainOriginatorPortal.Api.Models.Requests;
 /// <summary>Used for both initial bid creation and bulk-upsert (edit bids grid).</summary>
 public record UpsertBidSheetBidRequest
 {
-    /// <summary>Location identity — matched by (Name + TradeUnitCode) or (ElevatorCode + TradeUnitCode). Required for bulk upsert; ignored on location-scoped create.</summary>
-    [MaxLength(200)]
     /// <summary>
     /// The location this bid belongs to. Preferred over Name: locations are company-wide now, so a
     /// name is no longer unique and resolving by one could land the bid on the wrong elevator.
     /// </summary>
     public int? LocationId { get; init; }
 
-    /// <summary>Legacy fallback for callers that have no id. Resolved company-wide.</summary>
+    /// <summary>
+    /// Legacy fallback for callers that have no id. Resolved company-wide. Matched by (Name +
+    /// TradeUnitCode) or (ElevatorCode + TradeUnitCode); required for bulk upsert when no id is sent,
+    /// ignored on location-scoped create.
+    /// </summary>
+    /// <remarks>
+    /// The length limit belongs here, on the string. When <see cref="LocationId"/> was inserted above
+    /// this property (2026-09-02) it landed between the attribute and the property it was written for,
+    /// so MaxLength started validating an int and threw InvalidCastException on every bulk save that
+    /// carried a LocationId -- every save from the Edit Bids grid. A request-model test now pins that
+    /// length attributes sit only on strings and collections.
+    /// </remarks>
+    [MaxLength(200)]
     public string? Name { get; init; }
 
     [MaxLength(50)]
