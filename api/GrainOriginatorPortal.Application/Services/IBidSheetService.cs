@@ -44,8 +44,11 @@ public interface IBidSheetService
     /// <summary>Deletes a sheet and its shares and links. Owner only. The locations survive.</summary>
     Task DeleteSheetAsync(int sheetId, CancellationToken cancellationToken);
 
-    /// <summary>Replaces who the sheet is shared with. Owner only.</summary>
-    Task<BidSheetResponse> SetSheetSharesAsync(int sheetId, BidSheetSharesRequest request, CancellationToken cancellationToken);
+    /// <summary>
+    /// Replaces who the sheet is shared with. Any member. Returns the updated sheet, or null when the
+    /// caller took themselves off it and can no longer see it (the change is saved either way).
+    /// </summary>
+    Task<BidSheetResponse?> SetSheetSharesAsync(int sheetId, BidSheetSharesRequest request, CancellationToken cancellationToken);
 
     /// <summary>Puts an existing company-wide location on the sheet. Any member may.</summary>
     Task<BidSheetResponse> AddSheetLocationAsync(int sheetId, AddBidSheetLocationRequest request, CancellationToken cancellationToken);

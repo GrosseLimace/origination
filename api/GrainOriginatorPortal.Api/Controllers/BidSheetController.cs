@@ -206,12 +206,19 @@ public class BidSheetController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Replaces who a sheet is shared with. Owner only. An empty list unshares it.</summary>
+    /// <summary>
+    /// Replaces who a sheet is shared with. Any member. An empty list unshares it. 204 when the caller
+    /// took themselves off the sheet: the change is saved, and there is no sheet left for them to see.
+    /// </summary>
     [HttpPut("sheets/{sheetId:int}/shares")]
     [ProducesResponseType(typeof(BidSheetResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<BidSheetResponse>> SetSheetShares(int sheetId, [FromBody] BidSheetSharesRequest request, CancellationToken cancellationToken = default)
-        => Ok(await _service.SetSheetSharesAsync(sheetId, request, cancellationToken));
+    {
+        var updated = await _service.SetSheetSharesAsync(sheetId, request, cancellationToken);
+        return updated is null ? NoContent() : Ok(updated);
+    }
 
     /// <summary>Saves the sheet's shared column layout. Any member.</summary>
     [HttpPut("sheets/{sheetId:int}/layout")]
