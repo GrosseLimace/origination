@@ -154,6 +154,50 @@ public class BidSheetServiceSheetsTests
             It.Is<List<BidSheetShare>>(l => l.Count == 1 && l[0].SharedBy == Member), It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    // A member taking themselves off someone else's sheet: the write succeeds, and afterwards they can
+    // no longer see the sheet. That used to surface as a 404 from the re-read after the save -- "Failed
+    // to update sharing" on screen for a change that had gone through (QA, 2026-10-20). It returns null,
+    // which the controller answers as 204, and the share list is still written.
+    [Fact]
+    public async Task SetSheetSharesAsync_MemberRemovesThemselves_SavesAndReturnsNullInsteadOfThrowing()
+    {
+        var sheet = Sheet(sharedWith: Member);
+        var stillVisibleTo = new List<string> { Owner, Member };
+        _repo.Setup(r => r.SheetExistsAsync(sheet.Id, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _repo.Setup(r => r.GetVisibleSheetAsync(sheet.Id, It.IsAny<BidSheetAccess>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((int _, BidSheetAccess access, CancellationToken _) =>
+                stillVisibleTo.Contains(access.PersonId, StringComparer.OrdinalIgnoreCase) ? sheet : null);
+        _repo.Setup(r => r.SetSheetSharesAsync(sheet.Id, It.IsAny<List<BidSheetShare>>(), It.IsAny<CancellationToken>()))
+            .Callback(() => stillVisibleTo.Remove(Member))   // the save is what takes the member off
+            .ReturnsAsync(sheet);
+        CallerIs(Member);
+
+        var result = await _sut.SetSheetSharesAsync(
+            sheet.Id, new BidSheetSharesRequest { Members = [] }, CancellationToken.None);
+
+        Assert.Null(result);
+        _repo.Verify(r => r.SetSheetSharesAsync(sheet.Id,
+            It.Is<List<BidSheetShare>>(l => l.Count == 0), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // The ordinary case still hands the updated sheet back.
+    [Fact]
+    public async Task SetSheetSharesAsync_CallerStillOnTheSheet_ReturnsTheUpdatedSheet()
+    {
+        var sheet = Sheet(sharedWith: Member);
+        SheetIsVisibleTo(sheet, Owner, Member);
+        CallerIs(Owner);
+        _repo.Setup(r => r.SetSheetSharesAsync(sheet.Id, It.IsAny<List<BidSheetShare>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(sheet);
+
+        var result = await _sut.SetSheetSharesAsync(
+            sheet.Id, new BidSheetSharesRequest { Members = [new BidSheetShareRequest { UserId = Member }] },
+            CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal(sheet.Id, result!.Id);
+    }
+
     [Fact]
     public async Task RenameSheetAsync_CallerIsMemberNotOwner_Renames()
     {

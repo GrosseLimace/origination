@@ -356,13 +356,17 @@
                   <span class="text-base leading-none">{{ panelSelectedIsScoular() ? '★' : '☆' }}</span>
                   @if (panelSelectedIsScoular()) { Scoular } @else { Mark Scoular }
                 </button>
-                <button (click)="deleteMode.set(!deleteMode())" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap"
-                  [ngClass]="deleteMode()
-                    ? 'text-white bg-scoular-red-accessible border-scoular-red-accessible dark:bg-scoular-red dark:border-scoular-red'
-                    : 'text-scoular-red-accessible dark:text-scoular-red border-scoular-red/30 dark:border-scoular-red/40 hover:bg-scoular-red/10 dark:hover:bg-scoular-red/20'">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                  @if (deleteMode()) { Done } @else { Delete }
-                </button>
+                <!-- Manual locations only. A BarChart location is never deleted and its bids are the feed's; it comes
+                     off a sheet through Edit Bids, Remove locations from this sheet (business rule, 2026-10-20). -->
+                @if (!panelSelectedBarchartKey()) {
+                  <button (click)="deleteMode.set(!deleteMode())" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap"
+                    [ngClass]="deleteMode()
+                      ? 'text-white bg-scoular-red-accessible border-scoular-red-accessible dark:bg-scoular-red dark:border-scoular-red'
+                      : 'text-scoular-red-accessible dark:text-scoular-red border-scoular-red/30 dark:border-scoular-red/40 hover:bg-scoular-red/10 dark:hover:bg-scoular-red/20'">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                    @if (deleteMode()) { Done } @else { Delete }
+                  </button>
+                }
                 }
               </div>
 
@@ -385,7 +389,7 @@
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
                       </button>
                     </th>
-                    @if (deleteMode()) {
+                    @if (deleteMode() && !panelSelectedBarchartKey()) {
                     <th class="w-8 border-b border-gray-200 dark:border-gray-700"></th>
                     }
                   </tr>
@@ -417,7 +421,7 @@
                         'text-scoular-red-accessible dark:text-scoular-red': row.newStatus === 'beating',
                         'text-gray-900 dark:text-white': row.newStatus === 'none'
                       }">{{ row.newBidLabel || row.newBid || '--' }}@if (row.newBidContract) {<span class="ml-1 text-[12px] font-normal text-gray-500 dark:text-gray-400">{{ row.newBidContract }}</span>}</td>
-                      @if (deleteMode()) {
+                      @if (deleteMode() && !panelSelectedBarchartKey()) {
                       <td class="px-1 py-3 text-center">
                         @if (row.isFed) {
                           <span class="text-[10px] text-gray-400 dark:text-gray-500"
@@ -438,7 +442,9 @@
               <!-- Delete crop confirmation is shown as a popup (see below showDeleteCropConfirm block) -->
 
               <!-- Delete entire location (only visible in delete mode) -->
-              @if (deleteMode()) {
+              <!-- No delete for BarChart locations: they are never deleted (business rule, 2026-10-20; the server
+                   refuses too). The way off a sheet is Remove locations from this sheet. -->
+              @if (deleteMode() && !panelSelectedBarchartKey()) {
               <div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
                 <button (click)="openDeleteLocationConfirm()"
                   class="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-scoular-red-accessible dark:text-scoular-red rounded-lg border border-scoular-red/30 dark:border-scoular-red/40 hover:bg-scoular-red/10 dark:hover:bg-scoular-red/20 transition-colors">
@@ -451,7 +457,9 @@
               <div class="flex flex-col items-center justify-center py-12 px-6 text-center">
                 <p class="text-sm text-gray-400 dark:text-gray-500">No bids recorded for this location.</p>
               </div>
-              @if (deleteMode()) {
+              <!-- No delete for BarChart locations: they are never deleted (business rule, 2026-10-20; the server
+                   refuses too). The way off a sheet is Remove locations from this sheet. -->
+              @if (deleteMode() && !panelSelectedBarchartKey()) {
               <div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
                 <button (click)="openDeleteLocationConfirm()"
                   class="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-scoular-red-accessible dark:text-scoular-red rounded-lg border border-scoular-red/30 dark:border-scoular-red/40 hover:bg-scoular-red/10 dark:hover:bg-scoular-red/20 transition-colors">

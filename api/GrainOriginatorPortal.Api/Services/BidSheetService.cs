@@ -253,6 +253,18 @@ public class BidSheetService : IBidSheetService
     {
         // Destructive and company-wide: creator or Admin only.
         if (!await AuthorizeDestructiveLocationChangeAsync(id, cancellationToken)) return;
+
+        // A location linked to the BarChart feed is never deleted through the app, by anyone (business
+        // rule, 2026-10-20). It is a link to a vendor listing that other desks' sheets may also hold,
+        // and its bids are the feed's, not anyone's typing; what a user wants is to take it off their
+        // sheet, which removeBidSheetLocations does without touching the location or its bids. Manual
+        // locations keep the creator-or-Admin delete above.
+        var location = await _repository.GetLocationAsync(id, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(location?.BarchartLocationKey))
+            throw new ForbiddenException(
+                "BarChart locations can't be deleted. Remove it from your bid sheet instead; "
+              + "the location and its bids stay for everyone else.");
+
         await _repository.DeleteLocationAsync(id, cancellationToken);
     }
 
@@ -452,7 +464,7 @@ public class BidSheetService : IBidSheetService
     }
 
     /// <inheritdoc />
-    public async Task<BidSheetResponse> SetSheetSharesAsync(int sheetId, BidSheetSharesRequest request, CancellationToken cancellationToken)
+    public async Task<BidSheetResponse?> SetSheetSharesAsync(int sheetId, BidSheetSharesRequest request, CancellationToken cancellationToken)
     {
         // Any member. Note what this allows: a member can widen who sees the OWNER's sheet, and the
         // owner finds out by looking. That is the accepted trade for a shared working list -- the
@@ -487,7 +499,14 @@ public class BidSheetService : IBidSheetService
         _ = await _repository.SetSheetSharesAsync(sheetId, shares, cancellationToken)
             ?? throw new NotFoundException("Bid sheet", sheetId);
 
-        return await ReloadSheetAsync(sheetId, cancellationToken);
+        // Taking yourself off a sheet someone shared with you is the one write after which the caller
+        // can no longer see the result. Re-reading through the visibility check would then report "not
+        // found" for a change that has already been saved -- the screen said "Failed to update sharing"
+        // while the share was in fact gone (found in QA, 2026-10-20). Null means "saved, and you have
+        // left"; the controller answers 204 and the client drops the sheet from its list.
+        var access = await GetAccessAsync(cancellationToken);
+        var reloaded = await _repository.GetVisibleSheetAsync(sheetId, access, cancellationToken);
+        return reloaded?.ToResponse(access.PersonId);
     }
 
     /// <inheritdoc />
