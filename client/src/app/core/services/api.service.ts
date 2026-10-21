@@ -1048,9 +1048,12 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Replaces who a sheet is shared with. Owner only. An empty list unshares it. */
-  setBidSheetShares(sheetId: number, members: Array<{ memberType: string; memberId: string; name?: string }>): Observable<BidSheet> {
-    return this.http.put<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/shares`, { members })
+  /**
+   * Replaces who a sheet is shared with. Any member. An empty list unshares it. Null (a 204) when the
+   * caller took themselves off the sheet: the change is saved and there is no sheet left for them.
+   */
+  setBidSheetShares(sheetId: number, members: Array<{ memberType: string; memberId: string; name?: string }>): Observable<BidSheet | null> {
+    return this.http.put<BidSheet | null>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/shares`, { members })
       .pipe(catchError(e => this.handleError(e)));
   }
 

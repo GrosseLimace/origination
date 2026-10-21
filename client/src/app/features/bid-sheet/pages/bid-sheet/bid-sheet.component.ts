@@ -2048,9 +2048,22 @@ export class BidSheetComponent {
     this.apiService.setBidSheetShares(sheet.id, members).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (updated) => {
         this.savingShares.set(false);
-        this._applySheet(updated);
         this.showShareSheet.set(false);
-        this.toastService.success('Sharing updated');
+        if (updated) {
+          this._applySheet(updated);
+          this.toastService.success('Sharing updated');
+          return;
+        }
+        // No sheet back: the caller took themselves off someone else's sheet and can no longer see
+        // it. Same local clean-up as a delete, since from here on it is gone for them.
+        this.sheets.update(list => list.filter(s => s.id !== sheet.id));
+        this.setSelectedSheets(this.selectedSheetIds().filter(id => id !== sheet.id));
+        this.sheetActionTargetId.set(null);
+        if (this.editBidsMode()) this.closeEditBids();
+        this.toastService.success(`You've left "${sheet.name}"`);
+        this._applyBidFilterSources();
+        this.filterBids();
+        this._refreshMapMarkers();
       },
       error: () => {
         this.savingShares.set(false);
@@ -4019,6 +4032,11 @@ export class BidSheetComponent {
     const el = this.printPreviewPane()?.nativeElement;
     if (!el) { this.printPreviewPaneWidth.set(0); return; }
     // contentRect excludes the pane's padding, which is exactly the width the sheet may fill.
+    //
+    // The pane reserves its scrollbar gutter (see the template), and that is load-bearing here: the
+    // zoom this observer feeds changes the sheet's height, which can toggle the pane's vertical
+    // scrollbar, which would otherwise change the very width being observed -- a loop that showed up
+    // as the preview shaking between two zoom levels (found on the 2026-10-20 release check).
     const observer = new ResizeObserver(entries => {
       const width = entries[0]?.contentRect.width ?? el.clientWidth;
       this.printPreviewPaneWidth.set(Math.round(width));
@@ -4483,9 +4501,13 @@ export class BidSheetComponent {
         this._refreshMapMarkers();
         this.usageTracking.postClickEvent('interaction', 'bidsheet', 'location-deleted', name);
       },
-      error: () => {
+      error: (err) => {
         this.showDeleteLocationConfirm.set(false);
-        this.toastService.error('Failed to delete location');
+        // A 403 carries a reason worth reading: someone else's location, or a BarChart location, which
+        // is never deleted and has to be removed from the sheet instead.
+        this.toastService.error(err?.status === 403 && err?.message
+          ? err.message
+          : 'Failed to delete location');
       }
     });
   }
