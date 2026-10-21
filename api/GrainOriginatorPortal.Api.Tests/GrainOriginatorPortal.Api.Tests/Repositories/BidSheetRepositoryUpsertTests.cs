@@ -172,8 +172,9 @@ public class BidSheetRepositoryUpsertTests : IAsyncLifetime
     }
 
     // Overriding a fed cell is allowed, and ownership moves with the value. The cell becomes Manual so
-    // the sheet shows it as hand-typed; the bridge's next run takes it back. That round trip is the
-    // point -- an originator can correct a price today and the vendor reasserts tomorrow.
+    // the sheet shows it as hand-typed, and the vendor's stamps go with the ownership: a Manual row still
+    // carrying a symbol, a board and an "as of" reads as the vendor's number to anything keyed on them.
+    // The bridge takes the cell back only with a quote newer than this edit (newest wins).
     [Fact]
     public async Task BulkUpsert_OverridesAFeedOwnedCellAndTakesOwnership()
     {
@@ -196,6 +197,13 @@ public class BidSheetRepositoryUpsertTests : IAsyncLifetime
                     Bid = "4.98",
                     BasisBid = "-30",
                     Source = BidSources.Barchart,
+                    BarchartSymbol = "ZCPZ27-990001-990010.CM",
+                    QuoteAsOf = DateTime.UtcNow.AddDays(-20),
+                    BasisSymbol = "ZCBZ27-990001-990010.CM",
+                    BasisQuoteAsOf = DateTime.UtcNow.AddDays(-20),
+                    UnderlyingFuture = "ZCZ27",
+                    CoveredByCropYear = 2027,
+                    CoveredByMonth = 11,
                     CreatedBy = "barchart-feed",
                     CreatedAt = DateTime.UtcNow
                 }
@@ -211,6 +219,13 @@ public class BidSheetRepositoryUpsertTests : IAsyncLifetime
         Assert.Equal("9.99", cell!.Bid);
         Assert.Equal("99", cell.BasisBid);
         Assert.Equal(BidSources.Manual, cell.Source);
+        Assert.Null(cell.BarchartSymbol);
+        Assert.Null(cell.QuoteAsOf);
+        Assert.Null(cell.BasisSymbol);
+        Assert.Null(cell.BasisQuoteAsOf);
+        Assert.Null(cell.UnderlyingFuture);
+        Assert.Null(cell.CoveredByCropYear);
+        Assert.Null(cell.CoveredByMonth);
     }
 
     // Typing a basis over a cell the feed already owns must keep that basis and take the cell over. This

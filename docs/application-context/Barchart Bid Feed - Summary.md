@@ -24,8 +24,8 @@ Plus **4 new columns** on the existing Bid Sheet tables — to link locations to
 ## How it works for users
 
 - A new **search screen** to find BarChart locations and add them to the bid sheet — a location can be added to **multiple trade units/groups**, and we track where each one was added
-- Once added, that location's bids **appear and update automatically** every day — those bids are read-only
-- **Manual locations/bids work exactly like today**, and the feed can never overwrite a manual entry
+- Once added, that location's bids **appear and update automatically** every day, and hovering a bid says when the elevator last updated it. (An environment can also be set to show a bid the elevator has not updated in 10 days as "--" with the date instead of a number; off everywhere for now)
+- **Manual locations/bids work exactly like today.** A user may also type over a fed bid; the feed takes it back only with a newer, current quote (newest wins)
 - Removing a feed location just unhooks it from that trade unit — the history stays, and it can be re-added anytime
 
 ## Safety

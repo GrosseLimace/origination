@@ -265,12 +265,20 @@ public class BidSheetRepository : IBidSheetRepository
             else if (bidLookup.TryGetValue(key, out var bid))
             {
                 // A user may override a fed cell. Ownership moves with the value: the row becomes
-                // Manual so the sheet shows it as hand-typed, and the bridge's next run takes it
-                // back. That round trip is the feature -- an originator can correct a price today
-                // and the vendor reasserts tomorrow if they were wrong.
+                // Manual so the sheet shows it as hand-typed, and the bridge takes it back only when
+                // the elevator posts something newer than this edit (ApplyBidsToBidSheetAsync, newest
+                // wins). The vendor's stamps go with the ownership: a Manual row still wearing a symbol,
+                // a board and an "as of" reads as the vendor's number to anything keyed on the stamp.
                 bid.Source = BidSources.Manual;
                 bid.Bid = req.Bid;
                 bid.BasisBid = string.IsNullOrWhiteSpace(req.BasisBid) ? null : req.BasisBid;
+                bid.BarchartSymbol = null;
+                bid.QuoteAsOf = null;
+                bid.BasisSymbol = null;
+                bid.BasisQuoteAsOf = null;
+                bid.UnderlyingFuture = null;
+                bid.CoveredByCropYear = null;
+                bid.CoveredByMonth = null;
                 bid.ModifiedBy = userId;
                 bid.ModifiedAt = now;
             }

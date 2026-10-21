@@ -18,6 +18,7 @@ public class BidSheetService : IBidSheetService
     private readonly IBarchartCatalogRepository _barchartCatalog;
     private readonly IBarchartIngestRepository _barchartIngest;
     private readonly IEntitlementsRepository _entitlements;
+    private readonly IBarchartFeedSettings _feedSettings;
     private readonly ILogger<BidSheetService> _logger;
 
     /// <summary>Resolved once per request — the service is scoped, so this lives exactly as long as the
@@ -31,6 +32,7 @@ public class BidSheetService : IBidSheetService
         IBarchartCatalogRepository barchartCatalog,
         IBarchartIngestRepository barchartIngest,
         IEntitlementsRepository entitlements,
+        IBarchartFeedSettings feedSettings,
         ILogger<BidSheetService> logger)
     {
         _repository = repository;
@@ -39,6 +41,7 @@ public class BidSheetService : IBidSheetService
         _barchartCatalog = barchartCatalog;
         _barchartIngest = barchartIngest;
         _entitlements = entitlements;
+        _feedSettings = feedSettings;
         _logger = logger;
     }
 
@@ -198,7 +201,7 @@ public class BidSheetService : IBidSheetService
         // bids right away instead of looking empty until the next pipeline run.
         await _barchartIngest.ApplyBidsToBidSheetAsync(
             created.Id, BarchartFeedDefaults.InstrumentType, BarchartFeedDefaults.Actor,
-            cancellationToken: cancellationToken);
+            staleAfterDays: _feedSettings.StaleAfterDays, cancellationToken: cancellationToken);
 
         var withFedBids = await _repository.GetLocationAsync(created.Id, cancellationToken);
         return (withFedBids ?? created).ToResponse();

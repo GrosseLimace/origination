@@ -44,8 +44,8 @@ BarChart API responses (integration side)
 ```
 
 **The ownership rule (both directions):**
-- **Feed bids are read-only.** Once a location is added from BarChart, its fed bids show and update on their own — users cannot change, clear, or delete them.
-- **Manual bids belong to users.** The feed never writes over a manually entered bid, and users keep full control of everything they typed — including manual bids for other crops/months at a feed-linked location.
+- **Feed bids update on their own.** Once a location is added from BarChart, its fed bids show and refresh nightly, and hovering one says when the elevator last updated it. With `Barchart:HideStaleBids` on (off everywhere as of 2026-10-21), one the elevator has not updated in `StaleAfterDays` (10; `Barchart:StaleAfterDays`) shows as "--" with its date instead. The row is kept, stamp and all, for up to `MaxQuoteAgeDays` (90), which is what lets the date be shown. Two windows on purpose: publish is generous, trust is tight.
+- **Newest wins.** A user may type over a fed bid; the cell becomes Manual and the vendor stamps are dropped. The feed takes it back only with a quote that is both current and stamped after the edit (the older of the cash and basis stamps, when both sides are published). Manual bids for crops/months the feed does not cover are never touched.
 
 ---
 
@@ -147,7 +147,7 @@ Four new columns, no restructuring. Every existing bid automatically backfills a
 
 | New column | What it is |
 |---|---|
-| `Source` | `'Manual'` or `'Barchart'` — who owns the cell. `'Barchart'` cells are read-only in the app; only the feed updates them. |
+| `Source` | `'Manual'` or `'Barchart'` — who last wrote the cell. A `'Barchart'` cell may be typed over (it becomes `'Manual'`); the feed reclaims it only with a newer, current quote. |
 | `BarchartSymbol` | Which instrument fed the cell |
 | `QuoteAsOf` | Freshness shown in the UI ("as of 7/22 12:13 PM") |
 
@@ -200,7 +200,7 @@ The vendor's data contains typos, mangled phone numbers, blank fields, and addre
 ## What this deliberately does NOT do
 
 - No change to manual locations/bids — everything today keeps working identically.
-- The feed can **never** overwrite a manually entered bid, and users can **never** edit a fed bid — each side owns its own cells.
+- The feed never overwrites a manually entered bid with an older or stale quote (newest wins), and never touches manual bids for periods it does not publish.
 - Feed locations default to competitor, but if Scoular's own elevators come through the feed, a linked location can be flagged as a Scoular facility — nothing precludes it.
 - No API key is ever stored or logged in the database (Key Vault only).
 - Vendor test data (`IsTest`) never reaches the app.

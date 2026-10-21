@@ -89,7 +89,8 @@ public class BarchartIngestController : ControllerBase
 
     /// <summary>
     /// Publishes current feed prices onto the Bid Sheet for every location linked to the feed.
-    /// Call this after a quote load. Manually entered bids are never touched.
+    /// Call this after a quote load. A manually entered bid is replaced only by a quote that is both
+    /// current and newer than the edit; otherwise it is left alone.
     /// </summary>
     /// <param name="locationId">Limit to one Bid Sheet location; omit to process all linked locations.</param>
     /// <param name="instrumentType">Vendor price type to publish. Defaults to the flat cash bid.</param>

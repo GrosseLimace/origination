@@ -328,6 +328,9 @@ builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IBidSheetService, BidSheetService>();
 builder.Services.AddScoped<IBarchartIngestService, BarchartIngestService>();
 builder.Services.AddScoped<IBarchartCatalogService, BarchartCatalogService>();
+// Singleton: it only wraps IConfiguration, and the three services that publish feed bids plus the
+// coverage endpoint all have to read the same stale window.
+builder.Services.AddSingleton<IBarchartFeedSettings, BarchartFeedSettings>();
 builder.Services.AddScoped<IUserPreferenceService, UserPreferenceService>();
 builder.Services.AddScoped<IUserTradeUnitService, UserTradeUnitService>();
 builder.Services.AddScoped<ITradeUnitService, TradeUnitService>();

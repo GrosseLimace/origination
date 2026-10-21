@@ -13,6 +13,7 @@ public class BarchartCatalogService : IBarchartCatalogService
     private readonly IBarchartIngestRepository _ingest;
     private readonly IBidSheetRepository _bidSheet;
     private readonly IUserEntitlementService _entitlementService;
+    private readonly IBarchartFeedSettings _feedSettings;
     private readonly ILogger<BarchartCatalogService> _logger;
 
     private const string DefaultInstrumentType = BarchartFeedDefaults.InstrumentType;
@@ -28,12 +29,14 @@ public class BarchartCatalogService : IBarchartCatalogService
         IBarchartIngestRepository ingest,
         IBidSheetRepository bidSheet,
         IUserEntitlementService entitlementService,
+        IBarchartFeedSettings feedSettings,
         ILogger<BarchartCatalogService> logger)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _ingest = ingest ?? throw new ArgumentNullException(nameof(ingest));
         _bidSheet = bidSheet ?? throw new ArgumentNullException(nameof(bidSheet));
         _entitlementService = entitlementService ?? throw new ArgumentNullException(nameof(entitlementService));
+        _feedSettings = feedSettings ?? throw new ArgumentNullException(nameof(feedSettings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -102,7 +105,8 @@ public class BarchartCatalogService : IBarchartCatalogService
                         results[i] = results[i] with
                         {
                             MatchedBidPrice = matched.Price,
-                            MatchedBidBoard = matched.UnderlyingFuture
+                            MatchedBidBoard = matched.UnderlyingFuture,
+                            MatchedBidAsOf = matched.QuoteAsOf
                         };
                     }
                 }
@@ -150,7 +154,10 @@ public class BarchartCatalogService : IBarchartCatalogService
 
     /// <inheritdoc />
     public async Task<BarchartCoverageResponse> GetCoverageAsync(CancellationToken cancellationToken = default)
-        => (await _catalog.GetCoverageAsync(cancellationToken)).ToResponse();
+        // The stale window is configuration, not catalog data, so it joins the response here rather than
+        // in the repository: the client reads it once and applies one rule to every surface it draws.
+        => (await _catalog.GetCoverageAsync(cancellationToken)).ToResponse()
+           with { StaleAfterDays = _feedSettings.StaleAfterDays, HideStaleBids = _feedSettings.HideStaleBids };
 
     /// <inheritdoc />
     public async Task<BarchartRefreshBidsResponse?> RefreshBidsAsync(
@@ -164,8 +171,11 @@ public class BarchartCatalogService : IBarchartCatalogService
         var createdBy = await _bidSheet.GetLocationCreatedByAsync(locationId, cancellationToken);
         if (string.IsNullOrEmpty(createdBy)) return null;
 
+        // Same stale window as the nightly run: a user must not be able to "refresh" the feed back over
+        // their own override when the night would have left it alone.
         var rows = await _ingest.ApplyBidsToBidSheetAsync(
-            locationId, DefaultInstrumentType, FeedActor, cancellationToken: cancellationToken);
+            locationId, DefaultInstrumentType, FeedActor,
+            staleAfterDays: _feedSettings.StaleAfterDays, cancellationToken: cancellationToken);
 
         _logger.LogInformation(
             "BarChart bids refreshed for location {LocationId}: {RowsAffected} cells [DataMutation]",

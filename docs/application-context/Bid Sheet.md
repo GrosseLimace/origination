@@ -291,8 +291,9 @@ no scoring difference. It is not a substitute or an estimate. Cargill posts ONE 
 any time between 1 Oct and 30 Nov, which the vendor names after the November futures contract, so 5.38 is
 genuinely the October price; there is no separate October bid to prefer. Marking it on the face of the grid
 was tried twice (a month tag, then italics) and dropped both times for implying a substitution that is not
-happening. Only the tooltip names the covering contract, for the one case it matters: the elevator posted
-no separate price for this month.
+happening. The tooltip used to name the covering contract, for the one case it matters (the elevator
+posted no separate price for this month); since 2026-10-21 the tooltip says only when the bid was last
+updated, by request, and nothing on screen names the covering contract. The row model still carries it.
 
 The board symbol could not carry the distinction anyway -- a covering contract and the month it covers
 trade against the same board, and all 120 covered cells on Dev match their covering month's symbol exactly.
@@ -332,35 +333,73 @@ Consequence worth knowing after a deploy: the change stamps start empty, so **no
 first real move** — one nightly run, at most.
 ### What the feed refuses to publish
 
-The bridge publishes a price it would stand behind, and **shows an old one rather than hiding it**.
+The bridge publishes a price it would stand behind, and **keeps an old one rather than dropping it** --
+what the sheet then SHOWS is a separate, tighter question (next section).
 
-**Blocking is on the vendor's mode flag, not on age.** Measured across the live feed:
-
-| | mode `i` (live) | mode `d` (dead) |
-|---|---|---|
-| 0–7 days | 27,628 | 0 |
-| 8–90 days | 1,245 | 411 |
-| over 90 days | **0** | **2,272** |
-
-No live quote exceeds 90 days; every ancient one is `d`, as is every sentinel. This started as a 7-day
-age cutoff, which was a **proxy for mode and a lossy one** — it hid ~1,245 real bids to block a
-population that mode identifies exactly. An elevator that posts a new-crop bid and leaves it for weeks
-is behaving normally, and the delivery month already tells the user which period a bid covers.
+**Blocking is on age, not on the vendor's mode flag.** This has been three things. First a 7-day age
+cutoff, far too tight: an elevator that posts a new-crop bid and leaves it for weeks is behaving normally.
+Then the vendor's `mode` flag, on the belief that `d` meant a dead record -- wrong: BarChart's getQuote
+defines mode as the quote TYPE (real-time `R`, delayed `I`, end-of-day `D`), and filtering on it
+suppressed 1,126 real bids under 90 days old. Worse, mode is a request parameter, so a change on the
+pipeline side could return `d` for everything and blank the sheet. Age is a property of the bid itself.
 
 So, from `BarchartFeedDefaults`:
 
-- **`mode = d` never publishes.** Dead records, not offers.
+- **`MaxQuoteAgeDays` (90)** is the PUBLISH window: a quote older than this is not written, and a fed
+  cell left without a winner is pruned. Generous on purpose, so a frozen cell survives with its date
+  intact. `apply-bids` can override it per call.
 - **`MinPublishablePrice` (0.01)** for cash — excludes the `0.0025` no-bid placeholder. Basis is
   normally negative, so it gets a symmetric magnitude bound instead; both exclude the `214748.3647`
   sentinel (`int.MaxValue / 10000`).
-- **`MaxQuoteAgeDays` (365)** is a far backstop only, in case mode stops being trustworthy.
-  `apply-bids` can override it per call.
+- **`StaleAfterDays` (10)** is the TRUST window -- the next section.
 
-**Age is surfaced, not used to hide.** A fed cell whose quote hasn't moved in more than 7 days shows its
-as-of date in amber with "the elevator has not changed this bid since then". That keeps the one real
-hazard — a stale price *read as today's market* — without throwing away a bid the user asked to see. It
-was that hazard, not age itself, that justified the original rule: an unmarked 262-day-old soybean quote
-put **$3.51 for Sep 2026** between **$11.70** in August and October, which reads as a collapse.
+### A bid the elevator stopped updating
+
+BarChart keeps serving an elevator's LAST price for a delivery period it has gone quiet on, and the feed
+stores exactly what the vendor sends. Proven in PROD, October 2026: Scoular Goodland's October corn and
+milo frozen since Oct 7 while its December moved nightly; CHS Sharon Springs / Weskan December corn −20
+frozen since Oct 15; St. Francis Mercantile frozen since Aug 15. A frozen number reads as today's market,
+and nothing on screen said otherwise. (An earlier amber "as of" for a bid unchanged in 7 days had been
+dropped: opacity and tint cannot say HOW quiet, and for a past month the month already says history.)
+
+Two of the three pieces are always on; the third is a per-environment switch that is **off everywhere
+as of 2026-10-21** -- the user saw a Dev sheet where every bid was a blank (Dev's last load was Oct 13)
+and pulled it back the same day, keeping the hover and the takeover rule:
+
+- **Always:** hovers say when a bid was last updated (below), and the feed does not take a hand-typed
+  cell back with an older or stale quote (newest wins, below).
+- **Only when `Barchart:HideStaleBids` is true** (`Barchart__HideStaleBids`; reported as `hideStaleBids`
+  on `GET api/barchart/coverage`): a fed side the elevator has not updated within **`StaleAfterDays`**
+  is shown as **`--` with the date it went quiet** under it, everywhere a fed number appears -- map pins,
+  location panel, panel list, Edit Bids grid, catalog pins and the catalog popup. `StaleAfterDays`
+  defaults to 10 (`Barchart:StaleAfterDays`, clamped to 1..90) and also drives the takeover rule. The
+  location stays on the map and stays addable. For status colouring and the reference comparison a
+  quiet bid is no bid; in Both mode a quiet side prints as a blank beside the live one ("4.98 / --").
+  With the switch off nothing on the client is ever "stale": every fed number prints, however old.
+- Cash and basis are judged on their own stamps (`QuoteAsOf`, `BasisQuoteAsOf`): separate instruments,
+  and one freezes without the other.
+- A **past month** is judged at the month's end, not today. Its cells freeze as they last published and
+  are never pruned, so measured against today every one of them would read as blank. An elevator that
+  posted daily through August shows its August number next year; one that went quiet on the 15th shows
+  the 15th. (`client/.../bid-sheet/utils/bid-freshness.ts`, one parameter if the business ever wants
+  history shown as-is.)
+- Hovers say when, and only when: "Updated Oct 20" on a fed value, "Updated Oct 21" on a hand-typed
+  one -- and, with the switch on, "Not updated since Oct 7" on a quiet one. A third line under the bid
+  on the map card; the cell's title in the panel, the list, the grid and the catalog popup, with no
+  other text in it (the covering-contract sentence came out of the grid and list tooltips the same day).
+  In Both mode the one date is the most recent side's. With the switch on, a quiet grid cell is empty
+  with the date in grey until something is typed over it.
+- **Newest wins.** A user may type over a quiet cell; it becomes Manual (vendor stamps dropped) and
+  everyone sees it. The feed takes a Manual cell back only with a quote that is both inside
+  `StaleAfterDays` AND stamped after the edit -- and for a cell with both sides published, the OLDER of
+  the two stamps is the feed's word, so a live basis cannot carry a frozen cash price back over the
+  user's number. A quote with no stamp never takes a manual cell. The per-location Refresh button and a
+  newly linked location run under exactly the same rule (`IBarchartFeedSettings`).
+- An override typed over a **live** cell is a one-night override by design: the vendor's stamp refreshes
+  most days, so a current post dated after the edit reclaims it next morning. Clearing a cell hands it
+  back to the feed (the row is deleted; the next run re-inserts it).
+- The feed never prunes a cell for being quiet. The 90-day publish window above is what finally drops it,
+  and with it the date -- accepted.
 
 ### 
 ### Diagnosing a missing bid: `dbo.vw_BarchartPublishableBid`
@@ -433,17 +472,19 @@ data being honest rather than a fault.
 
 
 
-`dbo.BidSheetLocationBids.Source` is `Manual` or `Barchart`, and each side owns its own cells:
+`dbo.BidSheetLocationBids.Source` is `Manual` or `Barchart`, and says who last wrote the cell:
 
-- Fed cells render with a dashed green tint, an "as of" line under the value, and are **read-only** —
-  the input is `readonly`, `updateBid` refuses them, and `_buildDirtyBids` skips them. The server
-  rejects writes to them independently, so all three layers agree.
+- Fed cells render with a dashed green tint and an "as of" under the value. They are **editable**: the
+  first cut made them read-only, and that was dropped so an originator can correct a wrong vendor price
+  without waiting for the vendor. Typing over one makes it Manual, drops the vendor's stamps (symbol,
+  board, as-of), and everyone on the sheet sees the new number.
 - A feed-linked location can still carry **manual** bids for crops or months the vendor doesn't
-  publish, and those behave exactly as they always have. The read-only rule is per cell, not per row.
-- The feed never overwrites a manual cell. In the bridge's `MERGE`, a manual row matches but satisfies
-  no clause, so it's left exactly as typed.
-- A feed-owned crop can't be deleted from the panel — the delete button is replaced with a "Feed"
-  label, because the server would ignore the request anyway.
+  publish, and those behave exactly as they always have. Ownership is per cell, not per row.
+- **Newest wins, both ways.** The feed takes a manual cell back only with a quote that is current (inside
+  `StaleAfterDays`) and stamped after the edit; otherwise the manual value stands, whatever the vendor
+  sends. See "A bid the elevator stopped updating" above for the whole rule and its edges.
+- The panel's delete toggle is hidden for a BarChart-linked location — its cells come and go with the
+  feed, so the location is removed as a whole instead.
 
 ## Crop year + month preferences
 

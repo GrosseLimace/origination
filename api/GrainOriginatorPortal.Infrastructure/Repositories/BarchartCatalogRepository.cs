@@ -142,6 +142,12 @@ public class BarchartCatalogRepository : IBarchartCatalogRepository
                 Price = _appContext.BarchartCurrentQuotes
                     .Where(q => q.Symbol == i.Symbol)
                     .Select(q => (decimal?)q.LastPrice)
+                    .FirstOrDefault(),
+                // The elevator's own stamp on the price, so the pin can be judged stale by the same rule
+                // as an added location's cell -- the two sit on one map and must read alike.
+                QuoteAsOf = _appContext.BarchartCurrentQuotes
+                    .Where(q => q.Symbol == i.Symbol)
+                    .Select(q => q.TradeTimestamp)
                     .FirstOrDefault()
             })
             .Where(x => x.Price != null)
@@ -157,7 +163,8 @@ public class BarchartCatalogRepository : IBarchartCatalogRepository
                 result[row.LocationKey] = new BarchartMatchedPrice
                 {
                     Price = row.Price!.Value,
-                    UnderlyingFuture = row.UnderlyingFuture
+                    UnderlyingFuture = row.UnderlyingFuture,
+                    QuoteAsOf = row.QuoteAsOf
                 };
             }
         }

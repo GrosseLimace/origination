@@ -20,15 +20,17 @@ public class BidSheetServiceTests
     private readonly Mock<IBarchartCatalogRepository> _barchartCatalog = new();
     private readonly Mock<IBarchartIngestRepository> _barchartIngest = new();
     private readonly Mock<IEntitlementsRepository> _entitlements = new();
+    private readonly Mock<IBarchartFeedSettings> _feedSettings = new();
     private readonly BidSheetService _sut;
 
     public BidSheetServiceTests()
     {
         _requestContext.Setup(r => r.GetCurrentUser()).Returns("user@x.com");
+        _feedSettings.Setup(s => s.StaleAfterDays).Returns(10);
         _sut = new BidSheetService(
             _repo.Object, _requestContext.Object, _entitlementService.Object,
             _barchartCatalog.Object, _barchartIngest.Object,
-            _entitlements.Object, NullLogger<BidSheetService>.Instance);
+            _entitlements.Object, _feedSettings.Object, NullLogger<BidSheetService>.Instance);
     }
 
     private static CreateBidSheetLocationRequest Request(string name = "Kansas West", string tu = "TU1") => new()
@@ -121,7 +123,9 @@ public class BidSheetServiceTests
         Assert.Equal("IA", captured.State);
         Assert.Equal(41.42, captured.Latitude);
         _barchartIngest.Verify(i => i.ApplyBidsToBidSheetAsync(
-            7, "bidCash", "barchart-feed", It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
+            // Under the environment's stale window, so a freshly linked location follows the same
+            // takeover rule as the nightly run.
+            7, "bidCash", "barchart-feed", It.IsAny<int>(), 10, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // -------------------------------------------------------------------------
@@ -199,7 +203,7 @@ public class BidSheetServiceTests
 
         _barchartCatalog.Verify(c => c.GetLocationAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         _barchartIngest.Verify(i => i.ApplyBidsToBidSheetAsync(
-            It.IsAny<int?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+            It.IsAny<int?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
     // ── who may destroy a shared location ────────────────────────────────────────────────────────
     // Locations are company-wide now, so a delete takes the elevator and its whole bid history off

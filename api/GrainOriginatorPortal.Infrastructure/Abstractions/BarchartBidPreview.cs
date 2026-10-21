@@ -63,4 +63,7 @@ public record BarchartMatchedPrice
 
     /// <summary>Futures contract the price is quoted against, e.g. "ZCU26". Null when the vendor didn't supply one.</summary>
     public string? UnderlyingFuture { get; init; }
+
+    /// <summary>When the elevator last updated this price, UTC. The map hides a price past the stale window behind "--".</summary>
+    public DateTime? QuoteAsOf { get; init; }
 }

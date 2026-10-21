@@ -17,14 +17,16 @@ public class BarchartCatalogServiceTests
     private readonly IBarchartIngestRepository _ingest = Substitute.For<IBarchartIngestRepository>();
     private readonly IBidSheetRepository _bidSheet = Substitute.For<IBidSheetRepository>();
     private readonly IUserEntitlementService _entitlements = Substitute.For<IUserEntitlementService>();
+    private readonly IBarchartFeedSettings _feedSettings = Substitute.For<IBarchartFeedSettings>();
     private readonly BarchartCatalogService _sut;
 
     public BarchartCatalogServiceTests()
     {
         _catalog.GetPlacementsAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
             .Returns([]);
+        _feedSettings.StaleAfterDays.Returns(10);
         _sut = new BarchartCatalogService(
-            _catalog, _ingest, _bidSheet, _entitlements, NullLogger<BarchartCatalogService>.Instance);
+            _catalog, _ingest, _bidSheet, _entitlements, _feedSettings, NullLogger<BarchartCatalogService>.Instance);
     }
 
     private static BarchartLocationSummary Summary(string key, double? lat = null, double? lng = null) => new()
@@ -112,7 +114,15 @@ public class BarchartCatalogServiceTests
         _catalog.GetMatchedBidPricesAsync(
                 Arg.Is<IReadOnlyCollection<string>>(k => k.Contains("priced") && k.Contains("unpriced")),
                 "YC", 2026, 8, "bidCash", Arg.Any<CancellationToken>())
-            .Returns(new Dictionary<string, BarchartMatchedPrice> { ["priced"] = new() { Price = 4.98m, UnderlyingFuture = "ZCU26" } });
+            .Returns(new Dictionary<string, BarchartMatchedPrice>
+            {
+                ["priced"] = new()
+                {
+                    Price = 4.98m,
+                    UnderlyingFuture = "ZCU26",
+                    QuoteAsOf = new DateTime(2026, 10, 20, 14, 5, 0, DateTimeKind.Utc)
+                }
+            });
 
         var results = await _sut.SearchLocationsAsync(
             new BarchartLocationSearchRequest { CommodityCode = "YC", CropYear = 2026, Month = 8 },
@@ -124,6 +134,10 @@ public class BarchartCatalogServiceTests
         // elevators quoting the same delivery month can be quoting different exchanges.
         Assert.Equal("ZCU26", results.Single(r => r.LocationKey == "priced").MatchedBidBoard);
         Assert.Null(results.Single(r => r.LocationKey == "unpriced").MatchedBidBoard);
+        // And the elevator's stamp, so the map can judge a catalog pin stale by the same rule as an
+        // added location's cell instead of printing a frozen number as if it were this morning's.
+        Assert.Equal(new DateTime(2026, 10, 20, 14, 5, 0, DateTimeKind.Utc), results.Single(r => r.LocationKey == "priced").MatchedBidAsOf);
+        Assert.Null(results.Single(r => r.LocationKey == "unpriced").MatchedBidAsOf);
     }
 
     // -------------------------------------------------------------------------
@@ -295,7 +309,7 @@ public class BarchartCatalogServiceTests
 
         Assert.Null(result);
         await _ingest.DidNotReceive().ApplyBidsToBidSheetAsync(
-            Arg.Any<int?>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+            Arg.Any<int?>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     // -------------------------------------------------------------------------
@@ -307,7 +321,9 @@ public class BarchartCatalogServiceTests
     public async Task RefreshBidsAsync_ScopesBridgeToTheLocation_WithoutTradeUnitEntitlement()
     {
         _bidSheet.GetLocationCreatedByAsync(12, Arg.Any<CancellationToken>()).Returns("someone@scoular.com");
-        _ingest.ApplyBidsToBidSheetAsync(12, "bidCash", "barchart-feed", Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(6);
+        // Matches only when the environment's stale window (10 here) reaches the bridge: the Refresh
+        // button must not be a way to take a user's override back under a looser rule than the night's.
+        _ingest.ApplyBidsToBidSheetAsync(12, "bidCash", "barchart-feed", Arg.Any<int>(), 10, Arg.Any<CancellationToken>()).Returns(6);
 
         var result = await _sut.RefreshBidsAsync(12, CancellationToken.None);
 
@@ -339,5 +355,22 @@ public class BarchartCatalogServiceTests
         // The "bids updated" stamp the Bid Sheet shows; it is the price load, not the catalog sweep.
         Assert.Equal(new DateTime(2026, 10, 21, 10, 52, 0, DateTimeKind.Utc), result.PricesRefreshedUtc);
         Assert.NotEqual(result.LastRefreshedUtc, result.PricesRefreshedUtc);
+    }
+
+    // -------------------------------------------------------------------------
+    // The stale window rides on coverage because it is configuration the client cannot know otherwise:
+    // every "--" the sheet prints and every override it allows is judged against this number.
+    [Fact]
+    public async Task GetCoverageAsync_ExposesTheEnvironmentsStaleWindow()
+    {
+        _feedSettings.StaleAfterDays.Returns(14);
+        _feedSettings.HideStaleBids.Returns(true);
+        _catalog.GetCoverageAsync(Arg.Any<CancellationToken>()).Returns(new BarchartCoverage { LocationCount = 1 });
+
+        var result = await _sut.GetCoverageAsync(CancellationToken.None);
+
+        Assert.Equal(14, result.StaleAfterDays);
+        // And whether to act on it: the "--" treatment is a per-environment switch, off by default.
+        Assert.True(result.HideStaleBids);
     }
 }

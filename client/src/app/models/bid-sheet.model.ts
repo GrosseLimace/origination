@@ -7,7 +7,8 @@ export interface BidSheetLocationBid {
   cropYear: number;
   month: number;
   bid: string;
-  /** Who owns this cell: 'Manual' (a user typed it) or 'Barchart' (fed, read-only). */
+  /** Who owns this cell: 'Manual' (a user typed it) or 'Barchart' (fed). A fed cell may be typed over;
+   *  the feed takes it back only with a quote that is current and newer than the edit. */
   source: BidSource;
   /** Vendor symbol behind a fed cell; absent on manual cells. */
   barchartSymbol?: string;
@@ -39,7 +40,7 @@ export interface BidSheetLocationBid {
   modifiedAt?: string;
 }
 
-/** Who owns a bid cell. The server enforces this too: writes to a 'Barchart' cell are rejected. */
+/** Who owns a bid cell. Typing over a 'Barchart' cell makes it 'Manual' (newest wins, both ways). */
 export type BidSource = 'Manual' | 'Barchart';
 
 export interface BidSheetLocation {
@@ -51,7 +52,7 @@ export interface BidSheetLocation {
   latitude?: number;
   longitude?: number;
   elevatorCode?: string;
-  /** Set when this row is linked to a BarChart listing; its bids are fed and read-only. */
+  /** Set when this row is linked to a BarChart listing; its bids arrive from the feed. */
   barchartLocationKey?: string;
   tradeUnitCode: string;
   groupName?: string;
@@ -90,6 +91,9 @@ export interface BidSheetEntry {
   /** The cash price regardless of the toggle — the Edit Bids grid needs both at once in "Both" mode. */
   cashBid?: string;
   basisBid?: string;
+  /** Each side's own elevator stamp, regardless of the toggle (quoteAsOf above follows it). A side is
+   *  judged stale on its own stamp: cash and basis are separate BarChart instruments. */
+  cashQuoteAsOf?: string;
   basisQuoteAsOf?: string;
   /** Set when this cell shows a LATER contract month's bid whose delivery window covers this month
    *  (October showing the "Nov 26" bid that delivers from 1 Oct). Absent = the elevator's own bid. */

@@ -47,6 +47,11 @@ export interface BarchartCatalogLocation {
    *  one instrument type per call, since cash and basis are independent instruments; this is the
    *  merge point rather than a second server round trip the map has to know about. */
   matchedBasisPrice?: number;
+  /** When the elevator last updated matchedBidPrice. The map hides a price older than the coverage
+   *  response's staleAfterDays behind "--" and prints this date, as it does for an added location. */
+  matchedBidAsOf?: string;
+  /** matchedBasisPrice's own stamp; client-merged alongside it in Both mode. */
+  matchedBasisAsOf?: string;
 }
 
 /** Where a catalog listing already sits on the bid sheet. */
@@ -87,6 +92,12 @@ export interface BarchartCoverage {
   lastRefreshedUtc?: string;
   /** Price load: when bids were last pulled from BarChart. Shown on the Bid Sheet as "BarChart bids updated ...". */
   pricesRefreshedUtc?: string;
+  /** Days after the elevator's last update before a fed bid shows as "--" with its date instead of a
+   *  number (Barchart:StaleAfterDays on the server). The one threshold every surface judges by. */
+  staleAfterDays?: number;
+  /** Whether to hide a fed bid older than staleAfterDays behind "--" and its date. Off everywhere for
+   *  now: the number shows and the hover says when it was last updated. */
+  hideStaleBids?: boolean;
   states: BarchartStateCoverage[];
 }
 

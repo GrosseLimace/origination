@@ -38,6 +38,7 @@ public class BidSheetServiceSheetsTests
     private readonly Mock<IBarchartCatalogRepository> _barchartCatalog = new();
     private readonly Mock<IBarchartIngestRepository> _barchartIngest = new();
     private readonly Mock<IEntitlementsRepository> _entitlements = new();
+    private readonly Mock<IBarchartFeedSettings> _feedSettings = new();
     private readonly BidSheetService _sut;
 
     private const string Owner = "CEgr";
@@ -51,7 +52,7 @@ public class BidSheetServiceSheetsTests
         _sut = new BidSheetService(
             _repo.Object, _requestContext.Object, _entitlementService.Object,
             _barchartCatalog.Object, _barchartIngest.Object,
-            _entitlements.Object, NullLogger<BidSheetService>.Instance);
+            _entitlements.Object, _feedSettings.Object, NullLogger<BidSheetService>.Instance);
     }
 
     private void CallerIs(string shortName) =>

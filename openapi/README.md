@@ -224,6 +224,8 @@ ingest endpoints is confirmed in the thread.
 
 PROD can load before it publishes: `apply-bids` answers 200 and writes nothing while
 `Barchart:ApplyBidsEnabled` is off, so all three workflows can run on schedule from the start.
+`Barchart:StaleAfterDays` (default 10) is the companion setting: the age past which the sheet shows a
+fed bid as `--` with its date, and past which the feed may not take back a bid a user typed over.
 
 No new app roles are needed — `Origination.Application` already exists in every environment as a
 convention-based default. This is assignment only, which also avoids the trap where declaring a custom

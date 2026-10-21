@@ -55,7 +55,7 @@ regardless of a valid token.
 | `GET` | `/quote-batches?batchSize=100` | Ask us which symbols to quote. Returns them pre-grouped into batches. |
 | `POST` | `/quotes?snapshotDate=YYYY-MM-DD` | Send a vendor quote response. `snapshotDate` optional — defaults to today, Central time. |
 | `POST` | `/instruments` | Send a vendor instrument (catalog) response. |
-| `POST` | `/apply-bids?instrumentType=bidCash` | Publish current prices onto the Bid Sheet. Call after a quote load. Schedule it everywhere: an environment not yet showing fed bids answers 200 with `enabled: false` and writes nothing (our setting `Barchart:ApplyBidsEnabled`). |
+| `POST` | `/apply-bids?instrumentType=bidCash` | Publish current prices onto the Bid Sheet. Call after a quote load. Schedule it everywhere: an environment not yet showing fed bids answers 200 with `enabled: false` and writes nothing (our setting `Barchart:ApplyBidsEnabled`). A bid a user has typed over is replaced only by a quote that is current (`Barchart:StaleAfterDays`, default 10 days) and newer than the edit. |
 | `POST` | `/deactivate-instruments?lastSeenBefore=<utc>&maxSharePercent=25` | Retire catalog entries the vendor stopped publishing. **Only after a complete catalog cycle** — see the warning below. Refused with a 400 if it would retire more than `maxSharePercent` of the active catalog (default 25). |
 | `GET` | `/budget?monthlyCap=250000` | Month-to-date call usage on our side, as a cross-check against your own monitoring. |
 | `POST` | `/purge-history?auditRetentionDays=400&snapshotRetentionDays=730` | Optional housekeeping — trims the audit and price-history tables. Call it on a schedule or leave it to us. |

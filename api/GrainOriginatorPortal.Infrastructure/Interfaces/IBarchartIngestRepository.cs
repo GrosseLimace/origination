@@ -48,8 +48,9 @@ public interface IBarchartIngestRepository
 
     /// <summary>
     /// Copies current feed prices onto the Bid Sheet for locations linked to a BarChart location key.
-    /// Writes only cells owned by the feed, never touches manually entered bids, and prunes its own
-    /// rows once a delivery window or commodity mapping goes away.
+    /// Refreshes the cells it owns on any change; takes a hand-typed cell back only with a quote that is
+    /// both inside <paramref name="staleAfterDays"/> and newer than the edit (newest wins); prunes its
+    /// own rows once a delivery window or commodity mapping goes away.
     /// </summary>
     /// <param name="locationId">Limit to one Bid Sheet location; null processes every linked location.</param>
     /// <param name="instrumentType">Vendor price type to publish, e.g. <c>bidCash</c>. Null publishes any type.</param>
@@ -58,10 +59,15 @@ public interface IBarchartIngestRepository
     /// Skip quotes older than this. The vendor returns fresh and months-old quotes in the same payload,
     /// and a stale price on the sheet is read as today's market — worse than a blank cell.
     /// </param>
+    /// <param name="staleAfterDays">
+    /// Age past which a quote no longer counts as current. It is still published, but it cannot displace
+    /// a manual bid; the UI hides a quote this old behind "--" and shows its date instead.
+    /// </param>
     /// <returns>Bid rows written or removed.</returns>
     Task<int> ApplyBidsToBidSheetAsync(
         int? locationId, string? instrumentType, string appliedBy,
         int maxQuoteAgeDays = BarchartFeedDefaults.MaxQuoteAgeDays,
+        int staleAfterDays = BarchartFeedDefaults.StaleAfterDays,
         CancellationToken cancellationToken = default);
 
     /// <summary>Records one ingest call for monthly usage tracking.</summary>

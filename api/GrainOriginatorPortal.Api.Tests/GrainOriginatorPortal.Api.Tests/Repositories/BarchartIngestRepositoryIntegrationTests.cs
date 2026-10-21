@@ -34,6 +34,27 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
 
     private static bool Enabled => !string.IsNullOrWhiteSpace(ConnectionString);
 
+    // Every vendor timestamp in this file is relative to the clock. The fixtures used to hard-code
+    // 2026-07-22 and the whole file went red the day that crossed the 90-day publish window.
+    //
+    // DateTimeOffset, not DateTime.UtcNow: formatted with zzz, a UTC DateTime is printed with the
+    // MACHINE's local offset, which the loader then applies -- so a "two hours ago" stamp landed up to
+    // five hours in the future. Tests that compare a quote against an edit time need the real instant.
+    private static string Stamp(TimeSpan ago)
+        => DateTimeOffset.UtcNow.Subtract(ago).ToString("yyyy-MM-dd'T'HH:mm:sszzz");
+    private static string HoursAgo(int hours) => Stamp(TimeSpan.FromHours(hours));
+    private static string DaysAgo(int days) => Stamp(TimeSpan.FromDays(days));
+
+    /// <summary>Fills a fixture's STAMP_1D / STAMP_2D tokens at call time, so each test gets a live date.</summary>
+    private static string Dated(string quotesJson)
+        => quotesJson
+            // The same instant written the way the vendor writes it, in Central time -- so one row still
+            // exercises the loader's offset handling. Replaced first: it shares a prefix with STAMP_1D.
+            .Replace("STAMP_1D_CENTRAL",
+                DateTimeOffset.UtcNow.AddDays(-1).ToOffset(TimeSpan.FromHours(-5)).ToString("yyyy-MM-dd'T'HH:mm:sszzz"))
+            .Replace("STAMP_1D", DaysAgo(1))
+            .Replace("STAMP_2D", DaysAgo(2));
+
     // Modelled on the vendor proof-of-concept extracts, but with location keys and commodity names the
     // vendor does not issue. That matters: these tests run against a shared database that now holds a
     // real BarChart sweep, so a fixture using real values collides with it -- the real catalog puts 63
@@ -88,17 +109,17 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
     private const string QuotesJson = """
         { "status": { "code": 200 }, "results": [
           { "symbol": "ZCPZ27F-990201-15194.CM", "lastPrice": "4.47", "netChange": "0.0625",
-            "tradeTimestamp": "2026-07-22T12:12:36-05:00", "serverTimestamp": "2026-07-22T12:12:42-05:00",
+            "tradeTimestamp": "STAMP_1D", "serverTimestamp": "STAMP_1D",
             "dayCode": "L", "mode": "i", "unitCode": "4", "code": 200 },
           { "symbol": "ZCPZ27L-990201-15194.CM", "lastPrice": "4.53", "netChange": "0.0825",
-            "tradeTimestamp": "2026-07-22T12:12:36-05:00", "serverTimestamp": "2026-07-22T12:12:42-05:00",
+            "tradeTimestamp": "STAMP_1D_CENTRAL", "serverTimestamp": "STAMP_1D",
             "dayCode": "L", "mode": "i", "unitCode": "4", "code": 200 },
           { "symbol": "ZCPZ27-990201-15195.CM", "lastPrice": "4.47", "netChange": "0.0825",
-            "tradeTimestamp": "2026-07-22T12:12:37-05:00", "dayCode": "L", "mode": "i", "unitCode": "4", "code": 200 },
+            "tradeTimestamp": "STAMP_1D", "dayCode": "L", "mode": "i", "unitCode": "4", "code": 200 },
           { "symbol": "ZCPZ27-990202-6916.CM", "lastPrice": "4.41", "netChange": "0.0825",
-            "tradeTimestamp": "2026-07-22T12:13:57-05:00", "dayCode": "L", "mode": "i", "unitCode": "4", "code": 200 },
+            "tradeTimestamp": "STAMP_1D", "dayCode": "L", "mode": "i", "unitCode": "4", "code": 200 },
           { "symbol": "ZCPZ27-990203-17523.CM", "lastPrice": "4.13", "netChange": "0.0325",
-            "tradeTimestamp": "2026-07-21T21:32:32-05:00", "dayCode": "K", "mode": "i", "unitCode": "4", "code": 200 },
+            "tradeTimestamp": "STAMP_2D", "dayCode": "K", "mode": "i", "unitCode": "4", "code": 200 },
           { "symbol": "ZZ-NOT-IN-CATALOG.CM", "lastPrice": "1.23", "code": 200 }
         ] }
         """;
@@ -171,7 +192,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
 
         await _sut.LoadInstrumentsAsync(InstrumentsJson);
 
-        var first = await _sut.LoadQuotesAsync(QuotesJson, BusinessDate);
+        var first = await _sut.LoadQuotesAsync(Dated(QuotesJson), BusinessDate);
 
         Assert.Equal(5, first.QuotesUpserted);
         Assert.Equal(1, first.UnknownSymbolCount);
@@ -180,7 +201,11 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         var secondHalf = await _context.BarchartCurrentQuotes.AsNoTracking()
             .SingleAsync(q => q.Symbol == "ZCPZ27L-990201-15194.CM");
         Assert.Equal(4.53m, secondHalf.LastPrice);
-        Assert.Equal(new DateTime(2026, 7, 22, 17, 12, 36, DateTimeKind.Unspecified), secondHalf.TradeTimestamp);
+        // Stored as UTC: this row's stamp is written with a -05:00 offset (see Dated), so landing within
+        // minutes of a day ago proves the offset was applied rather than dropped.
+        Assert.NotNull(secondHalf.TradeTimestamp);
+        Assert.InRange(secondHalf.TradeTimestamp!.Value,
+            DateTime.UtcNow.AddDays(-1).AddMinutes(-5), DateTime.UtcNow.AddDays(-1).AddMinutes(5));
 
         var historyAfterFirst = await _context.BarchartQuoteSnapshots
             .CountAsync(s => s.SnapshotDate == BusinessDate);
@@ -188,7 +213,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
 
         // Re-running the same business date replaces the day's rows — this is what makes the ingest
         // endpoints safe for the pipeline to retry.
-        await _sut.LoadQuotesAsync(QuotesJson, BusinessDate);
+        await _sut.LoadQuotesAsync(Dated(QuotesJson), BusinessDate);
         Assert.Equal(historyAfterFirst,
             await _context.BarchartQuoteSnapshots.CountAsync(s => s.SnapshotDate == BusinessDate));
     }
@@ -213,7 +238,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         if (!Enabled) return;
 
         await _sut.LoadInstrumentsAsync(InstrumentsJson);
-        await _sut.LoadQuotesAsync(QuotesJson, BusinessDate);
+        await _sut.LoadQuotesAsync(Dated(QuotesJson), BusinessDate);
 
         // "Corn (IT Variant)" is deliberately left unmapped, so it must not reach the Bid Sheet.
         _context.BarchartCommodityMaps.Add(new BarchartCommodityMap
@@ -284,7 +309,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         if (!Enabled) return;
 
         await _sut.LoadInstrumentsAsync(InstrumentsJson);
-        await _sut.LoadQuotesAsync(QuotesJson, BusinessDate);
+        await _sut.LoadQuotesAsync(Dated(QuotesJson), BusinessDate);
 
         var map = new BarchartCommodityMap
         {
@@ -370,8 +395,8 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
                 "tradeTimestamp": "REPLACE_FRESH", "mode": "i", "unitCode": "4", "code": 200 }
             ] }
             """
-            .Replace("REPLACE_FRESH", DateTime.UtcNow.AddHours(-2).ToString("yyyy-MM-ddTHH:mm:sszzz"))
-            .Replace("REPLACE_STALE", DateTime.UtcNow.AddDays(-262).ToString("yyyy-MM-ddTHH:mm:sszzz"));
+            .Replace("REPLACE_FRESH", HoursAgo(2))
+            .Replace("REPLACE_STALE", DaysAgo(262));
 
         await _sut.LoadQuotesAsync(mixedQuotes, BusinessDate);
 
@@ -407,9 +432,11 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
     }
 
     // Users may fill a cell the vendor does not cover -- that is the point of a feed-linked location
-    // still accepting manual bids. But when the elevator starts publishing that month, the vendor's
-    // number is the better one and takes the cell over. The old rule left the manual value in place,
-    // which meant a bid typed into an empty cell silently masked the feed forever.
+    // still accepting manual bids. When the elevator then publishes that month, with a quote that is
+    // current and newer than the user's edit, the vendor's number is the better one and takes the cell
+    // over. The first rule left the manual value in place for good, which meant a bid typed into an
+    // empty cell silently masked the feed forever; the second took any manual cell the feed had a
+    // winner for, which handed frozen vendor prices back over corrections (see newest wins, below).
     [Fact]
     public async Task ApplyBids_TakesOverAManualCellOnceTheFeedPublishesIt()
     {
@@ -427,7 +454,8 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
             Bid = "9.99",
             Source = BidSources.Manual,
             CreatedBy = "integration-test",
-            CreatedAt = DateTime.UtcNow
+            // Typed two days ago; the fixture's quote is a day old, so the elevator spoke last.
+            CreatedAt = DateTime.UtcNow.AddDays(-2)
         });
         await _context.SaveChangesAsync();
 
@@ -437,7 +465,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
             .SingleAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_FLEX" && b.Month == 12);
         Assert.Equal("4.47", cell.Bid);
         // Ownership transfers with the value. The user can override again -- fed cells are editable --
-        // and this run would take it back a second time.
+        // and the feed takes it back the next time the elevator posts something newer.
         Assert.Equal(BidSources.Barchart, cell.Source);
         Assert.Equal("ZCPZ27-990001-990010.CM", cell.BarchartSymbol);
     }
@@ -468,7 +496,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
             BasisBid = "-40Z",
             Source = BidSources.Manual,
             CreatedBy = "integration-test",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow.AddDays(-2)     // older than the fixture's day-old quote
         });
         await _context.SaveChangesAsync();
 
@@ -628,9 +656,9 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         await _sut.LoadQuotesAsync("""
             { "status": { "code": 200 }, "results": [
               { "symbol": "ZCPX27-990001-990010.CM", "lastPrice": "4.39",
-                "tradeTimestamp": "2026-07-22T12:12:36-05:00", "mode": "i", "unitCode": "4", "code": 200 }
+                "tradeTimestamp": "STAMP_1D", "mode": "i", "unitCode": "4", "code": 200 }
             ] }
-            """, BusinessDate);
+            """.Replace("STAMP_1D", DaysAgo(1)), BusinessDate);
 
         await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
 
@@ -663,14 +691,14 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         Assert.Null(fresh.CashChangedAt);              // just appeared: nothing to have moved from
 
         // Same price, newer stamp -- a re-post. QuoteAsOf moves, CashChangedAt must not.
-        await _sut.LoadQuotesAsync(Quote("4.47", "2026-07-23T12:00:00-05:00"), BusinessDate.AddDays(1));
+        await _sut.LoadQuotesAsync(Quote("4.47", HoursAgo(12)), BusinessDate.AddDays(1));
         await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
         var reposted = await December(location.Id);
         Assert.NotEqual(fresh.QuoteAsOf, reposted.QuoteAsOf);
         Assert.Null(reposted.CashChangedAt);
 
         // A different price: this is a move.
-        await _sut.LoadQuotesAsync(Quote("4.52", "2026-07-24T12:00:00-05:00"), BusinessDate.AddDays(2));
+        await _sut.LoadQuotesAsync(Quote("4.52", HoursAgo(6)), BusinessDate.AddDays(2));
         await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
         var moved = await December(location.Id);
         Assert.Equal("4.52", moved.Bid);
@@ -704,7 +732,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
               { "symbol": "ZCPZ27-990001-990010.CM", "lastPrice": "4.47",
                 "tradeTimestamp": "REPLACE", "mode": "d", "flag": "s", "unitCode": "4", "code": 200 }
             ] }
-            """.Replace("REPLACE", DateTime.UtcNow.AddDays(-3).ToString("yyyy-MM-ddTHH:mm:sszzz"));
+            """.Replace("REPLACE", DaysAgo(3));
         await _sut.LoadQuotesAsync(endOfDay, BusinessDate);
 
         _context.BarchartCommodityMaps.Add(new BarchartCommodityMap
@@ -749,18 +777,18 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
     private const string ContractMonthQuotesJson = """
         { "status": { "code": 200 }, "results": [
           { "symbol": "ZCPZ27-990001-990010.CM", "lastPrice": "4.47",
-            "tradeTimestamp": "2026-07-22T12:12:36-05:00", "mode": "i", "unitCode": "4", "code": 200 },
+            "tradeTimestamp": "STAMP_1D", "mode": "i", "unitCode": "4", "code": 200 },
           { "symbol": "ZCPZ27F-990001-990011.CM", "lastPrice": "4.41",
-            "tradeTimestamp": "2026-07-22T12:12:36-05:00", "mode": "i", "unitCode": "4", "code": 200 },
+            "tradeTimestamp": "STAMP_1D", "mode": "i", "unitCode": "4", "code": 200 },
           { "symbol": "ZCPZ27L-990001-990011.CM", "lastPrice": "4.53",
-            "tradeTimestamp": "2026-07-22T12:12:36-05:00", "mode": "i", "unitCode": "4", "code": 200 }
+            "tradeTimestamp": "STAMP_1D", "mode": "i", "unitCode": "4", "code": 200 }
         ] }
         """;
 
     private async Task<BidSheetLocation> SeedContractMonthCatalogAsync()
     {
         await _sut.LoadInstrumentsAsync(ContractMonthInstrumentsJson);
-        await _sut.LoadQuotesAsync(ContractMonthQuotesJson, BusinessDate);
+        await _sut.LoadQuotesAsync(Dated(ContractMonthQuotesJson), BusinessDate);
 
         _context.BarchartCommodityMaps.AddRange(
             new BarchartCommodityMap
@@ -847,7 +875,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
               { "symbol": "ZCPZ27-990202-6916.CM", "lastPrice": "4.41",
                 "tradeTimestamp": "REPLACE_OLD", "mode": "i", "unitCode": "4", "code": 200 }
             ] }
-            """.Replace("REPLACE_OLD", DateTime.UtcNow.AddDays(-30).ToString("yyyy-MM-ddTHH:mm:sszzz"));
+            """.Replace("REPLACE_OLD", DaysAgo(30));
         await _sut.LoadQuotesAsync(unmoved, BusinessDate);
 
         _context.BarchartCommodityMaps.Add(new BarchartCommodityMap
@@ -877,7 +905,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
 
         await _sut.LoadInstrumentsAsync(InstrumentsJson);
 
-        var fresh = DateTime.UtcNow.AddHours(-1).ToString("yyyy-MM-ddTHH:mm:sszzz");
+        var fresh = HoursAgo(1);
         var quotes = """
             { "status": { "code": 200 }, "results": [
               { "symbol": "ZCPZ27-990202-6916.CM", "lastPrice": "4.41",
@@ -907,15 +935,16 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         Assert.Equal(BidSources.Barchart, cell.Source);
     }
 
-    // A manual cell is off limits to both prices, not just the cash one -- otherwise the feed could
-    // half-write a row a user owns.
+    // A basis-only winner is held to the same rule as cash: this quote is an hour older than the edit,
+    // so it neither attaches its basis nor takes the cell. The feed cannot half-write a row a user
+    // owns, and cannot take it with a post older than the user's.
     [Fact]
     public async Task ApplyBids_DoesNotAttachBasisToAManualBid()
     {
         if (!Enabled) return;
 
         await _sut.LoadInstrumentsAsync(InstrumentsJson);
-        var fresh = DateTime.UtcNow.AddHours(-1).ToString("yyyy-MM-ddTHH:mm:sszzz");
+        var fresh = HoursAgo(1);
         await _sut.LoadQuotesAsync("""
             { "status": { "code": 200 }, "results": [
               { "symbol": "ZCBZ27-990202-6916.CM", "lastPrice": "-30",
@@ -953,6 +982,228 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         Assert.Null(cell.BasisBid);
         Assert.Equal(BidSources.Manual, cell.Source);
     }
+    // ── newest wins ──────────────────────────────────────────────────────────────────────────────
+    // BarChart keeps serving the LAST price for a period an elevator stopped posting (Goodland's
+    // October corn sat frozen for two weeks while December moved nightly, 2026-10), so a user who
+    // corrects a frozen cell must not lose the correction to the same frozen price the next morning.
+    // The feed takes a hand-typed cell back only with a quote that is both current (inside
+    // staleAfterDays) and stamped after the edit. The tests seed the contract-month catalog, whose
+    // December quote is a day old, and a hand-typed December cell at a chosen edit time.
+
+    private async Task SeedManualDecemberAsync(
+        int locationId, DateTime createdAt, DateTime? modifiedAt = null, string commodityCode = "IT_FLEX")
+    {
+        _context.BidSheetLocationBids.Add(new BidSheetLocationBid
+        {
+            LocationId = locationId,
+            CommodityCode = commodityCode,
+            CropYear = 2027,
+            Month = 12,
+            Bid = "9.99",
+            Source = BidSources.Manual,
+            CreatedBy = "integration-test",
+            CreatedAt = createdAt,
+            ModifiedBy = modifiedAt is null ? null : "integration-test",
+            ModifiedAt = modifiedAt
+        });
+        await _context.SaveChangesAsync();
+    }
+
+    /// <summary>Re-quotes the contract-month fixture's December cash at a chosen stamp.</summary>
+    private static string DecemberQuote(string price, string stamp) => $$"""
+        { "status": { "code": 200 }, "results": [
+          { "symbol": "ZCPZ27-990001-990010.CM", "lastPrice": "{{price}}",
+            "tradeTimestamp": "{{stamp}}", "mode": "i", "unitCode": "4", "code": 200 }
+        ] }
+        """;
+
+    [Fact]
+    public async Task ApplyBids_LeavesAManualCellTypedAfterTheFeedsLastPost()
+    {
+        if (!Enabled) return;
+
+        var location = await SeedContractMonthCatalogAsync();          // quote: a day ago
+        await SeedManualDecemberAsync(location.Id, createdAt: DateTime.UtcNow);
+
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+
+        var cell = await December(location.Id);
+        Assert.Equal("9.99", cell.Bid);
+        Assert.Equal(BidSources.Manual, cell.Source);
+    }
+
+    // Newer than the edit is not enough on its own: a quote the elevator has not touched for a month
+    // is the frozen price this rule exists to keep off the sheet.
+    [Fact]
+    public async Task ApplyBids_NeverTakesAManualCellWithAStaleQuote()
+    {
+        if (!Enabled) return;
+
+        var location = await SeedContractMonthCatalogAsync();
+        await _sut.LoadQuotesAsync(DecemberQuote("4.47", DaysAgo(30)), BusinessDate.AddDays(1));
+        await SeedManualDecemberAsync(location.Id, createdAt: DateTime.UtcNow.AddDays(-60));
+
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+
+        var cell = await December(location.Id);
+        Assert.Equal("9.99", cell.Bid);
+        Assert.Equal(BidSources.Manual, cell.Source);
+    }
+
+    // The edit time is the LAST edit: a cell created months ago but corrected today was corrected today.
+    [Fact]
+    public async Task ApplyBids_UsesModifiedAtOverCreatedAtForTheEditTime()
+    {
+        if (!Enabled) return;
+
+        var location = await SeedContractMonthCatalogAsync();          // quote: a day ago
+        await SeedManualDecemberAsync(location.Id, createdAt: DateTime.UtcNow.AddDays(-30), modifiedAt: DateTime.UtcNow);
+
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+
+        Assert.Equal(BidSources.Manual, (await December(location.Id)).Source);
+    }
+
+    // A quote with no stamp can prove neither currency nor order, so it never displaces a person --
+    // though it still publishes to a cell the feed already owns (untimestamped quotes are let through
+    // on purpose).
+    [Fact]
+    public async Task ApplyBids_NeverTakesAManualCellWithAnUntimestampedQuote()
+    {
+        if (!Enabled) return;
+
+        var location = await SeedContractMonthCatalogAsync();
+        await _sut.LoadQuotesAsync("""
+            { "status": { "code": 200 }, "results": [
+              { "symbol": "ZCPZ27-990001-990010.CM", "lastPrice": "4.47", "mode": "i", "unitCode": "4", "code": 200 }
+            ] }
+            """, BusinessDate.AddDays(1));
+        await SeedManualDecemberAsync(location.Id, createdAt: DateTime.UtcNow.AddDays(-60));
+
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+
+        Assert.Equal(BidSources.Manual, (await December(location.Id)).Source);
+    }
+
+    // Staleness is a trust rule, not a publish rule: a cell the feed already owns keeps refreshing from
+    // a quote past the stale window, so the sheet can show the date the elevator went quiet.
+    [Fact]
+    public async Task ApplyBids_StillRefreshesAFedCellFromAStaleQuote()
+    {
+        if (!Enabled) return;
+
+        var location = await SeedContractMonthCatalogAsync();
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+        await _sut.LoadQuotesAsync(DecemberQuote("4.52", DaysAgo(30)), BusinessDate.AddDays(1));
+
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+
+        var cell = await December(location.Id);
+        Assert.Equal("4.52", cell.Bid);
+        Assert.Equal(BidSources.Barchart, cell.Source);
+        Assert.InRange(cell.QuoteAsOf!.Value, DateTime.UtcNow.AddDays(-30).AddMinutes(-5), DateTime.UtcNow.AddDays(-30).AddMinutes(5));
+    }
+
+    // The two windows side by side: inside the 90-day publish window a frozen cell is kept, with the
+    // stamp the sheet prints under the blank; past it the cell is pruned like any row without a winner.
+    [Fact]
+    public async Task ApplyBids_KeepsAStaleFedCellInsideThePublishWindowAndPrunesItPastIt()
+    {
+        if (!Enabled) return;
+
+        var location = await SeedContractMonthCatalogAsync();
+        await _sut.LoadQuotesAsync(DecemberQuote("4.47", DaysAgo(30)), BusinessDate.AddDays(1));
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+        Assert.Equal(BidSources.Barchart, (await December(location.Id)).Source);
+
+        await _sut.LoadQuotesAsync(DecemberQuote("4.47", DaysAgo(100)), BusinessDate.AddDays(2));
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+
+        Assert.False(await _context.BidSheetLocationBids.AsNoTracking()
+            .AnyAsync(b => b.LocationId == location.Id && b.CommodityCode == "IT_FLEX" && b.Month == 12));
+    }
+
+    // The window is the environment's (Barchart:StaleAfterDays), threaded in by every caller.
+    [Fact]
+    public async Task ApplyBids_TakeoverHonoursThePassedStaleWindow()
+    {
+        if (!Enabled) return;
+
+        var location = await SeedContractMonthCatalogAsync();
+        await _sut.LoadQuotesAsync(DecemberQuote("4.47", DaysAgo(20)), BusinessDate.AddDays(1));
+        await SeedManualDecemberAsync(location.Id, createdAt: DateTime.UtcNow.AddDays(-25));
+
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed");
+        Assert.Equal(BidSources.Manual, (await December(location.Id)).Source);   // 20 days is past the default 10
+
+        await _sut.ApplyBidsToBidSheetAsync(location.Id, "bidCash", "barchart-feed", staleAfterDays: 30);
+        var cell = await December(location.Id);
+        Assert.Equal("4.47", cell.Bid);
+        Assert.Equal(BidSources.Barchart, cell.Source);
+    }
+
+    /// <summary>The Sioux fixture (990202) quoted on cash and basis, each at its own stamp, mapped to IT_CORN.</summary>
+    private async Task<BidSheetLocation> SeedSiouxCashAndBasisAsync(string cashStamp, string basisStamp)
+    {
+        await _sut.LoadInstrumentsAsync(InstrumentsJson);
+        await _sut.LoadQuotesAsync($$"""
+            { "status": { "code": 200 }, "results": [
+              { "symbol": "ZCPZ27-990202-6916.CM", "lastPrice": "4.41",
+                "tradeTimestamp": "{{cashStamp}}", "mode": "i", "unitCode": "4", "code": 200 },
+              { "symbol": "ZCBZ27-990202-6916.CM", "lastPrice": "-30",
+                "tradeTimestamp": "{{basisStamp}}", "mode": "i", "unitCode": "4", "code": 200 }
+            ] }
+            """, BusinessDate);
+        _context.BarchartCommodityMaps.Add(new BarchartCommodityMap
+        {
+            BarchartCommodity = "Corn (IT Standard)",
+            CommodityCode = "IT_CORN",
+            CreatedBy = "integration-test"
+        });
+        var loc = NewLinkedLocation("__IT Sioux Newest Wins", "990202");
+        _context.BidSheetLocations.Add(loc);
+        await _context.SaveChangesAsync();
+        return loc;
+    }
+
+    private Task<BidSheetLocationBid> SiouxDecember(int locationId) =>
+        _context.BidSheetLocationBids.AsNoTracking().SingleAsync(b => b.LocationId == locationId && b.Month > 0);
+
+    // A takeover rewrites cash and basis together, so the feed's word on the cell is the OLDER of the two
+    // stamps: a live basis must not carry a frozen cash price back over a number somebody typed.
+    [Fact]
+    public async Task ApplyBids_LeavesAManualCellWhenOnlyOneSideOfTheFeedIsFresh()
+    {
+        if (!Enabled) return;
+
+        var loc = await SeedSiouxCashAndBasisAsync(cashStamp: DaysAgo(20), basisStamp: HoursAgo(1));
+        await SeedManualDecemberAsync(loc.Id, createdAt: DateTime.UtcNow.AddDays(-1), commodityCode: "IT_CORN");
+
+        await _sut.ApplyBidsToBidSheetAsync(loc.Id, "bidCash", "barchart-feed");
+
+        var cell = await SiouxDecember(loc.Id);
+        Assert.Equal("9.99", cell.Bid);
+        Assert.Null(cell.BasisBid);
+        Assert.Equal(BidSources.Manual, cell.Source);
+    }
+
+    // The positive case, so the rule above cannot pass by never taking anything over.
+    [Fact]
+    public async Task ApplyBids_TakesOverAManualCellWhenBothSidesAreCurrentAndNewerThanTheEdit()
+    {
+        if (!Enabled) return;
+
+        var loc = await SeedSiouxCashAndBasisAsync(cashStamp: HoursAgo(2), basisStamp: HoursAgo(1));
+        await SeedManualDecemberAsync(loc.Id, createdAt: DateTime.UtcNow.AddDays(-1), commodityCode: "IT_CORN");
+
+        await _sut.ApplyBidsToBidSheetAsync(loc.Id, "bidCash", "barchart-feed");
+
+        var cell = await SiouxDecember(loc.Id);
+        Assert.Equal("4.41", cell.Bid);
+        Assert.Equal("-30", cell.BasisBid);
+        Assert.Equal(BidSources.Barchart, cell.Source);
+    }
+
     // The contract a bid is quoted against is what makes two bids comparable, and it is NOT always the
     // delivery month: Kansas City wheat delivering in January trades against the March board. The Year
     // cell names it, so it has to reach the cell -- and reach the Year row, which is a month standing
@@ -985,7 +1236,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
     private const string ShortYearQuotesJson = """
         { "status": { "code": 200 }, "results": [
           { "symbol": "ZCPZ27-990003-990030.CM", "lastPrice": "4.61",
-            "tradeTimestamp": "2026-07-22T12:12:36-05:00", "mode": "i", "unitCode": "4", "code": 200 }
+            "tradeTimestamp": "STAMP_1D", "mode": "i", "unitCode": "4", "code": 200 }
         ] }
         """;
 
@@ -1003,7 +1254,7 @@ public class BarchartIngestRepositoryIntegrationTests : IAsyncLifetime
         if (!Enabled) return;
 
         await _sut.LoadInstrumentsAsync(ShortYearInstrumentsJson);
-        await _sut.LoadQuotesAsync(ShortYearQuotesJson, BusinessDate);
+        await _sut.LoadQuotesAsync(Dated(ShortYearQuotesJson), BusinessDate);
         _context.BarchartCommodityMaps.Add(new BarchartCommodityMap
         {
             BarchartCommodity = "Corn (IT Short)",

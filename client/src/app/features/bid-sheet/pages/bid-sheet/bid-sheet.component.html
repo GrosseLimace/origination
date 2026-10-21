@@ -272,11 +272,13 @@
                           <tr class="border-t border-gray-100 dark:border-gray-800">
                             <td class="py-1 text-gray-700 dark:text-gray-300">{{ row.crop }}</td>
                             <td class="py-1 text-right text-gray-500 dark:text-gray-400">{{ formatMonthYear(row.month, row.cropYear) }}</td>
+                            <!-- A price the elevator has let go quiet is "--" with its date beside it, and the
+                                 tooltip says when; a live one says when it was updated. Same rule as the sheet. -->
                             @if (priceMode() === 'both') {
-                              <td class="py-1 text-right font-medium text-gray-900 dark:text-white">{{ row.cash != null ? row.cash : '--' }}</td>
-                              <td class="py-1 text-right font-medium text-gray-900 dark:text-white">{{ basisCellText(row.basis) }}</td>
+                              <td class="py-1 text-right font-medium text-gray-900 dark:text-white" [title]="row.cashTitle">{{ row.cash != null ? row.cash : '--' }}@if (row.cashStaleDate) {<span class="ml-1 text-[10px] font-normal text-gray-400 dark:text-gray-500">{{ row.cashStaleDate }}</span>}</td>
+                              <td class="py-1 text-right font-medium text-gray-900 dark:text-white" [title]="row.basisTitle">{{ basisCellText(row.basis) }}@if (row.basisStaleDate) {<span class="ml-1 text-[10px] font-normal text-gray-400 dark:text-gray-500">{{ row.basisStaleDate }}</span>}</td>
                             } @else {
-                              <td class="py-1 text-right font-medium text-gray-900 dark:text-white">{{ priceMode() === 'basis' ? basisCellText(row.basis) : (row.cash ?? '--') }}</td>
+                              <td class="py-1 text-right font-medium text-gray-900 dark:text-white" [title]="priceMode() === 'basis' ? row.basisTitle : row.cashTitle">{{ priceMode() === 'basis' ? basisCellText(row.basis) : (row.cash ?? '--') }}@if (priceMode() === 'basis' ? row.basisStaleDate : row.cashStaleDate) {<span class="ml-1 text-[10px] font-normal text-gray-400 dark:text-gray-500">{{ priceMode() === 'basis' ? row.basisStaleDate : row.cashStaleDate }}</span>}</td>
                             }
                           </tr>
                         }
@@ -412,10 +414,10 @@
                           <span>{{ row.crop }}</span>
                           @if (barchartEnabled && row.isFed) {
                             <span class="px-1 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green"
-                                  [title]="row.fedAsOf ? 'From BarChart — updated ' + formatAsOf(row.fedAsOf) : 'From BarChart'">Feed</span>
+                                  [title]="row.fedTitle || 'From BarChart'">Feed</span>
                           } @else if (barchartEnabled && (row.oldBidLabel || row.newBidLabel || row.oldBid || row.newBid)) {
                             <span class="px-1 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide bg-scoular-blue/10 text-scoular-blue-medium dark:bg-scoular-blue/20 dark:text-scoular-blue"
-                                  title="Typed by hand — yours to edit, and the feed never touches it.">Manual</span>
+                                  title="Typed by hand — the feed only takes it back with a newer, current quote.">Manual</span>
                           }
                         </div>
                       </td>
@@ -424,13 +426,13 @@
                         'text-scoular-yellow dark:text-scoular-yellow': row.oldStatus === 'matching',
                         'text-scoular-red-accessible dark:text-scoular-red': row.oldStatus === 'beating',
                         'text-gray-900 dark:text-white': row.oldStatus === 'none'
-                      }">{{ row.oldBidLabel || row.oldBid || '--' }}@if (row.oldBidContract) {<span class="ml-1 text-[12px] font-normal text-gray-500 dark:text-gray-400">{{ row.oldBidContract }}</span>}</td>
+                      }" [title]="row.oldTitle">{{ row.oldBidLabel || row.oldBid || '--' }}@if (row.oldBidContract) {<span class="ml-1 text-[12px] font-normal text-gray-500 dark:text-gray-400">{{ row.oldBidContract }}</span>}@if (row.oldStaleDate) {<span class="ml-1 text-[11px] font-normal text-gray-400 dark:text-gray-500">{{ row.oldStaleDate }}</span>}</td>
                       <td class="px-1 py-3 text-[length:var(--text-fluid-sm)] font-mono font-semibold text-center whitespace-nowrap" [ngClass]="{
                         'text-scoular-blue-medium dark:text-scoular-blue': row.newStatus === 'reference',
                         'text-scoular-yellow dark:text-scoular-yellow': row.newStatus === 'matching',
                         'text-scoular-red-accessible dark:text-scoular-red': row.newStatus === 'beating',
                         'text-gray-900 dark:text-white': row.newStatus === 'none'
-                      }">{{ row.newBidLabel || row.newBid || '--' }}@if (row.newBidContract) {<span class="ml-1 text-[12px] font-normal text-gray-500 dark:text-gray-400">{{ row.newBidContract }}</span>}</td>
+                      }" [title]="row.newTitle">{{ row.newBidLabel || row.newBid || '--' }}@if (row.newBidContract) {<span class="ml-1 text-[12px] font-normal text-gray-500 dark:text-gray-400">{{ row.newBidContract }}</span>}@if (row.newStaleDate) {<span class="ml-1 text-[11px] font-normal text-gray-400 dark:text-gray-500">{{ row.newStaleDate }}</span>}</td>
                       @if (deleteMode() && !panelSelectedBarchartKey()) {
                       <td class="px-1 py-3 text-center">
                         @if (row.isFed) {
@@ -705,14 +707,14 @@
                         'text-scoular-red-accessible dark:text-scoular-red': item.oldStatus === 'beating',
                         'text-gray-900 dark:text-white': item.oldStatus === 'none'
                       }"
-                        [title]="item.oldCoveredBy ? item.oldCoveredBy + ' contract: its delivery window covers this month' : ''">{{ item.oldBidLabel || item.oldBid || '--' }}@if (item.oldBidContract) {<span class="ml-1 text-[12px] font-normal text-gray-500 dark:text-gray-400">{{ item.oldBidContract }}</span>}</td>
+                        [title]="item.oldTitle ?? ''">{{ item.oldBidLabel || item.oldBid || '--' }}@if (item.oldBidContract) {<span class="ml-1 text-[12px] font-normal text-gray-500 dark:text-gray-400">{{ item.oldBidContract }}</span>}@if (item.oldStaleDate) {<span class="ml-1 text-[11px] font-normal text-gray-400 dark:text-gray-500">{{ item.oldStaleDate }}</span>}</td>
                       <td class="px-1 py-3 text-[length:var(--text-fluid-sm)] font-mono font-semibold text-center whitespace-nowrap" [ngClass]="{
                         'text-scoular-blue-medium dark:text-scoular-blue': item.newStatus === 'reference',
                         'text-scoular-yellow dark:text-scoular-yellow': item.newStatus === 'matching',
                         'text-scoular-red-accessible dark:text-scoular-red': item.newStatus === 'beating',
                         'text-gray-900 dark:text-white': item.newStatus === 'none'
                       }"
-                        [title]="item.newCoveredBy ? item.newCoveredBy + ' contract: its delivery window covers this month' : ''">{{ item.newBidLabel || item.newBid || '--' }}@if (item.newBidContract) {<span class="ml-1 text-[12px] font-normal text-gray-500 dark:text-gray-400">{{ item.newBidContract }}</span>}</td>
+                        [title]="item.newTitle ?? ''">{{ item.newBidLabel || item.newBid || '--' }}@if (item.newBidContract) {<span class="ml-1 text-[12px] font-normal text-gray-500 dark:text-gray-400">{{ item.newBidContract }}</span>}@if (item.newStaleDate) {<span class="ml-1 text-[11px] font-normal text-gray-400 dark:text-gray-500">{{ item.newStaleDate }}</span>}</td>
                     </tr>
                   }
                 </tbody>
@@ -1682,8 +1684,8 @@
                               (keydown)="onBidKeyDown($event, rowIdx, colIdx)"
                               (blur)="onBidBlur()"
                               [readonly]="cellReadOnly()"
-                              placeholder="—"
-                              [title]="row.coverageChips[col.key] ? row.coverageChips[col.key] + ' contract: its delivery window covers this month' : ''"
+                              [placeholder]="row.cellMeta[col.key]?.cashStaleDate ? '' : '—'"
+                              [title]="row.cellMeta[col.key]?.cashTitle ?? ''"
                               class="w-full font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
                               [ngClass]="cellReadOnly()
                                 ? 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60 text-gray-700 dark:text-gray-300 cursor-default focus:ring-0'
@@ -1691,6 +1693,12 @@
                                   ? 'border-scoular-green-accessible bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 text-gray-900 dark:text-white'
                                   : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300')"
                             />
+                            <!-- The elevator has let this bid go quiet: the cell is EMPTY (so an untouched row
+                                 never saves) and says when, in grey, until something is typed over it. Hides
+                                 while the cell is being edited, like the board symbol below. -->
+                            @if (!row.bids[col.key] && row.cellMeta[col.key]?.cashStaleDate) {
+                              <span class="absolute inset-0 flex items-center justify-center pointer-events-none font-mono text-[11px] text-gray-400 dark:text-gray-500 group-focus-within:opacity-0 transition-opacity">— {{ row.cellMeta[col.key].cashStaleDate }}</span>
+                            }
                             <!-- Only while the fed value is present and untouched: the symbol describes
                                  the FED bid, and the moment the user types their own number it would be
                                  mislabelling a manual bid. font-mono makes every character 1ch wide, so
@@ -1722,8 +1730,8 @@
                                 (keydown)="onBidKeyDown($event, rowIdx, colIdx)"
                                 (blur)="onBidBlur()"
                                 [readonly]="cellReadOnly()"
-                                placeholder="—"
-                                [title]="row.coverageChips[col.key] ? row.coverageChips[col.key] + ' contract: its delivery window covers this month' : ''"
+                                [placeholder]="row.cellMeta[col.key]?.basisStaleDate ? '' : '—'"
+                                [title]="row.cellMeta[col.key]?.basisTitle ?? ''"
                                 class="w-full font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
                                 [ngClass]="cellReadOnly()
                                   ? 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60 text-gray-700 dark:text-gray-300 cursor-default focus:ring-0'
@@ -1731,6 +1739,10 @@
                                     ? 'border-scoular-green-accessible bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 text-gray-900 dark:text-white'
                                     : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300')"
                               />
+                              <!-- Same as the cash side: a basis the elevator has let go quiet is empty, dated in grey. -->
+                              @if (!row.basisBids[col.key] && row.cellMeta[col.key]?.basisStaleDate) {
+                                <span class="absolute inset-0 flex items-center justify-center pointer-events-none font-mono text-[11px] text-gray-400 dark:text-gray-500 group-focus-within:opacity-0 transition-opacity">— {{ row.cellMeta[col.key].basisStaleDate }}</span>
+                              }
                               <!-- Same guards as the cash side: fed value present and untouched. -->
                               @if (basisSymbol) {
                                 <span class="absolute top-1/2 -translate-y-1/2 pointer-events-none font-mono text-sm text-gray-500 dark:text-gray-400 group-focus-within:opacity-0 transition-opacity"

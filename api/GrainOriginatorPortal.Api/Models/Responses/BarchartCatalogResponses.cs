@@ -52,6 +52,12 @@ public record BarchartCatalogLocationResponse
     /// delivery month can be on different exchanges, so the number alone isn't a like-for-like compare.
     /// </summary>
     public string? MatchedBidBoard { get; init; }
+
+    /// <summary>
+    /// When the elevator last updated MatchedBidPrice, UTC. Null whenever MatchedBidPrice is. The map
+    /// hides a price older than the coverage response's StaleAfterDays behind "--" and prints this date.
+    /// </summary>
+    public DateTime? MatchedBidAsOf { get; init; }
 }
 
 /// <summary>Where a catalog listing already sits on the Bid Sheet.</summary>
@@ -116,6 +122,19 @@ public record BarchartCoverageResponse
     public DateTime? LastRefreshedUtc { get; init; }
     /// <summary>When prices were last loaded from the vendor; shown on the Bid Sheet as "BarChart bids updated ...".</summary>
     public DateTime? PricesRefreshedUtc { get; init; }
+
+    /// <summary>
+    /// Days after the elevator's last update before a fed bid stops being shown as a number: past this
+    /// the Bid Sheet prints "--" with the date, and a user may type over it without the feed taking it
+    /// back until the elevator posts something newer. Configuration (Barchart:StaleAfterDays), not data.
+    /// </summary>
+    public int StaleAfterDays { get; init; }
+
+    /// <summary>
+    /// Whether the Bid Sheet hides a fed bid older than StaleAfterDays behind "--" and its date. Off
+    /// everywhere for now: the number shows and the hover says when it was last updated.
+    /// </summary>
+    public bool HideStaleBids { get; init; }
     public List<BarchartStateCoverageResponse> States { get; init; } = [];
 }
 

@@ -7,7 +7,7 @@ public static class BidSources
 {
     /// <summary>
     /// Entered by a user. Includes a cell they typed over a fed one: the override takes ownership, and
-    /// the feed reclaims it on its next run if it still publishes that cell.
+    /// the feed reclaims it only with a quote that is both current and newer than the edit (newest wins).
     /// </summary>
     public const string Manual = "Manual";
 

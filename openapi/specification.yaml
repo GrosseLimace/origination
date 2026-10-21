@@ -152,7 +152,7 @@ paths:
         Copies current feed prices onto the Bid Sheet for every location an originator has linked to
         the feed. Call this once after the quote batches for a run are loaded.
 
-        Manually entered bids are never modified, and the call is deterministic — running it twice
+        A manually entered bid is replaced only by a quote that is both current (Barchart:StaleAfterDays) and newer than the edit; the call is deterministic — running it twice
         changes nothing.
 
         Safe to schedule in every environment. Where publishing is switched off (an environment loading

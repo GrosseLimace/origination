@@ -49,6 +49,20 @@ public static class BarchartFeedDefaults
     public const int MaxQuoteAgeDays = 90;
 
     /// <summary>
+    /// How long a bid may go untouched by the elevator before the sheet stops showing its number. Past
+    /// this the UI prints "--" with the elevator's last-update date instead, and the feed may no longer
+    /// take back a cell a user has typed over (see <c>ApplyBidsToBidSheetAsync</c>: newest wins).
+    ///
+    /// Distinct from <see cref="MaxQuoteAgeDays"/> on purpose. That is the PUBLISH window -- what the
+    /// bridge writes and keeps -- and it stays generous so a frozen cell survives with its date intact;
+    /// this is the TRUST window, and it is tight because BarChart keeps serving the last price for a
+    /// delivery period an elevator has stopped posting (Goodland's October corn sat frozen for two weeks
+    /// while its December moved nightly, 2026-10). Configurable per environment as
+    /// <c>Barchart:StaleAfterDays</c>; the client reads the effective value from the coverage endpoint.
+    /// </summary>
+    public const int StaleAfterDays = 10;
+
+    /// <summary>
     /// Lowest price treated as a real bid. The vendor uses tiny values (observed: 0.0025) as a
     /// no-bid placeholder on some elevators, for corn and soybeans alike.
     /// </summary>

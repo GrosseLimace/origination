@@ -19,6 +19,7 @@ public class BarchartIngestService : IBarchartIngestService
 {
     private readonly IBarchartIngestRepository _repository;
     private readonly IConfiguration _config;
+    private readonly IBarchartFeedSettings _feedSettings;
     private readonly ILogger<BarchartIngestService> _logger;
 
     /// <summary>
@@ -47,10 +48,12 @@ public class BarchartIngestService : IBarchartIngestService
     public const int DefaultMaxDeactivationSharePercent = 25;
 
     public BarchartIngestService(
-        IBarchartIngestRepository repository, IConfiguration config, ILogger<BarchartIngestService> logger)
+        IBarchartIngestRepository repository, IConfiguration config, IBarchartFeedSettings feedSettings,
+        ILogger<BarchartIngestService> logger)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _config = config ?? throw new ArgumentNullException(nameof(config));
+        _feedSettings = feedSettings ?? throw new ArgumentNullException(nameof(feedSettings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -188,7 +191,8 @@ public class BarchartIngestService : IBarchartIngestService
         try
         {
             var rows = await _repository.ApplyBidsToBidSheetAsync(
-                locationId, instrumentType, FeedActor, cancellationToken: cancellationToken);
+                locationId, instrumentType, FeedActor,
+                staleAfterDays: _feedSettings.StaleAfterDays, cancellationToken: cancellationToken);
             sw.Stop();
 
             _logger.LogInformation(

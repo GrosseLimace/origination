@@ -3176,3 +3176,289 @@ describe('BidSheetComponent — owner actions act on the sheet they were raised 
     expect(component.sheetActionTarget()?.name).toBe('Kansas');
   });
 });
+
+/**
+ * A bid the elevator stopped updating. BarChart keeps serving an elevator's LAST price for a period it
+ * has gone quiet on (Goodland's October corn sat frozen for two weeks while December moved nightly),
+ * so past a threshold the sheet withholds the number and shows the date instead -- on the pin, in the
+ * panel, in the grid, and on a catalog pin alike -- and a user may type over it.
+ */
+describe('BidSheetComponent — a bid the elevator stopped updating', () => {
+  let component: BidSheetComponent;
+
+  const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString();
+  // A period that is still open whenever this suite runs, so staleness is judged against today.
+  const YEAR = new Date().getFullYear() + 1;
+  const MONTH = 12;
+
+  beforeEach(() => {
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+    // The rule only applies while the feed is on; the environment under test may have it off.
+    (component as unknown as { barchartEnabled: boolean }).barchartEnabled = true;
+    // The "--" treatment is a per-environment switch, off by default; these specs pin what it does when on.
+    component.barchartHideStaleBids.set(true);
+    component.selectedYear.set(YEAR);
+    component.selectedMonth.set(MONTH);
+    component.selectedCrop.set('YC');
+  });
+
+  function seed(...locs: BidSheetLocation[]): void {
+    component.allMapLocations.set(locs);
+    component.sheets.set([{
+      id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
+      createdBy: 'test', createdAt: '2026-08-01T00:00:00Z', shares: [], locations: locs,
+    } as BidSheet]);
+    component.selectedSheetIds.set([1]);
+  }
+
+  /** A fed cell for the open period, updated by the elevator yesterday unless told otherwise. */
+  function fed(overrides: Partial<BidSheetLocationBid> = {}): BidSheetLocationBid {
+    return bid({ cropYear: YEAR, month: MONTH, source: 'Barchart', quoteAsOf: daysAgo(1), basisBid: '-30', basisQuoteAsOf: daysAgo(1), ...overrides });
+  }
+
+  const priv = () => component as unknown as {
+    _getLatestBid(l: number, y: number | null, c: string, m: number): string;
+    _hasCell(l: number, y: number | null, c: string, m: number): boolean;
+    _cellMetaFor(l: number, y: number | null, c: string, m: number): { kind: string; stale: boolean; title: string; staleDate: string };
+    _computeItemStatus(b: string, r: boolean, ref: number | null): string;
+    _referenceBid(y: number | null, c: string, m: number): number | null;
+    _getDisplayBid(l: number, y: number | null, c: string, m: number, inc?: boolean): string;
+  };
+
+  it('withholds a fed number the elevator has not updated in ten days, but still counts the cell as present', () => {
+    seed(location('Goodland', [fed({ quoteAsOf: daysAgo(11) })]));
+
+    expect(priv()._getLatestBid(1, YEAR, 'YC', MONTH)).toBe('');
+    expect(priv()._hasCell(1, YEAR, 'YC', MONTH)).toBe(true);
+    const meta = priv()._cellMetaFor(1, YEAR, 'YC', MONTH);
+    expect(meta.stale).toBe(true);
+    expect(meta.staleDate).toBe(component.formatAsOf(daysAgo(11)));
+    expect(meta.title).toBe(`Not updated since ${component.formatAsOf(daysAgo(11))}`);
+  });
+
+  it('shows one updated nine days ago, and names the when on hover', () => {
+    seed(location('Goodland', [fed({ quoteAsOf: daysAgo(9) })]));
+
+    expect(priv()._getLatestBid(1, YEAR, 'YC', MONTH)).toBe('4.98');
+    expect(priv()._cellMetaFor(1, YEAR, 'YC', MONTH)).toEqual({
+      kind: 'feed', stale: false, title: `Updated ${component.formatAsOf(daysAgo(9))}`, staleDate: '',
+    });
+  });
+
+  // The default everywhere today (user, 2026-10-21): the number always shows, and the hover still says
+  // when it was last updated -- without the "not updated since" judgment.
+  it('with the switch off, shows a fed number however old it is and dates it plainly on hover', () => {
+    component.barchartHideStaleBids.set(false);
+    seed(location('Goodland', [fed({ quoteAsOf: daysAgo(40) })]));
+
+    expect(priv()._getLatestBid(1, YEAR, 'YC', MONTH)).toBe('4.98');
+    expect(priv()._cellMetaFor(1, YEAR, 'YC', MONTH)).toEqual({
+      kind: 'feed', stale: false, title: `Updated ${component.formatAsOf(daysAgo(40))}`, staleDate: '',
+    });
+  });
+
+  it('judges by the threshold the server sent, not a fixed ten days', () => {
+    seed(location('Goodland', [fed({ quoteAsOf: daysAgo(20) })]));
+    expect(priv()._getLatestBid(1, YEAR, 'YC', MONTH)).toBe('');
+
+    component.barchartStaleAfterDays.set(30);
+    expect(priv()._getLatestBid(1, YEAR, 'YC', MONTH)).toBe('4.98');
+  });
+
+  it('dates a hand-typed cell by the edit and ignores the vendor stamp the row may still carry', () => {
+    seed(location('Goodland', [fed({ source: 'Manual', bid: '4.10', quoteAsOf: daysAgo(60), modifiedAt: daysAgo(0), createdAt: daysAgo(40) })]));
+
+    expect(priv()._getLatestBid(1, YEAR, 'YC', MONTH)).toBe('4.10');
+    const meta = priv()._cellMetaFor(1, YEAR, 'YC', MONTH);
+    expect(meta.kind).toBe('manual');
+    expect(meta.stale).toBe(false);
+    expect(meta.title).toBe(`Updated ${component.formatAsOf(daysAgo(0))}`);
+  });
+
+  it('colours nothing by a frozen bid: it is no bid for status, and no reference for others', () => {
+    seed(
+      location('Frozen', [fed({ locationId: 1, quoteAsOf: daysAgo(11) })]),
+      location('Live', [fed({ id: 2, locationId: 2, bid: '4.50' })]),
+    );
+
+    expect(priv()._computeItemStatus(priv()._getLatestBid(1, YEAR, 'YC', MONTH), false, 4.5)).toBe('none');
+    component.selectedLocationId.set(1);
+    expect(priv()._referenceBid(YEAR, 'YC', MONTH)).toBeNull();
+    component.selectedLocationId.set(2);
+    expect(priv()._referenceBid(YEAR, 'YC', MONTH)).toBe(4.5);
+  });
+
+  it('prints a quiet side as a blank beside the live one in Both mode, and nothing when both are quiet', () => {
+    component.priceMode.set('both');
+    seed(
+      location('Basis quiet', [fed({ locationId: 1, basisQuoteAsOf: daysAgo(11) })]),
+      location('Cash quiet', [fed({ id: 2, locationId: 2, quoteAsOf: daysAgo(11) })]),
+      location('Both quiet', [fed({ id: 3, locationId: 3, quoteAsOf: daysAgo(11), basisQuoteAsOf: daysAgo(11) })]),
+    );
+
+    expect(priv()._getDisplayBid(1, YEAR, 'YC', MONTH, false)).toBe('4.98 / --');
+    expect(priv()._getDisplayBid(2, YEAR, 'YC', MONTH, false)).toBe('-- / -30');
+    expect(priv()._getDisplayBid(3, YEAR, 'YC', MONTH, false)).toBe('');
+  });
+});
+
+describe('BidSheetComponent — a quiet bid in the grid, on the hover card and on a catalog pin', () => {
+  let component: BidSheetComponent;
+
+  const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString();
+  const YEAR = new Date().getFullYear() + 1;
+  const MONTH = 12;
+
+  beforeEach(() => {
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+    (component as unknown as { barchartEnabled: boolean }).barchartEnabled = true;
+    // The "--" treatment is a per-environment switch, off by default; these specs pin what it does when on.
+    component.barchartHideStaleBids.set(true);
+    component.selectedYear.set(YEAR);
+    component.selectedMonth.set(MONTH);
+    component.selectedCrop.set('YC');
+  });
+
+  function seed(...locs: BidSheetLocation[]): void {
+    component.allMapLocations.set(locs);
+    component.sheets.set([{
+      id: 1, name: 'Test Sheet', ownerUserId: 'test', isOwner: true,
+      createdBy: 'test', createdAt: '2026-08-01T00:00:00Z', shares: [], locations: locs,
+    } as BidSheet]);
+    component.selectedSheetIds.set([1]);
+  }
+
+  function fed(overrides: Partial<BidSheetLocationBid> = {}): BidSheetLocationBid {
+    return bid({ cropYear: YEAR, month: MONTH, source: 'Barchart', quoteAsOf: daysAgo(1), ...overrides });
+  }
+
+  // The grid is where the override happens, so an untouched quiet cell must never save (it is EMPTY on
+  // both sides of the dirty comparison) while a typed one must.
+  it('empties a quiet fed cell in the grid without dirtying it, and keeps the date for the cell to show', () => {
+    seed(location('Goodland', [fed({ quoteAsOf: daysAgo(11) })]));
+    component.selectedColumns.set([{ crop: 'YC', year: YEAR, month: MONTH }]);
+    component.crops.set(['YC']);
+    const p = component as unknown as { _buildEditGrid(): void; _buildDirtyBids(): { bid: string }[] };
+    p._buildEditGrid();
+
+    const key = `YC#${YEAR}#${MONTH}`;
+    const row = component.editBidsRows()[0];
+    expect(row.bids[key]).toBe('');
+    expect(row.originalBids[key]).toBe('');
+    expect(row.cellMeta[key].cashStaleDate).toBe(component.formatAsOf(daysAgo(11)));
+    expect(row.cellMeta[key].cashTitle).toContain('Not updated since');
+    expect(p._buildDirtyBids()).toEqual([]);
+
+    component.editBidsRows.update(rows => [{ ...rows[0], bids: { ...rows[0].bids, [key]: '4.10' } }]);
+    expect(p._buildDirtyBids().map(d => d.bid)).toEqual(['4.10']);
+  });
+
+  it('adds a third line to the hover card saying when, and prints -- for a quiet bid', () => {
+    (component as unknown as { _L: unknown })._L = { divIcon: (o: { html: string }) => o };
+    const p = component as unknown as {
+      _buildHoverIcon(n: string, b: string, bg: string, br: string, s?: boolean, w?: string): { html: string };
+    };
+
+    const quiet = p._buildHoverIcon('Goodland', '--', '#6b7280', '#4b5563', false, 'Not updated since Oct 7');
+    expect(quiet.html).toContain('>--<');
+    expect(quiet.html).toContain('Not updated since Oct 7');
+
+    const live = p._buildHoverIcon('Goodland', '4.98', '#6b7280', '#4b5563', false, 'Updated Oct 20');
+    expect(live.html).toContain('Updated Oct 20');
+
+    const bare = p._buildHoverIcon('Goodland', '4.98', '#6b7280', '#4b5563');
+    expect(bare.html).not.toContain('Updated');
+  });
+
+  // A catalog pin sits on the same map as an added location's, so it reads by the same rule.
+  it('prints a catalog pin as -- when its matched price has gone quiet, with no board', () => {
+    const p = component as unknown as { _catalogPriceLabel(l: BarchartCatalogLocation, b?: boolean): string | null };
+    const loc = (o: Partial<BarchartCatalogLocation>): BarchartCatalogLocation =>
+      ({ locationKey: 'K', instrumentCount: 1, commodityCount: 1, placements: [], ...o });
+
+    expect(p._catalogPriceLabel(loc({ matchedBidPrice: 4.98, matchedBidBoard: 'ZCU26', matchedBidAsOf: daysAgo(11) }))).toBe('--');
+    expect(p._catalogPriceLabel(loc({ matchedBidPrice: 4.98, matchedBidBoard: 'ZCU26', matchedBidAsOf: daysAgo(1) }))).toBe('4.98 (ZCU26)');
+    // No stamp at all cannot be judged, and is shown.
+    expect(p._catalogPriceLabel(loc({ matchedBidPrice: 4.98 }))).toBe('4.98');
+
+    component.priceMode.set('both');
+    expect(p._catalogPriceLabel(loc({ matchedBidPrice: 4.98, matchedBidAsOf: daysAgo(1), matchedBasisPrice: -30, matchedBasisAsOf: daysAgo(11) }), false)).toBe('4.98 / --');
+
+    // Switch off: the same quiet listing prints its number, board and all.
+    component.barchartHideStaleBids.set(false);
+    component.priceMode.set('cash');
+    expect(p._catalogPriceLabel(loc({ matchedBidPrice: 4.98, matchedBidBoard: 'ZCU26', matchedBidAsOf: daysAgo(11) }))).toBe('4.98 (ZCU26)');
+  });
+});
+
+describe('BidSheetComponent — the stale window comes from the server', () => {
+  it('takes Barchart:StaleAfterDays and Barchart:HideStaleBids from the coverage response', () => {
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of({ locationCount: 1, states: [], staleAfterDays: 14, hideStaleBids: true }),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    const component = TestBed.createComponent(BidSheetComponent).componentInstance;
+
+    expect(component.barchartStaleAfterDays()).toBe(14);
+    expect(component.barchartHideStaleBids()).toBe(true);
+  });
+});

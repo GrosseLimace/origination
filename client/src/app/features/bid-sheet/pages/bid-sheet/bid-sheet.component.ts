@@ -28,6 +28,7 @@ import { barchartDisplayName, barchartSaveName, isScoularListing } from '../../u
 import { buildBidSheetExport, downloadWorkbook, writeBidSheetWorkbook, ExcelJSModule } from '../../utils/bid-sheet-export';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { formatBasis, normalizeBasis } from '../../utils/basis-format';
+import { asOfTitle, classifyBidSide, isOlderThanDays, periodEnd, BidCellView, BidSide } from '../../utils/bid-freshness';
 import {
   buildPrintLayout, cellStyleMap, DEFAULT_PRINT_LAYOUT_STYLE, parsePrintLayoutStyle, PRINT_GEOMETRY, renderPrintDocument, tableColWidthPcts,
   PrintCropGroup, PrintColumn, PrintLayoutModel, PrintLayoutStyle, PrintLocation
@@ -69,17 +70,53 @@ interface EditBidsRow {
   basisBids: Record<string, string>;
   originalBasisBids: Record<string, string>;
   /** Column key -> the covering contract's month ("Nov") on a cell that shows a LATER month's bid because
-   *  that bid's delivery window covers this month; '' on the elevator's own bid for the month. Fills the
-   *  cell's tooltip and nothing else: a covered month reads as an ordinary bid, because it is one. */
+   *  that bid's delivery window covers this month; '' on the elevator's own bid for the month. Not shown
+   *  anywhere today -- it used to be the cell's tooltip, which now says only when the bid was last
+   *  updated (user, 2026-10-21). Kept on the row for when it is wanted again; a covered month reads as
+   *  an ordinary bid, because it is one. */
   coverageChips: Record<string, string>;
   /** Column key -> the board this fed cell is quoted against; '' on manual cells. */
   boardChips: Record<string, string>;
+  /** Column key -> each side's hover text and, for a side the elevator has let go quiet, the date it
+   *  did. Fills the inputs' tooltips and the grey date in an emptied cell; see _buildEditGrid. */
+  cellMeta: Record<string, EditBidsCellMeta>;
   /** True when the whole location is linked to a BarChart listing. */
   isBarchartLinked: boolean;
 }
 
+interface EditBidsCellMeta {
+  cashTitle: string;
+  basisTitle: string;
+  cashStaleDate: string;
+  basisStaleDate: string;
+}
+
 /** Status for a bid value vs the session reference. */
 type BidStatus = 'reference' | 'beating' | 'matching' | 'none';
+
+/**
+ * What a cell says about its own age, across the side(s) the price toggle is showing: the hover text,
+ * and -- when the elevator has let a side go quiet -- the date it did, printed under the blank.
+ */
+interface BidCellMeta {
+  kind: 'feed' | 'manual' | 'none';
+  stale: boolean;
+  title: string;
+  staleDate: string;
+}
+
+/** One period in the catalog popup's price table: each side's price, or null plus the date it went quiet. */
+interface CatalogDetailRow {
+  crop: string;
+  cropYear: number;
+  month: number;
+  cash: number | null;
+  basis: number | null;
+  cashTitle: string;
+  basisTitle: string;
+  cashStaleDate: string;
+  basisStaleDate: string;
+}
 
 /** Row in the panel list view (`filteredBidItems`). */
 interface BidSheetPanelItem {
@@ -107,6 +144,12 @@ interface BidSheetPanelItem {
   /** "Nov" when the column's value is really the November contract's bid covering this month. */
   oldCoveredBy?: string;
   newCoveredBy?: string;
+  /** The cell's tooltip: coverage note and when the value was last updated. */
+  oldTitle?: string;
+  newTitle?: string;
+  /** The date a fed value went quiet, printed under the "--" that stands in for it. */
+  oldStaleDate?: string;
+  newStaleDate?: string;
 }
 
 /** Width threshold (px) below which the filter bar wraps the search/clear group to a centered second row. */
@@ -702,10 +745,12 @@ export class BidSheetComponent {
         // without re-deriving anything. Only Both mode reads these.
         cashBid: bid.bid,
         basisBid: bid.basisBid,
-        // The basis timestamp, always -- unlike quoteAsOf above, which is whichever side the toggle is
-        // showing. BidSheetEntry has declared this field all along but nothing populated it, so a
-        // consumer reading it silently got undefined. "Did this move today?" needs both sides: cash and
-        // basis are independent instruments, so a basis-only move must still flag while in Cash mode.
+        // Each side's own timestamp, always -- unlike quoteAsOf above, which is whichever side the
+        // toggle is showing. basisQuoteAsOf was declared on BidSheetEntry long before anything
+        // populated it, so a consumer reading it silently got undefined. "Did this move today?" and
+        // "has the elevator let this side go quiet?" both need the two apart: cash and basis are
+        // independent instruments, so one can move or freeze without the other.
+        cashQuoteAsOf: bid.quoteAsOf,
         basisQuoteAsOf: bid.basisQuoteAsOf,
         coveredByCropYear: bid.coveredByCropYear,
         coveredByMonth: bid.coveredByMonth,
@@ -841,11 +886,33 @@ export class BidSheetComponent {
   });
 
 
-  // A fed bid that had sat unchanged for a while used to render at half opacity. It is gone: every bid
-  // reads the same whether it is this morning's or August's. For a past month the month itself already
-  // says the price is history, so the mute only made a correct number look degraded; for a live month
-  // it was the one hint that an elevator had gone quiet, but opacity cannot say HOW quiet -- the as-of
-  // date is on every cell and would answer that properly if it is ever wanted on screen.
+  /**
+   * Days after the elevator's last update before a fed bid stops being shown as a number. Past this the
+   * cell prints "--" with the date the elevator went quiet, everywhere a fed number appears; a user may
+   * type over it, and the feed takes the cell back only with a post newer than the edit.
+   *
+   * The server's value (Barchart:StaleAfterDays, via the coverage endpoint) replaces this default on
+   * init; 10 is also the server's default, so a first paint before the answer arrives is not wrong.
+   *
+   * The second attempt at this. A fed bid that had sat unchanged used to render at half opacity, and was
+   * dropped because opacity cannot say HOW quiet, and for a past month the month itself already says the
+   * price is history. What brought it back was BarChart serving an elevator's LAST price for a period it
+   * had stopped posting (Goodland's October corn, frozen two weeks while December moved nightly) -- a
+   * frozen number reads as today's market, and nothing on screen said otherwise. This time the number is
+   * withheld and the date is shown, and a past month is judged at its own end (utils/bid-freshness).
+   */
+  private static readonly DEFAULT_STALE_AFTER_DAYS = 10;
+  readonly barchartStaleAfterDays = signal<number>(BidSheetComponent.DEFAULT_STALE_AFTER_DAYS);
+
+  /**
+   * Whether the sheet acts on that age by hiding the number. OFF everywhere for now (Barchart:HideStaleBids,
+   * via the coverage endpoint): seen on a Dev sheet where every bid was a blank, the user pulled the "--"
+   * back the same day (2026-10-21) and kept the two things that cost nothing to read -- the hover saying
+   * when a bid was last updated, and the server no longer taking a hand-typed cell back with an older
+   * quote. With this off nothing is ever "stale" here: every fed number prints, and hovers read
+   * "Updated Oct 7" rather than "Not updated since". The treatment stays, switchable per environment.
+   */
+  readonly barchartHideStaleBids = signal<boolean>(false);
 
   /** How recent counts as "just moved". A trading day: what changed since you last looked. */
   private static readonly CHANGED_WITHIN_HOURS = 24;
@@ -886,6 +953,70 @@ export class BidSheetComponent {
     return entry.source === 'Barchart'
       ? this._changedWithin24h(entry.basisChangedAt)
       : this._changedWithin24h(entry.modifiedAt ?? entry.createdAt);
+  }
+
+  /** One side of a cell through the stale rule (utils/bid-freshness), under this environment's threshold. */
+  private _cellView(entry: BidSheetEntry | null | undefined, side: BidSide): BidCellView {
+    // Nothing is ever stale while the feed is off (no elevator stamp to judge by), nor while the
+    // environment has the "--" treatment switched off (barchartHideStaleBids).
+    const days = this.barchartEnabled && this.barchartHideStaleBids() ? this.barchartStaleAfterDays() : Number.POSITIVE_INFINITY;
+    return classifyBidSide(entry, side, days, Date.now(), entry ? periodEnd(entry.cropYear, entry.month) : undefined);
+  }
+
+  /** The side the price toggle is showing: basis in basis mode, cash otherwise (Both leads with cash). */
+  private _shownSide(): BidSide {
+    return this.priceMode() === 'basis' ? 'basis' : 'cash';
+  }
+
+  /** What a cell says about its own age across the side(s) on show -- see BidCellMeta. */
+  private _cellMetaFor(locationId: number, year: number | null, crop: string, month: number): BidCellMeta {
+    const entry = this._getLatestEntry(locationId, year, crop, month);
+    if (!entry) return BidSheetComponent.NO_CELL_META;
+    const sides: BidSide[] = this.priceMode() === 'both' ? ['cash', 'basis'] : [this._shownSide()];
+    return this._metaFromViews(sides.map(side => ({ side, view: this._cellView(entry, side) })));
+  }
+
+  private static readonly NO_CELL_META: BidCellMeta = { kind: 'none', stale: false, title: '', staleDate: '' };
+
+  /**
+   * Folds one or two classified sides into the hover text: ONE date, nothing else ("Updated Oct 20").
+   * In Both mode that is the side updated most recently; a side the elevator has let go quiet wins
+   * instead ("Not updated since Oct 7"), since that is the one worth a second look. A two-sided
+   * "Cash updated … · Basis …" reading was tried and taken out the same day (user, 2026-10-21): the
+   * hover is read at a glance, and the date is the whole point of it.
+   */
+  private _metaFromViews(views: { side: BidSide; view: BidCellView }[]): BidCellMeta {
+    const present = views.filter(v => v.view.kind !== 'none');
+    if (present.length === 0) return BidSheetComponent.NO_CELL_META;
+    const fmt = (iso?: string): string => this.formatAsOf(iso);
+    const stale = present.find(v => v.view.stale)?.view;
+    const at = (v: BidCellView): number => (v.asOf ? new Date(v.asOf).getTime() || 0 : 0);
+    const newest = present.reduce((best, v) => (at(v.view) > at(best.view) ? v : best), present[0]).view;
+    return {
+      kind: present.some(v => v.view.kind === 'feed') ? 'feed' : 'manual',
+      stale: !!stale,
+      title: asOfTitle(stale ?? newest, fmt),
+      staleDate: stale ? this.formatAsOf(stale.asOf) : ''
+    };
+  }
+
+  /**
+   * True when the cell holds a value on a shown side, live OR gone quiet. This is what "the location has
+   * a bid for the period" means for drawing a pin or listing a row at all: a frozen bid still earns the
+   * location its place, printed as "--" with the date, where _getLatestBid would say it has nothing.
+   */
+  private _hasCell(locationId: number, year: number | null, crop: string, month: number): boolean {
+    return this._cellMetaFor(locationId, year, crop, month).kind !== 'none';
+  }
+
+  /**
+   * The stale rule for a catalog price, which carries only its elevator stamp -- there is no Source,
+   * a catalog price is always the feed's. Judged at the period's end for a closed month, like a cell.
+   */
+  private _catalogStale(asOf: string | undefined, year: number | null, month: number): boolean {
+    if (!this.barchartEnabled || !this.barchartHideStaleBids()) return false;
+    const end = year ? periodEnd(year, month) : undefined;
+    return isOlderThanDays(asOf, this.barchartStaleAfterDays(), end != null ? Math.min(Date.now(), end) : Date.now());
   }
 
   /**
@@ -993,10 +1124,11 @@ export class BidSheetComponent {
     const newD = this.newDisplay();
     const entries = this.bidEntries().filter(e => e.locationId === locationId);
     let cropSet = [...new Set(entries.map(e => e.commodityCode).filter(Boolean))].sort();
-    // Only show crops that have bids for the displayed old/new periods
+    // Only show crops that have bids for the displayed old/new periods -- live or gone quiet, since a
+    // frozen bid still has its date to show.
     cropSet = cropSet.filter(crop =>
-      this._getLatestBid(locationId, newD.year, crop!, newD.month) ||
-      this._getLatestBid(locationId, oldD.year, crop!, oldD.month));
+      this._hasCell(locationId, newD.year, crop!, newD.month) ||
+      this._hasCell(locationId, oldD.year, crop!, oldD.month));
 
     // Reference comparison — color-code each crop row vs the session reference, whichever kind
     // (an added location via selectedLocationId, or a catalog listing via catalogReferenceKey).
@@ -1015,13 +1147,21 @@ export class BidSheetComponent {
       const newEntry = this._getLatestEntry(locationId, newD.year, crop!, newD.month);
       const oldEntry = this._getLatestEntry(locationId, oldD.year, crop!, oldD.month);
       const fedEntry = newEntry?.source === 'Barchart' ? newEntry : (oldEntry?.source === 'Barchart' ? oldEntry : null);
+      // When each value was last updated, for the cells' tooltips; and, for a fed value the elevator
+      // has let go quiet, the date it did, printed under the "--" that stands in for it.
+      const oldMeta = this._cellMetaFor(locationId, oldD.year, crop!, oldD.month);
+      const newMeta = this._cellMetaFor(locationId, newD.year, crop!, newD.month);
+      const fedMeta = newEntry?.source === 'Barchart' ? newMeta : oldMeta;
       return {
         crop: crop!, oldBid, newBid, oldStatus, newStatus,
         oldBidLabel: this._getDisplayBid(locationId, oldD.year, crop!, oldD.month, false),
         newBidLabel: this._getDisplayBid(locationId, newD.year, crop!, newD.month, false),
         oldBidContract: this.panelContractFor(locationId, oldD.year, crop!, oldD.month),
         newBidContract: this.panelContractFor(locationId, newD.year, crop!, newD.month),
-        isFed: !!fedEntry, fedAsOf: fedEntry?.quoteAsOf
+        isFed: !!fedEntry, fedAsOf: fedEntry?.quoteAsOf,
+        fedTitle: fedEntry ? ['From BarChart', fedMeta.title].filter(Boolean).join(' — ') : '',
+        oldTitle: oldMeta.title, newTitle: newMeta.title,
+        oldStaleDate: oldMeta.staleDate, newStaleDate: newMeta.staleDate
       };
     });
   });
@@ -1390,29 +1530,37 @@ export class BidSheetComponent {
    * mapping for can never match a chosen crop, so it drops out -- which is right, since it cannot
    * reach the sheet either.
    */
-  readonly catalogDetailRows = computed<{ crop: string; cropYear: number; month: number; cash: number | null; basis: number | null }[]>(() => {
+  readonly catalogDetailRows = computed<CatalogDetailRow[]>(() => {
     const detail = this.catalogDetail();
     if (!detail) return [];
     const mode = this.priceMode();
     const onlyCrop = this.selectedCrop();
-    const byPeriod = new Map<string, { crop: string; cropYear: number; month: number; cash: number | null; basis: number | null }>();
+    const byPeriod = new Map<string, CatalogDetailRow>();
+    const fmt = (iso?: string): string => this.formatAsOf(iso);
     for (const bid of detail.bids) {
       if (onlyCrop && bid.commodityCode !== onlyCrop) continue;
       const crop = bid.commodityCode || bid.vendorCommodity;
       const key = `${crop}|${bid.cropYear}|${bid.month}`;
       let row = byPeriod.get(key);
       if (!row) {
-        row = { crop, cropYear: bid.cropYear, month: bid.month, cash: null, basis: null };
+        row = { crop, cropYear: bid.cropYear, month: bid.month, cash: null, basis: null, cashTitle: '', basisTitle: '', cashStaleDate: '', basisStaleDate: '' };
         byPeriod.set(key, row);
       }
-      if (bid.isBasis) row.basis = bid.price ?? null;
-      else row.cash = bid.price ?? null;
+      // Through the stale rule: a price the elevator has let go quiet is withheld and its date kept
+      // for the cell to print, exactly as an added location's cell does.
+      const has = bid.price != null;
+      const stale = has && this._catalogStale(bid.quoteAsOf, bid.cropYear, bid.month);
+      const title = asOfTitle({ value: has ? String(bid.price) : '', asOf: bid.quoteAsOf, stale, kind: has ? 'feed' : 'none' }, fmt);
+      const staleDate = stale ? this.formatAsOf(bid.quoteAsOf) : '';
+      if (bid.isBasis) { row.basis = stale ? null : bid.price ?? null; row.basisTitle = title; row.basisStaleDate = staleDate; }
+      else { row.cash = stale ? null : bid.price ?? null; row.cashTitle = title; row.cashStaleDate = staleDate; }
     }
     const rows = [...byPeriod.values()];
-    // In a single-price mode a period the elevator does not quote that way has nothing to say here.
-    if (mode === 'basis') return rows.filter(r => r.basis != null);
-    if (mode === 'cash') return rows.filter(r => r.cash != null);
-    return rows.filter(r => r.cash != null || r.basis != null);
+    // In a single-price mode a period the elevator does not quote that way has nothing to say here;
+    // one it quoted and then let go quiet still has its date to say.
+    if (mode === 'basis') return rows.filter(r => r.basis != null || r.basisStaleDate);
+    if (mode === 'cash') return rows.filter(r => r.cash != null || r.cashStaleDate);
+    return rows.filter(r => r.cash != null || r.basis != null || r.cashStaleDate || r.basisStaleDate);
   });
   readonly catalogDetailAdding = signal<boolean>(false);
 
@@ -1587,11 +1735,23 @@ export class BidSheetComponent {
     // Load all bid sheet locations for map display (once)
     this._loadAllMapLocations();
 
-    // When BarChart prices were last loaded, for the "bids updated" stamp. Best effort: if it fails
-    // the stamp simply does not show, which is better than a wrong one.
+    // When BarChart prices were last loaded, for the "bids updated" stamp, and the environment's stale
+    // window. Best effort: if it fails the stamp simply does not show, which is better than a wrong
+    // one, and the window keeps its default, which is the server's default too.
     if (this.barchartEnabled) {
       this.apiService.getBarchartCoverage().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-        next: (c) => this.barchartPricesRefreshedAt.set(c?.pricesRefreshedUtc ?? null),
+        next: (c) => {
+          this.barchartPricesRefreshedAt.set(c?.pricesRefreshedUtc ?? null);
+          const days = c?.staleAfterDays;
+          if (days != null && days > 0) this.barchartStaleAfterDays.set(days);
+          if (c?.hideStaleBids === true) {
+            this.barchartHideStaleBids.set(true);
+            // The list and the pins are drawn imperatively, so an environment that hides stale bids
+            // has to redraw what the first paint drew with the treatment off.
+            this.filterBids();
+            this._refreshMapMarkers();
+          }
+        },
         error: () => this.barchartPricesRefreshedAt.set(null),
       });
     }
@@ -2445,6 +2605,10 @@ export class BidSheetComponent {
       const entryWithCoords = entryById.get(locationId);
       const name = nameById.get(locationId) ?? entryWithCoords?.name ?? '';
       const isRef = locationId === refId;
+      const oldCoveredBy = this.coverageLabelFor(locationId, oldD.year, crop, oldD.month);
+      const newCoveredBy = this.coverageLabelFor(locationId, newD.year, crop, newD.month);
+      const oldMeta = this._cellMetaFor(locationId, oldD.year, crop, oldD.month);
+      const newMeta = this._cellMetaFor(locationId, newD.year, crop, newD.month);
 
       items.push({
         type: 'entry',
@@ -2460,8 +2624,14 @@ export class BidSheetComponent {
         newBidLabel: this._getDisplayBid(locationId, newD.year, crop, newD.month, false),
         oldBidContract: this.panelContractFor(locationId, oldD.year, crop, oldD.month),
         newBidContract: this.panelContractFor(locationId, newD.year, crop, newD.month),
-        oldCoveredBy: this.coverageLabelFor(locationId, oldD.year, crop, oldD.month),
-        newCoveredBy: this.coverageLabelFor(locationId, newD.year, crop, newD.month),
+        oldCoveredBy,
+        newCoveredBy,
+        // The date alone. The covering-contract sentence used to ride here too and was taken out
+        // (user, 2026-10-21): the hover is for "when was this last updated", nothing else.
+        oldTitle: oldMeta.title,
+        newTitle: newMeta.title,
+        oldStaleDate: oldMeta.staleDate,
+        newStaleDate: newMeta.staleDate,
         oldStatus: isRef ? 'reference' : this._computeItemStatus(oldBid, false, oldRefBid),
         newStatus: isRef ? 'reference' : this._computeItemStatus(newBid, false, newRefBid),
         status: isRef ? 'reference' : this._computeItemStatus(selectedBid, false, selectedRefBid)
@@ -2505,9 +2675,16 @@ export class BidSheetComponent {
     this.filteredBidItems.set(items);
   }
 
+  /**
+   * The cell's value on the side the toggle shows, through the stale rule: a fed side the elevator has
+   * not updated within the threshold reads as NO bid here. Status colouring, the reference comparison,
+   * the panel and every pin come through this one method, which is what makes them agree -- a frozen
+   * price neither colours a pin nor wins a comparison. _hasCell is the question "is there anything
+   * here at all", which a frozen bid still answers yes to.
+   */
   private _getLatestBid(locationId: number, year: number | null, commodityCode: string, month: number): string {
     if (!year || !commodityCode) return '';
-    return this.bidLookup().get(`${locationId}|${commodityCode}|${year}|${month}`)?.bid ?? '';
+    return this._cellView(this._getLatestEntry(locationId, year, commodityCode, month), this._shownSide()).value;
   }
 
   /**
@@ -2585,15 +2762,26 @@ export class BidSheetComponent {
    * map cramped. The panel, the grid and print always name it; so does hover, at any zoom.
    */
   private _getDisplayBid(locationId: number, year: number | null, crop: string, month: number, includeContract = true): string {
+    const entry = this._getLatestEntry(locationId, year, crop, month);
     const primary = this._getLatestBid(locationId, year, crop, month);
-    const basis = (this._getLatestEntry(locationId, year, crop, month)?.basisBid ?? '').trim();
+    // The basis side through the same stale rule _getLatestBid applies to the shown side.
+    const basisView = this._cellView(entry, 'basis');
+    const basis = basisView.value;
     // A positive basis is signed so it cannot be read as a small cash price. In basis mode the
     // "primary" value IS the basis -- _applyBidFilterSources puts whichever side the toggle shows
     // into the entry's bid field -- so that one needs signing too.
     const signedBasis = formatBasis(basis);
-    const value = this.priceMode() === 'both'
-      ? (primary && basis ? `${primary} / ${signedBasis}` : (primary || signedBasis))
-      : (this.priceMode() === 'basis' ? formatBasis(primary) : primary);
+    let value: string;
+    if (this.priceMode() === 'both') {
+      // A side that exists but has gone quiet prints as a blank beside the live one: "4.98 / --" says
+      // the elevator still posts cash here and has let its basis go, which "4.98" alone would hide.
+      // With nothing live on either side the cell is empty and the caller prints its own "--".
+      const cashText = primary || (this._cellView(entry, 'cash').stale ? '--' : '');
+      const basisText = basis ? signedBasis : (basisView.stale ? '--' : '');
+      value = !primary && !basis ? '' : (cashText && basisText ? `${cashText} / ${basisText}` : (cashText || basisText));
+    } else {
+      value = this.priceMode() === 'basis' ? formatBasis(primary) : primary;
+    }
     if (!includeContract) return value;
     // Every fed value names the contract it is quoted against: a Year cell because its value is one
     // month standing in for a year, a month cell because the board is what makes two bids comparable
@@ -3091,10 +3279,11 @@ export class BidSheetComponent {
     forkJoin({ cash: cash$, basis: basis$ }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: ({ cash, basis }) => {
         if (gen !== this._catalogLoadGen) return;
-        const basisByKey = new Map(basis.filter(r => r.matchedBidPrice != null).map(r => [r.locationKey, r.matchedBidPrice]));
+        const basisByKey = new Map(basis.filter(r => r.matchedBidPrice != null).map(r => [r.locationKey, r]));
         this.catalogLocations.set(cash.map(r => {
-          const matchedBasisPrice = basisByKey.get(r.locationKey);
-          return matchedBasisPrice != null ? { ...r, matchedBasisPrice } : r;
+          const b = basisByKey.get(r.locationKey);
+          // The basis stamp rides with the basis price, so each side is judged stale on its own.
+          return b ? { ...r, matchedBasisPrice: b.matchedBidPrice, matchedBasisAsOf: b.matchedBidAsOf } : r;
         }));
         this._renderCatalogMarkers();
       },
@@ -3462,21 +3651,39 @@ export class BidSheetComponent {
       const originalBasisBids: Record<string, string> = {};
       const coverageChips: Record<string, string> = {};
       const boardChips: Record<string, string> = {};
+      const cellMeta: Record<string, EditBidsCellMeta> = {};
+      const fmt = (iso?: string): string => this.formatAsOf(iso);
       for (const col of columns) {
         const entry = lookup.get(`${locationId}|${col.crop}|${col.year}|${col.month}`);
         // Each price lives in its own field whatever the toggle says. The template picks which to
         // show; the save writes each to its own column. Reading a mode-selected value into bids is
         // how a basis would end up filed as a cash price.
-        bids[col.key] = entry?.cashBid ?? '';
+        //
+        // Each side arrives through the stale rule: a fed side the elevator has let go quiet is an
+        // EMPTY cell here, and empty in originalBids too, so an untouched cell is never dirty and never
+        // saved -- while a value typed into it is dirty and saves as the user's own, which is the
+        // override the rule exists to allow. The date it went quiet goes into the cell's meta instead.
+        const cash = this._cellView(entry, 'cash');
+        const basis = this._cellView(entry, 'basis');
+        bids[col.key] = cash.value;
         // Display form, sign and all: a negative already shows its "-" here, so a positive hiding
         // its "+" reads as an inconsistency rather than as a convention. normalizeBasis takes it back
         // off at every boundary that leaves this screen.
-        basisBids[col.key] = formatBasis(entry?.basisBid ?? '');
+        basisBids[col.key] = formatBasis(basis.value);
         originalBasisBids[col.key] = basisBids[col.key];
         coverageChips[col.key] = this.coverageChipFor(entry);
         boardChips[col.key] = this.cellBoardFor(locationId, col.year, col.crop, col.month);
+        // Each input's tooltip is the date alone ("Updated Oct 13"). The covering-contract sentence
+        // that used to be the tooltip, and a type-to-correct hint, were both taken out the day they
+        // went in (user, 2026-10-21): the hover is for "when was this last updated", nothing else.
+        cellMeta[col.key] = {
+          cashTitle: asOfTitle(cash, fmt),
+          basisTitle: asOfTitle(basis, fmt),
+          cashStaleDate: cash.stale ? this.formatAsOf(cash.asOf) : '',
+          basisStaleDate: basis.stale ? this.formatAsOf(basis.asOf) : ''
+        };
       }
-      rows.push({ locationId, name, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, basisBids, originalBasisBids, coverageChips, boardChips, isBarchartLinked: !!rep?.barchartLocationKey });
+      rows.push({ locationId, name, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids }, basisBids, originalBasisBids, coverageChips, boardChips, cellMeta, isBarchartLinked: !!rep?.barchartLocationKey });
     }
 
     // Also include locations with no bids yet (e.g. just added from Edit Bids)
@@ -3485,7 +3692,7 @@ export class BidSheetComponent {
       addedIds.add(loc.id);
       const bids: Record<string, string> = {};
       for (const col of columns) { bids[col.key] = ''; }
-      rows.push({ locationId: loc.id, name: loc.name, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, basisBids: {}, originalBasisBids: {}, coverageChips: {}, boardChips: {}, isBarchartLinked: !!loc.barchartLocationKey });
+      rows.push({ locationId: loc.id, name: loc.name, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids }, basisBids: {}, originalBasisBids: {}, coverageChips: {}, boardChips: {}, cellMeta: {}, isBarchartLinked: !!loc.barchartLocationKey });
     }
 
     // No re-sort here. Row order used to be a separate, per-user, name-keyed lookup applied on top --
@@ -3932,7 +4139,8 @@ export class BidSheetComponent {
             // method exists to prevent. Source becomes Manual and the fed provenance is dropped
             // because this path only runs for a user's own edit: overriding a fed cell takes it over,
             // and keeping Source='Barchart' left the row wearing a Feed chip and a board label that
-            // no longer described its number.
+            // no longer described its number. The vendor stamps go too, as the server drops them:
+            // the cell's date is now the edit (modifiedAt below).
             bids[idx] = {
               ...bids[idx],
               bid: d.bid,
@@ -3941,6 +4149,8 @@ export class BidSheetComponent {
               barchartSymbol: undefined,
               basisSymbol: undefined,
               underlyingFuture: undefined,
+              quoteAsOf: undefined,
+              basisQuoteAsOf: undefined,
               commodityName: d.commodityName ?? bids[idx].commodityName,
               commodityCategory: d.commodityCategory ?? bids[idx].commodityCategory,
               modifiedAt: now
@@ -5196,7 +5406,9 @@ export class BidSheetComponent {
         // Sheet scope: the panel IS the filter model -- show what its filters left, and only what has a
         // bid for the selected period. A sheet with a crop picked lists who is bidding it.
         if (!names.some(n => panelNames.has(n))) continue;
-        if (crop && !locs.some(l => this._getLatestBid(l.id, year, crop, month))) continue;
+        // "Has a bid" includes a bid the elevator has let go quiet: it is drawn, as "--" with its date,
+        // rather than vanishing as if the location had never priced the crop.
+        if (crop && !locs.some(l => this._hasCell(l.id, year, crop, month))) continue;
       }
       renderGroups.push({ locs, names, isRef, isPanelOpen });
     }
@@ -5218,6 +5430,7 @@ export class BidSheetComponent {
       // Panel-open location — render expanded with name + bid (uses status color if reference, otherwise gray)
       if (isPanelOpen) {
         const bidStr = crop ? this._getLatestBid(panelOpenId!, year, crop, month) : '';
+        const panelMeta = crop ? this._cellMetaFor(panelOpenId!, year, crop, month) : BidSheetComponent.NO_CELL_META;
         // This pin represents the open location specifically, not "any location at this coordinate".
         const panelIsScoular = this.scoularLocationIds().has(panelOpenId!);
         let pinBg = '#6b7280', pinBorder = '#4b5563';
@@ -5227,7 +5440,8 @@ export class BidSheetComponent {
           const c = statusColors[status] ?? statusColors['none'];
           pinBg = c.bg; pinBorder = c.border;
         } else if (panelIsScoular) { pinBg = BidSheetComponent.SCOULAR_BG; pinBorder = BidSheetComponent.SCOULAR_BORDER; }
-        const expandedIcon = this._buildHoverIcon(panelOpenName, bidStr, pinBg, pinBorder, panelIsScoular);
+        const expandedIcon = this._buildHoverIcon(
+          panelOpenName, bidStr || (panelMeta.stale ? '--' : ''), pinBg, pinBorder, panelIsScoular, panelMeta.title);
         const marker = L.marker([lat, lng], { icon: expandedIcon, zIndexOffset: 1000 });
         marker.on('click', () => this._selectMapLocation(locs[0]));
         this._clusterGroup.addLayer(marker);
@@ -5268,8 +5482,9 @@ export class BidSheetComponent {
         });
         const m = L.marker([lat, lng], { icon: dotIcon });
         m.on('click', () => this._selectMapLocation(locs[0]));
-        const hoverBid2 = crop ? this._getDisplayBid(locs[0].id, year, crop, month) : '';
-        this._bindHoverExpand(m, dotIcon, locs[0].name, hoverBid2, color, border, scoularIds.has(locs[0].id));
+        const hoverMeta2 = crop ? this._cellMetaFor(locs[0].id, year, crop, month) : BidSheetComponent.NO_CELL_META;
+        const hoverBid2 = crop ? (this._getDisplayBid(locs[0].id, year, crop, month) || (hoverMeta2.stale ? '--' : '')) : '';
+        this._bindHoverExpand(m, dotIcon, locs[0].name, hoverBid2, color, border, scoularIds.has(locs[0].id), hoverMeta2.title);
         this._clusterGroup.addLayer(m);
       };
 
@@ -5292,38 +5507,51 @@ export class BidSheetComponent {
             // the panel still name it at any zoom.
             const bidLabel = this._getDisplayBid(l.id, year, crop, month, zoom >= BidSheetComponent.BOARD_SYMBOL_ZOOM);
             const nameIsScoular = this.scoularLocationIds().has(l.id);
+            // A side the elevator has let go quiet prints its date under the pill, whatever else the
+            // pill says: "4.98 / --" over "Oct 7" reads as cash live, basis frozen since the 7th.
+            const meta = this._cellMetaFor(l.id, year, crop, month);
+            const sub = meta.stale ? meta.staleDate : '';
             if (isNameRef) {
               const { bg, border } = statusColors['reference'];
-              return { name: n, label: bidLabel || '--', bg, border, isScoular: nameIsScoular };
+              return { name: n, label: bidLabel || '--', sub, bg, border, isScoular: nameIsScoular };
             }
-            if (!bidVal) return null;
+            if (!bidVal) {
+              // Nothing live -- but a bid the elevator has let go quiet still earns the pin. It prints
+              // a blank with the date under it, so the gap reads as "stopped posting", not "no bid".
+              if (!meta.stale) return null;
+              const quiet = comparingToRef ? statusColors['none'] : this._neutralPinColors();
+              return { name: n, label: bidLabel || '--', sub, bg: quiet.bg, border: quiet.border, isScoular: nameIsScoular };
+            }
             // No reference set means there is no comparison to colour by, so ours are simply green
             // rather than a gray "no status" pill wearing a ring.
             if (!comparingToRef && nameIsScoular) {
-              return { name: n, label: bidLabel, bg: BidSheetComponent.SCOULAR_BG, border: BidSheetComponent.SCOULAR_BORDER, isScoular: true };
+              return { name: n, label: bidLabel, sub, bg: BidSheetComponent.SCOULAR_BG, border: BidSheetComponent.SCOULAR_BORDER, isScoular: true };
             }
             // No reference means there is no status to colour by, so this is the neutral pin -- which
             // in "All locations" has to be the catalog's own neutral, or the added pins are the only
             // grey ones on a map of blue (see _neutralPinColors).
             if (!comparingToRef) {
               const neutral = this._neutralPinColors();
-              return { name: n, label: bidLabel, bg: neutral.bg, border: neutral.border, isScoular: nameIsScoular };
+              return { name: n, label: bidLabel, sub, bg: neutral.bg, border: neutral.border, isScoular: nameIsScoular };
             }
             const status = this._computeItemStatus(bidVal, false, refBid);
             const { bg, border } = statusColors[status] ?? statusColors['none'];
-            return { name: n, label: bidLabel, bg, border, isScoular: nameIsScoular };
+            return { name: n, label: bidLabel, sub, bg, border, isScoular: nameIsScoular };
           })
           .filter((x): x is NonNullable<typeof x> => x !== null);
 
         if (bidItems.length > 0) {
-          const linesHtml = bidItems.map(({ label, bg, border, isScoular }) => {
+          const linesHtml = bidItems.map(({ label, sub, bg, border, isScoular }) => {
             const isGrey = bg === '#d1d5db';
             const pillBg = isGrey ? '#6b7280' : bg;
             const pillBorder = isGrey ? '#4b5563' : border;
-            return `<div style="background:${pillBg};border:2px solid ${pillBorder};border-radius:6px;padding:5px 6px;font-size:11px;font-weight:700;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,0.45);white-space:nowrap;box-shadow:${this._scoularRing(comparingToRef && isScoular)}0 2px 4px rgba(0,0,0,0.3);line-height:1.2;cursor:pointer;">${this._esc(label)}</div>`;
+            const subHtml = sub
+              ? `<div style="font-size:9px;font-weight:500;opacity:0.85;line-height:1.1;margin-top:1px;">${this._esc(sub)}</div>`
+              : '';
+            return `<div style="background:${pillBg};border:2px solid ${pillBorder};border-radius:6px;padding:5px 6px;font-size:11px;font-weight:700;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,0.45);white-space:nowrap;box-shadow:${this._scoularRing(comparingToRef && isScoular)}0 2px 4px rgba(0,0,0,0.3);line-height:1.2;cursor:pointer;">${this._esc(label)}${subHtml}</div>`;
           }).join('');
-          const maxWidth = Math.max(58, ...bidItems.map(({ label }) => label.length * 7 + 16));
-          const height = bidItems.length * 28 + 16;
+          const maxWidth = Math.max(58, ...bidItems.map(({ label, sub }) => Math.max(label.length * 7, sub.length * 6) + 16));
+          const height = bidItems.reduce((h, { sub }) => h + 28 + (sub ? 11 : 0), 16);
           const primaryBg = bidItems[0].bg;
           const divIcon = L.divIcon({
             // One pulse for the whole coordinate group, like the Scoular ring: "something here moved".
@@ -5337,8 +5565,9 @@ export class BidSheetComponent {
           });
           const marker = L.marker([lat, lng], { icon: divIcon });
           marker.on('click', () => this._selectMapLocation(locs[0]));
-          const hoverBid3 = crop ? this._getDisplayBid(locs[0].id, year, crop, month) : '';
-          this._bindHoverExpand(marker, divIcon, locs[0].name, hoverBid3, primaryBg, bidItems[0].border, scoularIds.has(locs[0].id));
+          const hoverMeta3 = crop ? this._cellMetaFor(locs[0].id, year, crop, month) : BidSheetComponent.NO_CELL_META;
+          const hoverBid3 = crop ? (this._getDisplayBid(locs[0].id, year, crop, month) || (hoverMeta3.stale ? '--' : '')) : '';
+          this._bindHoverExpand(marker, divIcon, locs[0].name, hoverBid3, primaryBg, bidItems[0].border, scoularIds.has(locs[0].id), hoverMeta3.title);
           this._clusterGroup.addLayer(marker);
           return;
         }
@@ -5382,8 +5611,9 @@ export class BidSheetComponent {
       });
       const marker = L.marker([lat, lng], { icon: nameIcon });
       marker.on('click', () => this._selectMapLocation(locs[0]));
-      const hoverBid4 = crop ? this._getDisplayBid(locs[0].id, year, crop, month) : '';
-      this._bindHoverExpand(marker, nameIcon, locs[0].name, hoverBid4, bg, border, scoularIds.has(locs[0].id));
+      const hoverMeta4 = crop ? this._cellMetaFor(locs[0].id, year, crop, month) : BidSheetComponent.NO_CELL_META;
+      const hoverBid4 = crop ? (this._getDisplayBid(locs[0].id, year, crop, month) || (hoverMeta4.stale ? '--' : '')) : '';
+      this._bindHoverExpand(marker, nameIcon, locs[0].name, hoverBid4, bg, border, scoularIds.has(locs[0].id), hoverMeta4.title);
       this._clusterGroup.addLayer(marker);
     });
 
@@ -5477,7 +5707,9 @@ export class BidSheetComponent {
       // the popup shouldn't make the pin you're actively comparing against look unselected.
       const isRef = loc.locationKey === refKey;
       const selected = loc.locationKey === detailKey || isRef;
-      const price = loc.matchedBidPrice;
+      // Through the stale rule, like an added location's cell: a price the elevator has let go quiet
+      // neither colours the pin nor passes the status filter -- it is drawn as a blank with its date.
+      const price = this._catalogStale(loc.matchedBidAsOf, year, month) ? undefined : loc.matchedBidPrice;
       // Status filter, by the same rule the added-location pass uses: only a pin with a price can be
       // judged, the reference always stays, and a dot has nothing to say so it is left alone. Without
       // this the filter narrowed one layer and not the other, which read as pins randomly missing.
@@ -5490,7 +5722,7 @@ export class BidSheetComponent {
       const label = showLabels ? this._catalogPriceLabel(loc, showBoard) : null;
 
       const { marker, icon } = label != null
-        ? this._buildCatalogPriceMarker(loc, label, price, isRef, hasReference, refBid, selected)
+        ? this._buildCatalogPriceMarker(loc, label, price, isRef, hasReference, refBid, selected, this._catalogMeta(loc).staleDate)
         : this._buildCatalogDotMarker(loc, selected);
 
       marker.on('click', () => this._selectCatalogLocation(loc));
@@ -5511,23 +5743,32 @@ export class BidSheetComponent {
     // matchedBidPrice carries whichever instrument the toggle asked for: the catalog search is run
     // with instrumentType 'bidBasis' in basis mode and 'bidCash' otherwise, so in basis mode this
     // field IS the basis. matchedBasisPrice is only populated in Both mode, by the second request.
-    const primary = loc.matchedBidPrice;
-    const basis = loc.matchedBasisPrice;
+    //
+    // Each side through the stale rule first: a price the elevator has let go quiet prints as a
+    // blank, exactly as an added location's cell does, and a blank earns no board.
+    const year = this.selectedYear();
+    const month = this.selectedMonth();
+    const primaryStale = loc.matchedBidPrice != null && this._catalogStale(loc.matchedBidAsOf, year, month);
+    const basisStale = loc.matchedBasisPrice != null && this._catalogStale(loc.matchedBasisAsOf, year, month);
+    const primary = primaryStale ? undefined : loc.matchedBidPrice;
+    const basis = basisStale ? undefined : loc.matchedBasisPrice;
     const primaryIsBasis = this.priceMode() === 'basis';
     let value: string | null;
     if (this.priceMode() !== 'both') {
       value = primary != null
         ? (primaryIsBasis ? formatBasis(primary.toString()) : primary.toString())
-        : null;
+        : (primaryStale ? '--' : null);
     } else if (primary != null && basis != null) {
       value = `${primary} / ${formatBasis(basis.toString())}`;
+    } else if (primary != null) {
+      value = basisStale ? `${primary} / --` : primary.toString();
+    } else if (basis != null) {
+      value = primaryStale ? `-- / ${formatBasis(basis.toString())}` : formatBasis(basis.toString());
     } else {
-      value = primary != null
-        ? primary.toString()
-        : (basis != null ? formatBasis(basis.toString()) : null);
+      value = primaryStale || basisStale ? '--' : null;
     }
     if (value == null) return null;
-    if (!includeBoard) return value;
+    if (!includeBoard || (primary == null && basis == null)) return value;
     // Names the contract behind the number, exactly as _getDisplayBid does for an added location --
     // the two kinds of pin sit on the same map and have to be readable against each other.
     const board = loc.matchedBidBoard?.trim();
@@ -5563,7 +5804,7 @@ export class BidSheetComponent {
    * an actual number to show.
    */
   private _buildCatalogPriceMarker(loc: BarchartCatalogLocation, label: string, cashPrice: number | undefined, isRef: boolean,
-    hasReference: boolean, refBid: number | null, selected: boolean): { marker: Leaflet.Marker; icon: Leaflet.DivIcon } {
+    hasReference: boolean, refBid: number | null, selected: boolean, sub = ''): { marker: Leaflet.Marker; icon: Leaflet.DivIcon } {
     const L = this._L!;
     let bg: string, border: string;
     if (isRef) {
@@ -5580,13 +5821,17 @@ export class BidSheetComponent {
     } else {
       bg = BidSheetComponent.CATALOG_PILL_BG; border = BidSheetComponent.CATALOG_PILL_BORDER;
     }
-    const width = Math.max(44, label.length * 8 + 16);
-    const height = selected ? 34 : 28;
+    const width = Math.max(44, Math.max(label.length * 8, sub.length * 6) + 16);
+    // The date a side went quiet rides under the label, as it does on an added location's pill.
+    const subHtml = sub
+      ? `<div style="font-size:9px;font-weight:500;opacity:0.85;line-height:1.1;margin-top:1px;">${this._esc(sub)}</div>`
+      : '';
+    const height = (selected ? 34 : 28) + (sub ? 11 : 0);
     const icon = L.divIcon({
       // Site-wide freshness, not this period's -- see the dot marker above for why.
       className: 'custom-marker' + this._movedPulseClass(this._changedWithin24h(loc.latestQuoteAsOf)),
       html: `<div style="position:relative;text-align:center;">
-        <div style="background:${bg};border:2px solid ${border};border-radius:6px;padding:4px 6px;font-size:11px;font-weight:700;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,0.45);white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,0.3);line-height:1.2;cursor:pointer;">${this._esc(label)}</div>
+        <div style="background:${bg};border:2px solid ${border};border-radius:6px;padding:4px 6px;font-size:11px;font-weight:700;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,0.45);white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,0.3);line-height:1.2;cursor:pointer;">${this._esc(label)}${subHtml}</div>
         <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid ${bg};margin:-1px auto 0;"></div>
       </div>`,
       iconSize: [width, height],
@@ -5604,7 +5849,28 @@ export class BidSheetComponent {
   private _bindCatalogHover(marker: Leaflet.Marker, icon: Leaflet.DivIcon, loc: BarchartCatalogLocation, label: string | null): void {
     const name = barchartDisplayName(loc);
     const subtitle = [loc.city, loc.state].filter(Boolean).join(', ');
-    this._bindHoverExpand(marker, icon, name, label ?? subtitle, '#2563eb', '#1d4ed8');
+    this._bindHoverExpand(marker, icon, name, label ?? subtitle, '#2563eb', '#1d4ed8', false, this._catalogMeta(loc).title);
+  }
+
+  /**
+   * A catalog listing's matched price(s) through the stale rule, as the same BidCellMeta an added
+   * location's cell produces, so its pin and hover read exactly like one.
+   */
+  private _catalogMeta(loc: BarchartCatalogLocation): BidCellMeta {
+    const year = this.selectedYear();
+    const month = this.selectedMonth();
+    const view = (price: number | undefined, asOf: string | undefined): BidCellView => {
+      if (price == null) return { value: '', stale: false, kind: 'none' };
+      const stale = this._catalogStale(asOf, year, month);
+      return { value: stale ? '' : String(price), asOf, stale, kind: 'feed' };
+    };
+    // matchedBidPrice is whichever instrument the toggle asked for (the basis, in basis mode); the
+    // separate basis pass only exists in Both mode. See _catalogPriceLabel.
+    const views: { side: BidSide; view: BidCellView }[] = this.priceMode() === 'both'
+      ? [{ side: 'cash', view: view(loc.matchedBidPrice, loc.matchedBidAsOf) },
+         { side: 'basis', view: view(loc.matchedBasisPrice, loc.matchedBasisAsOf) }]
+      : [{ side: this._shownSide(), view: view(loc.matchedBidPrice, loc.matchedBidAsOf) }];
+    return this._metaFromViews(views);
   }
 
   /**
@@ -5704,9 +5970,13 @@ export class BidSheetComponent {
    */
   private _catalogBidFor(locationKey: string, year: number | null, crop: string, month: number): string {
     if (!year || !crop) return '';
+    // Both answers go through the stale rule: a reference the elevator has let go quiet compares
+    // nothing, just as an added location's frozen cell would (see _getLatestBid).
     if (year === this.selectedYear() && month === this.selectedMonth() && crop === this.selectedCrop()) {
       const current = this.catalogLocations().find(l => l.locationKey === locationKey);
-      if (current?.matchedBidPrice != null) return String(current.matchedBidPrice);
+      if (current?.matchedBidPrice != null) {
+        return this._catalogStale(current.matchedBidAsOf, year, month) ? '' : String(current.matchedBidPrice);
+      }
     }
     // isBasis has to match too: the detail cache holds cash AND basis as separate rows for the same
     // commodity/period, not one row with two prices, so leaving this off would let whichever one
@@ -5714,7 +5984,8 @@ export class BidSheetComponent {
     const wantBasis = this.priceMode() === 'basis';
     const bid = this._catalogDetailCache.get(locationKey)?.bids
       .find(b => b.commodityCode === crop && b.cropYear === year && b.month === month && b.isBasis === wantBasis);
-    return bid?.price != null ? String(bid.price) : '';
+    if (bid?.price == null) return '';
+    return this._catalogStale(bid.quoteAsOf, year, month) ? '' : String(bid.price);
   }
 
   /** True while ANY reference is set -- an added location or a catalog one. Drives the "am I
@@ -5894,20 +6165,28 @@ export class BidSheetComponent {
    * price. The grid is where you go to act on a row, and that is where the question is worth
    * answering. (User's call, 2026-09-16, after trying it.)
    */
-  private _buildHoverIcon(name: string, bid: string, bg: string, border: string, isScoular = false): any {
+  /**
+   * @param when A third line under the bid saying when it was last updated ("Updated Oct 20", or
+   * "Not updated since Oct 7" for a bid the elevator has let go quiet) -- asked for by originators
+   * (2026-10-21) once frozen vendor prices started reading as this morning's. '' draws no line.
+   */
+  private _buildHoverIcon(name: string, bid: string, bg: string, border: string, isScoular = false, when = ''): any {
     const L = this._L!;
     const nameHtml = `<div style="font-size:11px;font-weight:700;color:#fff;white-space:nowrap;line-height:1.2;">${this._esc(name)}</div>`;
     const bidLabel = bid || '--';
     const subHtml = bid
       ? `<div style="font-size:10px;font-weight:500;color:rgba(255,255,255,0.85);white-space:nowrap;line-height:1.2;margin-top:2px;">${this._esc(bidLabel)}</div>`
       : '';
-    const textLen = Math.max(name.length, bidLabel.length + 3);
+    const whenHtml = when
+      ? `<div style="font-size:9px;font-weight:500;color:rgba(255,255,255,0.75);white-space:nowrap;line-height:1.2;margin-top:2px;">${this._esc(when)}</div>`
+      : '';
+    const textLen = Math.max(name.length, bidLabel.length + 3, Math.ceil(when.length * 0.85));
     const w = Math.max(100, textLen * 7 + 24);
-    const h = bid ? 50 : 36;
+    const h = 36 + (bid ? 14 : 0) + (when ? 12 : 0);
     return L.divIcon({
       className: 'custom-marker',
       html: `<div style="position:relative;text-align:center;display:flex;flex-direction:column;align-items:center;">
-        <div style="background:${bg};border:2px solid ${border};border-radius:8px;padding:5px 9px;box-shadow:${this._scoularRing(isScoular && bg !== BidSheetComponent.SCOULAR_BG)}0 3px 10px rgba(0,0,0,0.3);cursor:pointer;">${nameHtml}${subHtml}</div>
+        <div style="background:${bg};border:2px solid ${border};border-radius:8px;padding:5px 9px;box-shadow:${this._scoularRing(isScoular && bg !== BidSheetComponent.SCOULAR_BG)}0 3px 10px rgba(0,0,0,0.3);cursor:pointer;">${nameHtml}${subHtml}${whenHtml}</div>
         <div style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:9px solid ${bg};margin:-1px auto 0;"></div>
       </div>`,
       iconSize: [w, h],
@@ -5929,8 +6208,8 @@ export class BidSheetComponent {
     this._hoveredMarker = null;
   }
 
-  private _bindHoverExpand(marker: any, originalIcon: any, name: string, bid: string, bg: string, border: string, isScoular = false): void {
-    const hoverIcon = this._buildHoverIcon(name, bid, bg, border, isScoular);
+  private _bindHoverExpand(marker: any, originalIcon: any, name: string, bid: string, bg: string, border: string, isScoular = false, when = ''): void {
+    const hoverIcon = this._buildHoverIcon(name, bid, bg, border, isScoular, when);
     marker.on('mouseover', () => {
       // At most one pin is ever expanded; whatever was before this one collapses first.
       if (this._hoveredMarker?.marker !== marker) this._collapseHoveredMarker();

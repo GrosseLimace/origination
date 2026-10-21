@@ -28,12 +28,14 @@ public class BarchartIngestServiceTests
         _sut = CreateService(applyBidsEnabled: "true");
     }
 
-    private BarchartIngestService CreateService(string? applyBidsEnabled)
+    private BarchartIngestService CreateService(string? applyBidsEnabled, string? staleAfterDays = null)
     {
         var settings = new Dictionary<string, string?>();
         if (applyBidsEnabled != null) settings[BarchartIngestService.ApplyBidsEnabledSetting] = applyBidsEnabled;
+        if (staleAfterDays != null) settings[BarchartFeedSettings.StaleAfterDaysSetting] = staleAfterDays;
         var config = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
-        return new BarchartIngestService(_repository, config, NullLogger<BarchartIngestService>.Instance);
+        return new BarchartIngestService(
+            _repository, config, new BarchartFeedSettings(config), NullLogger<BarchartIngestService>.Instance);
     }
 
     [Fact]
@@ -163,14 +165,32 @@ public class BarchartIngestServiceTests
     public async Task ApplyBidsAsync_StampsTheFeedActorSoWrittenCellsAreAttributableToTheFeed()
     {
         _repository.ApplyBidsToBidSheetAsync(
-                Arg.Any<int?>(), Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+                Arg.Any<int?>(), Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(12);
 
         var result = await _sut.ApplyBidsAsync(locationId: 42, instrumentType: "bidCash");
 
         Assert.Equal(12, result.RowsAffected);
         Assert.True(result.Enabled);
-        await _repository.Received(1).ApplyBidsToBidSheetAsync(42, "bidCash", "barchart-feed", Arg.Any<int>(), Arg.Any<CancellationToken>());
+        // No Barchart:StaleAfterDays configured, so the bridge runs under the shared default.
+        await _repository.Received(1).ApplyBidsToBidSheetAsync(
+            42, "bidCash", "barchart-feed", Arg.Any<int>(), BarchartFeedDefaults.StaleAfterDays, Arg.Any<CancellationToken>());
+    }
+
+    // The stale window is the environment's call (Barchart:StaleAfterDays), and the bridge has to run
+    // under exactly that value: it decides whether a hand-typed cell may be taken back tonight.
+    [Fact]
+    public async Task ApplyBidsAsync_PassesTheConfiguredStaleWindowToTheBridge()
+    {
+        var sut = CreateService(applyBidsEnabled: "true", staleAfterDays: "21");
+        _repository.ApplyBidsToBidSheetAsync(
+                Arg.Any<int?>(), Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(1);
+
+        await sut.ApplyBidsAsync(locationId: null, instrumentType: "bidCash");
+
+        await _repository.Received(1).ApplyBidsToBidSheetAsync(
+            null, "bidCash", "barchart-feed", Arg.Any<int>(), 21, Arg.Any<CancellationToken>());
     }
 
     [Theory]
@@ -187,7 +207,7 @@ public class BarchartIngestServiceTests
         Assert.Equal(0, result.RowsAffected);
         Assert.False(result.Enabled);
         await _repository.DidNotReceive().ApplyBidsToBidSheetAsync(
-            Arg.Any<int?>(), Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+            Arg.Any<int?>(), Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
         await _repository.Received(1).LogApiCallAsync(
             Arg.Is<BarchartApiCallAudit>(a => a.Endpoint == "ingest/apply-bids" && a.Success
                 && a.RowsAffected == 0 && a.QueryParams!.Contains("skipped=disabled")),

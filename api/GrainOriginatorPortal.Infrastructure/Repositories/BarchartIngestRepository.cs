@@ -438,15 +438,17 @@ WHERE i.IsActive = 1
     public async Task<int> ApplyBidsToBidSheetAsync(
         int? locationId, string? instrumentType, string appliedBy,
         int maxQuoteAgeDays = BarchartFeedDefaults.MaxQuoteAgeDays,
+        int staleAfterDays = BarchartFeedDefaults.StaleAfterDays,
         CancellationToken cancellationToken = default)
     {
         // Publishes one winning price per (location, commodity, crop year, month) cell, then prunes
         // feed-owned cells that no longer have a winner (rolled-off delivery months, deactivated
         // instruments, or a commodity mapping switched off).
         //
-        // The ownership rule lives here: only Source='Barchart' rows are ever written or removed, so a
-        // manually entered bid is untouchable. The MATCHED clause additionally requires a real change,
-        // which stops a no-op run from churning ModifiedAt on every cell.
+        // The ownership rule lives in the MERGE: a feed-owned row is refreshed on any real change (and
+        // never churned on a no-op run); a hand-typed row is taken back only by a quote that is both
+        // inside staleAfterDays and newer than the edit -- newest wins. Only Source='Barchart' rows are
+        // ever pruned.
         // @locationId, @instrumentType and @appliedBy arrive as bound parameters — they are not
         // declared here because SQL Server treats variable names case-insensitively, so a DECLARE
         // would collide with the parameter of the same name.
@@ -552,10 +554,12 @@ DECLARE @winners TABLE
        -- so it gets a symmetric magnitude bound instead. Both exclude the 214748.3647 sentinel.
        AND ((i.InstrumentType = @cashType AND q.LastPrice >= @minPrice AND q.LastPrice <= @maxPrice)
          OR (i.InstrumentType = @basisType AND ABS(q.LastPrice) <= @maxPrice))
-       -- How long the ELEVATOR has left the bid untouched is the whole staleness test. It is deliberately
+       -- How long the ELEVATOR has left the bid untouched is the whole publish test. It is deliberately
        -- generous: an elevator that posts a new-crop bid and leaves it for weeks is behaving normally,
-       -- and the delivery month already tells the user which period the bid covers. The UI mutes an
-       -- ageing bid rather than hiding it.
+       -- and the delivery month already tells the user which period the bid covers. What the sheet
+       -- SHOWS is a tighter question (@staleAfterDays, in the MERGE below): past that age the UI prints
+       -- a blank and the date instead of the number -- which is exactly why the row still has to be
+       -- published and kept here, or there would be no date to print.
        --
        -- This used to filter on the vendor's mode flag instead, on the belief that d meant a dead record.
        -- BarChart's getQuote docs say otherwise: mode is the quote TYPE -- real-time R, delayed I,
@@ -654,6 +658,9 @@ GROUP BY c.LocationId, c.CommodityCode, c.CropYear, c.BidMonth;
 
 DECLARE @written int = 0;
 DECLARE @pruned  int = 0;
+-- A local rather than a bound parameter (see the note on @locationId above): quotes at or after this
+-- instant still count as the elevator's current word and may take a hand-typed cell back.
+DECLARE @staleCutoff datetime2 = DATEADD(DAY, -@staleAfterDays, SYSUTCDATETIME());
 
 BEGIN TRANSACTION;
 
@@ -662,30 +669,55 @@ USING
 (
     SELECT LocationId, CommodityCode, CommodityName, CommodityCategory, CropYear, BidMonth,
            Symbol, BidText, QuoteAsOf, BasisSymbol, BasisText, BasisQuoteAsOf, UnderlyingFuture,
-           CoveredByCropYear, CoveredByMonth
+           CoveredByCropYear, CoveredByMonth,
+           -- The feed's word on the whole cell: the OLDER of the sides it would write. A takeover rewrites
+           -- cash and basis together, so a live basis must not be allowed to carry a frozen cash price
+           -- back over a number somebody typed (Goodland, October 2026: cash stopped on the 7th while
+           -- basis kept ticking). NULL when neither side is stamped, and NULL never wins a cell.
+           FeedAsOf = CASE WHEN QuoteAsOf IS NULL THEN BasisQuoteAsOf
+                           WHEN BasisQuoteAsOf IS NULL THEN QuoteAsOf
+                           WHEN QuoteAsOf < BasisQuoteAsOf THEN QuoteAsOf
+                           ELSE BasisQuoteAsOf END
     FROM @winners
 ) AS s
    ON t.LocationId    = s.LocationId
   AND t.CommodityCode = s.CommodityCode
   AND t.CropYear      = s.CropYear
   AND t.Month         = s.BidMonth
--- The feed takes a cell over even if a user typed in it first. Users are allowed to fill a gap the
--- vendor does not cover, and they should be -- but the moment the elevator starts publishing that
--- month, the vendor's number is the better one and it wins. Leaving the manual value in place read as
--- manual-always-wins, and in practice meant a bid typed into an empty cell silently masked the feed
--- forever: the row matched on the key, failed the Source test, and NOT MATCHED never fired.
+-- Two owners, two rules. (SQL Server allows one updating WHEN MATCHED, hence the single predicate.)
 --
--- Source is reassigned on takeover, so the cell becomes feed-owned and read-only from then on.
-WHEN MATCHED AND (t.Source <> N'Barchart'
-                  OR t.Bid <> ISNULL(s.BidText, N'')
-                  OR ISNULL(t.BarchartSymbol, N'') <> ISNULL(s.Symbol, N'')
-                  OR ISNULL(t.QuoteAsOf, N'19000101') <> ISNULL(s.QuoteAsOf, N'19000101')
-                  OR ISNULL(t.BasisBid, N'') <> ISNULL(s.BasisText, N'')
-                  OR ISNULL(t.BasisSymbol, N'') <> ISNULL(s.BasisSymbol, N'')
-                  OR ISNULL(t.BasisQuoteAsOf, N'19000101') <> ISNULL(s.BasisQuoteAsOf, N'19000101')
-                  OR ISNULL(t.UnderlyingFuture, N'') <> ISNULL(s.UnderlyingFuture, N'')
-                  OR ISNULL(t.CoveredByCropYear, -1) <> ISNULL(s.CoveredByCropYear, -1)
-                  OR ISNULL(t.CoveredByMonth, -1) <> ISNULL(s.CoveredByMonth, -1))
+-- A feed-owned cell refreshes on any real change, and only on a real change, so a no-op run does not
+-- churn ModifiedAt. Deliberately NOT gated on @staleCutoff: a quote the elevator has left for weeks is
+-- still what the elevator says, and keeping the row current (with its QuoteAsOf) is what lets the sheet
+-- print the date it went quiet (not updated since Oct 7) instead of nothing.
+--
+-- A hand-typed cell belongs to the person who typed it until the elevator says something NEWER: the
+-- feed takes it back only with a post that is both current (at or after @staleCutoff) and stamped after
+-- the edit. Newest wins. The first cut let the feed take any manual cell it had a winner for -- on the
+-- argument that a user filling a gap should yield once the vendor covers it -- which in practice meant
+-- an originator who corrected a frozen vendor price lost the correction the next morning, to the same
+-- frozen price. A user who wants the feed back can clear the cell: the row is deleted and the next run
+-- re-inserts it.
+--
+-- Source is reassigned on takeover, so the cell is feed-owned again from then on.
+WHEN MATCHED AND
+(
+    (t.Source = N'Barchart'
+     AND (t.Bid <> ISNULL(s.BidText, N'')
+          OR ISNULL(t.BarchartSymbol, N'') <> ISNULL(s.Symbol, N'')
+          OR ISNULL(t.QuoteAsOf, N'19000101') <> ISNULL(s.QuoteAsOf, N'19000101')
+          OR ISNULL(t.BasisBid, N'') <> ISNULL(s.BasisText, N'')
+          OR ISNULL(t.BasisSymbol, N'') <> ISNULL(s.BasisSymbol, N'')
+          OR ISNULL(t.BasisQuoteAsOf, N'19000101') <> ISNULL(s.BasisQuoteAsOf, N'19000101')
+          OR ISNULL(t.UnderlyingFuture, N'') <> ISNULL(s.UnderlyingFuture, N'')
+          OR ISNULL(t.CoveredByCropYear, -1) <> ISNULL(s.CoveredByCropYear, -1)
+          OR ISNULL(t.CoveredByMonth, -1) <> ISNULL(s.CoveredByMonth, -1)))
+    OR
+    (t.Source <> N'Barchart'
+     AND s.FeedAsOf IS NOT NULL
+     AND s.FeedAsOf >= @staleCutoff
+     AND s.FeedAsOf >  ISNULL(t.ModifiedAt, t.CreatedAt))
+)
     THEN UPDATE SET
         t.Bid               = ISNULL(s.BidText, N''),
         t.Source            = N'Barchart',
@@ -780,6 +812,7 @@ SELECT CAST(@written + @pruned AS int);";
             ("@basisType", BarchartFeedDefaults.BasisInstrumentType),
             ("@appliedBy", appliedBy),
             ("@maxQuoteAgeDays", maxQuoteAgeDays),
+            ("@staleAfterDays", staleAfterDays),
             ("@minPrice", BarchartFeedDefaults.MinPublishablePrice),
             ("@maxPrice", BarchartFeedDefaults.MaxPublishablePrice));
     }
