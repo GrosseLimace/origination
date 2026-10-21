@@ -823,6 +823,23 @@ export class BidSheetComponent {
   /** Whether the BarChart picker and fed-bid display are turned on for this environment. */
   readonly barchartEnabled = environment.barchartBidsEnabled === true;
 
+  /**
+   * When BarChart prices were last loaded (the pipeline's morning run), ISO. Shown next to the sheet
+   * picker as "BarChart bids updated ...", asked for by originators (2026-10-21) so they always know
+   * whether the fed numbers are this morning's or yesterday's. This is the LOAD time for the whole
+   * sheet; each fed cell's own "as of" (when the elevator last changed that bid) stays on its badge.
+   */
+  readonly barchartPricesRefreshedAt = signal<string | null>(null);
+
+  /** "Oct 21, 5:52 AM" -- always date AND time, since the question it answers is "how old is this". */
+  readonly barchartUpdatedLabel = computed<string>(() => {
+    const iso = this.barchartPricesRefreshedAt();
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  });
+
 
   // A fed bid that had sat unchanged for a while used to render at half opacity. It is gone: every bid
   // reads the same whether it is this morning's or August's. For a past month the month itself already
@@ -1569,6 +1586,15 @@ export class BidSheetComponent {
 
     // Load all bid sheet locations for map display (once)
     this._loadAllMapLocations();
+
+    // When BarChart prices were last loaded, for the "bids updated" stamp. Best effort: if it fails
+    // the stamp simply does not show, which is better than a wrong one.
+    if (this.barchartEnabled) {
+      this.apiService.getBarchartCoverage().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (c) => this.barchartPricesRefreshedAt.set(c?.pricesRefreshedUtc ?? null),
+        error: () => this.barchartPricesRefreshedAt.set(null),
+      });
+    }
 
     // Restores saved crop/month/year/columns AND which sheet was last open (_loadSheets runs once
     // that comes back). This used to be gated on having a trade unit selected and, worse, was never

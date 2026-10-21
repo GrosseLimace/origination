@@ -328,6 +328,7 @@ public class BarchartCatalogServiceTests
         {
             LocationCount = 2894,
             LastRefreshedUtc = new DateTime(2026, 8, 18, 11, 0, 0, DateTimeKind.Utc),
+            PricesRefreshedUtc = new DateTime(2026, 10, 21, 10, 52, 0, DateTimeKind.Utc),
             States = [new BarchartStateCoverage { State = "IA", LocationCount = 412 }]
         });
 
@@ -335,5 +336,8 @@ public class BarchartCatalogServiceTests
 
         Assert.Equal(2894, result.LocationCount);
         Assert.Equal("IA", Assert.Single(result.States).State);
+        // The "bids updated" stamp the Bid Sheet shows; it is the price load, not the catalog sweep.
+        Assert.Equal(new DateTime(2026, 10, 21, 10, 52, 0, DateTimeKind.Utc), result.PricesRefreshedUtc);
+        Assert.NotEqual(result.LastRefreshedUtc, result.PricesRefreshedUtc);
     }
 }

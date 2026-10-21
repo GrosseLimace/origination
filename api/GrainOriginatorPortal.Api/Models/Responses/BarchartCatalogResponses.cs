@@ -114,6 +114,8 @@ public record BarchartCoverageResponse
 {
     public int LocationCount { get; init; }
     public DateTime? LastRefreshedUtc { get; init; }
+    /// <summary>When prices were last loaded from the vendor; shown on the Bid Sheet as "BarChart bids updated ...".</summary>
+    public DateTime? PricesRefreshedUtc { get; init; }
     public List<BarchartStateCoverageResponse> States { get; init; } = [];
 }
 

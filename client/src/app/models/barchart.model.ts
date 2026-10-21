@@ -83,7 +83,10 @@ export interface BarchartCatalogBid {
 /** What the catalog holds, so an empty search reads as a coverage gap rather than a broken feed. */
 export interface BarchartCoverage {
   locationCount: number;
+  /** Catalog sweep: when the list of elevators was last refreshed. */
   lastRefreshedUtc?: string;
+  /** Price load: when bids were last pulled from BarChart. Shown on the Bid Sheet as "BarChart bids updated ...". */
+  pricesRefreshedUtc?: string;
   states: BarchartStateCoverage[];
 }
 

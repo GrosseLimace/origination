@@ -3128,6 +3128,24 @@ describe('BidSheetComponent — owner actions act on the sheet they were raised 
     expect(component.showShareSheet()).toBe(false);
   });
 
+  // "BarChart bids updated ..." next to the sheet picker: the price LOAD time, always with a date and
+  // a time, because the question it answers is "are these this morning's numbers". Empty, not a
+  // placeholder, when there is nothing to say -- a wrong stamp is worse than none.
+  it('labels the BarChart price-load time with a date and a time, and says nothing without one', () => {
+    component.barchartPricesRefreshedAt.set('2026-10-21T10:52:00Z');
+    const label = component.barchartUpdatedLabel();
+    const expected = new Date('2026-10-21T10:52:00Z').toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    expect(label).toBe(expected);
+    expect(label).toMatch(/Oct 21/);
+    expect(label).toMatch(/\d:52/);
+
+    component.barchartPricesRefreshedAt.set(null);
+    expect(component.barchartUpdatedLabel()).toBe('');
+
+    component.barchartPricesRefreshedAt.set('not a date');
+    expect(component.barchartUpdatedLabel()).toBe('');
+  });
+
   // The toolbar buttons have no row to be raised from, so they keep pointing at the first ticked --
   // which is why the ones that cannot be made unambiguous are hidden once several are open.
   it('falls back to the first ticked sheet when raised without one', () => {

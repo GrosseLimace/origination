@@ -54,6 +54,7 @@ public static class BarchartCatalogMappings
     {
         LocationCount = c.LocationCount,
         LastRefreshedUtc = c.LastRefreshedUtc,
+        PricesRefreshedUtc = c.PricesRefreshedUtc,
         States = c.States
             .Select(s => new BarchartStateCoverageResponse { State = s.State, LocationCount = s.LocationCount })
             .ToList(),

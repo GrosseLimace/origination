@@ -282,11 +282,16 @@ public class BarchartCatalogRepository : IBarchartCatalogRepository
         var total = await _appContext.BarchartLocationSummaries.CountAsync(cancellationToken);
         var lastSeen = await _appContext.BarchartLocationSummaries
             .MaxAsync(l => (DateTime?)l.LastSeenUtc, cancellationToken);
+        // The newest quote write is when the pipeline last delivered prices (every quote in a load gets
+        // this stamp, whether or not the elevator's number moved), which is what "bids updated" means.
+        var pricesRefreshed = await _appContext.BarchartCurrentQuotes
+            .MaxAsync(q => (DateTime?)q.UpdatedAtUtc, cancellationToken);
 
         return new BarchartCoverage
         {
             LocationCount = total,
             LastRefreshedUtc = lastSeen,
+            PricesRefreshedUtc = pricesRefreshed,
             States = states
         };
     }

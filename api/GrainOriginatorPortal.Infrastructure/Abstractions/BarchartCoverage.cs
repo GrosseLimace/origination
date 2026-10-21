@@ -12,6 +12,15 @@ public record BarchartCoverage
     /// <summary>When the catalog was last refreshed by a vendor load.</summary>
     public DateTime? LastRefreshedUtc { get; init; }
 
+    /// <summary>
+    /// When PRICES were last loaded from the vendor -- the most recent quote write. This is the stamp
+    /// the Bid Sheet shows as "BarChart bids updated ...", so an originator knows whether the numbers
+    /// are this morning's or yesterday's. Distinct from <see cref="LastRefreshedUtc"/>, which is the
+    /// catalog sweep (which elevators exist), and from each cell's own QuoteAsOf, which is when the
+    /// elevator last changed that one bid.
+    /// </summary>
+    public DateTime? PricesRefreshedUtc { get; init; }
+
     /// <summary>Per-state counts, most locations first.</summary>
     public List<BarchartStateCoverage> States { get; init; } = [];
 }

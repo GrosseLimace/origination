@@ -52,6 +52,15 @@
                 (deletedSheet)="openDeleteSheetConfirm($event)" />
             }
 
+            <!-- When BarChart prices were last loaded. Always on screen, not a tooltip: the question it
+                 answers is "are these this morning's numbers", and nobody hovers to find that out. -->
+            @if (barchartEnabled && barchartUpdatedLabel()) {
+              <span class="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap"
+                    title="When the BarChart price feed last ran. Each fed bid's own date -- when the elevator last changed it -- is on its Feed badge in the location panel.">
+                BarChart bids updated {{ barchartUpdatedLabel() }}
+              </span>
+            }
+
             <select [ngModel]="selectedCrop()" (ngModelChange)="selectedCrop.set($event); onMapCropChange()" class="px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
               <option value="">All Crops</option>
               @for (crop of mapCropChoices(); track crop) {
