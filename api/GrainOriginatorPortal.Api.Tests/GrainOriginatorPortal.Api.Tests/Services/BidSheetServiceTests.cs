@@ -254,6 +254,41 @@ public class BidSheetServiceTests
         _repo.Verify(r => r.DeleteLocationAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    // BarChart-linked locations are never deleted through the app -- not by their creator, not by an
+    // Admin (business rule, 2026-10-20). The way off a sheet is removing it from the sheet, which keeps
+    // the location and its feed bids for everyone else.
+    [Theory]
+    [InlineData(false)]   // the creator
+    [InlineData(true)]    // an Admin
+    public async Task DeleteLocationAsync_BarchartLinkedLocation_ThrowsForbiddenForEveryoneAndDeletesNothing(bool admin)
+    {
+        _repo.Setup(r => r.GetLocationCreatedByAsync(7, It.IsAny<CancellationToken>()))
+             .ReturnsAsync("user@x.com");
+        _repo.Setup(r => r.GetLocationAsync(7, It.IsAny<CancellationToken>()))
+             .ReturnsAsync(new BidSheetLocation { Id = 7, Name = "Gothenburg", BarchartLocationKey = "6916", CreatedBy = "user@x.com" });
+        _requestContext.Setup(r => r.IsAdmin()).Returns(admin);
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(
+            () => _sut.DeleteLocationAsync(7, CancellationToken.None));
+
+        Assert.Contains("Remove it from your bid sheet", ex.Message);
+        _repo.Verify(r => r.DeleteLocationAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // A manual location (no BarChart key) still deletes for its creator.
+    [Fact]
+    public async Task DeleteLocationAsync_ManualLocation_StillDeletesForItsCreator()
+    {
+        _repo.Setup(r => r.GetLocationCreatedByAsync(7, It.IsAny<CancellationToken>()))
+             .ReturnsAsync("user@x.com");
+        _repo.Setup(r => r.GetLocationAsync(7, It.IsAny<CancellationToken>()))
+             .ReturnsAsync(new BidSheetLocation { Id = 7, Name = "Our Elevator", BarchartLocationKey = null, CreatedBy = "user@x.com" });
+
+        await _sut.DeleteLocationAsync(7, CancellationToken.None);
+
+        _repo.Verify(r => r.DeleteLocationAsync(7, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     // Wiping every bid for a commodity is destructive on the same shared row, so it is gated the same.
     [Fact]
     public async Task DeleteBidsAsync_SomeoneElsesLocation_ThrowsForbidden()
