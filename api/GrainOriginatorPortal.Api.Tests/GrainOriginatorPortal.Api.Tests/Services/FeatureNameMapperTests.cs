@@ -37,6 +37,8 @@ public class FeatureNameMapperTests
     [InlineData("GET", "/api/storedgrain/customer/4821", "customers", "storage")]
     [InlineData("GET", "/api/dpcontracts/customer/4821", "customers", "dp-contracts")]
     [InlineData("PUT", "/api/producerdetails/customer/4821", "customers", "producer-details")]
+    [InlineData("POST", "/api/fd-cic/2026/score", "customers", "fd-cic-45z")]
+    [InlineData("GET", "/api/fd-cic/2026/options", "customers", "fd-cic-45z")]
     // ---- Planting Intentions dashboard --------------------------------------------
     // Saves are POST .../upsert, so they must not fall through to the by-crop view rule.
     [InlineData("GET", "/api/dashboardplantingestimates", "dashboard", "by-crop")]

@@ -37,13 +37,35 @@ The calculation steps live in code, and the numbers live in the pack. If a new U
 numbers, the update is just a new pack. If it changes a formula, the change report says so, and the
 calculator gets a new version alongside the old one.
 
-**Rules the calculator follows** (to build in the C# port):
-- Every saved score records the method version (e.g. `USDA FD-CIC v1.2`) and the pack's hashes, next to the
+## The calculator in the API
+
+Code lives in [Services/FdCic/](../../api/GrainOriginatorPortal.Api/Services/FdCic/):
+
+| Piece | What it does |
+|---|---|
+| `FdCicPack` | Loads an embedded pack and refuses it if any data file's SHA-256 differs from its manifest |
+| `FdCicMethodV1` | The v1.2 arithmetic (§2.14 of the method write-up), tied to the v1.2 formula fingerprint |
+| `FdCicVersionGate` | A version is usable only if a method matches its fingerprint, its test cases were confirmed against the same workbook, and every case reproduces Excel to a relative 1e-9 |
+| `FdCicService` | Picks each crop year's version from `FdCic:VersionByYear` in appsettings.json and gates it at startup. A failing version is logged ("FD-CIC vX is switched off: …") and scores nothing; the rest of the app runs normally |
+
+Endpoints (signed-in users; nothing is stored):
+
+| Endpoint | Returns |
+|---|---|
+| `GET api/fd-cic/versions` | Each version, its years, and whether it passed its gate (and why not) |
+| `GET api/fd-cic/{year}/options` | Crop, cover crop, tillage and manure choices, and the states, in the version's own labels |
+| `GET api/fd-cic/{year}/counties?state=IA` | The counties that version can look up |
+| `POST api/fd-cic/{year}/score` | The CI and its components, the national average and change, plus the version label, workbook hash and formula fingerprint. Leave out the actual yield for a projected score. Places USDA has no data for come back with `scorable: false` and the reason |
+
+The API tests run every case in every embedded pack, so adding a pack whose cases don't reproduce fails the
+build.
+
+**Rules for scores the app keeps** (for the storage step):
+- Every saved score records the label, workbook hash and formula fingerprint returned with it, next to the
   inputs and outputs it froze.
 - A finalized score is never recalculated under a newer version. It stays on the version that produced it.
-- Which version applies to a program year is a setting, so switching versions is a configuration change, not
+- Which version applies to a crop year is a setting, so switching versions is a configuration change, not
   a code release.
-- A version can't be switched on until its golden cases pass.
 
 **Decision needed (business):** when USDA releases a new version mid-season, should fields that are not yet
 finalized be rescored under it? Recommended: yes, with a visible "rescored under vX" note. Finalized fields
@@ -72,10 +94,14 @@ its macros. The tools read it as data, and the Excel check runs with macros forc
    ```bash
    node tools/fdcic-extract/golden.mjs <new-workbook.xlsm> api/GrainOriginatorPortal.Api/Content/FdCic/v1.3
    ```
-5. **Run the API tests.** The calculator must match every golden case in the new pack.
+5. **Run the API tests** (`FdCicGoldenCaseTests` picks up the new pack by itself). The calculator must match
+   every golden case. A formula change also needs a new `IFdCicMethod` for the new fingerprint, registered in
+   Program.cs next to `FdCicMethodV1`.
 6. **Review and approve:** a pull request with the pack, `CHANGES.md` and test results. Update the
    "Version in use" table above. `CHANGES.md` stays in the repo as the record of what changed.
-7. **Switch the program year's version** in configuration once approved.
+7. **Switch the crop year's version** in `FdCic:VersionByYear` (appsettings.json, or an App Service setting
+   such as `FdCic__VersionByYear__2027=1.3`) once approved. Check the startup log or `GET api/fd-cic/versions`
+   to confirm it passed its gate.
 
 For a tables-only release this should take about a day, most of it review.
 
