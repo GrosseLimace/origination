@@ -593,9 +593,9 @@ Build these in order:
    - corn in MLRA 77D: CSA has it but IEF does not.
 9. Use `double` throughout, without intermediate rounding. Compare with Excel at a tolerance of about 1e-9 relative.
 
-### Suggested Excel-vs-port test cases (1 MU each)
+### Excel-vs-port test cases (1 MU each)
 
-The "predicted" columns were computed from the formulas above by a scratch script that read the dumped tables. They are **not Excel output**; the point of the test is to confirm them in Excel.
+**Confirmed in Excel on 2026-10-22.** These results were first predicted from the formulas above, then calculated by Excel itself (macros off, workbook not saved). Excel agreed to every digit shown. Full-precision values, plus four more cases, are in the v1.2 pack's `golden-cases.json` (see [README.md](README.md)).
 
 | # | Crop | State / County (MLRA) | Actual / Expected yield → yield for CI | Syn N lb/ac | Cover crop | Tillage | NI fraction | Manure (amount × lb N) | Exercises |
 |---|---|---|---|---|---|---|---|---|---|
@@ -605,7 +605,7 @@ The "predicted" columns were computed from the formulas above by a scratch scrip
 | 4 | Sorghum | KS / Finney (72) | 80 / 80 → 80 | 90 | Cover crop | No till (NTIT) | 0.25 | Dairy liquid 4 × 25 | sorghum NTIT column, partial NI, manure |
 | 5 | Canola | ND / Cass (56A) | 40 / 45 → 40 | 100 | Cover crop | Reduced till | 0.5 | Poultry solid 2 × 60 | canola branch and small MLRA coverage |
 
-Predicted outputs (g CO2e/bu):
+Outputs (g CO2e/bu), as calculated by Excel:
 
 | # | N fert C70 | SOC C72 | Dir N2O C79 | Indir N2O C80 | Energy C82 | Other chem C83 | Urea/lime C84 | **CI C68** | Natl M68 | % C98 |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -615,10 +615,10 @@ Predicted outputs (g CO2e/bu):
 | 4 | 1466.24 | −4831.67 | 5951.53 | 152.56 | 628.59 | 595.14 | 269.58 | **4231.98** | 6429.27 | −34.18% |
 | 5 | 2715.03 | −4798.95 | 17478.51 | 843.61 | 796.58 | 1036.39 | 979.93 | **19051.10** | 15530.31 | +22.67% |
 
-Additional sanity cases worth running:
-- **Corn in a county whose MLRA is 77D.** Expect `#N/A` (missing IEF).
-- **Any crop with county "None".** Expect `#N/A`.
-- **Corn in Story with national-like inputs** (yield 186/186, N 155.687, no practices, NI 0). The predicted CI is 5646.40, which is **not** equal to the national 6019.55, because C70/C84 scale by NUI/threshold and the N2O terms use the local IEF and C23.
+Additional cases (also in `golden-cases.json`, also confirmed in Excel):
+- **Corn in a county whose MLRA is 77D** (Andrews, TX). Excel gives `#N/A` (missing IEF).
+- **Canola in Story, IA** (no canola data for MLRA 103). Excel gives `#VALUE!` (the "NA" table cell).
+- **Corn in Story with national-like inputs** (yield 186/186, N 155.687, no practices, NI 0). Excel gives a CI of 5646.40, which is **not** equal to the national 6019.55, because C70/C84 scale by NUI/threshold and the N2O terms use the local IEF and C23.
 
 ---
 

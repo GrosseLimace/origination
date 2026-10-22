@@ -1,0 +1,231 @@
+{
+  "note": "Test cases for the FD-CIC calculator. Inputs are written by hand; every expected block is Excel's own result (tools/fdcic-extract/golden.mjs).",
+  "cases": [
+    {
+      "name": "1 corn Story IA no-till, inhibitor 50%",
+      "crop": "Corn",
+      "state": "IA",
+      "county": "Story",
+      "actualYield": 200,
+      "expectedYield": 190,
+      "syntheticN": 180,
+      "niFraction": 0.5,
+      "coverCrop": "No cover crop",
+      "tillage": "No till",
+      "manure": [],
+      "expected": {
+        "yieldForCi": 200,
+        "nFertilizer": 1173.9679678496075,
+        "soilCarbon": -2383.972964453836,
+        "directN2o": 2304.637402000886,
+        "indirectN2o": 359.3766608233511,
+        "onFarmEnergy": 623.821282316312,
+        "otherChemicals": 474.5549737095992,
+        "ureaLime": 518.3598830123829,
+        "ci": 3070.7452052583026,
+        "nationalAverage": 6019.548841421649,
+        "changeFraction": -0.4898712036144758
+      }
+    },
+    {
+      "name": "2 corn McLean IL grazed cover, low yield clamp, two manures",
+      "crop": "Corn",
+      "state": "IL",
+      "county": "McLean",
+      "actualYield": 140,
+      "expectedYield": 200,
+      "syntheticN": 170,
+      "niFraction": 0,
+      "coverCrop": "Cover crop with grazing",
+      "tillage": "Reduced till",
+      "manure": [
+        {"amount":5,"nContent":30},
+        {"amount":10,"nContent":12}
+      ],
+      "expected": {
+        "yieldForCi": 160,
+        "nFertilizer": 1385.93440648912,
+        "soilCarbon": -1395.6635215395531,
+        "directN2o": 6460.721175597321,
+        "indirectN2o": 746.661584156564,
+        "onFarmEnergy": 797.154007838302,
+        "otherChemicals": 474.5549737095992,
+        "ureaLime": 557.331688210732,
+        "ci": 9026.694314462085,
+        "nationalAverage": 6019.548841421649,
+        "changeFraction": 0.4995632649988156
+      }
+    },
+    {
+      "name": "3 soybean McLean IL cover + no-till, high yield clamp",
+      "crop": "Soybean",
+      "state": "IL",
+      "county": "McLean",
+      "actualYield": 75,
+      "expectedYield": 55,
+      "syntheticN": 10,
+      "niFraction": 0,
+      "coverCrop": "Cover crop",
+      "tillage": "No till",
+      "manure": [],
+      "expected": {
+        "yieldForCi": 66,
+        "nFertilizer": 257.17314949538184,
+        "soilCarbon": -7930.207521698716,
+        "directN2o": 6321.417201522917,
+        "indirectN2o": 351.8659412602535,
+        "onFarmEnergy": 1098.0389861236251,
+        "otherChemicals": 1064.7645108419968,
+        "ureaLime": 47.28343764564073,
+        "ci": 1210.335705191099,
+        "nationalAverage": 7682.148865188497,
+        "changeFraction": -0.8424482880466284
+      }
+    },
+    {
+      "name": "4 sorghum Finney KS cover + no-till (NTIT), inhibitor 25%, manure",
+      "crop": "Sorghum",
+      "state": "KS",
+      "county": "Finney",
+      "actualYield": 80,
+      "expectedYield": 80,
+      "syntheticN": 90,
+      "niFraction": 0.25,
+      "coverCrop": "Cover crop",
+      "tillage": "No till",
+      "manure": [
+        {"amount":4,"nContent":25}
+      ],
+      "expected": {
+        "yieldForCi": 80,
+        "nFertilizer": 1466.2442476566148,
+        "soilCarbon": -4831.673502886976,
+        "directN2o": 5951.533875842162,
+        "indirectN2o": 152.5566224823338,
+        "onFarmEnergy": 628.5943995875019,
+        "otherChemicals": 595.142624632374,
+        "ureaLime": 269.58128635663,
+        "ci": 4231.979553670641,
+        "nationalAverage": 6429.267580611221,
+        "changeFraction": -0.34176335008469
+      }
+    },
+    {
+      "name": "5 canola Cass ND cover + reduced till, inhibitor 50%, manure",
+      "crop": "Canola",
+      "state": "ND",
+      "county": "Cass",
+      "actualYield": 40,
+      "expectedYield": 45,
+      "syntheticN": 100,
+      "niFraction": 0.5,
+      "coverCrop": "Cover crop",
+      "tillage": "Reduced till",
+      "manure": [
+        {"amount":2,"nContent":60}
+      ],
+      "expected": {
+        "yieldForCi": 40,
+        "nFertilizer": 2715.032535684218,
+        "soilCarbon": -4798.950230155706,
+        "directN2o": 17478.51373233568,
+        "indirectN2o": 843.6136910676879,
+        "onFarmEnergy": 796.5795031221729,
+        "otherChemicals": 1036.3889150680043,
+        "ureaLime": 979.9262799300128,
+        "ci": 19051.10442705207,
+        "nationalAverage": 15530.305522917366,
+        "changeFraction": 0.2267050637825006
+      }
+    },
+    {
+      "name": "6 corn Story IA national-like inputs, no practices",
+      "crop": "Corn",
+      "state": "IA",
+      "county": "Story",
+      "actualYield": 186,
+      "expectedYield": 186,
+      "syntheticN": 155.687,
+      "niFraction": 0,
+      "coverCrop": "No cover crop",
+      "tillage": "None of the above",
+      "manure": [],
+      "expected": {
+        "yieldForCi": 186,
+        "nFertilizer": 1091.8252748542525,
+        "soilCarbon": 0,
+        "directN2o": 2366.101273123657,
+        "indirectN2o": 395.21691595032513,
+        "onFarmEnergy": 815.4495067071456,
+        "otherChemicals": 474.5549737095992,
+        "ureaLime": 503.25726086885066,
+        "ci": 5646.40520521383,
+        "nationalAverage": 6019.548841421649,
+        "changeFraction": -0.06198863835776974
+      }
+    },
+    {
+      "name": "7 soybean McLean IL full inhibitor (raises N2O here), three manures",
+      "crop": "Soybean",
+      "state": "IL",
+      "county": "McLean",
+      "actualYield": 60,
+      "expectedYield": 58,
+      "syntheticN": 20,
+      "niFraction": 1,
+      "coverCrop": "No cover crop",
+      "tillage": "None of the above",
+      "manure": [
+        {"amount":3,"nContent":20},
+        {"amount":8,"nContent":32},
+        {"amount":1,"nContent":94}
+      ],
+      "expected": {
+        "yieldForCi": 60,
+        "nFertilizer": 565.78092888984,
+        "soilCarbon": 0,
+        "directN2o": 24128.809595684157,
+        "indirectN2o": 3205.0169549574152,
+        "onFarmEnergy": 1266.7566448122577,
+        "otherChemicals": 1064.7645108419968,
+        "ureaLime": 104.0235628204096,
+        "ci": 30335.15219800608,
+        "nationalAverage": 7682.148865188497,
+        "changeFraction": 2.9487847385344494
+      }
+    },
+    {
+      "name": "8 corn Andrews TX (MLRA 77D has no emission factors)",
+      "crop": "Corn",
+      "state": "TX",
+      "county": "Andrews",
+      "actualYield": 150,
+      "expectedYield": 150,
+      "syntheticN": 150,
+      "niFraction": 0,
+      "coverCrop": "No cover crop",
+      "tillage": "None of the above",
+      "manure": [],
+      "expected": {"error":"#N/A"}
+    },
+    {
+      "name": "9 canola Story IA (no canola data for this MLRA)",
+      "crop": "Canola",
+      "state": "IA",
+      "county": "Story",
+      "actualYield": 40,
+      "expectedYield": 40,
+      "syntheticN": 100,
+      "niFraction": 0,
+      "coverCrop": "No cover crop",
+      "tillage": "None of the above",
+      "manure": [],
+      "expected": {"error":"#VALUE!"}
+    }
+  ],
+  "confirmedInExcel": {
+    "on": "2026-10-22",
+    "workbookSha256": "da5c9dc4a1907ffde88bc17cbe046f07915cb207fa8107eed989f42268a4bc26",
+    "how": "Inputs typed into Crop Inputs column C by tools/fdcic-extract/excel-run.ps1; macros disabled; workbook not saved."
+  }
+}
