@@ -70,6 +70,13 @@ export const routes: Routes = [
         loadChildren: () => import('./features/cws-spike/cws-spike.routes').then(m => m.CWS_SPIKE_ROUTES)
       }
     : { path: 'cws', redirectTo: '' },
+  // Self-help: every question, by category or search. The Help panel itself isn't a route — it opens
+  // over whatever page the user is on.
+  {
+    path: 'help',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/help/pages/help/help.component').then(m => m.HelpComponent)
+  },
   {
     path: '**',
     redirectTo: ''

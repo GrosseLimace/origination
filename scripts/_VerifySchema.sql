@@ -94,6 +94,13 @@
 --   BinCapacity and unlinked grain onto a new "Bin 1" site; 20261009201700_DropProducerDetailsBinCapacity
 --   then dropped ProducerDetails.BinCapacity.
 --   20261009201625_AddBinSitesModifiedAt added ProducerDetails.BinSitesModifiedAt datetime2 NULL (backfilled).
+--   Updated 2026-10-06: 20261006150349_AddCustomerIdSequence creates the sequence dbo.CustomerIdSequence
+--   (ids for customers minted from CTRM, band [5e15, 6e15)); no table, column or index changed, so
+--   @Migrations grew by one and a 'Sequence.Missing' check sits next to the unique-index checks.
+--   The Migrations count comment read 52 but the list already held 55 ids; corrected to 56.
+--   Updated 2026-10-07: 20261007133856_AddCustomerPaymentMethod adds dbo.Customer.PaymentMethod
+--   nvarchar(10) NULL (the CTRM payment method code behind the ACH badge on the ctrm customer-sync
+--   source), so Columns grew to 372 and Migrations to 57.
 --   Updated 2026-10-13 (spike_CwsWorkspaceEmbed = featureflag_GraphQLBarChart + main): main brought
 --   ProducerBinSite and the bin-site columns, and dropped UsageDashboardViewAllUsers and
 --   ProducerDetails.BinCapacity; the branch keeps its remodel shapes (BidSheetLocations.TradeUnitCode
@@ -103,6 +110,10 @@
 --   Updated 2026-10-20 (main 5ed04040 merged in): main now carries the Bid Sheet remodel and BarChart
 --   (#726) and 20261013163045_RestrictCustomerTradeUnitDeleteAndValidateCustomerFks; this branch adds
 --   only the organic certification tables on top. Totals re-checked against the merged snapshot.
+--   Updated 2026-10-22 (main 3f688806 merged in): main brought the CustomerIdSequence, Customer.PaymentMethod,
+--   ConvertYearlyBidsToFuturesMonth and ExcludeNotesWithoutTradeUnitFromRecap migrations; this branch still
+--   adds only the organic certification tables. Merged lists
+--   = main's rows + the 56 organic rows: 51 tables, 530 columns, 26 unique indexes, 99 migrations.
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -211,7 +222,7 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (529)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (530)
 -- Format: (schema, table, column, sql_type, is_nullable)
 -- sql_type format must match what this script reconstructs from sys.columns:
 --   int, bigint, bit, datetime2, datetime2(N), date, float, uniqueidentifier
@@ -406,6 +417,7 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'Customer', 'IsManual',                   'bit',           0),
 ('dbo', 'Customer', 'MerchandisingCity',          'nvarchar(255)', 1),
 ('dbo', 'Customer', 'CustomerName',               'nvarchar(500)', 0),
+('dbo', 'Customer', 'PaymentMethod',              'nvarchar(10)',  1),
 ('dbo', 'Customer', 'MerchandisingPhone',         'nvarchar(100)', 1),
 ('dbo', 'Customer', 'MerchandisingPostalCode',    'nvarchar(20)',  1),
 ('dbo', 'Customer', 'ScoularId',                  'nvarchar(400)', 1),
@@ -837,7 +849,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (96)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (99)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -920,6 +932,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20260923152000_AddOrganicCertificationTables'),
 ('20261001133422_AddCtrmSourceToggleUsers'),
 ('20261005131626_DropCtrmSourceToggleUsers'),
+('20261006150349_AddCustomerIdSequence'),
+('20261007133856_AddCustomerPaymentMethod'),
 ('20261007145119_AddProducerBinSite'),
 ('20261007152343_WidenProducerBinSiteCoordinatePrecision'),
 ('20261007162014_AddBinSiteQueryLibraryItems'),
@@ -937,7 +951,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20261009201625_AddBinSitesModifiedAt'),
 ('20261009201700_DropProducerDetailsBinCapacity'),
 ('20261013163045_RestrictCustomerTradeUnitDeleteAndValidateCustomerFks'),
-('20261020171105_ConvertYearlyBidsToFuturesMonth');
+('20261020171105_ConvertYearlyBidsToFuturesMonth'),
+('20261022142931_ExcludeNotesWithoutTradeUnitFromRecap');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.
@@ -1138,6 +1153,18 @@ INSERT INTO @Findings (SortBucket, Category, Item, Expected, Actual, Status)
 
     UNION ALL
 
+    -- ---- Missing sequence (20261006150349_AddCustomerIdSequence) ----
+    SELECT 42, 'Sequence.Missing',
+           '[dbo].[CustomerIdSequence]',
+           'present', 'MISSING', 'FAIL'
+    WHERE NOT EXISTS (
+        SELECT 1 FROM sys.sequences s
+        INNER JOIN sys.schemas sc ON sc.schema_id = s.schema_id
+        WHERE sc.name = 'dbo' AND s.name = 'CustomerIdSequence'
+    )
+
+    UNION ALL
+
     -- ---- Missing migrations (env behind code) ----
     SELECT 50, 'Migration.Missing',
            e.MigrationId, 'applied', 'MISSING', 'FAIL'
@@ -1191,3 +1218,5 @@ ELSE
 --   are unchanged from main. Tables 47, Columns 480, Unique indexes 24, Migrations 93.
 --   Updated 2026-10-20: 20261020171105_ConvertYearlyBidsToFuturesMonth is data-only (Yearly bids onto their
 --   futures month; flat organic prices back to the cash column); no table, column or index row changed.
+--   Updated 2026-10-22: 20261022142931_ExcludeNotesWithoutTradeUnitFromRecap only alters dbo.GetRecapNotes
+--   (skips notes with no trade unit); no table, column or index row changed.

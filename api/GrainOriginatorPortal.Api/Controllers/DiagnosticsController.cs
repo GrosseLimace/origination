@@ -19,7 +19,6 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class DiagnosticsController : ControllerBase
 {
     private readonly IWebHostEnvironment _env;
-    private readonly CustomerSyncService _customerSync;
     private readonly ISchemaDiagnosticsService _schema;
     private readonly ICtrmDiagnosticsService _ctrm;
     private readonly ICommoditySeedService _commoditySeed;
@@ -29,7 +28,6 @@ public class DiagnosticsController : ControllerBase
 
     public DiagnosticsController(
         IWebHostEnvironment env,
-        CustomerSyncService customerSync,
         ISchemaDiagnosticsService schema,
         ICtrmDiagnosticsService ctrm,
         ICommoditySeedService commoditySeed,
@@ -38,7 +36,6 @@ public class DiagnosticsController : ControllerBase
         IAppAccessDiagnosticsService appAccess)
     {
         _env = env;
-        _customerSync = customerSync;
         _schema = schema;
         _ctrm = ctrm;
         _commoditySeed = commoditySeed;
@@ -152,10 +149,10 @@ public class DiagnosticsController : ControllerBase
     /// from the App Service is the only way to test egress from inside the VNet rather than from a
     /// workstation on VPN. These endpoints report connectivity status only — no schema, no data.
     /// </remarks>
+    // The ONE definition of "production-like" lives in DiagnosticsEnvironmentGate, shared with
+    // CustomerSyncDiagnosticsController so the two cannot drift.
     private IActionResult? DenyIfProduction()
-        => _env.IsDevelopment() || _env.IsEnvironment("Dev") || _env.IsEnvironment("QA")
-            ? null
-            : NotFound();
+        => DiagnosticsEnvironmentGate.IsProductionLike(_env) ? NotFound() : null;
 
     // -------------------------------------------------------------------------
     /// <summary>
@@ -226,26 +223,9 @@ public class DiagnosticsController : ControllerBase
         return Ok(await _schema.GetTableSchemaAsync(tableName, cancellationToken));
     }
 
-    /// <summary>
-    /// Manual on-demand trigger for the customer sync. Available in all
-    /// environments to admins (gated by the controller-level
-    /// <c>[Authorize(Policy = "AdminOnly")]</c>) — useful when prod needs an
-    /// out-of-cycle refresh ahead of the next scheduled
-    /// <see cref="CustomerSyncBackgroundService"/> run.
-    ///
-    /// Invokes the same upsert / soft-delete logic the scheduled service uses
-    /// (see Services/CustomerSyncService). Replaces the legacy
-    /// POST /api/diagnostics/customer-snapshot/populate endpoint that did a
-    /// destructive DELETE+INSERT — the new sync preserves FK references from
-    /// Notes / ProducerDetails / ProducerPlantingIntentions by soft-deleting.
-    /// </summary>
-    [HttpPost("customer-sync/run")]
-    [ProducesResponseType(typeof(CustomerSyncResult), StatusCodes.Status200OK)]
-    public async Task<IActionResult> RunCustomerSync(CancellationToken cancellationToken = default)
-    {
-        var result = await _customerSync.SyncAsync(cancellationToken);
-        return Ok(result);
-    }
+    // POST customer-sync/run lives in CustomerSyncDiagnosticsController (dryRun / force / source
+    // options, last-run, compare, ctrm-probe, ctrm-capabilities). Keeping it here as well would map
+    // two actions to the same route and fail every call with an ambiguous-match error.
 
     // -------------------------------------------------------------------------
     /// <summary>
@@ -274,7 +254,7 @@ public class DiagnosticsController : ControllerBase
     /// verdict: Ok, or a categorized reason (EgressBlocked = NSG outbound rule needed,
     /// PermissionMissing = GroupMember.Read.All grant needed, TokenFailure, NotFound, NotConfigured).
     ///
-    /// Deliberately NOT gated by <see cref="DenyIfNotDevelopment"/> (like customer-sync/run):
+    /// Deliberately NOT gated by <see cref="DenyIfNotDevelopment"/> (like customer-sync/run in CustomerSyncDiagnosticsController):
     /// the deployed dev environment runs ASPNETCORE_ENVIRONMENT=Dev, which that gate would 404 —
     /// and deployed Dev is exactly where the managed identity's Graph access must be proven.
     /// Read-only; admin-gated by the controller-level policy.

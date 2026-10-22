@@ -24,7 +24,8 @@ namespace GrainOriginatorPortal.Api.Tests.Controllers;
 /// <item>DenyIfNotDevelopment (Development or QA only): connections, tables, tableschema, schema,
 /// commodities/seed, elevator-cache/*.</item>
 /// <item>DenyIfProduction (Development, Dev or QA): the four ctrm probes.</item>
-/// <item>Ungated: customer-sync/run, usage-rollups/backfill, app-access-group-members.</item>
+/// <item>Ungated: usage-rollups/backfill, app-access-group-members. (customer-sync/run moved to
+/// CustomerSyncDiagnosticsController, which has its own gate tests.)</item>
 /// </list>
 /// </summary>
 public class DiagnosticsControllerGateTests
@@ -55,7 +56,6 @@ public class DiagnosticsControllerGateTests
 
         return new DiagnosticsController(
             env.Object,
-            new CustomerSyncService(new Mock<IServiceScopeFactory>().Object, new Mock<ILogger<CustomerSyncService>>().Object),
             _schema.Object,
             _ctrm.Object,
             _commoditySeed.Object,
