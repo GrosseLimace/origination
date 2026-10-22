@@ -23,7 +23,7 @@
       {
         "group": "Help",
         "kind": "added",
-        "text": "Can't find a producer? Help can check your trade units, search every trade unit and CTRM, and tell you where the producer is and how to open or add them."
+        "text": "Can't find a producer? Help searches every trade unit in the Workbench for them. If they aren't in the Workbench yet, it checks CTRM, so you can add them. Either way, it tells you where the producer is and how to open or add them."
       },
       {
         "group": "Help",
