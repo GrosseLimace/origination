@@ -22,11 +22,12 @@
           <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">Field #</span>
             <input class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftField.fsaFieldNo" (ngModelChange)="saveField()" /></label>
           <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">State</span>
-            <select class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftField.state" (ngModelChange)="draftField.county = countiesFor($event)[0] || ''; saveField()">
-              @for (st of plan.states; track st) { <option [value]="st">{{ st }}</option> }
+            <select class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftField.state" (ngModelChange)="draftField.county = ''; saveField()">
+              @for (st of states(); track st) { <option [value]="st">{{ st }}</option> }
             </select></label>
           <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">County</span>
-            <select class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftField.county" (ngModelChange)="saveField()">
+            <select class="ci-input" [class.ci-missing]="!draftField.county" [disabled]="seasonLocked()" [(ngModel)]="draftField.county" (ngModelChange)="saveField()">
+              <option value="" disabled>County…</option>
               @for (c of countiesFor(draftField.state); track c) { <option [value]="c">{{ c }}</option> }
             </select></label>
           <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">{{ draftSeason.year }} acres</span>

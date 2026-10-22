@@ -2,10 +2,11 @@ import { Component, computed, effect, inject, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CoverCrop, FdCicData, FieldProgramRecord, FieldSeason, ManureApplication, ManureForm, ManureType, ProducerField, Tillage } from '@models';
-import { COVER_LABELS, TILLAGE_LABELS, estimateCi, fdCicCropFor, missingInputs } from '@shared/utils/ci-illustrative';
+import { FdCicApiService } from '@core/services/fd-cic-api.service';
 import { CiPreviewPanelComponent } from '../../ci-preview-panel.component';
 import { ProgramIntake } from '../program-def';
-import { ProgramRecordMockService } from '../program-record-mock.service';import { MANURE_OPTIONS, fdCicScorable } from './fd-cic.data';
+import { ProgramRecordMockService } from '../program-record-mock.service';
+import { COVER_LABELS, MANURE_OPTIONS, TILLAGE_LABELS, fdCicScoreState, missingInputs } from './fd-cic.data';
 
 const cloneData = (d: FdCicData): FdCicData => ({ ...d, manure: d.manure.map(m => ({ ...m })) });
 
@@ -13,7 +14,7 @@ const cloneData = (d: FdCicData): FdCicData => ({ ...d, manure: d.manure.map(m =
  * The 45Z inputs for one field, in the order and wording of the USDA FD-CIC v1.2 "Crop Inputs" tab.
  * State, county and acres come from the field, so they are not asked again; the workbook's defaults
  * are preselected, so expected yield and total N are all a field needs to score. Edits save as they
- * are made, and the CI beside the form moves with every change.
+ * are made, and the USDA score beside the form follows every change.
  */
 @Component({
   selector: 'app-fd-cic-intake',
@@ -24,6 +25,7 @@ const cloneData = (d: FdCicData): FdCicData => ({ ...d, manure: d.manure.map(m =
 })
 export class FdCicIntakeComponent implements ProgramIntake {
   private readonly records = inject(ProgramRecordMockService);
+  private readonly api = inject(FdCicApiService);
 
   readonly record = input.required<FieldProgramRecord>();
   readonly season = input.required<FieldSeason>();
@@ -46,13 +48,13 @@ export class FdCicIntakeComponent implements ProgramIntake {
   draft: FdCicData | null = null;
   private _draftOf: string | null = null;
 
-  readonly crop = computed(() => fdCicCropFor(this.season().cropLabel));
   readonly stored = computed(() => this.record().data as FdCicData);
-  readonly result = computed(() => {
-    const crop = this.crop();
-    return crop ? estimateCi(crop, fdCicScorable(this.stored(), this.season())) : null;
+  /** The USDA score from the API for what's saved; it follows every edit. */
+  readonly scoreState = computed(() => fdCicScoreState(this.api, this.stored(), this.season(), this.field()));
+  readonly missing = computed(() => {
+    const missing = missingInputs(this.stored(), this.season());
+    return this.field().county ? missing : ['the field\'s county (above)', ...missing];
   });
-  readonly missing = computed(() => missingInputs({ ...this.stored(), acres: this.season().acres }));
   readonly isFinal = computed(() => this.record().status === 'Final');
 
   constructor() {

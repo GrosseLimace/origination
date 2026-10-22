@@ -133,7 +133,8 @@ export class ProgramRecordMockService {
     for (const r of this.forEnrollment(enrollment).filter(x => x.status !== 'Final')) {
       const def = this.registry.get(r.programKey)!;
       const season = this.plan.season(r.seasonId)!;
-      const missing = def.finalizeMissing(r.data, season);
+      const field = this.plan.field(season.fieldKey)!;
+      const missing = def.finalizeMissing(r.data, season, field);
       if (missing.length) leftOpen.push({ recordId: r.id, missing });
       else this.finalize(r.id, 'harvest complete');
     }
@@ -147,7 +148,7 @@ export class ProgramRecordMockService {
     const field = season && this.plan.field(season.fieldKey);
     const def = current && this.registry.get(current.programKey);
     if (!current || !season || !field || !def || current.status === 'Final') return false;
-    if (def.finalizeMissing(current.data, season).length > 0) return false;
+    if (def.finalizeMissing(current.data, season, field).length > 0) return false;
     const frozen = { ...def.freeze(current.data, season, field), finalizedBy: by, finalizedAt: new Date().toISOString() };
     this.records.update(rs => rs.map(r => (r.id === id ? { ...r, status: 'Final', frozen } : r)));
     return true;

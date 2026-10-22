@@ -2,6 +2,7 @@ import { Component, ElementRef, computed, inject, input, output, signal, viewChi
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { FieldPlanMockService } from '@core/services/field-plan-mock.service';
+import { FdCicApiService } from '@core/services/fd-cic-api.service';
 import { Customer, FieldSeason, PlantingIntention } from '@models';
 import { ProgramRegistry } from './programs/program-registry';
 import { ProgramRecordMockService } from './programs/program-record-mock.service';
@@ -29,6 +30,7 @@ export class CropFieldsPanelComponent {
   readonly plan = inject(FieldPlanMockService);
   private readonly records = inject(ProgramRecordMockService);
   private readonly registry = inject(ProgramRegistry);
+  private readonly fdCic = inject(FdCicApiService);
 
   readonly intention = input.required<PlantingIntention>();
   readonly customer = input.required<Customer>();
@@ -47,7 +49,8 @@ export class CropFieldsPanelComponent {
   readonly summaries = computed(() => this.programs().flatMap(program => {
     const items = this.seasons().flatMap(season => {
       const record = this.records.find(season.id, program.key);
-      return record ? [{ season, record }] : [];
+      const field = this.plan.field(season.fieldKey);
+      return record && field ? [{ season, record, field }] : [];
     });
     const summary = items.length && program.rowSummary ? program.rowSummary(items, this.intention()) : null;
     return summary ? [{ programKey: program.key, label: program.shortLabel, ...summary }] : [];
@@ -85,7 +88,7 @@ export class CropFieldsPanelComponent {
       const program = this.registry.get(record.programKey);
       if (!program || !field) return [];
       const score = record.frozen?.score ?? program.preview(record.data, s, field);
-      const text = score ? null : (program.chipText?.(record.data) ?? null);
+      const text = score ? null : (program.chipText?.(record.data) ?? program.previewNote?.(record.data, s, field) ?? null);
       return [{ programKey: program.key, label: program.shortLabel, status: record.status, score, text }];
     });
   }
@@ -160,9 +163,9 @@ export class CropFieldsPanelComponent {
   }
 
   openAdd(): void {
-    const st = this.customer().stateProvince;
-    this.newState = st && this.plan.countiesByState[st] ? st : 'KS';
-    this.newCounty = this.plan.countiesByState[this.newState][0];
+    // The producer's own state to start with; the county is picked from USDA's list for it.
+    this.newState = this.customer().stateProvince || 'KS';
+    this.newCounty = '';
     this.newName = '';
     this.newFsaFarm = this.newFsaTract = this.newFsaField = '';
     this.newAcres = this.remaining() > 0 ? this.remaining() : null;
@@ -193,8 +196,13 @@ export class CropFieldsPanelComponent {
     this.adding.set(false); // back to the button: one field at a time keeps the row quiet
   }
 
+  /** States and counties as USDA's FD-CIC county table names them, so a field's location can be scored. */
+  states(): string[] {
+    return this.fdCic.states();
+  }
+
   countiesFor(state: string): string[] {
-    return this.plan.countiesByState[state] ?? [];
+    return this.fdCic.counties(state);
   }
 
   openSeasonId: string | null = null;

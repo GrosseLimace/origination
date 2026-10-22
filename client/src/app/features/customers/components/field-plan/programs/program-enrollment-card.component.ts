@@ -81,7 +81,7 @@ import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment'
                           <span class="font-semibold text-gray-900 dark:text-white">{{ r.score.value | number:'1.0-0' }}</span>
                           <span class="text-gray-500"> {{ r.score.unitShort }} · {{ r.status === 'Final' ? 'final' : 'projected' }}</span>
                         } @else {
-                          <span class="text-amber-700 dark:text-amber-400">needs inputs</span>
+                          <span class="text-amber-700 dark:text-amber-400">{{ r.scoreNote ?? 'needs inputs' }}</span>
                         }
                       </td>
                     </tr>
@@ -201,6 +201,7 @@ export class ProgramEnrollmentCardComponent {
         recordId: r.id, seasonId: season.id, fieldKey: field.fieldKey, fieldName: field.name, fsa: fsaKey(field),
         cropLabel: season.cropLabel, year, acres: season.acres, status: r.status,
         score: r.frozen?.score ?? program.preview(r.data, season, field) ?? undefined,
+        scoreNote: program.previewNote?.(r.data, season, field) ?? undefined,
         production: program.production ? program.production(r.data, season) : undefined,
       }];
     });

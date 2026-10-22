@@ -136,12 +136,13 @@
           <label class="block text-xs text-gray-600 dark:text-gray-300">Field #
             <input class="ci-input ci-compact !w-16" [(ngModel)]="newFsaField" /></label>
           <label class="block text-xs text-gray-600 dark:text-gray-300">State
-            <select class="ci-input ci-compact !w-20" [(ngModel)]="newState" (ngModelChange)="newCounty = countiesFor($event)[0] || ''">
-              @for (st of plan.states; track st) { <option [value]="st">{{ st }}</option> }
+            <select class="ci-input ci-compact !w-20" [(ngModel)]="newState" (ngModelChange)="newCounty = ''">
+              @for (st of states(); track st) { <option [value]="st">{{ st }}</option> }
             </select>
           </label>
           <label class="block text-xs text-gray-600 dark:text-gray-300">County
-            <select class="ci-input ci-compact !w-36" [(ngModel)]="newCounty">
+            <select class="ci-input ci-compact !w-36" [class.ci-missing]="!newCounty" [(ngModel)]="newCounty">
+              <option value="" disabled>County…</option>
               @for (c of countiesFor(newState); track c) { <option [value]="c">{{ c }}</option> }
             </select>
           </label>

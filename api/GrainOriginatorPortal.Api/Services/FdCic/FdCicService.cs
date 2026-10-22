@@ -79,20 +79,28 @@ public sealed class FdCicService : IFdCicService
             ManureTypes = pack.Options.ManureTypes
                 .Select(m => new FdCicManureTypeResponse { Label = m.Label, Unit = m.Unit, LikelyMaxNPerUnit = m.LikelyMaxNPerUnit })
                 .ToList(),
-            States = pack.Counties.Select(c => c.State).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList(),
             MaxManureEntries = FdCicInputRules.MaxManureEntries,
         };
     }
 
-    public IReadOnlyList<string> Counties(int year, string state)
-    {
-        var (pack, _) = Usable(year);
-        return pack.Counties
+    public IReadOnlyList<string> States() =>
+        LocationPack().Counties.Select(c => c.State).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
+
+    public IReadOnlyList<string> Counties(string state) =>
+        LocationPack().Counties
             .Where(c => string.Equals(c.State, state, StringComparison.OrdinalIgnoreCase))
             .Select(c => c.County)
             .Order(StringComparer.OrdinalIgnoreCase)
             .ToList();
-    }
+
+    /// <summary>A field's location is entered once for every year, so the lists come from the newest usable version.</summary>
+    private FdCicPack LocationPack() =>
+        _versions.Values
+            .Where(v => v.Problem is null)
+            .OrderByDescending(v => _settings.VersionByYear.Where(y => y.Value == v.Version).Max(y => y.Key))
+            .Select(v => v.Pack)
+            .FirstOrDefault()
+        ?? throw new InfrastructureException("No FD-CIC version passed its test cases, so there is no county list.", "FD_CIC_VERSION_UNAVAILABLE");
 
     public FdCicScoreResponse Score(int year, FdCicInput input)
     {
@@ -126,8 +134,39 @@ public sealed class FdCicService : IFdCicService
             Ci = result.Ci,
             NationalAverage = result.NationalAverage,
             ChangeFraction = result.ChangeFraction,
+            Effects = result.Scorable ? Effects(pack, method, input, result) : [],
             Unit = Unit,
         };
+    }
+
+    /// <summary>
+    /// What each choice is worth: the score with the choice minus the score with the workbook's default
+    /// in its place, everything else equal. Not a USDA output; it explains the USDA score in plain terms.
+    /// </summary>
+    internal static IReadOnlyList<FdCicEffectResponse> Effects(FdCicPack pack, IFdCicMethod method, FdCicInput input, FdCicResult result)
+    {
+        const string defaultTillage = "None of the above", defaultCover = "No cover crop";
+        var effects = new List<FdCicEffectResponse>();
+        void Compare(string label, FdCicInput without)
+        {
+            var other = method.Calculate(pack, without);
+            if (!other.Scorable) return;
+            double delta = result.Ci!.Value - other.Ci!.Value;
+            if (Math.Abs(delta) >= 1) effects.Add(new FdCicEffectResponse { Label = label, Delta = delta });
+        }
+
+        if (input.Tillage != defaultTillage && pack.Options.Tillage.Contains(defaultTillage))
+            Compare(input.Tillage, input with { Tillage = defaultTillage });
+        if (input.CoverCrop != defaultCover && pack.Options.CoverCrops.Contains(defaultCover))
+            Compare(input.CoverCrop, input with { CoverCrop = defaultCover });
+        if (input.NiFraction > 0)
+            Compare("Nitrification inhibitor", input with { NiFraction = 0 });
+        if (input.Manure.Count > 0)
+            Compare("Manure", input with { Manure = [] });
+        // Against the national N use per bushel behind USDA's national average, at this field's yield.
+        var crop = pack.Constants.Crop(input.Crop)!;
+        Compare("Nitrogen rate vs. national", input with { SyntheticN = crop.DefaultNui * result.YieldForCi, ActualYield = result.YieldForCi });
+        return effects.OrderBy(e => e.Delta).ToList();
     }
 
     private (FdCicPack Pack, IFdCicMethod Method) Usable(int year)

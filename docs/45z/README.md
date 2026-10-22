@@ -53,9 +53,14 @@ Endpoints (signed-in users; nothing is stored):
 | Endpoint | Returns |
 |---|---|
 | `GET api/fd-cic/versions` | Each version, its years, and whether it passed its gate (and why not) |
-| `GET api/fd-cic/{year}/options` | Crop, cover crop, tillage and manure choices, and the states, in the version's own labels |
-| `GET api/fd-cic/{year}/counties?state=IA` | The counties that version can look up |
-| `POST api/fd-cic/{year}/score` | The CI and its components, the national average and change, plus the version label, workbook hash and formula fingerprint. Leave out the actual yield for a projected score. Places USDA has no data for come back with `scorable: false` and the reason |
+| `GET api/fd-cic/{year}/options` | Crop, cover crop, tillage and manure choices, in the version's own labels |
+| `GET api/fd-cic/states`, `GET api/fd-cic/counties?state=IA` | The state and county lists a field's location is picked from (every program uses them). A location is entered once for every year, so these come from the newest version that passed its gate |
+| `POST api/fd-cic/{year}/score` | The CI and its components, the national average and change, plus the version label, workbook hash and formula fingerprint. Leave out the actual yield for a projected score. Places USDA has no data for come back with `scorable: false` and the reason. `effects` explains the score: each of the field's choices against the workbook default (not a USDA output) |
+
+In the app, the 45Z form asks this endpoint for the score as the originator types (the
+client caches each set of inputs). Field chips and the crop row's roll-up use the same scores. At harvest complete, the
+field's inputs, the USDA outputs, the version label, the workbook hash and the formula fingerprint are
+frozen together.
 
 The API tests run every case in every embedded pack, so adding a pack whose cases don't reproduce fails the
 build.

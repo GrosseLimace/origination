@@ -29,7 +29,7 @@ public class FdCicController : ControllerBase
         return Ok(_service.Versions());
     }
 
-    /// <summary>Crop, cover crop, tillage and manure choices, and the states, for the year's version.</summary>
+    /// <summary>Crop, cover crop, tillage and manure choices for the year's version.</summary>
     [HttpGet("{year:int:range(2020,2100)}/options")]
     [ProducesResponseType(typeof(FdCicOptionsResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status422UnprocessableEntity)]
@@ -38,15 +38,24 @@ public class FdCicController : ControllerBase
         return Ok(_service.Options(year));
     }
 
-    /// <summary>The counties the year's version can look up for a state (two-letter code).</summary>
-    [HttpGet("{year:int:range(2020,2100)}/counties")]
+    /// <summary>The states a field can be in. A field's location is entered once for every year, so this
+    /// list (and the county list) comes from the newest USDA version that passed its test cases.</summary>
+    [HttpGet("states")]
     [ProducesResponseType(typeof(IReadOnlyList<string>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status422UnprocessableEntity)]
-    public ActionResult<IReadOnlyList<string>> GetCounties(int year, [FromQuery] string state)
+    public ActionResult<IReadOnlyList<string>> GetStates()
+    {
+        return Ok(_service.States());
+    }
+
+    /// <summary>The counties in a state (two-letter code), as USDA's county table names them.</summary>
+    [HttpGet("counties")]
+    [ProducesResponseType(typeof(IReadOnlyList<string>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    public ActionResult<IReadOnlyList<string>> GetCounties([FromQuery] string state)
     {
         if (string.IsNullOrWhiteSpace(state) || state.Length != 2)
             throw new Exceptions.ValidationException("state", "Use the two-letter state code.");
-        return Ok(_service.Counties(year, state));
+        return Ok(_service.Counties(state));
     }
 
     /// <summary>

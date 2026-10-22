@@ -112,6 +112,8 @@ export interface EnrollableRecord {
   acres: number | null;
   status: ProgramRecordStatus;
   score?: ProgramScore;
+  /** Why there is no score yet when the inputs are in, e.g. "calculating…" (see the program's previewNote). */
+  scoreNote?: string;
   /** What the field should have delivered (45Z: acres × actual yield, in bushels), for the ticket check. */
   production?: number | null;
 }

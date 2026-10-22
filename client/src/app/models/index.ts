@@ -27,3 +27,4 @@ export * from './query-library.model';
 export * from './whats-new.model';
 export * from './carbon-intensity.model';
 export * from './field-plan.model';
+export * from './fd-cic.model';

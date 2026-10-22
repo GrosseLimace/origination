@@ -94,12 +94,13 @@ public sealed class FdCicMethodV1 : IFdCicMethod
         double? soc = Csa("socGPerBu"), csaDirect = Csa("directN2oChange"), csaIndirect = Csa("indirectN2oChange"), csaFuel = Csa("fuelChange");
         double? niDirect = Ni("directN2oChange"), niIndirect = Ni("indirectN2oChange");
 
+        string place = $"{input.County} County, {input.State} (MLRA {mlra})";
+        string cropName = input.Crop.ToLowerInvariant();
         if (iefDirect is null || iefIndirect is null)
-            return Unscorable(mlra, yieldForCi, national,
-                $"{pack.Label} has no {input.Crop} N2O emission factors for {input.County} County, {input.State} (MLRA {mlra}).");
+            return Unscorable(mlra, yieldForCi, national, $"{pack.Label} has no {cropName} data for {place}.");
         if (soc is null || csaDirect is null || csaIndirect is null || csaFuel is null || niDirect is null || niIndirect is null)
             return Unscorable(mlra, yieldForCi, national,
-                $"{pack.Label} has no {input.Crop} data for {input.CoverCrop.ToLowerInvariant()} with {input.Tillage.ToLowerInvariant()} tillage in {input.County} County, {input.State} (MLRA {mlra}).");
+                $"{pack.Label} has no {cropName} data for \"{input.CoverCrop}\" with \"{input.Tillage}\" in {place}.");
 
         double nui = input.SyntheticN / yieldForCi;                                   // C20
         double nueAdjustment = crop.DefaultNui / crop.NuiThreshold;                   // C23 = C21 / C27

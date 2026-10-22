@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { DialogComponent, DialogContentComponent, DialogDescriptionComponent, DialogFooterComponent, DialogHeaderComponent, DialogTitleComponent } from '@shared/components/dialog/dialog.component';
 import { FieldPlanMockService } from '@core/services/field-plan-mock.service';
+import { FdCicApiService } from '@core/services/fd-cic-api.service';
 import { FieldSeason, ProducerField } from '@models';
 import { ProgramRegistry } from './programs/program-registry';
 import { ProgramRecordMockService } from './programs/program-record-mock.service';
@@ -31,6 +32,7 @@ export class FieldSeasonDialogComponent {
   private readonly records = inject(ProgramRecordMockService);
   private readonly registry = inject(ProgramRegistry);
   private readonly enrollments = inject(ProgramEnrollmentMockService);
+  private readonly fdCic = inject(FdCicApiService);
 
   readonly seasonId = input.required<string>();
   /** Opens straight onto this program, adding it to the field if it isn't there yet. */
@@ -108,8 +110,13 @@ export class FieldSeasonDialogComponent {
     this.records.ensureEnrollments(this.draftField.fieldKey); // FSA numbers in: the enrollment ID can be issued
   }
 
+  /** States and counties as USDA's FD-CIC county table names them, so a field's location can be scored. */
+  states(): string[] {
+    return this.fdCic.states();
+  }
+
   countiesFor(state: string): string[] {
-    return this.plan.countiesByState[state] ?? [];
+    return this.fdCic.counties(state);
   }
 
   addProgram(key: string): void {

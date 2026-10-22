@@ -1,12 +1,59 @@
-import { FdCicData, FieldSeason, SeasonStatus } from '@models';
-import { ScorableSeason } from '@shared/utils/ci-illustrative';
+import { CoverCrop, FdCicCrop, FdCicData, FdCicScoreRequest, FdCicScoreState, FieldSeason, ProducerField, Tillage } from '@models';
+import { FdCicApiService } from '@core/services/fd-cic-api.service';
 
-/** Stamped on every finalized 45Z record. The C# port of the calculator replaces "illustrative prototype". */
-export const FD_CIC_CALCULATOR_VERSION = 'USDA FD-CIC v1.2 (estimate)';
+/** The workbook's own labels, which the API's tables are keyed by. */
+export const TILLAGE_LABELS: Record<Tillage, string> = {
+  ReducedTill: 'Reduced till', NoTill: 'No till', NoneOfTheAbove: 'None of the above',
+};
+export const COVER_LABELS: Record<CoverCrop, string> = {
+  CoverCrop: 'Cover crop', CoverCropGrazed: 'Cover crop with grazing', None: 'No cover crop',
+};
 
-/** The scoring helpers' view of one field: the program data plus the field season's acres. */
-export function fdCicScorable(data: FdCicData, season: Pick<FieldSeason, 'acres'>, status: SeasonStatus = 'Draft'): ScorableSeason {
-  return { ...data, acres: season.acres, status };
+/** Maps a planting row's crop label ("Irrigated Corn", "Organic Soybeans", "Milo") to an FD-CIC crop, or null. */
+export function fdCicCropFor(cropLabel: string): FdCicCrop | null {
+  const label = cropLabel.toLowerCase();
+  if (label.includes('popcorn')) return null;
+  if (label.includes('corn')) return 'Corn';
+  if (label.includes('soy')) return 'Soybean';
+  if (label.includes('sorghum') || label.includes('milo')) return 'Sorghum';
+  if (label.includes('canola')) return 'Canola';
+  return null;
+}
+
+/** The inputs a field still needs before it can be scored, in form order. */
+export function missingInputs(data: FdCicData, season: Pick<FieldSeason, 'acres'>): string[] {
+  const missing: string[] = [];
+  if (!season.acres || season.acres <= 0) missing.push('acres');
+  if (!data.expectedYield || data.expectedYield <= 0) missing.push('expected yield');
+  if (data.syntheticN === null || data.syntheticN < 0) missing.push('nitrogen rate');
+  return missing;
+}
+
+/**
+ * The API request for one field, or null while it can't be scored yet (missing inputs, a crop USDA
+ * doesn't score, or a field without a county). Manure rows still being filled in count as zero.
+ */
+export function fdCicRequest(data: FdCicData, season: FieldSeason, field: ProducerField): FdCicScoreRequest | null {
+  const crop = fdCicCropFor(season.cropLabel);
+  if (!crop || !field.state || !field.county || missingInputs(data, season).length > 0) return null;
+  return {
+    crop,
+    state: field.state,
+    county: field.county,
+    actualYield: data.actualYield && data.actualYield > 0 ? data.actualYield : null,
+    expectedYield: data.expectedYield!,
+    syntheticN: data.syntheticN!,
+    niFraction: data.niFraction,
+    coverCrop: COVER_LABELS[data.coverCrop],
+    tillage: TILLAGE_LABELS[data.tillage],
+    manure: data.manure.map(m => ({ amount: m.amount ?? 0, nContent: m.nContent ?? 0 })),
+  };
+}
+
+/** A field's score from the API, for the crop year of its season. Null while it can't be requested yet. */
+export function fdCicScoreState(api: FdCicApiService, data: FdCicData, season: FieldSeason, field: ProducerField): FdCicScoreState | null {
+  const request = fdCicRequest(data, season, field);
+  return request ? api.score(season.year, request) : null;
 }
 
 /** The workbook's manure types, with its wording. */

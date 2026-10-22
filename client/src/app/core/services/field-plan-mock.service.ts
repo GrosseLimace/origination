@@ -15,18 +15,6 @@ export class FieldPlanMockService {
   readonly seasons = signal<FieldSeason[]>([]);
   private _nextId = 1;
 
-  /** A short county list per state; the real list comes from the FD-CIC county table. */
-  readonly countiesByState: Record<string, string[]> = {
-    IA: ['Polk', 'Story', 'Boone', 'Hamilton', 'Hardin', 'Marshall'],
-    IL: ['Champaign', 'McLean', 'Livingston', 'Iroquois', 'LaSalle'],
-    KS: ['Pratt', 'Kingman', 'Stafford', 'Reno', 'Barton', 'Greeley', 'Wichita'],
-    MN: ['Renville', 'Redwood', 'Faribault', 'Martin'],
-    NE: ['Hall', 'Buffalo', 'Adams', 'York', 'Hamilton'],
-    ND: ['Cass', 'Richland', 'Traill', 'Cavalier'],
-    SD: ['Brown', 'Spink', 'Beadle', 'Minnehaha'],
-  };
-  get states(): string[] { return Object.keys(this.countiesByState); }
-
   // ── Reads ─────────────────────────────────────────────────────────────────
 
   fieldsFor(customerId: number): ProducerField[] {

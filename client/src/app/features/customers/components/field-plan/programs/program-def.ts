@@ -24,8 +24,13 @@ export interface SustainabilityProgramDef<TData = any> {
 
   /** Inputs still needed before the program can score the field (Draft until empty). */
   missing(data: TData, season: FieldSeason): string[];
-  /** The live score, or null while inputs are missing. */
+  /** The live score, or null while inputs are missing or the score isn't back yet. */
   preview(data: TData, season: FieldSeason, field: ProducerField): ProgramScore | null;
+  /**
+   * A short word for the field's chip when there is no score but the inputs are in, e.g. 45Z's
+   * "calculating…" or "no USDA data". Leave it out for a program that scores locally or not at all.
+   */
+  previewNote?(data: TData, season: FieldSeason, field: ProducerField): string | null;
 
   /**
    * What the field should have delivered on the enrollment's tickets (45Z: acres × actual yield, in
@@ -34,7 +39,7 @@ export interface SustainabilityProgramDef<TData = any> {
    */
   production?(data: TData, season: FieldSeason): number | null;
   /** What still stands between the record and Final when the enrollment's harvest is marked complete. */
-  finalizeMissing(data: TData, season: FieldSeason): string[];
+  finalizeMissing(data: TData, season: FieldSeason, field: ProducerField): string[];
   /** The audit copy of inputs and outputs stored at finalize. */
   freeze(data: TData, season: FieldSeason, field: ProducerField): Omit<FrozenProgramResult, 'finalizedBy' | 'finalizedAt'>;
 
@@ -42,7 +47,7 @@ export interface SustainabilityProgramDef<TData = any> {
    * A one-line roll-up for a crop row, or null to show none: the main figure (45Z: "CI 2,629 g/bu")
    * and, optionally, its change against the program's baseline, which is shown green when better.
    */
-  rowSummary?(items: { season: FieldSeason; record: FieldProgramRecord<TData> }[], intention: { id: number; acres: number }): RowSummary | null;
+  rowSummary?(items: { season: FieldSeason; record: FieldProgramRecord<TData>; field: ProducerField }[], intention: { id: number; acres: number }): RowSummary | null;
   /**
    * The short text on the field's program chip when the program has no score to show, e.g.
    * GrainCraft's variety. Programs with a score (45Z) leave it out and the chip shows the score.

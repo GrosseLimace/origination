@@ -17,7 +17,8 @@ public record FdCicVersionResponse
     public string? ConfirmedInExcelOn { get; init; }
 }
 
-/// <summary>The input choices for a year's FD-CIC version, using the workbook's exact labels.</summary>
+/// <summary>The input choices for a year's FD-CIC version, using the workbook's exact labels. Field
+/// locations come from <c>GET api/fd-cic/states</c> and <c>/counties</c>.</summary>
 public record FdCicOptionsResponse
 {
     public required string Version { get; init; }
@@ -26,7 +27,6 @@ public record FdCicOptionsResponse
     public required IReadOnlyList<string> CoverCrops { get; init; }
     public required IReadOnlyList<string> Tillage { get; init; }
     public required IReadOnlyList<FdCicManureTypeResponse> ManureTypes { get; init; }
-    public required IReadOnlyList<string> States { get; init; }
     public required int MaxManureEntries { get; init; }
 }
 
@@ -60,7 +60,18 @@ public record FdCicScoreResponse
     public required double NationalAverage { get; init; }
     /// <summary>(CI − national) ÷ national, e.g. -0.25 for 25% below.</summary>
     public double? ChangeFraction { get; init; }
+    /// <summary>
+    /// Not a USDA output: how much each of the field's choices moves its CI, against the workbook default
+    /// (g CO2e/bu, negative = lowers it), most helpful first. Empty when unscorable.
+    /// </summary>
+    public required IReadOnlyList<FdCicEffectResponse> Effects { get; init; }
     public required string Unit { get; init; }
+}
+
+public record FdCicEffectResponse
+{
+    public required string Label { get; init; }
+    public required double Delta { get; init; }
 }
 
 public record FdCicComponentsResponse

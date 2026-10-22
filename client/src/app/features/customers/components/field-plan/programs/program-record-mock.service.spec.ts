@@ -7,7 +7,10 @@ import { ProgramIntake, SustainabilityProgramDef } from './program-def';
 import { SUSTAINABILITY_PROGRAMS } from './program-registry';
 import { ProgramRecordMockService } from './program-record-mock.service';
 import { ProgramEnrollmentMockService } from './program-enrollment-mock.service';
-import { FD_CIC_PROGRAM } from './fd-cic/fd-cic.program';
+import { createFdCicProgram } from './fd-cic/fd-cic.program';
+import { fakeFdCicApi } from './fd-cic/fd-cic.testing';
+
+const FD_CIC_PROGRAM = createFdCicProgram(fakeFdCicApi());
 
 /**
  * A made-up second program, to prove a new program needs no change to the field, record or
@@ -129,7 +132,7 @@ describe('ProgramRecordMockService (prototype)', () => {
     records.update({ ...z, data: scored(z) });
     const e = records.enrollmentFor(z)!;
     enrollments.update({ ...e, attestation: { ...e.attestation, signerName: 'Pat', signedOn: '2026-05-02',
-      confirmations: Object.fromEntries(FD_CIC_PROGRAM.enrollment.statements.map(s => [s.key, true])) } });
+      confirmations: Object.fromEntries(FD_CIC_PROGRAM.enrollment!.statements.map(s => [s.key, true])) } });
     const listed = [{ recordId: z.id, seasonId: corn.id, fieldKey: north.fieldKey, fieldName: north.name, fsa: '1234/5678/3', cropLabel: 'Corn', year: 2026, acres: 80, status: 'Ready' as const }];
     expect(enrollments.attest(e.key, listed)?.status).toBe('Attested');
 

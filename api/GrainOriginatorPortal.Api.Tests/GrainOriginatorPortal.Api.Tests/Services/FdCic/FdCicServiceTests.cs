@@ -41,6 +41,20 @@ public class FdCicServiceTests
     }
 
     [Fact]
+    public void Score_ExplainsEachChoiceAgainstTheWorkbookDefault()
+    {
+        var score = Service().Score(2026, StoryCorn());
+
+        var noTill = score.Effects.Single(e => e.Label == "No till");
+        var withoutNoTill = Service().Score(2026, StoryCorn() with { Tillage = "None of the above" });
+        Assert.Equal(score.Ci!.Value - withoutNoTill.Ci!.Value, noTill.Delta, 6);
+        Assert.True(noTill.Delta < 0);
+        Assert.Contains(score.Effects, e => e.Label == "Nitrification inhibitor" && e.Delta < 0);
+        Assert.DoesNotContain(score.Effects, e => e.Label == "Manure");
+        Assert.Equal(score.Effects.OrderBy(e => e.Delta).Select(e => e.Label), score.Effects.Select(e => e.Label));
+    }
+
+    [Fact]
     public void Score_WithoutActualYield_IsProjectedFromExpectedYield()
     {
         var score = Service().Score(2026, StoryCorn(actualYield: null));
@@ -133,18 +147,33 @@ public class FdCicServiceTests
     }
 
     [Fact]
-    public void Options_AndCounties_ComeFromTheYearsVersion()
+    public void Options_ComeFromTheYearsVersion()
     {
-        var service = Service();
+        var options = Service().Options(2026);
 
-        var options = service.Options(2026);
         Assert.Equal("1.2", options.Version);
         Assert.Contains("Corn", options.Crops);
         Assert.Contains("No till", options.Tillage);
-        Assert.Contains("IA", options.States);
         Assert.Equal(8, options.ManureTypes.Count);
+    }
 
-        Assert.Contains("Story", service.Counties(2026, "ia"));
+    [Fact]
+    public void Locations_ComeFromTheNewestUsableVersion_WhateverTheYear()
+    {
+        // 2027's version has no pack, so the lists come from the newest version that passed (1.2).
+        var service = Service(new Dictionary<int, string> { [2026] = "1.2", [2027] = "9.9" });
+
+        Assert.Contains("IA", service.States());
+        Assert.Contains("Story", service.Counties("ia"));
+        Assert.Empty(service.Counties("ZZ"));
+    }
+
+    [Fact]
+    public void Locations_WithNoUsableVersion_AreUnavailable()
+    {
+        var service = Service(new Dictionary<int, string> { [2027] = "9.9" });
+
+        Assert.Throws<InfrastructureException>(() => service.States());
     }
 
     [Fact]
