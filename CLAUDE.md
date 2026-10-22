@@ -6,7 +6,7 @@ notes live in [docs/application-context/](docs/application-context/), operations
 [agents-docs/audits/AUDIT-TRACKING.json](agents-docs/audits/AUDIT-TRACKING.json).
 
 ## Software Bill of Materials (SBOM)
-Last Updated: 2026-10-20
+Last Updated: 2026-10-22
 
 Direct dependencies plus the transitive packages pinned for security. This is the compact copy
 company policy asks for here; [README.md](README.md#software-bill-of-materials-sbom) has the same
@@ -49,7 +49,7 @@ rows with the security notes behind each pin. Update BOTH in the same commit as 
 | tslib | 2.8.1 | 0BSD | TypeScript runtime helpers |
 | zone.js | 0.15.1 | MIT | Angular change detection zone |
 | tailwindcss | 4.2.1 | MIT | Utility-first CSS framework |
-| vitest | 4.1.11 | MIT | Unit testing framework |
+| vitest | 4.1.12 | MIT | Unit testing framework |
 | typescript | 5.9.3 | Apache-2.0 | TypeScript compiler |
 | esbuild | ≥0.28.1 | MIT | Bundler |
 | vite | ≥7.3.5 | MIT | Dev server/bundler |
