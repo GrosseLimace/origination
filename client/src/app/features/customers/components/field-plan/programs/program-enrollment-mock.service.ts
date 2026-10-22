@@ -27,13 +27,13 @@ export class ProgramEnrollmentMockService {
   /** The live enrollment, or a new one with its ID issued now. */
   ensureFor(programKey: string, customerId: number, year: number): ProgramEnrollment | undefined {
     const existing = this.current(programKey, customerId, year);
-    const def = this.registry.get(programKey);
-    if (existing || !def) return existing;
+    const config = this.registry.get(programKey)?.enrollment;
+    if (existing || !config) return existing;
     const seq = this._nextSeq.get(programKey) ?? 1;
     this._nextSeq.set(programKey, seq + 1);
     const created: ProgramEnrollment = {
-      key: crypto.randomUUID(), programKey, enrollmentId: formatEnrollmentId(def.enrollment.idPrefix, year, seq),
-      customerId, year, status: 'Open', attestation: blankAttestation(def.enrollment.statements),
+      key: crypto.randomUUID(), programKey, enrollmentId: formatEnrollmentId(config.idPrefix, year, seq),
+      customerId, year, status: 'Open', attestation: blankAttestation(config.statements),
     };
     this.enrollments.update(es => [...es, created]);
     return created;
@@ -52,7 +52,7 @@ export class ProgramEnrollmentMockService {
   }
 
   blockers(enrollment: ProgramEnrollment, listed: readonly EnrollableRecord[]): string[] {
-    const statements = this.registry.get(enrollment.programKey)?.enrollment.statements ?? [];
+    const statements = this.registry.get(enrollment.programKey)?.enrollment?.statements ?? [];
     return enrollmentBlockers(enrollment, listed, this.enrollments(), statements);
   }
 

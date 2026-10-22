@@ -45,7 +45,7 @@ import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment'
             @if (e.harvestCompleteAt) { <span class="ml-1 text-gray-600 dark:text-gray-300">· harvest complete</span> }
             @if (check()?.flagged) { <span class="ml-1 font-semibold text-red-700 dark:text-red-400">· ⚠ tickets don't match production</span> }
           } @else {
-            <span class="text-amber-700 dark:text-amber-400">No live enrollment</span>
+            <span class="text-amber-700 dark:text-amber-400">{{ withFsaCount() ? 'No live enrollment' : 'No enrollment ID yet: fields need FSA numbers' }}</span>
           }
           <span class="ml-2 text-gray-400">{{ open ? '▾' : '▸' }}</span>
         </span>
@@ -54,8 +54,12 @@ import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment'
       @if (open) {
         <div class="space-y-4 border-t border-gray-100 dark:border-gray-700 px-4 py-4 text-sm">
           @if (!e) {
-            <p class="text-gray-600 dark:text-gray-300">The last enrollment was withdrawn. Issue a new ID for this producer's {{ records().length }} field(s) in {{ p.shortLabel }}.</p>
-            <button type="button" class="rounded-md bg-scoular-green-accessible px-3 py-1.5 text-white border-0" (click)="issueNew()">Issue a new enrollment ID</button>
+            @if (!withFsaCount()) {
+              <p class="text-gray-600 dark:text-gray-300">Add FSA farm, tract and field numbers to a field in {{ p.shortLabel }} to issue this producer's enrollment ID.</p>
+            } @else {
+              <p class="text-gray-600 dark:text-gray-300">The last enrollment was withdrawn. Issue a new ID for this producer's {{ withFsaCount() }} field(s) in {{ p.shortLabel }}.</p>
+              <button type="button" class="rounded-md bg-scoular-green-accessible px-3 py-1.5 text-white border-0" (click)="issueNew()">Issue a new enrollment ID</button>
+            }
           } @else {
             <p class="text-gray-600 dark:text-gray-300">
               Incoming tickets for this producer's {{ p.shortLabel }} grain are assigned <span class="font-semibold">{{ e.enrollmentId }}</span>.
@@ -73,7 +77,7 @@ import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment'
                   @for (r of records(); track r.recordId) {
                     <tr class="border-t border-gray-100 dark:border-gray-700">
                       <td class="py-1 text-gray-900 dark:text-white">{{ r.fieldName }}</td>
-                      <td class="text-gray-600 dark:text-gray-300">{{ r.fsa || '—' }}</td>
+                      <td [class]="r.fsa ? 'text-gray-600 dark:text-gray-300' : 'text-amber-700 dark:text-amber-400'">{{ r.fsa || 'FSA # needed' }}</td>
                       <td class="text-gray-600 dark:text-gray-300">{{ r.cropLabel }}</td>
                       <td class="text-right text-gray-600 dark:text-gray-300">{{ r.acres | number }}</td>
                       <td class="text-right text-gray-600 dark:text-gray-300">
@@ -113,7 +117,7 @@ import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment'
                     <input class="ci-input" [(ngModel)]="draft.attestation.documentRef" (ngModelChange)="save()" /></label>
                 </div>
                 <div class="space-y-1 text-gray-700 dark:text-gray-300">
-                  @for (s of p.enrollment.statements; track s.key) {
+                  @for (s of p.enrollment!.statements; track s.key) {
                     <label class="flex items-start gap-2"><input type="checkbox" class="mt-1" [(ngModel)]="draft.attestation.confirmations[s.key]" (ngModelChange)="save()" />
                       {{ s.label }}</label>
                   }
@@ -129,15 +133,15 @@ import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment'
                       [disabled]="blockers().length > 0" (click)="attest()">Record producer attestation</button>
             } @else {
               <div class="flex flex-wrap items-center justify-between gap-2 rounded-md bg-blue-50 dark:bg-blue-900/30 px-3 py-2 text-blue-900 dark:text-blue-200">
-                <span>🔒 {{ e.enrollmentId }} attested by {{ e.attestedBy }}. {{ p.enrollment.attestedNote }}</span>
+                <span>🔒 {{ e.enrollmentId }} attested by {{ e.attestedBy }}. {{ p.enrollment!.attestedNote }}</span>
                 <button type="button" class="underline bg-transparent border-0 p-0" (click)="showWithdraw = true">Withdraw…</button>
               </div>
             }
 
             <!-- Tickets assigned this ID, checked against production; harvest complete finalizes -->
-            <div class="rounded-lg border-2 border-dashed border-amber-400 dark:border-amber-600 bg-amber-50/50 dark:bg-amber-900/10 p-4 space-y-3">
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
               <div class="flex flex-wrap items-center justify-between gap-2">
-                <span class="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">Prototype: simulate CTRM tickets assigned {{ e.enrollmentId }}</span>
+                <span class="font-medium text-gray-900 dark:text-white">Tickets assigned {{ e.enrollmentId }}</span>
                 <span class="text-gray-700 dark:text-gray-300">{{ tickets().length }} ticket{{ tickets().length === 1 ? '' : 's' }} · {{ check()?.delivered | number:'1.0-0' }} bu</span>
               </div>
               @if (tickets().length) {
@@ -147,7 +151,7 @@ import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment'
                   </thead>
                   <tbody>
                     @for (t of tickets(); track t.ticketNo) {
-                      <tr class="border-t border-amber-200/60 dark:border-amber-800/40">
+                      <tr class="border-t border-gray-100 dark:border-gray-700">
                         <td class="py-1">{{ t.ticketNo }}</td>
                         <td>{{ t.date | date:'MM/dd/yy' }}</td>
                         <td>{{ t.enrollmentId }}</td>
@@ -224,7 +228,11 @@ export class ProgramEnrollmentCardComponent {
   readonly year = input.required<number>();
 
   readonly tolerance = DELIVERY_TOLERANCE;
-  readonly program = computed(() => this.registry.get(this.programKey()));
+  /** The program, if it has a producer-level enrollment (otherwise the card shows nothing). */
+  readonly program = computed(() => {
+    const def = this.registry.get(this.programKey());
+    return def?.enrollment ? def : undefined;
+  });
 
   /** Every record the producer has in this program for the year: the enrollment's fields. */
   readonly records = computed<EnrollableRecord[]>(() => {
@@ -249,6 +257,8 @@ export class ProgramEnrollmentCardComponent {
     this.service.enrollments();
     return this.service.current(this.programKey(), this.customerId(), this.year());
   });
+  /** Fields in the program with all three FSA numbers: the ones that can join the enrollment. */
+  readonly withFsaCount = computed(() => this.records().filter(r => !!r.fsa).length);
   readonly withdrawn = computed(() => {
     this.service.enrollments();
     return this.service.withdrawn(this.programKey(), this.customerId(), this.year());

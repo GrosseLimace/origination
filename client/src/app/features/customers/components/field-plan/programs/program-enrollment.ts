@@ -36,6 +36,8 @@ export function enrollmentBlockers(
 ): string[] {
   const blockers: string[] = [];
   if (listed.length === 0) blockers.push('at least one field');
+  const noFsa = listed.filter(r => !r.fsa);
+  if (noFsa.length) blockers.push(`FSA numbers for ${noFsa.map(r => r.fieldName).join(', ')}`);
   const unscored = listed.filter(r => r.status === 'Draft');
   if (unscored.length) blockers.push(`finish the inputs for ${unscored.map(r => r.fieldName).join(', ')}`);
 

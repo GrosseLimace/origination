@@ -75,6 +75,25 @@ describe('ProgramRecordMockService (prototype)', () => {
     expect(records.enrollmentFor(next)?.enrollmentId).toBe('CI-2027-000002');
   });
 
+  it('should hold back the enrollment ID until a field in the program has its FSA numbers', () => {
+    const noFsa = plan.createField({ customerId: 11, name: 'Rented 80', fsaFarmNo: '', fsaTractNo: '', fsaFieldNo: '', state: 'KS', county: 'Pratt' });
+    const z = records.add(plan.addSeason(noFsa.fieldKey, 5, 2026, 'Corn', 80).id, FD_CIC_PROGRAM.key)!;
+    expect(records.enrollmentFor(z)).toBeUndefined();
+    expect(enrollments.current(FD_CIC_PROGRAM.key, 11, 2026)).toBeUndefined();
+
+    plan.updateField({ ...noFsa, fsaFarmNo: '4321', fsaTractNo: '8765', fsaFieldNo: '1' });
+    records.ensureEnrollments(noFsa.fieldKey);
+    expect(records.enrollmentFor(z)?.enrollmentId).toBe('CI-2026-000001');
+  });
+
+  it('should leave a field without FSA numbers out of the enrollment (and out of harvest complete)', () => {
+    const z1 = records.add(corn.id, FD_CIC_PROGRAM.key)!;
+    const noFsa = plan.createField({ customerId: 9, name: 'Rented 80', fsaFarmNo: '4321', fsaTractNo: '', fsaFieldNo: '', state: 'KS', county: 'Pratt' });
+    const z2 = records.add(plan.addSeason(noFsa.fieldKey, 1, 2026, 'Corn', 80).id, FD_CIC_PROGRAM.key)!;
+    expect(records.forEnrollment(records.enrollmentFor(z1)!).map(r => r.id)).toEqual([z1.id]);
+    expect(records.enrollmentFor(z2)).toBeUndefined();
+  });
+
   it('should retire a withdrawn ID and issue a new one with the next program input', () => {
     const z = records.add(corn.id, FD_CIC_PROGRAM.key)!;
     enrollments.withdraw(records.enrollmentFor(z)!.key, 'Producer enrolled elsewhere');

@@ -300,7 +300,15 @@ export class PlantingIntentionsTableComponent {
   // The row's acres stay the total; fields only break it down (FieldPlanMockService, in memory).
   readonly fieldPlanningEnabled = environment.fieldPlanningEnabled;
   /** One enrollment card per program; each shows only once the producer has a field in it. */
-  readonly programs = inject(ProgramRegistry).all;
+  readonly programs = inject(ProgramRegistry).all.filter(p => !!p.enrollment);
+
+  /** The crop row whose fields are open: softly highlighted so it's clear which crop is being worked on. */
+  readonly activeIntentionId = signal<number | null>(null);
+
+  setActiveCrop(intentionId: number, expanded: boolean): void {
+    if (expanded) this.activeIntentionId.set(intentionId);
+    else if (this.activeIntentionId() === intentionId) this.activeIntentionId.set(null);
+  }
 
   get fieldPlanYear(): number {
     return this.selectedYear() || Math.max(0, ...this.plantingIntentions().map(p => p.plantingYear)) || new Date().getFullYear();

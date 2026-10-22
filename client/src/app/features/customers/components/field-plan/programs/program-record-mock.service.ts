@@ -3,6 +3,7 @@ import { FieldPlanMockService } from '@core/services/field-plan-mock.service';
 import { FieldProgramRecord, FieldSeason, ProgramEnrollment } from '@models';
 import { ProgramRegistry } from './program-registry';
 import { ProgramEnrollmentMockService } from './program-enrollment-mock.service';
+import { fsaKey } from './program-enrollment';
 
 /**
  * PROTOTYPE ONLY: in-memory sustainability program records, one per program per field season. The
@@ -42,29 +43,45 @@ export class ProgramRecordMockService {
     return this.forSeason(seasonId).some(r => r.status === 'Final');
   }
 
-  /** The producer's live enrollment this record belongs to (by program, producer and year). */
+  /**
+   * The producer's live enrollment this record belongs to (by program, producer and year). A field
+   * only joins its enrollment once its FSA farm, tract and field numbers are in.
+   */
   enrollmentFor(record: FieldProgramRecord): ProgramEnrollment | undefined {
     const season = this.plan.season(record.seasonId);
     const field = season && this.plan.field(season.fieldKey);
-    return season && field ? this.enrollments.current(record.programKey, field.customerId, season.year) : undefined;
+    return season && field && fsaKey(field) ? this.enrollments.current(record.programKey, field.customerId, season.year) : undefined;
   }
 
-  /** Every record in an enrollment: the producer's records in its program and year. */
+  /** Every record in an enrollment: the producer's records in its program and year whose fields have FSA numbers. */
   forEnrollment(enrollment: ProgramEnrollment): FieldProgramRecord[] {
     return this.records().filter(r => {
       if (r.programKey !== enrollment.programKey) return false;
       const season = this.plan.season(r.seasonId);
       const field = season && this.plan.field(season.fieldKey);
-      return !!season && !!field && field.customerId === enrollment.customerId && season.year === enrollment.year;
+      return !!season && !!field && !!fsaKey(field) && field.customerId === enrollment.customerId && season.year === enrollment.year;
     });
+  }
+
+  /**
+   * Issues the producer's enrollment ID for each program on the field, once the field has its FSA
+   * numbers. Called when a program is added and when the field's FSA numbers change.
+   */
+  ensureEnrollments(fieldKey: string): void {
+    const field = this.plan.field(fieldKey);
+    if (!field || !fsaKey(field)) return;
+    for (const r of this.records()) {
+      const season = this.plan.season(r.seasonId);
+      if (season?.fieldKey === fieldKey) this.enrollments.ensureFor(r.programKey, field.customerId, season.year);
+    }
   }
 
   // ── Writes ────────────────────────────────────────────────────────────────
 
   /**
    * Adds a program to a field season. The data starts from the program's defaults, plus whatever the
-   * program carries over from the field's last season in it. The producer's enrollment ID for the
-   * program and year is issued now if they don't have one.
+   * program carries over from the field's last season in it. If the field has its FSA numbers, the
+   * producer's enrollment ID for the program and year is issued now (if they don't have one).
    */
   add(seasonId: string, programKey: string): FieldProgramRecord | undefined {
     const season = this.plan.season(seasonId);
@@ -92,7 +109,7 @@ export class ProgramRecordMockService {
     const record: FieldProgramRecord = { id: `r${this._nextId++}`, seasonId, programKey, data, status: 'Draft', copiedFromYear };
     record.status = this._status(record, season);
     this.records.update(rs => [...rs, record]);
-    this.enrollments.ensureFor(programKey, field.customerId, season.year);
+    this.ensureEnrollments(field.fieldKey);
     return record;
   }
 

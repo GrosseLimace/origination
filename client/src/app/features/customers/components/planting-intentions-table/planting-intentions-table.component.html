@@ -48,7 +48,8 @@
             }
 
             <!-- Card -->
-            <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800">
+            <div class="border rounded-lg p-4 transition-colors"
+                 [class]="activeIntentionId() === intention.id ? 'border-scoular-green-accessible/50 bg-scoular-green-accessible/5 dark:bg-scoular-green/10' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'">
               <div class="flex items-start justify-between mb-3">
                 <div class="flex-1">
                   <div class="font-medium text-gray-900 dark:text-white">{{ rowCropLabel(intention) }}</div>
@@ -80,7 +81,7 @@
               </div>
               @if (fieldPlanningEnabled) {
                 <div class="mt-3 -mx-1 border-t border-gray-100 dark:border-gray-700 pt-2">
-                  <app-crop-fields-panel [intention]="intention" [customer]="customer()" [cropLabel]="rowCropLabel(intention)" (updateTotal)="updateTotalFromFields(intention, $event)" />
+                  <app-crop-fields-panel [intention]="intention" [customer]="customer()" [cropLabel]="rowCropLabel(intention)" (updateTotal)="updateTotalFromFields(intention, $event)" (expandedChange)="setActiveCrop(intention.id, $event)" />
                 </div>
               }
             </div>
@@ -206,7 +207,7 @@
                 }
 
                 <!-- Data Row (with 45Z on, it shares its bottom border with the 45Z line below) -->
-                <app-table-row [class]="fieldPlanningEnabled ? '!border-b-0 even:!bg-transparent' : ''">
+                <app-table-row [class]="fieldPlanningEnabled ? '!border-b-0 ' + (activeIntentionId() === intention.id ? '!bg-scoular-green-accessible/5 dark:!bg-scoular-green/10' : 'even:!bg-transparent') : ''">
                   <app-table-cell class="text-center">{{ rowCropLabel(intention) }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.acres | number }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.plantingYear }}</app-table-cell>
@@ -234,10 +235,10 @@
                 <!-- Fields line: indented under the crop with a left rule, no divider above, so it reads as
                      part of the row it belongs to rather than a row of its own. Expands to the field list. -->
                 @if (fieldPlanningEnabled) {
-                  <app-table-row class="even:!bg-transparent">
+                  <app-table-row [class]="activeIntentionId() === intention.id ? '!bg-scoular-green-accessible/5 dark:!bg-scoular-green/10' : 'even:!bg-transparent'">
                     <app-table-cell [colspan]="5" tdClass="!pt-0 !pb-3 !pl-10 !whitespace-normal">
                       <div class="border-l-2 pl-2 border-scoular-green-accessible/50 dark:border-scoular-green/50">
-                        <app-crop-fields-panel [intention]="intention" [customer]="customer()" [cropLabel]="rowCropLabel(intention)" (updateTotal)="updateTotalFromFields(intention, $event)" />
+                        <app-crop-fields-panel [intention]="intention" [customer]="customer()" [cropLabel]="rowCropLabel(intention)" (updateTotal)="updateTotalFromFields(intention, $event)" (expandedChange)="setActiveCrop(intention.id, $event)" />
                       </div>
                     </app-table-cell>
                   </app-table-row>

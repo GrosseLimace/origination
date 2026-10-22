@@ -3,7 +3,7 @@
   <app-dialog-header>
     <app-dialog-title>{{ draftField.name }} · {{ draftSeason.year }}</app-dialog-title>
     <app-dialog-description>
-      {{ draftSeason.cropLabel }} · FSA {{ draftField.fsaFarmNo }}/{{ draftField.fsaTractNo }}/{{ draftField.fsaFieldNo }} · {{ draftField.county }} County, {{ draftField.state }} · Changes save as you go.
+      {{ draftSeason.cropLabel }} · {{ hasFsa() ? 'FSA ' + draftField.fsaFarmNo + '/' + draftField.fsaTractNo + '/' + draftField.fsaFieldNo : 'FSA # needed' }} · {{ draftField.county }} County, {{ draftField.state }} · Changes save as you go.
     </app-dialog-description>
   </app-dialog-header>
 
@@ -63,8 +63,14 @@
               }
             </div>
 
-            <!-- The enrollment ID incoming tickets are assigned -->
-            @if (enrollment(); as e) {
+            <!-- The enrollment ID incoming tickets are assigned (programs with an enrollment only) -->
+            @if (!a.def.enrollment) {
+              <!-- no producer-level enrollment for this program -->
+            } @else if (!hasFsa()) {
+              <div class="rounded-lg bg-amber-50 dark:bg-amber-900/30 px-4 py-2 text-sm text-amber-800 dark:text-amber-300">
+                Add this field's FSA farm, tract and field numbers above to get the producer's {{ a.def.shortLabel }} enrollment ID.
+              </div>
+            } @else if (enrollment(); as e) {
               <div class="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-scoular-green-accessible/40 bg-scoular-green-accessible/5 px-4 py-2 text-sm">
                 <span class="font-semibold text-scoular-green-accessible dark:text-scoular-green">Enrollment {{ e.enrollmentId }}</span>
                 <span class="text-gray-700 dark:text-gray-300">Incoming {{ a.def.shortLabel }} tickets from this producer are assigned <span class="font-medium">{{ e.enrollmentId }}</span>.</span>
@@ -82,7 +88,7 @@
 
             @if (a.record.frozen; as fz) {
               <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 px-4 py-3 text-sm text-blue-900 dark:text-blue-200">
-                <span>🔒 Finalized from {{ fz.finalizedBy }}: {{ fz.score.value | number:'1.0-0' }} {{ fz.score.unit }} ({{ fz.calculatorVersion }}). Locked for audit.</span>
+                <span>🔒 Finalized from {{ fz.finalizedBy }}@if (fz.score; as sc) {: {{ sc.value | number:'1.0-0' }} {{ sc.unit }}} ({{ fz.calculatorVersion }}). Locked for audit.</span>
                 @if (lockedBy(); as enrolled) {
                   <span>In attested enrollment {{ enrolled.enrollmentId }}. Withdraw the enrollment to correct this field.</span>
                 } @else {

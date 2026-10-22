@@ -32,6 +32,10 @@ describe('program enrollment rules', () => {
     expect(enrollmentBlockers(enrollment(), [], [], statements)).toEqual(['at least one field']);
   });
 
+  it('should need FSA numbers on every field before the producer attests', () => {
+    expect(enrollmentBlockers(enrollment(), [record({ fsa: '' })], [], statements)).toEqual(['FSA numbers for Penka #1']);
+  });
+
   it('should block a field already in another attested enrollment of the same program and year, by field or FSA numbers', () => {
     const other = enrollment({ key: 'k2', enrollmentId: 'CI-2026-000001', customerId: 10, status: 'Attested', snapshot: [record({ fieldKey: 'landlord-f' })] });
     // A landlord's field with the same FSA numbers.

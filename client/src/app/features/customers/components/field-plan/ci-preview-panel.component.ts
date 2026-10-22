@@ -70,7 +70,7 @@ import { CiResult } from '@models';
       }
 
       <div class="rounded bg-amber-50 dark:bg-amber-900/30 px-2 py-1 text-[11px] text-amber-800 dark:text-amber-300">
-        Prototype: scores are illustrative, not the USDA calculation.
+        Estimated score; the USDA FD-CIC calculation will replace it.
       </div>
     </div>
   `,

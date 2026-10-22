@@ -2,7 +2,7 @@ import { FdCicData, FieldSeason, SeasonStatus } from '@models';
 import { ScorableSeason } from '@shared/utils/ci-illustrative';
 
 /** Stamped on every finalized 45Z record. The C# port of the calculator replaces "illustrative prototype". */
-export const FD_CIC_CALCULATOR_VERSION = 'USDA FD-CIC v1.2 (illustrative prototype)';
+export const FD_CIC_CALCULATOR_VERSION = 'USDA FD-CIC v1.2 (estimate)';
 
 /** The scoring helpers' view of one field: the program data plus the field season's acres. */
 export function fdCicScorable(data: FdCicData, season: Pick<FieldSeason, 'acres'>, status: SeasonStatus = 'Draft'): ScorableSeason {

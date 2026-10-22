@@ -40,11 +40,21 @@ export interface SustainabilityProgramDef<TData = any> {
 
   /** A one-line roll-up for a crop row, or null to show none. */
   rowSummary?(items: { season: FieldSeason; record: FieldProgramRecord<TData> }[], intention: { id: number; acres: number }): string | null;
+  /**
+   * The short text on the field's program chip when the program has no score to show, e.g.
+   * GrainCraft's variety. Programs with a score (45Z) leave it out and the chip shows the score.
+   */
+  chipText?(data: TData): string | null;
 
   /** The program's input form. Rendered with NgComponentOutlet; writes through ProgramRecordMockService. */
   intake: Type<ProgramIntake>;
 
-  enrollment: {
+  /**
+   * Producer-level enrollment, for programs that have one (45Z): an ID per producer per year, issued
+   * once a field in the program has its FSA numbers, plus the producer's signed attestation. A
+   * program without it records field data only.
+   */
+  enrollment?: {
     /** Enrollment IDs read `${idPrefix}-${year}-000001`. */
     idPrefix: string;
     /** What the producer confirms when attesting; keys are stored with the answers. */

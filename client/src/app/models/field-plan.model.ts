@@ -67,7 +67,8 @@ export type ProgramRecordStatus = 'Draft' | 'Ready' | 'Final';
 export interface FrozenProgramResult {
   inputs: Record<string, unknown>;
   outputs: Record<string, unknown>;
-  score: ProgramScore;
+  /** The headline result, for programs that score a field (45Z: CI). */
+  score?: ProgramScore;
   calculatorVersion: string;
   finalizedBy: string;
   finalizedAt: string;

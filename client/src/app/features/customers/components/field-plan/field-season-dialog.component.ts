@@ -8,6 +8,7 @@ import { FieldSeason, ProducerField } from '@models';
 import { ProgramRegistry } from './programs/program-registry';
 import { ProgramRecordMockService } from './programs/program-record-mock.service';
 import { ProgramEnrollmentMockService } from './programs/program-enrollment-mock.service';
+import { fsaKey } from './programs/program-enrollment';
 
 /**
  * One field on one crop row: its name, FSA numbers and location, its acres this year, and the
@@ -63,6 +64,11 @@ export class FieldSeasonDialogComponent {
     const a = this.active();
     return a ? this.enrollments.lockedBy(a.record.id) : undefined;
   });
+  /** All three FSA numbers are in: the field can join its program enrollments. */
+  readonly hasFsa = computed(() => {
+    const f = this.field();
+    return !!f && !!fsaKey(f);
+  });
   /** A finalized program froze this season's acres and location, so they can't change under it. */
   readonly seasonLocked = computed(() => this.records.hasFinal(this.seasonId()));
   readonly intakeInputs = computed(() => {
@@ -97,7 +103,9 @@ export class FieldSeasonDialogComponent {
   }
 
   saveField(): void {
-    if (this.draftField && !this.seasonLocked()) this.plan.updateField(this.draftField);
+    if (!this.draftField || this.seasonLocked()) return;
+    this.plan.updateField(this.draftField);
+    this.records.ensureEnrollments(this.draftField.fieldKey); // FSA numbers in: the enrollment ID can be issued
   }
 
   countiesFor(state: string): string[] {

@@ -5,6 +5,7 @@ import { FieldPlanMockService } from '@core/services/field-plan-mock.service';
 import { Customer, FieldSeason, PlantingIntention } from '@models';
 import { ProgramRegistry } from './programs/program-registry';
 import { ProgramRecordMockService } from './programs/program-record-mock.service';
+import { fsaKey } from './programs/program-enrollment';
 import { FieldSeasonDialogComponent } from './field-season-dialog.component';
 
 /**
@@ -52,18 +53,24 @@ export class CropFieldsPanelComponent {
     return text ? [{ programKey: program.key, label: program.shortLabel, text }] : [];
   }));
 
+  /** Tells the table this crop row is the one being worked on, so it can highlight it. */
+  readonly expandedChange = output<boolean>();
+
   toggle(): void {
     this.expanded.update(e => !e);
+    this.expandedChange.emit(this.expanded());
+    if (this.expanded()) this.openAdd();
   }
 
   fieldName(s: FieldSeason): string {
     return this.plan.field(s.fieldKey)?.name ?? 'Field';
   }
 
-  /** "FSA 1234/5678/3". */
+  /** "FSA 1234/5678/3", or a prompt while any of the three is missing. */
   fieldFsa(s: FieldSeason): string {
     const f = this.plan.field(s.fieldKey);
-    return f ? `FSA ${f.fsaFarmNo}/${f.fsaTractNo}/${f.fsaFieldNo}` : '';
+    const fsa = f ? fsaKey(f) : '';
+    return fsa ? `FSA ${fsa}` : 'FSA # needed';
   }
 
   fieldPlace(s: FieldSeason): string {
@@ -71,15 +78,29 @@ export class CropFieldsPanelComponent {
     return f ? `${f.county}, ${f.state}` : '';
   }
 
-  /** The field's programs as chips: short label, score and status. */
+  /** The field's programs as chips: short label, then its score (45Z) or its own short text (GrainCraft), and status. */
   chips(s: FieldSeason) {
     const field = this.plan.field(s.fieldKey);
     return this.records.forSeason(s.id).flatMap(record => {
       const program = this.registry.get(record.programKey);
       if (!program || !field) return [];
       const score = record.frozen?.score ?? program.preview(record.data, s, field);
-      return [{ programKey: program.key, label: program.shortLabel, status: record.status, score }];
+      const text = score ? null : (program.chipText?.(record.data) ?? null);
+      return [{ programKey: program.key, label: program.shortLabel, status: record.status, score, text }];
     });
+  }
+
+  /** Programs that apply to this crop and aren't on the field yet: the "Add program" menu. */
+  addable(s: FieldSeason) {
+    return this.programs().filter(p => !this.records.find(s.id, p.key));
+  }
+
+  /** The season whose "Add program" menu is open. */
+  menuFor: string | null = null;
+
+  addProgram(s: FieldSeason, programKey: string): void {
+    this.menuFor = null;
+    this.open(s, programKey);
   }
 
   /** A field with a finalized program is locked: its acres are part of a frozen result. */
@@ -142,8 +163,7 @@ export class CropFieldsPanelComponent {
   }
 
   get canAdd(): boolean {
-    const fsaComplete = !!(this.newFsaFarm.trim() && this.newFsaTract.trim() && this.newFsaField.trim());
-    return !!this.newName.trim() && (this.newAcres ?? 0) > 0 && (!this.isNewField || (fsaComplete && !!this.newCounty));
+    return !!this.newName.trim() && (this.newAcres ?? 0) > 0 && (!this.isNewField || !!this.newCounty);
   }
 
   add(): void {

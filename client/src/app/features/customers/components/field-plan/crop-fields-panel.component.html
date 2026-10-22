@@ -1,5 +1,5 @@
 <!-- Summary line: always shown under the crop row -->
-<button type="button" (click)="toggle(); expanded() && openAdd()"
+<button type="button" (click)="toggle()"
         class="group flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-3 py-1 text-left text-sm bg-transparent border border-transparent hover:border-scoular-green-accessible/40 hover:bg-scoular-green-accessible/5 dark:hover:bg-scoular-green/10 transition-colors">
   <span class="text-gray-400 w-3">{{ expanded() ? '▾' : '▸' }}</span>
   <span class="font-medium text-gray-700 dark:text-gray-200">Fields</span>
@@ -9,7 +9,7 @@
     <span class="text-gray-700 dark:text-gray-200">{{ inFields() | number }} of {{ intention().acres | number }} ac</span>
   }
   @for (s of summaries(); track s.programKey) {
-    <span class="text-gray-700 dark:text-gray-200">· <span class="font-semibold text-scoular-green-accessible dark:text-scoular-green">🌱 {{ s.label }}</span> {{ s.text }}</span>
+    <span class="text-gray-700 dark:text-gray-200">· <span class="font-semibold text-scoular-green-accessible dark:text-scoular-green">{{ s.label }}</span> {{ s.text }}</span>
   }
   @if (remaining() < 0) {
     <span class="text-amber-700 dark:text-amber-400">· {{ -remaining() | number }} ac over the total</span>
@@ -17,30 +17,40 @@
 </button>
 
 @if (expanded()) {
-  <div class="mt-1 ml-5 space-y-2">
+  <div class="mt-2 ml-5 max-w-4xl space-y-3">
     @if (seasons().length > 0) {
-      <table class="w-full max-w-3xl text-sm">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            <th class="pb-1 pr-3 font-medium">Field</th>
+            <th class="pb-1 pr-3 font-medium w-32">Acres</th>
+            <th class="pb-1 pr-3 font-medium">Sustainability programs</th>
+            <th class="pb-1 w-8"></th>
+          </tr>
+        </thead>
         <tbody>
           @for (s of seasons(); track s.id) {
-            <tr class="border-b border-gray-100 dark:border-gray-800">
-              <td class="py-1.5 pr-3">
-                <span class="font-medium text-gray-900 dark:text-white">{{ fieldName(s) }}</span>
-                <div class="text-xs text-gray-500 dark:text-gray-400">{{ fieldFsa(s) }} · {{ fieldPlace(s) }}</div>
+            <tr class="border-t border-gray-100 dark:border-gray-800 align-top">
+              <td class="py-2 pr-3">
+                <button type="button" class="text-left font-medium text-gray-900 dark:text-white bg-transparent border-0 p-0 hover:underline" (click)="open(s)">{{ fieldName(s) }}</button>
+                <div class="text-xs" [class]="fieldFsa(s) === 'FSA # needed' ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'">
+                  {{ fieldFsa(s) }} <span class="text-gray-500 dark:text-gray-400">· {{ fieldPlace(s) }}</span>
+                </div>
               </td>
-              <td class="py-1.5 pr-3 w-32">
+              <td class="py-2 pr-3">
                 <div class="flex items-center gap-1">
                   <input type="number" min="0" class="ci-input ci-compact !w-24 text-right" [disabled]="locked(s)"
                          [ngModel]="s.acres" (ngModelChange)="setAcres(s, $event)" aria-label="Acres" />
                   <span class="text-xs text-gray-500">ac</span>
                 </div>
               </td>
-              <td class="py-1.5 pr-3">
-                <div class="flex flex-wrap items-center gap-1.5">
+              <td class="py-2 pr-3">
+                <div class="relative flex flex-wrap items-center gap-1.5">
                   @for (c of chips(s); track c.programKey) {
                     <button type="button" (click)="open(s, c.programKey)"
-                            class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs bg-transparent hover:bg-gray-50 dark:hover:bg-gray-700/40"
+                            class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs bg-transparent hover:bg-gray-50 dark:hover:bg-gray-700/40"
                             [class]="c.status === 'Draft' ? 'border-amber-300 text-amber-800 dark:border-amber-700 dark:text-amber-300' : 'border-scoular-green-accessible/40 text-gray-800 dark:text-gray-100'">
-                      <span class="font-semibold">🌱 {{ c.label }}</span>
+                      <span class="font-semibold">{{ c.label }}</span>
                       @if (c.score) {
                         <span class="tabular-nums">{{ c.score.value | number:'1.0-0' }} {{ c.score.unitShort }}</span>
                         @if (c.score.vsBaseline !== undefined) {
@@ -48,22 +58,36 @@
                             {{ c.score.vsBaseline <= 0 ? '▼' : '▲' }}{{ absPct(c.score.vsBaseline) }}%
                           </span>
                         }
+                      } @else if (c.text) {
+                        <span>{{ c.text }}</span>
                       } @else {
                         <span>needs inputs</span>
                       }
-                      @if (c.status === 'Final') { <span title="Finalized">🔒</span> }
+                      @if (c.status === 'Final') { <span title="Final">🔒</span> }
                     </button>
                   }
-                  @if (programs().length > chips(s).length) {
-                    <button type="button" class="text-xs text-scoular-green-accessible dark:text-scoular-green bg-transparent border-0 p-0 hover:underline"
-                            (click)="open(s, chips(s).length === 0 && programs().length === 1 ? programs()[0].key : null)">
-                      + {{ chips(s).length === 0 && programs().length === 1 ? programs()[0].shortLabel : 'program' }}
+
+                  @if (addable(s).length) {
+                    <button type="button" class="inline-flex items-center gap-1 rounded-full border border-dashed border-gray-300 dark:border-gray-600 px-2.5 py-0.5 text-xs text-gray-600 dark:text-gray-300 bg-transparent hover:border-scoular-green-accessible hover:text-scoular-green-accessible"
+                            (click)="menuFor = menuFor === s.id ? null : s.id" [attr.aria-expanded]="menuFor === s.id">
+                      Add program ▾
                     </button>
+                    @if (menuFor === s.id) {
+                      <div class="absolute left-0 top-full z-20 mt-1 w-72 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg">
+                        @for (p of addable(s); track p.key) {
+                          <button type="button" class="block w-full px-3 py-2 text-left bg-transparent border-0 hover:bg-gray-50 dark:hover:bg-gray-700/50" (click)="addProgram(s, p.key)">
+                            <div class="text-sm font-medium text-gray-900 dark:text-white">{{ p.label }}</div>
+                            <div class="text-xs text-gray-500 dark:text-gray-400">{{ p.description }}</div>
+                          </button>
+                        }
+                      </div>
+                    }
+                  } @else if (chips(s).length === 0) {
+                    <span class="text-xs text-gray-400 dark:text-gray-500">None for {{ cropLabel() }}</span>
                   }
-                  <button type="button" class="text-xs text-gray-500 dark:text-gray-400 bg-transparent border-0 p-0 hover:underline" (click)="open(s)">Details ›</button>
                 </div>
               </td>
-              <td class="py-1.5 w-8 text-right">
+              <td class="py-2 text-right">
                 @if (!locked(s)) {
                   <button type="button" class="text-gray-400 hover:text-red-600 bg-transparent border-0 p-0" (click)="remove(s)" [attr.aria-label]="'Remove ' + fieldName(s)">✕</button>
                 }
@@ -75,7 +99,7 @@
     }
 
     @if (remaining() < 0) {
-      <div class="max-w-3xl rounded-md bg-amber-50 dark:bg-amber-900/30 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+      <div class="rounded-md bg-amber-50 dark:bg-amber-900/30 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
         Fields add up to {{ inFields() | number }} ac, {{ -remaining() | number }} more than the {{ intention().acres | number }} ac on this row.
         <button type="button" class="ml-1 font-medium underline bg-transparent border-0 p-0 text-inherit" (click)="updateTotal.emit(inFields())">
           Update total to {{ inFields() | number }}
@@ -83,48 +107,45 @@
       </div>
     }
 
-    <!-- Add a field: a name (the producer's existing fields are suggested); FSA numbers and location only for a new one -->
-    <div class="flex max-w-3xl flex-wrap items-end gap-2">
-      <label class="block text-xs text-gray-600 dark:text-gray-300">Field name
-        <input class="ci-input ci-compact !w-48" [attr.list]="'fields-' + intention().id" placeholder="Name or pick one"
-               [(ngModel)]="newName" (ngModelChange)="onNameChange()" />
-        <datalist [id]="'fields-' + intention().id">
-          @for (f of pickable(); track f.fieldKey) { <option [value]="f.name">FSA {{ f.fsaFarmNo }}/{{ f.fsaTractNo }}/{{ f.fsaFieldNo }}</option> }
-        </datalist>
-      </label>
-      @if (isNewField) {
-        <label class="block text-xs text-gray-600 dark:text-gray-300">FSA farm #
-          <input class="ci-input ci-compact !w-20" [(ngModel)]="newFsaFarm" /></label>
-        <label class="block text-xs text-gray-600 dark:text-gray-300">Tract #
-          <input class="ci-input ci-compact !w-20" [(ngModel)]="newFsaTract" /></label>
-        <label class="block text-xs text-gray-600 dark:text-gray-300">Field #
-          <input class="ci-input ci-compact !w-16" [(ngModel)]="newFsaField" /></label>
-      }
-      @if (isNewField) {
-        <label class="block text-xs text-gray-600 dark:text-gray-300">State
-          <select class="ci-input ci-compact !w-20" [(ngModel)]="newState" (ngModelChange)="newCounty = countiesFor($event)[0] || ''">
-            @for (st of plan.states; track st) { <option [value]="st">{{ st }}</option> }
-          </select>
+    <!-- Add a field: a name (the producer's existing fields are suggested); FSA numbers and location for a new one -->
+    <div class="rounded-md border border-gray-100 dark:border-gray-800 px-3 py-2">
+      <div class="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Add a field</div>
+      <div class="flex flex-wrap items-end gap-2">
+        <label class="block text-xs text-gray-600 dark:text-gray-300">Field name
+          <input class="ci-input ci-compact !w-48" [attr.list]="'fields-' + intention().id" placeholder="Name or pick one"
+                 [(ngModel)]="newName" (ngModelChange)="onNameChange()" />
+          <datalist [id]="'fields-' + intention().id">
+            @for (f of pickable(); track f.fieldKey) { <option [value]="f.name">{{ f.county }}, {{ f.state }}</option> }
+          </datalist>
         </label>
-        <label class="block text-xs text-gray-600 dark:text-gray-300">County
-          <select class="ci-input ci-compact !w-36" [(ngModel)]="newCounty">
-            @for (c of countiesFor(newState); track c) { <option [value]="c">{{ c }}</option> }
-          </select>
+        @if (isNewField) {
+          <label class="block text-xs text-gray-600 dark:text-gray-300">FSA farm #
+            <input class="ci-input ci-compact !w-20" [(ngModel)]="newFsaFarm" /></label>
+          <label class="block text-xs text-gray-600 dark:text-gray-300">Tract #
+            <input class="ci-input ci-compact !w-20" [(ngModel)]="newFsaTract" /></label>
+          <label class="block text-xs text-gray-600 dark:text-gray-300">Field #
+            <input class="ci-input ci-compact !w-16" [(ngModel)]="newFsaField" /></label>
+          <label class="block text-xs text-gray-600 dark:text-gray-300">State
+            <select class="ci-input ci-compact !w-20" [(ngModel)]="newState" (ngModelChange)="newCounty = countiesFor($event)[0] || ''">
+              @for (st of plan.states; track st) { <option [value]="st">{{ st }}</option> }
+            </select>
+          </label>
+          <label class="block text-xs text-gray-600 dark:text-gray-300">County
+            <select class="ci-input ci-compact !w-36" [(ngModel)]="newCounty">
+              @for (c of countiesFor(newState); track c) { <option [value]="c">{{ c }}</option> }
+            </select>
+          </label>
+        }
+        <label class="block text-xs text-gray-600 dark:text-gray-300">Acres
+          <input type="number" min="0" class="ci-input ci-compact !w-24 text-right" [(ngModel)]="newAcres" (keydown.enter)="add()" />
         </label>
+        <button type="button" class="h-8 rounded-md px-3 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-50 border-0"
+                [disabled]="!canAdd" (click)="add()">Add field</button>
+      </div>
+      @if (isNewField) {
+        <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">FSA numbers can be added later, but a field needs them before the producer gets an enrollment ID.</div>
       }
-      <label class="block text-xs text-gray-600 dark:text-gray-300">Acres
-        <input type="number" min="0" class="ci-input ci-compact !w-24 text-right" [(ngModel)]="newAcres" (keydown.enter)="add()" />
-      </label>
-      <button type="button" class="h-8 rounded-md px-3 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-50 border-0"
-              [disabled]="!canAdd" (click)="add()">Add field</button>
     </div>
-    @if (isNewField) {
-      <div class="text-xs text-gray-500 dark:text-gray-400">New field: enter its FSA farm, tract and field numbers from the producer's FSA-578.</div>
-    }
-    @if (programs().length === 0) {
-      <div class="text-xs text-gray-400 dark:text-gray-500">🌱 No sustainability programs apply to {{ cropLabel() }}.</div>
-    }
-    <div class="text-[11px] text-amber-700 dark:text-amber-400">Prototype: fields are kept in this browser tab only.</div>
   </div>
 }
 
