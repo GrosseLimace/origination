@@ -209,7 +209,7 @@ All controllers depend on `IDataService` (DI'd as `SqlDataService` today, with `
 - Tenant: `1521f999-f722-4a4f-9747-166f93e9b0d1` (Scoular AAD).
 - Dev SPA client: `e0f25943-ae8b-4c2d-8060-c9ffbd448aff`.
 - Dev API scope: `api://00078a10-3f3f-4d17-9350-fe90401125ae/Origination.Application.Dev`.
-- **Cache mode**: `sessionStorage`. Tokens die when the tab closes — see security comments at the top of `main.ts` for the threat-model rationale.
+- **Cache mode**: `sessionStorage`. Tokens die when the tab closes — see security comments in `core/auth/msal-instance.ts` (where the `PublicClientApplication` is created) for the threat-model rationale.
 - Deep-link preservation: `auth.guard.ts` saves the target URL to `sessionStorage["deepLinkUrl"]` before redirecting to AAD; `main.ts` restores it after `loginRedirect` returns.
 
 ### Route guards

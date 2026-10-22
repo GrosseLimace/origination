@@ -102,7 +102,7 @@
             <span class="hidden 2xl:inline">{{ isActive('/bid-sheet') ? 'Back to Producers' : 'Bid Sheet' }}</span>
           </app-button>
           }
-          @if (cwsSpikeEnabled) {
+          @if (contractWorkspaceEnabled) {
           <app-button [variant]="inCws() ? 'default' : 'outline'" (onClick)="toggleCws()" class="gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               @if (inCws()) { <path d="m12 19-7-7 7-7"/><path d="M19 12H5"/> }
@@ -190,7 +190,7 @@
           <span>Bid Sheet</span>
         </button>
         }
-        @if (cwsSpikeEnabled) {
+        @if (contractWorkspaceEnabled) {
         <button type="button" [class]="getMobileNavClass('/cws')" (click)="mobileNavigate('/cws')">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>

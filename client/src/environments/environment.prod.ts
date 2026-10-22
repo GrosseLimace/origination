@@ -26,7 +26,8 @@ export const environment = {
   // Originator Calculators: ON in PROD. Gates the floating calculator launcher on the
   // customer home page (Profitability / Check / Cancel-vs-Roll). Client-side only — no backend.
   calculatorEnabled: true,
-  cwsSpikeEnabled: false,
+  // Contract Workspace (CWS) at /cws. Off: the `cws` block below lists what Prod still needs.
+  contractWorkspaceEnabled: false,
   // CTRM read-ahead: the 350ms hover prefetch on the producer list and the 4s post-click
   // convergence re-read. Both exist to hide CTRM GraphQL latency, and both cost an extra read per
   // hovered row and per click.
@@ -69,5 +70,17 @@ export const environment = {
   apiConfig: {
     uri: '/api/*',
     scopes: ['api://e1458bcd-7212-4ea0-a836-7e08d03b5bbf/Origination.Application.Prod']
+  },
+  // Contract Workspace (/cws): the Contracts API it calls, and the scope our own sign-in requests for
+  // it. Public identifiers, not secrets, from the CWS team's Prod app registrations; the
+  // Prod-to-Prod pairing is not yet confirmed with the CWS team. Still needed before the route is on
+  // here: the delegated permission and consent on this SPA registration, cms allowing this origin
+  // (CORS), and its host in SecurityHeaders:SpaConnectSrcHosts. 'prod' shows no environment chip.
+  cws: {
+    apiUrl: 'https://cms.scoular.com/api/v1',
+    scopes: ['api://8e2aac30-2994-47bd-be02-f626327c9e9c/ContractManagementSystem.Application.Prod'],
+    environmentName: 'prod',
+    // Local only: sample data instead of the API. Never true in a deployed environment.
+    sampleData: false
   }
 };

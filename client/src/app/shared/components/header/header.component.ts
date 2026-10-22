@@ -57,8 +57,8 @@ export class HeaderComponent {
 
   readonly envName = environment.envName;
   readonly bidSheetEnabled = environment.bidSheetEnabled;
-  // SPIKE: the Contract Workspace at /cws (local only).
-  readonly cwsSpikeEnabled = environment.cwsSpikeEnabled;
+  // The Contract Workspace at /cws.
+  readonly contractWorkspaceEnabled = environment.contractWorkspaceEnabled;
   // Groups (daily recap + @-mentionable in notes). On in every environment — see
   // environment.dailyDigestEnabled, which still carries the original Daily Digest name.
   readonly dailyDigestEnabled = environment.dailyDigestEnabled;

@@ -268,7 +268,7 @@ Last Updated: 2026-10-06
 | @azure/msal-angular | 5.1.1 | MIT | Azure AD authentication (Angular) |
 | @azure/msal-browser | 5.23.0 | MIT | MSAL browser runtime (raised from 5.4.0 because `@cws/core-auth` peers on ^5.23.0) |
 | @it/design-system | 0.1.1 | Internal | Scoular IT design system components |
-| @cws/workspace | 0.2.0 | Internal | SPIKE: Contract Workspace shell, routes and provider bundle, mounted at `/cws` (local only, `cwsSpikeEnabled`). Vendored from `client/vendor/cws/`; the 16 `@cws/*` packages are released together at one version |
+| @cws/workspace | 0.2.0 | Internal | SPIKE: Contract Workspace shell, routes and provider bundle, mounted at `/cws` (gated by `contractWorkspaceEnabled`; on locally only). Vendored from `client/vendor/cws/`; the 16 `@cws/*` packages are released together at one version |
 | @cws/features-home | 0.2.0 | Internal | SPIKE: CWS contract grid |
 | @cws/features-approvals | 0.2.0 | Internal | SPIKE: CWS approval queues |
 | @cws/features-pricing | 0.2.0 | Internal | SPIKE: CWS pricing and pricing approvals |
