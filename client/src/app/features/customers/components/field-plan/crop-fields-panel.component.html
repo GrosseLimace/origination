@@ -8,13 +8,8 @@
   } @else {
     <span class="text-gray-700 dark:text-gray-200">{{ inFields() | number }} of {{ intention().acres | number }} ac</span>
   }
-  @if (summary(); as s) {
-    @if (s.ciGPerBu !== null) {
-      <span class="text-gray-700 dark:text-gray-200">· <span class="font-semibold text-scoular-green-accessible dark:text-scoular-green">🌱 45Z</span> CI <span class="font-semibold">{{ s.ciGPerBu | number:'1.0-0' }}</span> g/bu</span>
-      <span class="font-medium" [class]="(s.vsNational ?? 0) <= 0 ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'">
-        {{ (s.vsNational ?? 0) <= 0 ? '▼' : '▲' }}{{ absPct(s.vsNational) }}% vs national
-      </span>
-    }
+  @for (s of summaries(); track s.programKey) {
+    <span class="text-gray-700 dark:text-gray-200">· <span class="font-semibold text-scoular-green-accessible dark:text-scoular-green">🌱 {{ s.label }}</span> {{ s.text }}</span>
   }
   @if (remaining() < 0) {
     <span class="text-amber-700 dark:text-amber-400">· {{ -remaining() | number }} ac over the total</span>
@@ -34,30 +29,42 @@
               </td>
               <td class="py-1.5 pr-3 w-32">
                 <div class="flex items-center gap-1">
-                  <input type="number" min="0" class="ci-input ci-compact !w-24 text-right" [disabled]="s.status === 'Final'"
+                  <input type="number" min="0" class="ci-input ci-compact !w-24 text-right" [disabled]="locked(s)"
                          [ngModel]="s.acres" (ngModelChange)="setAcres(s, $event)" aria-label="Acres" />
                   <span class="text-xs text-gray-500">ac</span>
                 </div>
               </td>
               <td class="py-1.5 pr-3">
-                @if (ci(s); as c) {
-                  <button type="button" class="text-left text-sm bg-transparent border-0 p-0 hover:underline" (click)="openSeasonId = s.id">
-                    @if (c.result) {
-                      🌱 CI <span class="font-semibold tabular-nums text-gray-900 dark:text-white">{{ c.result.ciGPerBu | number:'1.0-0' }}</span>
-                      <span [class]="c.result.vsNational <= 0 ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'">
-                        {{ c.result.vsNational <= 0 ? '▼' : '▲' }}{{ absPct(c.result.vsNational) }}%
-                      </span>
-                      @if (c.status === 'Final') { <span title="Finalized">🔒</span> } @else { <span class="text-gray-400">›</span> }
-                    } @else {
-                      <span class="text-amber-700 dark:text-amber-400">🌱 Add 45Z practices ›</span>
-                    }
-                  </button>
-                } @else {
-                  <button type="button" class="text-xs text-gray-500 dark:text-gray-400 bg-transparent border-0 p-0 hover:underline" (click)="openSeasonId = s.id">Details ›</button>
-                }
+                <div class="flex flex-wrap items-center gap-1.5">
+                  @for (c of chips(s); track c.programKey) {
+                    <button type="button" (click)="open(s, c.programKey)"
+                            class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs bg-transparent hover:bg-gray-50 dark:hover:bg-gray-700/40"
+                            [class]="c.status === 'Draft' ? 'border-amber-300 text-amber-800 dark:border-amber-700 dark:text-amber-300' : 'border-scoular-green-accessible/40 text-gray-800 dark:text-gray-100'">
+                      <span class="font-semibold">🌱 {{ c.label }}</span>
+                      @if (c.score) {
+                        <span class="tabular-nums">{{ c.score.value | number:'1.0-0' }} {{ c.score.unitShort }}</span>
+                        @if (c.score.vsBaseline !== undefined) {
+                          <span [class]="c.score.vsBaseline <= 0 ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'">
+                            {{ c.score.vsBaseline <= 0 ? '▼' : '▲' }}{{ absPct(c.score.vsBaseline) }}%
+                          </span>
+                        }
+                      } @else {
+                        <span>needs inputs</span>
+                      }
+                      @if (c.status === 'Final') { <span title="Finalized">🔒</span> }
+                    </button>
+                  }
+                  @if (programs().length > chips(s).length) {
+                    <button type="button" class="text-xs text-scoular-green-accessible dark:text-scoular-green bg-transparent border-0 p-0 hover:underline"
+                            (click)="open(s, chips(s).length === 0 && programs().length === 1 ? programs()[0].key : null)">
+                      + {{ chips(s).length === 0 && programs().length === 1 ? programs()[0].shortLabel : 'program' }}
+                    </button>
+                  }
+                  <button type="button" class="text-xs text-gray-500 dark:text-gray-400 bg-transparent border-0 p-0 hover:underline" (click)="open(s)">Details ›</button>
+                </div>
               </td>
               <td class="py-1.5 w-8 text-right">
-                @if (s.status !== 'Final') {
+                @if (!locked(s)) {
                   <button type="button" class="text-gray-400 hover:text-red-600 bg-transparent border-0 p-0" (click)="remove(s)" [attr.aria-label]="'Remove ' + fieldName(s)">✕</button>
                 }
               </td>
@@ -103,15 +110,13 @@
       <button type="button" class="h-8 rounded-md px-3 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-50 border-0"
               [disabled]="!canAdd" (click)="add()">Add field</button>
     </div>
-    @if (!ciCrop()) {
-      <div class="text-xs text-gray-400 dark:text-gray-500" title="The USDA 45Z calculator (FD-CIC v1.0) only scores corn, soybeans, sorghum and canola.">
-        🌱 45Z · {{ cropLabel() }} is not a scored crop
-      </div>
+    @if (programs().length === 0) {
+      <div class="text-xs text-gray-400 dark:text-gray-500">🌱 No sustainability programs apply to {{ cropLabel() }}.</div>
     }
     <div class="text-[11px] text-amber-700 dark:text-amber-400">Prototype: fields are kept in this browser tab only.</div>
   </div>
 }
 
 @if (openSeasonId) {
-  <app-field-season-dialog [seasonId]="openSeasonId" (close)="openSeasonId = null" />
+  <app-field-season-dialog [seasonId]="openSeasonId" [startProgram]="openProgram" (close)="openSeasonId = null; openProgram = null" />
 }

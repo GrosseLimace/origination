@@ -1,0 +1,113 @@
+/**
+ * Fields under planting intentions, and the sustainability programs recorded on them.
+ *
+ * A ProducerField is durable: a name and a location, entered once and offered again in later years.
+ * A FieldSeason is that field's share of one planting intention (one crop row): just its acres. Crop,
+ * year, type and trade unit come from the intention row, so they are never entered twice, and the
+ * intention's Acres stays the total the dashboard counts.
+ *
+ * Program data never lives on the season. Each program a field takes part in (45Z first, others
+ * later) is a FieldProgramRecord holding that program's own data, so adding a program needs no change
+ * to fields or seasons. Producer-level sign-off is a ProgramEnrollment per program per year.
+ */
+
+export interface ProducerField {
+  fieldKey: string;
+  customerId: number;
+  name: string;
+  state: string;
+  county: string;
+}
+
+/** One field's share of one planting intention (crop row). */
+export interface FieldSeason {
+  id: string;
+  fieldKey: string;
+  plantingIntentionId: number;
+  /** Copied from the intention when the field is added, for history and copy-forward. */
+  year: number;
+  cropLabel: string;
+  acres: number | null;
+}
+
+/** A program's headline number for one field, e.g. 45Z's CI in g CO₂e/bu. */
+export interface ProgramScore {
+  value: number;
+  /** Full unit for the record, e.g. "g CO₂e/bu". */
+  unit: string;
+  /** Short unit for chips, e.g. "g/bu". */
+  unitShort: string;
+  /** Fractional change against the program's baseline (45Z: national average), when it has one. */
+  vsBaseline?: number;
+}
+
+/** Draft: inputs still missing. Ready: scored, can be finalized. Final: frozen and locked. */
+export type ProgramRecordStatus = 'Draft' | 'Ready' | 'Final';
+
+/** What a program record looked like when it was finalized: the audit copy of inputs and outputs. */
+export interface FrozenProgramResult {
+  inputs: Record<string, unknown>;
+  outputs: Record<string, unknown>;
+  score: ProgramScore;
+  calculatorVersion: string;
+  finalizedBy: string;
+  finalizedAt: string;
+}
+
+/** One sustainability program on one field season. `data` is the program's own shape. */
+export interface FieldProgramRecord<TData = unknown> {
+  id: string;
+  seasonId: string;
+  programKey: string;
+  data: TData;
+  status: ProgramRecordStatus;
+  /** Set when the data was prefilled from the field's previous season. */
+  copiedFromYear?: number;
+  frozen?: FrozenProgramResult;
+}
+
+export type EnrollmentStatus = 'Draft' | 'Attested' | 'Withdrawn';
+
+/** The producer's signed statement for one program year. Confirmations are keyed by the program's statements. */
+export interface ProgramAttestation {
+  signerName: string;
+  /** yyyy-mm-dd. */
+  signedOn: string;
+  method: 'eSign' | 'Paper';
+  documentRef: string;
+  confirmations: Record<string, boolean>;
+}
+
+/** A finalized program record as an enrollment lists it. */
+export interface EnrollableRecord {
+  recordId: string;
+  seasonId: string;
+  fieldKey: string;
+  fieldName: string;
+  cropLabel: string;
+  year: number;
+  acres: number | null;
+  status: ProgramRecordStatus;
+  score?: ProgramScore;
+}
+
+/**
+ * One producer's enrollment in one program for one year: the ID downstream records (45Z: delivery
+ * lots in the CI ledger) point back to. Issued when the producer attests; never reused, even after
+ * a withdrawal.
+ */
+export interface ProgramEnrollment {
+  key: string;
+  programKey: string;
+  enrollmentId: string | null;
+  customerId: number;
+  year: number;
+  status: EnrollmentStatus;
+  recordIds: string[];
+  attestation: ProgramAttestation;
+  attestedBy?: string;
+  attestedAt?: string;
+  /** The listed records as they stood when attested. */
+  snapshot?: EnrollableRecord[];
+  withdrawnReason?: string;
+}

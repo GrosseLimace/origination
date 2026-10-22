@@ -1,201 +1,125 @@
-@if (draft && draftField) {
+@if (draftSeason && draftField) {
 <app-dialog [isOpen]="true" (close)="close.emit()" size="xl" [scrollBody]="true" [closeOnBackdrop]="false">
   <app-dialog-header>
-    <app-dialog-title>
-      {{ draftField.name }}
-      · {{ draft.year }}
-    </app-dialog-title>
+    <app-dialog-title>{{ draftField.name }} · {{ draftSeason.year }}</app-dialog-title>
     <app-dialog-description>
-      {{ draft.cropLabel }} · {{ draftField.county }} County, {{ draftField.state }} · Changes save as you go.
+      {{ draftSeason.cropLabel }} · {{ draftField.county }} County, {{ draftField.state }} · Changes save as you go.
     </app-dialog-description>
   </app-dialog-header>
 
   <app-dialog-content>
-    <div class="grid gap-6" [class]="ciCrop() ? 'lg:grid-cols-[minmax(0,1fr)_18rem]' : ''">
-      <section class="space-y-6">
-        @if (isFinal()) {
-          <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 px-4 py-3 text-sm text-blue-900 dark:text-blue-200">
-            <span>🔒 Finalized by {{ season()?.finalizedBy }} with an actual yield of {{ season()?.actualYield }} bu/ac, final CI {{ season()?.finalCiGPerBu | number:'1.0-0' }} g/bu ({{ season()?.calculatorVersion }}). Locked for audit.</span>
-            @if (lockedBy(); as enrolled) {
-              <span>In enrollment {{ enrolled.enrollmentId }}. Withdraw the enrollment to correct this field.</span>
-            } @else {
-              <button type="button" class="underline bg-transparent border-0 p-0" (click)="showReopen = true">Reopen to correct…</button>
-            }
-          </div>
-        }
+    <div class="space-y-6">
+      <!-- The field: entered once, reused every year -->
+      <div>
+        <h4 class="font-semibold text-gray-900 dark:text-white">Field</h4>
+        <div class="mt-2 grid gap-3 sm:grid-cols-4">
+          <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">Name</span>
+            <input class="ci-input" [(ngModel)]="draftField.name" (ngModelChange)="saveField()" /></label>
+          <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">State</span>
+            <select class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftField.state" (ngModelChange)="draftField.county = countiesFor($event)[0] || ''; saveField()">
+              @for (st of plan.states; track st) { <option [value]="st">{{ st }}</option> }
+            </select></label>
+          <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">County</span>
+            <select class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftField.county" (ngModelChange)="saveField()">
+              @for (c of countiesFor(draftField.state); track c) { <option [value]="c">{{ c }}</option> }
+            </select></label>
+          <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">{{ draftSeason.year }} acres</span>
+            <input type="number" min="0" class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftSeason.acres" (ngModelChange)="saveSeason()" /></label>
+        </div>
+      </div>
 
-        <!-- The field (lasting: entered once, reused every year) -->
-        <div>
-          <h4 class="font-semibold text-gray-900 dark:text-white">Field <span class="text-sm font-normal text-gray-500">(kept for every year)</span></h4>
-          <div class="mt-2 grid gap-3 sm:grid-cols-3">
-            <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">Name</span>
-              <input class="ci-input" [(ngModel)]="draftField.name" (ngModelChange)="saveField()" /></label>
-            <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">State</span>
-              <select class="ci-input" [(ngModel)]="draftField.state" (ngModelChange)="draftField.county = countiesFor($event)[0] || ''; saveField()">
-                @for (st of plan.states; track st) { <option [value]="st">{{ st }}</option> }
-              </select></label>
-            <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">County</span>
-              <select class="ci-input" [(ngModel)]="draftField.county" (ngModelChange)="saveField()">
-                @for (c of countiesFor(draftField.state); track c) { <option [value]="c">{{ c }}</option> }
-              </select></label>
-          </div>
+      <!-- Sustainability programs on this field -->
+      <div>
+        <div class="flex flex-wrap items-center gap-2 border-b border-gray-200 dark:border-gray-700">
+          <h4 class="mr-2 pb-2 font-semibold text-gray-900 dark:text-white">Sustainability programs</h4>
+          @for (p of programRecords(); track p.record.id) {
+            <button type="button" (click)="activeKey.set(p.record.programKey)"
+                    class="-mb-px rounded-t-md border px-3 py-1.5 text-sm"
+                    [class]="active()?.record?.id === p.record.id
+                      ? 'border-gray-200 border-b-white bg-white font-semibold text-gray-900 dark:border-gray-700 dark:border-b-gray-800 dark:bg-gray-800 dark:text-white'
+                      : 'border-transparent bg-transparent text-gray-600 hover:text-gray-900 dark:text-gray-300'">
+              🌱 {{ p.def.shortLabel }}
+              @if (p.record.status === 'Final') { 🔒 } @else if (p.record.status === 'Draft') { <span class="text-amber-600">•</span> }
+            </button>
+          }
+          @for (d of addable(); track d.key) {
+            <button type="button" class="mb-1 rounded-md border border-dashed border-scoular-green-accessible/60 px-2.5 py-1 text-sm text-scoular-green-accessible dark:text-scoular-green bg-transparent hover:bg-scoular-green-accessible/5"
+                    [title]="d.description" (click)="addProgram(d.key)">+ {{ d.shortLabel }}</button>
+          }
         </div>
 
-          <fieldset [disabled]="isFinal()" class="space-y-6">
-            <!-- This year -->
-            <div>
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <h4 class="font-semibold text-gray-900 dark:text-white">{{ draft.year }} · {{ draft.cropLabel }}</h4>
-                @if (ciCrop() && prior() && !isFinal()) {
-                  <app-button variant="outline" size="sm" (onClick)="copyPrior()">{{ copyPriorLabel() }}</app-button>
-                }
-              </div>
-              <div class="mt-2 grid gap-3 sm:grid-cols-2">
-                <label class="block text-sm">
-                  <span class="text-gray-700 dark:text-gray-300">Acres planted this year</span>
-                  <input type="number" min="0" class="ci-input" [(ngModel)]="draft.acres" (ngModelChange)="saveSeason()" />
-                  <span class="text-xs text-gray-500 dark:text-gray-400">Defaults to the whole field. Lower it if only part is planted.</span>
-                </label>
-              </div>
+        @if (active(); as a) {
+          <div class="pt-4 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span class="text-gray-600 dark:text-gray-300">{{ a.def.label }}</span>
+              @if (a.record.status !== 'Final') {
+                <button type="button" class="text-xs text-gray-500 hover:text-red-600 bg-transparent border-0 p-0" (click)="removeProgram()">Remove from this field</button>
+              }
             </div>
 
-            @if (ciCrop()) {
-              <!-- 45Z practices -->
-              <div class="rounded-lg border border-scoular-green-accessible/30 dark:border-scoular-green/30 p-4 space-y-6">
-                <div class="text-sm font-semibold text-scoular-green-accessible dark:text-scoular-green">🌱 45Z practices</div>
-
-                <div class="grid gap-3 sm:grid-cols-2">
-                  <label class="block text-sm">
-                    <span class="text-gray-700 dark:text-gray-300">Expected yield (bu/ac)</span>
-                    <input type="number" min="0" class="ci-input" [class.ci-missing]="!draft.expectedYield"
-                           [(ngModel)]="draft.expectedYield" (ngModelChange)="saveSeason()" />
-                    <span class="text-xs text-gray-500 dark:text-gray-400">Crop insurance APH yield, or the FSA county benchmark.</span>
-                  </label>
-                  <label class="block text-sm">
-                    <span class="text-gray-700 dark:text-gray-300">Actual yield (bu/ac)</span>
-                    <input type="number" class="ci-input" disabled [ngModel]="season()?.actualYield" placeholder="Entered when you finalize" />
-                    <span class="text-xs text-gray-500 dark:text-gray-400">Entered after harvest, when the field is finalized.</span>
-                  </label>
-                </div>
-
-                <app-ci-intake-sections [season]="draft" [disabled]="isFinal()" (changed)="saveSeason()" />
-
-                <div>
-                  <div class="text-sm text-gray-700 dark:text-gray-300" [class.text-amber-700]="!draft.tillage">Tillage</div>
-                  <div class="mt-1 grid gap-2 sm:grid-cols-3">
-                    @for (o of tillageOptions; track o.value) {
-                      <button type="button" (click)="setTillage(o.value)" [disabled]="isFinal()"
-                              class="rounded-lg border px-3 py-2 text-left transition-colors"
-                              [class]="draft.tillage === o.value
-                                ? 'border-scoular-green-accessible bg-scoular-green-accessible/10 dark:border-scoular-green'
-                                : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/40'">
-                        <div class="font-medium text-gray-900 dark:text-white">{{ o.label }}</div>
-                        <div class="text-xs text-gray-500 dark:text-gray-400">{{ o.help }}</div>
-                      </button>
-                    }
-                  </div>
-                  <div class="mt-4 text-sm text-gray-700 dark:text-gray-300" [class.text-amber-700]="!draft.coverCrop">Cover crop</div>
-                  <div class="mt-1 grid gap-2 sm:grid-cols-3">
-                    @for (o of coverOptions; track o.value) {
-                      <button type="button" (click)="setCover(o.value)" [disabled]="isFinal()"
-                              class="rounded-lg border px-3 py-2 text-left transition-colors"
-                              [class]="draft.coverCrop === o.value
-                                ? 'border-scoular-green-accessible bg-scoular-green-accessible/10 dark:border-scoular-green'
-                                : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/40'">
-                        <div class="font-medium text-gray-900 dark:text-white">{{ o.label }}</div>
-                        <div class="text-xs text-gray-500 dark:text-gray-400">{{ o.help }}</div>
-                      </button>
-                    }
-                  </div>
-                </div>
-
-                <div>
-                  <div class="text-sm text-gray-700 dark:text-gray-300">Manure <span class="text-gray-500">(optional)</span></div>
-                  @if (draft.manure.length === 0) {
-                    <div class="mt-1 flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
-                      No manure applied.
-                      @if (!isFinal()) {
-                        <button type="button" class="text-scoular-green-accessible dark:text-scoular-green hover:underline bg-transparent border-0 p-0" (click)="addManure()">+ Add manure</button>
-                      }
-                    </div>
-                  } @else {
-                    <div class="mt-1 space-y-2">
-                      @for (m of draft.manure; track $index; let i = $index) {
-                        <div class="grid items-end gap-2 rounded-lg border border-gray-200 dark:border-gray-700 p-3 sm:grid-cols-[1fr_1fr_1fr_1fr_auto]">
-                          <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">Animal</span>
-                            <select class="ci-input" [(ngModel)]="m.type" (ngModelChange)="saveSeason()">
-                              @for (t of manureTypes; track t) { <option [value]="t">{{ t }}</option> }
-                            </select></label>
-                          <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">Form</span>
-                            <select class="ci-input" [(ngModel)]="m.form" (ngModelChange)="saveSeason()">
-                              <option value="Solid">Solid</option><option value="Liquid">Liquid</option>
-                            </select></label>
-                          <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">Amount ({{ manureAmountUnit(m) }})</span>
-                            <input type="number" min="0" class="ci-input" [(ngModel)]="m.amount" (ngModelChange)="saveSeason()" /></label>
-                          <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">N content ({{ manureNUnit(m) }})</span>
-                            <input type="number" min="0" class="ci-input" [(ngModel)]="m.nContent" (ngModelChange)="saveSeason()" /></label>
-                          @if (!isFinal()) {
-                            <button type="button" class="h-9 px-2 text-sm text-gray-500 hover:text-red-600 bg-transparent border-0" (click)="removeManure(i)" aria-label="Remove manure application">✕</button>
-                          }
-                        </div>
-                      }
-                      @if (draft.manure.length < 3 && !isFinal()) {
-                        <button type="button" class="text-sm text-scoular-green-accessible dark:text-scoular-green hover:underline bg-transparent border-0 p-0" (click)="addManure()">+ Add another</button>
-                      }
-                    </div>
-                  }
-                </div>
+            @if (a.record.frozen; as fz) {
+              <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 px-4 py-3 text-sm text-blue-900 dark:text-blue-200">
+                <span>🔒 Finalized by {{ fz.finalizedBy }}: {{ fz.score.value | number:'1.0-0' }} {{ fz.score.unit }} ({{ fz.calculatorVersion }}). Locked for audit.</span>
+                @if (lockedBy(); as enrolled) {
+                  <span>In enrollment {{ enrolled.enrollmentId }}. Withdraw the enrollment to correct this field.</span>
+                } @else {
+                  <button type="button" class="underline bg-transparent border-0 p-0" (click)="showReopen = true">Reopen to correct…</button>
+                }
               </div>
-            } @else if (carbonIntensityEnabled) {
-              <div class="text-sm text-gray-400 dark:text-gray-500">🌱 45Z · {{ draft.cropLabel }} is not a scored crop, so there are no practices to record.</div>
             }
-          </fieldset>
-      </section>
 
-      @if (ciCrop()) {
-        <aside>
-          <div class="lg:sticky lg:top-0">
-            <app-ci-preview-panel [result]="result()" [missing]="missing()" />
+            @if (intakeInputs(); as inputs) {
+              <ng-container *ngComponentOutlet="a.def.intake; inputs: inputs" />
+            }
           </div>
-        </aside>
-      }
+        } @else if (addable().length) {
+          <p class="pt-4 text-sm text-gray-600 dark:text-gray-300">
+            Add a program to record this field's sustainability data. Its field details above are shared by every program.
+          </p>
+        } @else {
+          <p class="pt-4 text-sm text-gray-400 dark:text-gray-500">No sustainability programs apply to {{ draftSeason.cropLabel }}.</p>
+        }
+      </div>
     </div>
   </app-dialog-content>
 
   <app-dialog-footer>
     <app-button variant="outline" (onClick)="close.emit()">Done</app-button>
-    @if (ciCrop() && !isFinal()) {
-      <app-button variant="default" [disabled]="!result()" (onClick)="openFinalize()">Finalize field…</app-button>
+    @if (active(); as a) {
+      @if (a.record.status !== 'Final') {
+        <app-button variant="default" [disabled]="a.record.status !== 'Ready'" (onClick)="openFinalize()">Finalize {{ a.def.shortLabel }}…</app-button>
+      }
     }
   </app-dialog-footer>
 </app-dialog>
 }
 
-<!-- Finalize -->
-@if (showFinalize && draft && draftField) {
+<!-- Finalize: the program's end-of-season numbers, then freeze -->
+@if (showFinalize && active(); as a) {
   <div class="fixed inset-0 z-[70] flex items-start justify-center bg-black/40 px-4 pt-[12vh]" (click)="showFinalize = false">
     <div class="w-full max-w-md rounded-lg bg-white dark:bg-gray-800 shadow-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4" (click)="$event.stopPropagation()">
-      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Finalize {{ draftField.name }} · {{ draft.cropLabel }} {{ draft.year }}</h3>
-      <label class="block text-sm">
-        <span class="text-gray-700 dark:text-gray-300">Actual yield (bu/ac)</span>
-        <input type="number" min="0" class="ci-input" [(ngModel)]="finalizeYield" />
-      </label>
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Finalize {{ a.def.shortLabel }} · {{ draftField?.name }} {{ draftSeason?.year }}</h3>
+      @for (i of a.def.finalizeInputs; track i.key) {
+        <label class="block text-sm">
+          <span class="text-gray-700 dark:text-gray-300">{{ i.label }}</span>
+          <input type="number" min="0" class="ci-input" [(ngModel)]="finalizeValues[i.key]" />
+        </label>
+      }
       @if (finalizePreview; as fp) {
         <div class="text-sm text-gray-700 dark:text-gray-300">
-          Final CI <span class="font-semibold">{{ fp.ciGPerBu | number:'1.0-0' }} g/bu</span>
-          @if (result(); as projected) { (projected {{ projected.ciGPerBu | number:'1.0-0' }}) }
+          Final <span class="font-semibold">{{ fp.value | number:'1.0-0' }} {{ fp.unit }}</span>
+          @if (preview(); as projected) { (projected {{ projected.value | number:'1.0-0' }}) }
         </div>
+      } @else if (finalizeMissing.length) {
+        <div class="text-sm text-amber-700 dark:text-amber-400">Still needed: {{ finalizeMissing.join(', ') }}.</div>
       }
-      @if (finalizeBlockerList.length) {
-        <div class="rounded-md bg-amber-50 dark:bg-amber-900/30 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
-          Still needed for the audit: {{ finalizeBlockerList.join(', ') }}.
-        </div>
+      @if (draftSeason) {
+        <label class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <input type="checkbox" class="mt-1" [(ngModel)]="finalizeConfirmed" />
+          <span>{{ a.def.finalizeStatement(draftSeason) }}</span>
+        </label>
       }
-      <label class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
-        <input type="checkbox" class="mt-1" [(ngModel)]="finalizeAttested" />
-        <span>I confirm the practices and yield for this field were provided by the producer for the {{ draft.year }} crop year.</span>
-      </label>
-      <p class="text-xs text-gray-500 dark:text-gray-400">Once finalized the field is locked. Reopening needs a reason, and the finalized record is kept.</p>
+      <p class="text-xs text-gray-500 dark:text-gray-400">Finalizing keeps a copy of the inputs and results for the audit and locks the field. Reopening needs a reason.</p>
       <div class="flex justify-end gap-2">
         <app-button variant="outline" (onClick)="showFinalize = false">Cancel</app-button>
         <app-button variant="default" [disabled]="!canFinalize" (onClick)="confirmFinalize()">Finalize</app-button>
@@ -213,7 +137,7 @@
         <span class="text-gray-700 dark:text-gray-300">Why does it need correcting?</span>
         <textarea rows="3" class="ci-input" [(ngModel)]="reopenReason"></textarea>
       </label>
-      <p class="text-xs text-gray-500 dark:text-gray-400">The finalized record and this reason are kept in the field's history.</p>
+      <p class="text-xs text-gray-500 dark:text-gray-400">The reason is kept in the field's history.</p>
       <div class="flex justify-end gap-2">
         <app-button variant="outline" (onClick)="showReopen = false">Cancel</app-button>
         <app-button variant="default" [disabled]="!reopenReason.trim()" (onClick)="confirmReopen()">Reopen</app-button>

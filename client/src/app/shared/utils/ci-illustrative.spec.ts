@@ -1,13 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { FieldSeason } from '@models';
-import { estimateCi, fdCicCropFor, missingInputs, nationalAverage, summarizeIntention, yieldUsed } from './ci-illustrative';
-import { emptyIntake } from './ci-enrollment';
+import { ScorableSeason, estimateCi, fdCicCropFor, missingInputs, nationalAverage, summarizeIntention, yieldUsed } from './ci-illustrative';
 
-function season(overrides: Partial<FieldSeason> = {}): FieldSeason {
+function season(overrides: Partial<ScorableSeason> = {}): ScorableSeason {
   return {
-    id: 's1', fieldKey: 'f1', plantingIntentionId: 1, year: 2026, cropLabel: 'Corn', acres: 100,
+    acres: 100,
     expectedYield: 200, actualYield: null, syntheticN: 195.48, niFraction: 0,
-    tillage: 'Conventional', coverCrop: 'None', manure: [], status: 'Draft', ...emptyIntake(),
+    tillage: 'NoneOfTheAbove', coverCrop: 'None', manure: [], status: 'Draft',
     ...overrides,
   };
 }
@@ -34,8 +32,9 @@ describe('ci-illustrative (prototype)', () => {
   });
 
   it('should list missing inputs and not score until they are filled', () => {
-    const blank = season({ expectedYield: null, syntheticN: null, tillage: null, coverCrop: null });
-    expect(missingInputs(blank)).toEqual(['expected yield', 'nitrogen rate', 'tillage', 'cover crop']);
+    const blank = season({ expectedYield: null, syntheticN: null });
+    // Tillage and cover crop default to the workbook's "None of the above" / "No cover crop", so only these two are ever missing.
+    expect(missingInputs(blank)).toEqual(['expected yield', 'nitrogen rate']);
     expect(estimateCi('Corn', blank)).toBeNull();
   });
 
@@ -50,7 +49,7 @@ describe('ci-illustrative (prototype)', () => {
     const r = estimateCi('Corn', season({ tillage: 'NoTill', coverCrop: 'CoverCrop', niFraction: 0.5 }))!;
     expect(r.ciGPerBu).toBeLessThan(6030.65);
     const labels = r.reasons.map(x => x.label);
-    expect(labels).toEqual(expect.arrayContaining(['No-till', 'Cover crop', 'Nitrification inhibitor']));
+    expect(labels).toEqual(expect.arrayContaining(['No till', 'Cover crop', 'Nitrification inhibitor']));
     expect(r.reasons.every(x => x.delta < 0)).toBe(true);
   });
 
@@ -69,7 +68,7 @@ describe('ci-illustrative (prototype)', () => {
 
   it('should report status: not started, draft while anything is missing, final when all are final', () => {
     expect(summarizeIntention('Corn', { id: 1, acres: 100 }, []).status).toBe('NotStarted');
-    expect(summarizeIntention('Corn', { id: 1, acres: 100 }, [season(), season({ id: 's2', tillage: null })]).status).toBe('Draft');
+    expect(summarizeIntention('Corn', { id: 1, acres: 100 }, [season(), season({ expectedYield: null })]).status).toBe('Draft');
     expect(summarizeIntention('Corn', { id: 1, acres: 100 }, [season()]).status).toBe('Projected');
     expect(summarizeIntention('Corn', { id: 1, acres: 100 }, [season({ status: 'Final', actualYield: 200 })]).status).toBe('Final');
   });

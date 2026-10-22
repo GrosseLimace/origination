@@ -2,8 +2,9 @@ import { Component, computed, inject, input, output, signal } from '@angular/cor
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { FieldPlanMockService } from '@core/services/field-plan-mock.service';
-import { Customer, FdCicCrop, FieldSeason, PlantingIntention } from '@models';
-import { estimateCi, seasonStatus, summarizeIntention } from '@shared/utils/ci-illustrative';
+import { Customer, FieldSeason, PlantingIntention } from '@models';
+import { ProgramRegistry } from './programs/program-registry';
+import { ProgramRecordMockService } from './programs/program-record-mock.service';
 import { FieldSeasonDialogComponent } from './field-season-dialog.component';
 
 /**
@@ -11,6 +12,9 @@ import { FieldSeasonDialogComponent } from './field-season-dialog.component';
  * break it down. Adding a field pre-fills the acres not yet in a field, so a crop on one field needs
  * no extra typing. When the fields add up to more than the total, the row offers to update it — the
  * only way field data ever changes an intention, and it goes through the normal Edit dialog.
+ *
+ * Each field shows a chip per sustainability program it takes part in; the programs themselves come
+ * from the program registry, so nothing here is specific to 45Z.
  */
 @Component({
   selector: 'app-crop-fields-panel',
@@ -21,12 +25,12 @@ import { FieldSeasonDialogComponent } from './field-season-dialog.component';
 })
 export class CropFieldsPanelComponent {
   readonly plan = inject(FieldPlanMockService);
+  private readonly records = inject(ProgramRecordMockService);
+  private readonly registry = inject(ProgramRegistry);
 
   readonly intention = input.required<PlantingIntention>();
   readonly customer = input.required<Customer>();
   readonly cropLabel = input.required<string>();
-  /** The FD-CIC crop when this row is scored for 45Z, else null. */
-  readonly ciCrop = input<FdCicCrop | null>(null);
   /** Asks the table to open its Edit dialog with the total set to the field acres. */
   readonly updateTotal = output<number>();
 
@@ -34,10 +38,18 @@ export class CropFieldsPanelComponent {
   readonly seasons = computed(() => this.plan.seasonsForIntention(this.intention().id));
   readonly inFields = computed(() => this.seasons().reduce((sum, s) => sum + (s.acres ?? 0), 0));
   readonly remaining = computed(() => this.intention().acres - this.inFields());
-  readonly summary = computed(() => {
-    const crop = this.ciCrop();
-    return crop ? summarizeIntention(crop, this.intention(), this.seasons()) : null;
-  });
+
+  /** Programs that apply to this crop row. */
+  readonly programs = computed(() => this.registry.eligible(this.cropLabel()));
+  /** One roll-up line per program with records on this row (45Z: the row's CI). */
+  readonly summaries = computed(() => this.programs().flatMap(program => {
+    const items = this.seasons().flatMap(season => {
+      const record = this.records.find(season.id, program.key);
+      return record ? [{ season, record }] : [];
+    });
+    const text = items.length && program.rowSummary ? program.rowSummary(items, this.intention()) : null;
+    return text ? [{ programKey: program.key, label: program.shortLabel, text }] : [];
+  }));
 
   toggle(): void {
     this.expanded.update(e => !e);
@@ -52,16 +64,30 @@ export class CropFieldsPanelComponent {
     return f ? `${f.county}, ${f.state}` : '';
   }
 
-  ci(s: FieldSeason) {
-    const crop = this.ciCrop();
-    return crop ? { result: estimateCi(crop, s), status: seasonStatus(s) } : null;
+  /** The field's programs as chips: short label, score and status. */
+  chips(s: FieldSeason) {
+    const field = this.plan.field(s.fieldKey);
+    return this.records.forSeason(s.id).flatMap(record => {
+      const program = this.registry.get(record.programKey);
+      if (!program || !field) return [];
+      const score = record.frozen?.score ?? program.preview(record.data, s, field);
+      return [{ programKey: program.key, label: program.shortLabel, status: record.status, score }];
+    });
+  }
+
+  /** A field with a finalized program is locked: its acres are part of a frozen result. */
+  locked(s: FieldSeason): boolean {
+    return this.records.hasFinal(s.id);
   }
 
   setAcres(s: FieldSeason, value: number): void {
+    if (this.locked(s)) return;
     this.plan.updateSeason({ ...s, acres: Number(value) || 0 });
   }
 
   remove(s: FieldSeason): void {
+    if (this.locked(s)) return;
+    this.records.removeForSeason(s.id);
     this.plan.removeSeason(s.id);
   }
 
@@ -122,8 +148,15 @@ export class CropFieldsPanelComponent {
   }
 
   openSeasonId: string | null = null;
+  openProgram: string | null = null;
 
-  absPct(fraction: number | null): number {
+  /** Opens the field, optionally straight onto (or adding) one program. */
+  open(s: FieldSeason, programKey: string | null = null): void {
+    this.openSeasonId = s.id;
+    this.openProgram = programKey;
+  }
+
+  absPct(fraction: number | undefined): number {
     return Math.abs(Math.round((fraction ?? 0) * 100));
   }
 }

@@ -1,9 +1,9 @@
 
     <div class="w-full">
       @if (fieldPlanningEnabled) {
-        <!-- 45Z enrollment for the plan year: the producer attestation and the ID delivery lots carry -->
-        @if (carbonIntensityEnabled) {
-          <app-ci-enrollment-card class="mb-3 block" [customerId]="customer().id" [cropYear]="fieldPlanYear" [seasons]="enrollableSeasons()" />
+        <!-- Program enrollments for the plan year: the producer attestation and the ID each program issues -->
+        @for (program of programs; track program.key) {
+          <app-program-enrollment-card class="block [&:not(:empty)]:mb-3" [programKey]="program.key" [customerId]="customer().id" [year]="fieldPlanYear" />
         }
       }
 
@@ -80,8 +80,7 @@
               </div>
               @if (fieldPlanningEnabled) {
                 <div class="mt-3 -mx-1 border-t border-gray-100 dark:border-gray-700 pt-2">
-                  <app-crop-fields-panel [intention]="intention" [customer]="customer()" [cropLabel]="rowCropLabel(intention)"
-                                         [ciCrop]="ciCropFor(intention)" (updateTotal)="updateTotalFromFields(intention, $event)" />
+                  <app-crop-fields-panel [intention]="intention" [customer]="customer()" [cropLabel]="rowCropLabel(intention)" (updateTotal)="updateTotalFromFields(intention, $event)" />
                 </div>
               }
             </div>
@@ -238,8 +237,7 @@
                   <app-table-row class="even:!bg-transparent">
                     <app-table-cell [colspan]="5" tdClass="!pt-0 !pb-3 !pl-10 !whitespace-normal">
                       <div class="border-l-2 pl-2 border-scoular-green-accessible/50 dark:border-scoular-green/50">
-                        <app-crop-fields-panel [intention]="intention" [customer]="customer()" [cropLabel]="rowCropLabel(intention)"
-                                               [ciCrop]="ciCropFor(intention)" (updateTotal)="updateTotalFromFields(intention, $event)" />
+                        <app-crop-fields-panel [intention]="intention" [customer]="customer()" [cropLabel]="rowCropLabel(intention)" (updateTotal)="updateTotalFromFields(intention, $event)" />
                       </div>
                     </app-table-cell>
                   </app-table-row>

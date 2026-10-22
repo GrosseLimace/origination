@@ -1,19 +1,18 @@
-import { Injectable, inject, signal } from '@angular/core';
-import { FieldSeason, ProducerField, SeasonStatus } from '@models';
-import { missingInputs } from '@shared/utils/ci-illustrative';
-import { CALCULATOR_VERSION, cloneIntake, emptyIntake, finalizeBlockers } from '@shared/utils/ci-enrollment';
-import { CiEnrollmentMockService } from '@core/services/ci-enrollment-mock.service';
+import { Injectable, signal } from '@angular/core';
+import { FieldSeason, ProducerField } from '@models';
 
 /**
  * PROTOTYPE ONLY: in-memory stand-in for the fields API, so "fields under each crop row" can be
  * walked through with originators before any table or endpoint exists. Nothing is persisted and no
  * planting intention is ever written: a reload starts over. Every producer starts with no fields.
+ *
+ * Holds only what every field has (name, location, acres per crop row). Sustainability program data
+ * lives in ProgramRecordMockService, one record per program per season.
  */
 @Injectable({ providedIn: 'root' })
 export class FieldPlanMockService {
   readonly fields = signal<ProducerField[]>([]);
   readonly seasons = signal<FieldSeason[]>([]);
-  private readonly _enrollments = inject(CiEnrollmentMockService);
   private _nextId = 1;
 
   /** A short county list per state; the real list comes from the FD-CIC county table. */
@@ -46,7 +45,7 @@ export class FieldPlanMockService {
     return this.seasons().find(s => s.id === id);
   }
 
-  /** The field's most recent record before `year`: last time's acres and practices. */
+  /** The field's most recent season before `year`: last time's acres, and the key to last time's program data. */
   lastSeason(fieldKey: string, year: number): FieldSeason | undefined {
     return this.seasons()
       .filter(s => s.fieldKey === fieldKey && s.year < year)
@@ -66,48 +65,16 @@ export class FieldPlanMockService {
   }
 
   addSeason(fieldKey: string, intentionId: number, year: number, cropLabel: string, acres: number): FieldSeason {
-    const season = this._blank(fieldKey, intentionId, year, cropLabel, acres);
+    const season: FieldSeason = { id: `s${this._nextId++}`, fieldKey, plantingIntentionId: intentionId, year, cropLabel, acres };
     this.seasons.update(ss => [...ss, season]);
     return season;
   }
 
   updateSeason(season: FieldSeason): void {
-    if (this.season(season.id)?.status === 'Final') return;
-    const next = { ...season, manure: season.manure.map(m => ({ ...m })), ...cloneIntake(season) };
-    next.status = missingInputs(next).length === 0 ? 'Projected' : 'Draft';
-    this.seasons.update(ss => ss.map(s => (s.id === season.id ? next : s)));
+    this.seasons.update(ss => ss.map(s => (s.id === season.id ? { ...season } : s)));
   }
 
   removeSeason(seasonId: string): void {
-    this.seasons.update(ss => ss.filter(s => s.id !== seasonId || s.status === 'Final'));
-  }
-
-  /** Locks the season with its actual yield and freezes the CI it was finalized at. Refused while the audit records are incomplete. */
-  finalizeSeason(seasonId: string, actualYield: number, finalCiGPerBu: number): void {
-    const season = this.seasons().find(s => s.id === seasonId);
-    if (!season || finalizeBlockers(season, actualYield).length > 0) return;
-    this.seasons.update(ss => ss.map(s => (s.id === seasonId
-      ? { ...s, actualYield, finalCiGPerBu, calculatorVersion: CALCULATOR_VERSION, status: 'Final' as SeasonStatus, finalizedBy: 'you', finalizedAt: new Date().toISOString() }
-      : s)));
-  }
-
-  /** Refused while an attested 45Z enrollment holds the season: withdraw the enrollment first. */
-  reopenSeason(seasonId: string): void {
-    if (this._enrollments.lockedBy(seasonId)) return;
-    this.seasons.update(ss => ss.map(s => {
-      if (s.id !== seasonId) return s;
-      const reopened: FieldSeason = { ...s, status: 'Draft', finalizedBy: undefined, finalizedAt: undefined, finalCiGPerBu: undefined, calculatorVersion: undefined };
-      reopened.status = missingInputs(reopened).length === 0 ? 'Projected' : 'Draft';
-      return reopened;
-    }));
-  }
-
-  private _blank(fieldKey: string, intentionId: number, year: number, cropLabel: string, acres: number): FieldSeason {
-    return {
-      id: `s${this._nextId++}`, fieldKey, plantingIntentionId: intentionId, year, cropLabel, acres,
-      expectedYield: null, actualYield: null, syntheticN: null, niFraction: 0, tillage: null, coverCrop: null, manure: [],
-      status: 'Draft',
-      ...emptyIntake(),
-    };
+    this.seasons.update(ss => ss.filter(s => s.id !== seasonId));
   }
 }

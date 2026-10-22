@@ -25,21 +25,8 @@ describe('practicesToCopy', () => {
     expect(practicesToCopy(soybeans2025, 'Soybean', 'Corn')).toEqual({ tillage: 'NoTill', coverCrop: 'CoverCrop' });
   });
 
-  it('should copy N applications, other fertilizer and energy for the same crop, but never evidence, ids or results', () => {
-    const prior = {
-      ...corn2025,
-      nApplications: [{ product: 'UAN' as const, lbsN: 175, timing: 'Sidedress' as const, efficiency: 'None' as const }],
-      noNApplied: false, phosphateLbs: 40, potashLbs: 60, limeTons: null,
-      energy: { dieselGal: 4, gasolineGal: null, lpGal: 12, naturalGasTherms: null, electricityKwh: null },
-      evidence: [{ id: 'e1', kind: 'YieldRecord' as const, reference: 'FSA-578', addedBy: 'you', addedAt: '2025-11-01' }],
-      finalCiGPerBu: 4200, id: 'last-year', status: 'Final' as const, actualYield: 210,
-    };
-    const copied = practicesToCopy(prior, 'Corn', 'Corn');
-    expect(copied.nApplications).toEqual(prior.nApplications);
-    expect(copied.nApplications![0]).not.toBe(prior.nApplications[0]);
-    expect(copied).toMatchObject({ phosphateLbs: 40, potashLbs: 60, energy: prior.energy });
-    for (const key of ['evidence', 'finalCiGPerBu', 'id', 'status', 'actualYield']) {
-      expect(copied).not.toHaveProperty(key);
-    }
+  it('should never copy the actual yield', () => {
+    const lastYear = { ...corn2025, actualYield: 210 };
+    expect(practicesToCopy(lastYear, 'Corn', 'Corn')).not.toHaveProperty('actualYield');
   });
 });

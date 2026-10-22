@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, input, output, inject, DestroyRef, signal, computed } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, input, output, inject, DestroyRef, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -6,17 +6,16 @@ import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowCompo
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
 import { InputComponent } from '@shared/components/input/input.component';
-import { Customer, PlantingIntention, Commodity, FdCicCrop, EnrollableSeason } from '@models';
+import { Customer, PlantingIntention, Commodity } from '@models';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
-import { fdCicCropFor } from '@shared/utils/ci-illustrative';
 import { environment } from '@env/environment';
 import { CropFieldsPanelComponent } from '../field-plan/crop-fields-panel.component';
-import { CiEnrollmentCardComponent } from '../field-plan/ci-enrollment-card.component';
-import { FieldPlanMockService } from '@core/services/field-plan-mock.service';
+import { ProgramEnrollmentCardComponent } from '../field-plan/programs/program-enrollment-card.component';
+import { ProgramRegistry } from '../field-plan/programs/program-registry';
 
 
 type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'tradeUnit';
@@ -46,7 +45,7 @@ type PlantingRow = PlantingIntention;
     DialogFooterComponent,
     InputComponent,
     CropFieldsPanelComponent,
-    CiEnrollmentCardComponent
+    ProgramEnrollmentCardComponent
   ],
   templateUrl: './planting-intentions-table.component.html',
   // State written outside a template event is a signal: the API responses (trade units, both
@@ -297,33 +296,11 @@ export class PlantingIntentionsTableComponent {
     return `${row.type ? row.type + ' ' : ''}${this.cropCategoryFor(row.crop, row.category)}`;
   }
 
-  // ── Fields under each crop row + 45Z (prototype, behind fieldPlanningEnabled / carbonIntensityEnabled) ──
+  // ── Fields under each crop row + sustainability programs (prototype, behind fieldPlanningEnabled) ──
   // The row's acres stay the total; fields only break it down (FieldPlanMockService, in memory).
   readonly fieldPlanningEnabled = environment.fieldPlanningEnabled;
-  readonly carbonIntensityEnabled = environment.carbonIntensityEnabled;
-
-  private readonly cropPlan = inject(FieldPlanMockService);
-
-  /** The producer's scored field seasons for the plan year, for the enrollment card. */
-  readonly enrollableSeasons = computed<EnrollableSeason[]>(() => {
-    const customerId = this.customer().id;
-    const year = this.fieldPlanYear;
-    const scored = (label: string) => this.carbonIntensityEnabled && fdCicCropFor(label) !== null;
-    const toRow = (s: { id: string; fieldKey: string; acres: number | null; actualYield: number | null; status: EnrollableSeason['status']; finalCiGPerBu?: number },
-                   field: { name: string }, cropLabel: string): EnrollableSeason => ({
-      seasonId: s.id, fieldKey: s.fieldKey, fieldName: field.name,
-      cropLabel, cropYear: year, acres: s.acres, actualYield: s.actualYield, status: s.status, finalCiGPerBu: s.finalCiGPerBu,
-    });
-
-    const plan = this.cropPlan;
-    const fields = new Map<string, { name: string; customerId: number }>(
-      plan.fields().filter(f => f.customerId === customerId).map(f => [f.fieldKey, f]));
-    return (plan.seasons() as { id: string; fieldKey: string; year: number; cropLabel: string; acres: number | null; actualYield: number | null; status: EnrollableSeason['status']; finalCiGPerBu?: number }[])
-      .flatMap(s => {
-        const field = fields.get(s.fieldKey);
-        return field && s.year === year && scored(s.cropLabel) ? [toRow(s, field, s.cropLabel)] : [];
-      });
-  });
+  /** One enrollment card per program; each shows only once the producer has a field in it. */
+  readonly programs = inject(ProgramRegistry).all;
 
   get fieldPlanYear(): number {
     return this.selectedYear() || Math.max(0, ...this.plantingIntentions().map(p => p.plantingYear)) || new Date().getFullYear();
@@ -334,11 +311,6 @@ export class PlantingIntentionsTableComponent {
   updateTotalFromFields(row: PlantingRow, acres: number): void {
     this.openEditDialog(row);
     this.editForm.acres = acres.toString();
-  }
-
-  /** The FD-CIC crop for a row, or null when the crop isn't scored. */
-  ciCropFor(row: PlantingRow): FdCicCrop | null {
-    return this.carbonIntensityEnabled ? fdCicCropFor(this.cropCategoryFor(row.crop, row.category)) : null;
   }
 
   get sortedIntentions(): PlantingRow[] {

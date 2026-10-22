@@ -1,28 +1,25 @@
-import { Component, computed, effect, inject, input, output } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
+import { CommonModule, NgComponentOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { DialogComponent, DialogContentComponent, DialogDescriptionComponent, DialogFooterComponent, DialogHeaderComponent, DialogTitleComponent } from '@shared/components/dialog/dialog.component';
 import { FieldPlanMockService } from '@core/services/field-plan-mock.service';
-import { CoverCrop, FieldSeason, ManureApplication, ProducerField, Tillage } from '@models';
-import { COVER_LABELS, TILLAGE_LABELS, estimateCi, fdCicCropFor, missingInputs } from '@shared/utils/ci-illustrative';
-import { copiesAllPractices, practicesToCopy } from '@shared/utils/ci-copy-forward';
-import { CiPreviewPanelComponent } from './ci-preview-panel.component';
-import { CiIntakeSectionsComponent } from './ci-intake-sections.component';
-import { cloneIntake, finalizeBlockers } from '@shared/utils/ci-enrollment';
-import { CiEnrollmentMockService } from '@core/services/ci-enrollment-mock.service';
-import { environment } from '@env/environment';
+import { FieldSeason, ProducerField } from '@models';
+import { ProgramRegistry } from './programs/program-registry';
+import { ProgramRecordMockService } from './programs/program-record-mock.service';
+import { ProgramEnrollmentMockService } from './programs/program-enrollment-mock.service';
 
 /**
- * One field on one crop row: the field's lasting details (name, location), its acres, and — for a
- * crop the USDA 45Z calculator scores — the practices and CI. Edits save as they are made; Finalize
- * is the only deliberate commit.
+ * One field on one crop row: the field's lasting details (name, location), its acres this year, and
+ * the sustainability programs it takes part in. Each program brings its own form (rendered from the
+ * program registry); finalizing and reopening work the same way for every program. Edits save as
+ * they are made.
  */
 @Component({
   selector: 'app-field-season-dialog',
   standalone: true,
   imports: [
-    CommonModule, FormsModule, ButtonComponent, CiPreviewPanelComponent, CiIntakeSectionsComponent,
+    CommonModule, FormsModule, NgComponentOutlet, ButtonComponent,
     DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent,
   ],
   templateUrl: './field-season-dialog.component.html',
@@ -30,172 +27,147 @@ import { environment } from '@env/environment';
 })
 export class FieldSeasonDialogComponent {
   readonly plan = inject(FieldPlanMockService);
-  readonly carbonIntensityEnabled = environment.carbonIntensityEnabled;
+  private readonly records = inject(ProgramRecordMockService);
+  private readonly registry = inject(ProgramRegistry);
+  private readonly enrollments = inject(ProgramEnrollmentMockService);
 
   readonly seasonId = input.required<string>();
+  /** Opens straight onto this program, adding it to the field if it isn't there yet. */
+  readonly startProgram = input<string | null>(null);
   readonly close = output<void>();
-
-  readonly tillageOptions: { value: Tillage; label: string; help: string }[] = [
-    { value: 'NoTill', label: TILLAGE_LABELS.NoTill, help: 'Planted straight into last year\'s residue. No tillage passes all year.' },
-    { value: 'ReducedTill', label: TILLAGE_LABELS.ReducedTill, help: 'One or two light passes (vertical till, field cultivator). Most residue stays on top.' },
-    { value: 'Conventional', label: TILLAGE_LABELS.Conventional, help: 'Chisel, disk or moldboard plow. Residue mostly turned under.' },
-  ];
-  readonly coverOptions: { value: CoverCrop; label: string; help: string }[] = [
-    { value: 'None', label: COVER_LABELS.None, help: 'Nothing planted between cash crops.' },
-    { value: 'CoverCrop', label: COVER_LABELS.CoverCrop, help: 'A cover (rye, oats, radish…) grown after harvest and not grazed.' },
-    { value: 'CoverCropGrazed', label: COVER_LABELS.CoverCropGrazed, help: 'A cover crop that livestock grazed.' },
-  ];
-  readonly manureTypes: ManureApplication['type'][] = ['Beef', 'Dairy', 'Swine', 'Poultry'];
 
   readonly season = computed(() => this.plan.season(this.seasonId()));
   readonly field = computed(() => this.plan.field(this.season()?.fieldKey ?? ''));
-  /** The FD-CIC crop when this season is scored for 45Z, else null (fallow, wheat, flag off…). */
-  readonly ciCrop = computed(() => {
+
+  // ── Programs on this field ─────────────────────────────────────────────────
+  readonly programRecords = computed(() =>
+    this.records.forSeason(this.seasonId()).map(record => ({ record, def: this.registry.get(record.programKey)! })).filter(p => p.def));
+  /** Programs that apply to this crop and aren't on the field yet. */
+  readonly addable = computed(() => {
     const s = this.season();
-    if (!this.carbonIntensityEnabled || !s) return null;
-    return fdCicCropFor(s.cropLabel);
+    const added = new Set(this.programRecords().map(p => p.record.programKey));
+    return s ? this.registry.eligible(s.cropLabel).filter(d => !added.has(d.key)) : [];
   });
-  readonly result = computed(() => {
-    const s = this.season();
-    const crop = this.ciCrop();
-    return s && crop ? estimateCi(crop, s) : null;
+  readonly activeKey = signal<string | null>(null);
+  readonly active = computed(() => {
+    const all = this.programRecords();
+    return all.find(p => p.record.programKey === this.activeKey()) ?? (all.length ? all[0] : null);
   });
-  readonly isFinal = computed(() => this.season()?.status === 'Final');
-  private readonly enrollments = inject(CiEnrollmentMockService);
-  /** The attested 45Z enrollment holding this season: while it stands, the season can't be reopened. */
-  readonly lockedBy = computed(() => this.enrollments.lockedBy(this.season()?.id ?? ''));
-  readonly prior = computed(() => {
+  readonly isFinal = computed(() => this.active()?.record.status === 'Final');
+  readonly lockedBy = computed(() => {
+    const a = this.active();
+    return a ? this.enrollments.lockedBy(a.record.id) : undefined;
+  });
+  /** A finalized program froze this season's acres, so they can't change under it. */
+  readonly seasonLocked = computed(() => this.records.hasFinal(this.seasonId()));
+  readonly intakeInputs = computed(() => {
+    const a = this.active();
     const s = this.season();
-    return s ? this.plan.lastSeason(s.fieldKey, s.year) : undefined;
+    const f = this.field();
+    return a && s && f ? { record: a.record, season: s, field: f, disabled: a.record.status === 'Final' } : null;
+  });
+  readonly preview = computed(() => {
+    const a = this.active();
+    const s = this.season();
+    const f = this.field();
+    return a && s && f ? a.def.preview(a.record.data, s, f) : null;
   });
 
-  /** Editable copies; every change is written straight back. */
-  draft: FieldSeason | null = null;
+  /** Editable copies of the generic parts; every change is written straight back. */
+  draftSeason: FieldSeason | null = null;
   draftField: ProducerField | null = null;
 
   constructor() {
     effect(() => {
       const s = this.season();
-      if (s?.id !== this.draft?.id || s?.status !== this.draft?.status) {
-        this.draft = s ? { ...s, manure: s.manure.map(m => ({ ...m })), ...cloneIntake(s) } : null;
-      }
+      if (s?.id !== this.draftSeason?.id) this.draftSeason = s ? { ...s } : null;
       const f = this.field();
       if (f?.fieldKey !== this.draftField?.fieldKey) this.draftField = f ? { ...f } : null;
     });
-  }
-
-  missing(): string[] {
-    return this.draft ? missingInputs(this.draft) : [];
+    effect(() => {
+      const key = this.startProgram();
+      if (key && this.season() && !this.records.find(this.seasonId(), key)) this.addProgram(key);
+      else if (key) this.activeKey.set(key);
+    });
   }
 
   saveSeason(): void {
-    if (this.draft) this.plan.updateSeason(this.draft);
+    if (this.draftSeason && !this.seasonLocked()) this.plan.updateSeason(this.draftSeason);
   }
 
   saveField(): void {
     if (this.draftField) this.plan.updateField(this.draftField);
   }
 
-  setTillage(value: Tillage): void {
-    if (!this.draft || this.isFinal()) return;
-    this.draft.tillage = value;
-    this.saveSeason();
+  countiesFor(state: string): string[] {
+    return this.plan.countiesByState[state] ?? [];
   }
 
-  setCover(value: CoverCrop): void {
-    if (!this.draft || this.isFinal()) return;
-    this.draft.coverCrop = value;
-    this.saveSeason();
+  addProgram(key: string): void {
+    if (this.records.add(this.seasonId(), key)) this.activeKey.set(key);
   }
 
-  addManure(): void {
-    if (!this.draft || this.draft.manure.length >= 3) return;
-    this.draft.manure.push({ type: 'Swine', form: 'Liquid', amount: null, nContent: null });
-    this.saveSeason();
+  removeProgram(): void {
+    const a = this.active();
+    if (!a || a.record.status === 'Final') return;
+    this.records.remove(a.record.id);
+    this.activeKey.set(null);
   }
 
-  removeManure(index: number): void {
-    this.draft?.manure.splice(index, 1);
-    this.saveSeason();
-  }
-
-  manureAmountUnit(m: ManureApplication): string {
-    return m.form === 'Solid' ? 'tons/ac' : '1,000 gal/ac';
-  }
-
-  manureNUnit(m: ManureApplication): string {
-    return m.form === 'Solid' ? 'lbs N/ton' : 'lbs N/1,000 gal';
-  }
-
-  /** Last year's practices onto this year: everything for the same crop, tillage and cover only across crops. */
-  copyPrior(): void {
-    const prior = this.prior();
-    const crop = this.ciCrop();
-    const priorCrop = prior ? fdCicCropFor(prior.cropLabel) : null;
-    if (!this.draft || !prior || !crop || this.isFinal()) return;
-    Object.assign(this.draft, priorCrop
-      ? practicesToCopy(prior, priorCrop, crop)
-      : { tillage: prior.tillage, coverCrop: prior.coverCrop });
-    this.saveSeason();
-  }
-
-  copyPriorLabel(): string {
-    const prior = this.prior();
-    const crop = this.ciCrop();
-    const priorCrop = prior ? fdCicCropFor(prior.cropLabel) : null;
-    if (!prior || !crop) return '';
-    return priorCrop && copiesAllPractices(priorCrop, crop)
-      ? `Copy ${prior.year} practices`
-      : `Copy ${prior.year} tillage & cover (${prior.cropLabel})`;
-  }
-
-  // ── Finalize / reopen ──────────────────────────────────────────────────────
+  // ── Finalize / reopen (the same for every program) ─────────────────────────
   showFinalize = false;
-  finalizeYield: number | null = null;
-  finalizeAttested = false;
+  finalizeValues: Record<string, number | null> = {};
+  finalizeConfirmed = false;
 
   openFinalize(): void {
-    this.finalizeYield = this.season()?.actualYield ?? null;
-    this.finalizeAttested = false;
+    const a = this.active();
+    if (!a) return;
+    const data = a.record.data as Record<string, unknown>;
+    this.finalizeValues = Object.fromEntries(a.def.finalizeInputs.map(i => [i.key, (data[i.key] as number | null) ?? null]));
+    this.finalizeConfirmed = false;
     this.showFinalize = true;
   }
 
-  get finalizePreview() {
-    const s = this.season();
-    const crop = this.ciCrop();
-    if (!s || !crop || !this.finalizeYield) return null;
-    return estimateCi(crop, { ...s, actualYield: this.finalizeYield });
+  private get _finalData() {
+    const a = this.active();
+    return a ? { ...(a.record.data as object), ...this.finalizeValues } : null;
   }
 
-  /** What the audit still needs before this field can be finalized (see finalizeBlockers). */
-  get finalizeBlockerList(): string[] {
+  get finalizeMissing(): string[] {
+    const a = this.active();
     const s = this.season();
-    return s ? finalizeBlockers(s, this.finalizeYield) : [];
+    return a && s ? a.def.finalizeMissing(this._finalData, s) : [];
+  }
+
+  get finalizePreview() {
+    const a = this.active();
+    const s = this.season();
+    const f = this.field();
+    return a && s && f && this.finalizeMissing.length === 0 ? a.def.preview(this._finalData, s, f) : null;
   }
 
   get canFinalize(): boolean {
-    return !!this.finalizeYield && this.finalizeYield > 0 && this.finalizeAttested && !!this.result() && this.finalizeBlockerList.length === 0;
+    return this.finalizeConfirmed && this.finalizeMissing.length === 0;
   }
 
   confirmFinalize(): void {
-    const s = this.season();
-    if (!s || !this.canFinalize) return;
-    this.plan.finalizeSeason(s.id, this.finalizeYield!, this.finalizePreview!.ciGPerBu);
-    this.showFinalize = false;
+    const a = this.active();
+    if (!a || !this.canFinalize) return;
+    if (this.records.finalize(a.record.id, this.finalizeValues)) this.showFinalize = false;
   }
 
   showReopen = false;
   reopenReason = '';
 
   confirmReopen(): void {
-    const s = this.season();
-    if (!s || !this.reopenReason.trim()) return;
-    this.plan.reopenSeason(s.id);
+    const a = this.active();
+    if (!a || !this.reopenReason.trim()) return;
+    this.records.reopen(a.record.id);
     this.showReopen = false;
     this.reopenReason = '';
   }
 
-  countiesFor(state: string): string[] {
-    return this.plan.countiesByState[state] ?? [];
+  absPct(fraction: number | undefined): number {
+    return Math.abs(Math.round((fraction ?? 0) * 100));
   }
 }

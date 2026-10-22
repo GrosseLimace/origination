@@ -1,33 +1,38 @@
 import { Component, computed, effect, inject, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { CiEnrollmentMockService } from '@core/services/ci-enrollment-mock.service';
-import { CiEnrollment, EnrollableSeason } from '@models';
+import { FieldPlanMockService } from '@core/services/field-plan-mock.service';
+import { EnrollableRecord, ProgramEnrollment } from '@models';
+import { ProgramRegistry } from './program-registry';
+import { ProgramRecordMockService } from './program-record-mock.service';
+import { ProgramEnrollmentMockService } from './program-enrollment-mock.service';
 
 /**
- * A producer's 45Z enrollment for one crop year, above the planting table in every field-plan
- * option: which finalized fields are in it, each with its frozen field-level CI, and the producer's
- * signed attestation. Attesting issues the Enrollment ID that delivery lots in the CI ledger will
- * carry. PROTOTYPE ONLY (CiEnrollmentMockService, in memory).
+ * A producer's enrollment in one sustainability program for one year, above the planting table:
+ * which finalized fields are in it, each with its frozen score, and the producer's signed
+ * attestation (statements from the program). Attesting issues the program's Enrollment ID. Shows
+ * nothing until the producer has a field in the program. PROTOTYPE ONLY (in memory).
  */
 @Component({
-  selector: 'app-ci-enrollment-card',
+  selector: 'app-program-enrollment-card',
   standalone: true,
   imports: [CommonModule, FormsModule],
-  styleUrl: './field-plan.css',
+  styleUrl: '../field-plan.css',
   template: `
     @let e = enrollment();
+    @if (program(); as p) {
+    @if (records().length || e || withdrawn().length) {
     <div class="rounded-lg border border-scoular-green-accessible/40 dark:border-scoular-green/40 bg-white dark:bg-gray-800">
       <button type="button" class="flex w-full flex-wrap items-center justify-between gap-2 bg-transparent border-0 px-4 py-3 text-left" (click)="open = !open">
-        <span class="text-sm font-semibold text-gray-900 dark:text-white">🌱 45Z enrollment · {{ cropYear() }} crop</span>
+        <span class="text-sm font-semibold text-gray-900 dark:text-white">🌱 {{ p.shortLabel }} enrollment · {{ year() }}</span>
         <span class="text-sm">
           @if (e?.status === 'Attested') {
             <span class="rounded-full bg-scoular-green-accessible/15 px-2 py-0.5 font-semibold text-scoular-green-accessible dark:text-scoular-green">{{ e!.enrollmentId }}</span>
-            <span class="ml-2 text-gray-600 dark:text-gray-300">{{ e!.fieldSeasonIds.length }} field{{ e!.fieldSeasonIds.length === 1 ? '' : 's' }} · attested {{ e!.attestation.signedOn }}</span>
+            <span class="ml-2 text-gray-600 dark:text-gray-300">{{ e!.recordIds.length }} field{{ e!.recordIds.length === 1 ? '' : 's' }} · attested {{ e!.attestation.signedOn }}</span>
           } @else if (e) {
             <span class="text-amber-700 dark:text-amber-400">Draft · no Enrollment ID yet</span>
           } @else {
-            <span class="text-gray-500 dark:text-gray-400">Not enrolled · {{ finalCount() }} of {{ seasons().length }} scored field{{ seasons().length === 1 ? '' : 's' }} finalized</span>
+            <span class="text-gray-500 dark:text-gray-400">Not enrolled · {{ finalCount() }} of {{ records().length }} field{{ records().length === 1 ? '' : 's' }} finalized</span>
           }
           <span class="ml-2 text-gray-400">{{ open ? '▾' : '▸' }}</span>
         </span>
@@ -37,13 +42,13 @@ import { CiEnrollment, EnrollableSeason } from '@models';
         <div class="space-y-4 border-t border-gray-100 dark:border-gray-700 px-4 py-4 text-sm">
           @if (!e) {
             <p class="text-gray-600 dark:text-gray-300">
-              One enrollment per producer per crop year. It lists finalized fields, each carrying its own CI score, under
-              the producer's signed attestation. Its ID is what scored deliveries are recorded against in the CI ledger.
+              One enrollment per producer per year. It lists finalized fields, each with its own frozen result, under the
+              producer's signed attestation, and gets an ID when the producer attests.
             </p>
             <button type="button" class="rounded-md bg-scoular-green-accessible px-3 py-1.5 text-white border-0 disabled:opacity-50"
-                    [disabled]="seasons().length === 0" (click)="startEnrollment()">Start {{ cropYear() }} enrollment</button>
-            @if (seasons().length === 0) {
-              <span class="ml-2 text-gray-500 dark:text-gray-400">Add fields to a scored crop row first.</span>
+                    [disabled]="finalCount() === 0" (click)="startEnrollment()">Start {{ year() }} enrollment</button>
+            @if (finalCount() === 0) {
+              <span class="ml-2 text-gray-500 dark:text-gray-400">Finalize a field first.</span>
             }
           } @else {
             <!-- Fields -->
@@ -51,21 +56,22 @@ import { CiEnrollment, EnrollableSeason } from '@models';
               <div class="font-medium text-gray-900 dark:text-white">Fields</div>
               <table class="mt-1 w-full text-left">
                 <thead class="text-xs uppercase text-gray-500 dark:text-gray-400">
-                  <tr><th class="w-8"></th><th class="py-1">Field</th><th>Crop</th><th class="text-right">Acres</th><th class="text-right">Final CI (g CO₂e/bu)</th></tr>
+                  <tr><th class="w-8"></th><th class="py-1">Field</th><th>Crop</th><th class="text-right">Acres</th><th class="text-right">Final result</th></tr>
                 </thead>
                 <tbody>
-                  @for (s of rows(); track s.seasonId) {
+                  @for (r of rows(); track r.recordId) {
                     <tr class="border-t border-gray-100 dark:border-gray-700">
                       <td class="py-1">
-                        <input type="checkbox" [disabled]="e.status !== 'Draft'" [ngModel]="draft?.fieldSeasonIds?.includes(s.seasonId) ?? true"
-                               (ngModelChange)="toggleSeason(s.seasonId, $event)" [attr.aria-label]="'Include ' + s.fieldName" />
+                        <input type="checkbox" [disabled]="e.status !== 'Draft'" [ngModel]="draft?.recordIds?.includes(r.recordId) ?? true"
+                               (ngModelChange)="toggleRecord(r.recordId, $event)" [attr.aria-label]="'Include ' + r.fieldName" />
                       </td>
-                      <td class="py-1 text-gray-900 dark:text-white">{{ s.fieldName }}</td>
-                      <td class="text-gray-600 dark:text-gray-300">{{ s.cropLabel }}</td>
-                      <td class="text-right text-gray-600 dark:text-gray-300">{{ s.acres | number }}</td>
+                      <td class="py-1 text-gray-900 dark:text-white">{{ r.fieldName }}</td>
+                      <td class="text-gray-600 dark:text-gray-300">{{ r.cropLabel }}</td>
+                      <td class="text-right text-gray-600 dark:text-gray-300">{{ r.acres | number }}</td>
                       <td class="text-right">
-                        @if (s.status === 'Final' && s.finalCiGPerBu !== undefined) {
-                          <span class="font-semibold text-gray-900 dark:text-white">{{ s.finalCiGPerBu | number:'1.0-0' }}</span>
+                        @if (r.status === 'Final' && r.score) {
+                          <span class="font-semibold text-gray-900 dark:text-white">{{ r.score.value | number:'1.0-0' }}</span>
+                          <span class="text-gray-500"> {{ r.score.unitShort }}</span>
                         } @else {
                           <span class="text-amber-700 dark:text-amber-400">not finalized</span>
                         }
@@ -96,14 +102,10 @@ import { CiEnrollment, EnrollableSeason } from '@models';
                     <input class="ci-input" [(ngModel)]="draft.attestation.documentRef" (ngModelChange)="save()" /></label>
                 </div>
                 <div class="space-y-1 text-gray-700 dark:text-gray-300">
-                  <label class="flex items-start gap-2"><input type="checkbox" class="mt-1" [(ngModel)]="draft.attestation.notEnrolledElsewhere" (ngModelChange)="save()" />
-                    None of these fields is enrolled with another buyer or program for the {{ cropYear() }} crop year.</label>
-                  <label class="flex items-start gap-2"><input type="checkbox" class="mt-1" [(ngModel)]="draft.attestation.recordsAccurate" (ngModelChange)="save()" />
-                    The practices, yields and records provided are accurate.</label>
-                  <label class="flex items-start gap-2"><input type="checkbox" class="mt-1" [(ngModel)]="draft.attestation.consentToThirdPartyAudit" (ngModelChange)="save()" />
-                    Scoular, the receiving plant and a third-party auditor may review the supporting records.</label>
-                  <label class="flex items-start gap-2"><input type="checkbox" class="mt-1" [(ngModel)]="draft.attestation.firstPointOfAggregationAck" (ngModelChange)="save()" />
-                    Scoular, as first point of aggregation, holds and allocates the CI of this grain; the producer makes no other claim on it.</label>
+                  @for (s of p.enrollment.statements; track s.key) {
+                    <label class="flex items-start gap-2"><input type="checkbox" class="mt-1" [(ngModel)]="draft.attestation.confirmations[s.key]" (ngModelChange)="save()" />
+                      {{ s.label }}</label>
+                  }
                 </div>
               </fieldset>
             }
@@ -116,7 +118,7 @@ import { CiEnrollment, EnrollableSeason } from '@models';
                       [disabled]="blockers().length > 0" (click)="attest()">Record attestation and issue Enrollment ID</button>
             } @else {
               <div class="flex flex-wrap items-center justify-between gap-2 rounded-md bg-blue-50 dark:bg-blue-900/30 px-3 py-2 text-blue-900 dark:text-blue-200">
-                <span>🔒 {{ e.enrollmentId }} attested by {{ e.attestedBy }}. Delivery lots will carry this ID.</span>
+                <span>🔒 {{ e.enrollmentId }} attested by {{ e.attestedBy }}. {{ p.enrollment.attestedNote }}</span>
                 <button type="button" class="underline bg-transparent border-0 p-0" (click)="showWithdraw = true">Withdraw…</button>
               </div>
               @if (showWithdraw) {
@@ -134,38 +136,60 @@ import { CiEnrollment, EnrollableSeason } from '@models';
           }
 
           @for (w of withdrawn(); track w.key) {
-            <div class="text-xs text-gray-500 dark:text-gray-400">Withdrawn: {{ w.enrollmentId }} ({{ w.fieldSeasonIds.length }} fields) · {{ w.withdrawnReason }}</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">Withdrawn: {{ w.enrollmentId }} ({{ w.recordIds.length }} fields) · {{ w.withdrawnReason }}</div>
           }
         </div>
       }
     </div>
+    }
+    }
   `,
 })
-export class CiEnrollmentCardComponent {
-  private readonly service = inject(CiEnrollmentMockService);
+export class ProgramEnrollmentCardComponent {
+  private readonly service = inject(ProgramEnrollmentMockService);
+  private readonly recordStore = inject(ProgramRecordMockService);
+  private readonly plan = inject(FieldPlanMockService);
+  private readonly registry = inject(ProgramRegistry);
 
+  readonly programKey = input.required<string>();
   readonly customerId = input.required<number>();
-  readonly cropYear = input.required<number>();
-  /** The producer's scored field seasons for the crop year, from whichever field-plan option is showing. */
-  readonly seasons = input.required<EnrollableSeason[]>();
+  readonly year = input.required<number>();
+
+  readonly program = computed(() => this.registry.get(this.programKey()));
+
+  /** The producer's records in this program for the year, as the enrollment lists them. */
+  readonly records = computed<EnrollableRecord[]>(() => {
+    const customerId = this.customerId();
+    const year = this.year();
+    return this.recordStore.records().flatMap(r => {
+      if (r.programKey !== this.programKey()) return [];
+      const season = this.plan.season(r.seasonId);
+      const field = season && this.plan.field(season.fieldKey);
+      if (!season || !field || field.customerId !== customerId || season.year !== year) return [];
+      return [{
+        recordId: r.id, seasonId: season.id, fieldKey: field.fieldKey, fieldName: field.name, cropLabel: season.cropLabel,
+        year, acres: season.acres, status: r.status, score: r.frozen?.score,
+      }];
+    });
+  });
 
   readonly enrollment = computed(() => {
     this.service.enrollments();
-    return this.service.current(this.customerId(), this.cropYear());
+    return this.service.current(this.programKey(), this.customerId(), this.year());
   });
   readonly withdrawn = computed(() => {
     this.service.enrollments();
-    return this.service.withdrawn(this.customerId(), this.cropYear());
+    return this.service.withdrawn(this.programKey(), this.customerId(), this.year());
   });
-  readonly finalCount = computed(() => this.seasons().filter(s => s.status === 'Final').length);
-  /** Attested: the snapshot as signed. Draft: every scored season, to tick in or out. */
+  readonly finalCount = computed(() => this.records().filter(r => r.status === 'Final').length);
+  /** Attested: the snapshot as signed. Draft: every record, to tick in or out. */
   readonly rows = computed(() => {
     const e = this.enrollment();
-    return e?.status === 'Attested' ? (e.snapshot ?? []) : this.seasons();
+    return e?.status === 'Attested' ? (e.snapshot ?? []) : this.records();
   });
   readonly listed = computed(() => {
-    const ids = new Set(this.enrollment()?.fieldSeasonIds ?? []);
-    return this.seasons().filter(s => ids.has(s.seasonId));
+    const ids = new Set(this.enrollment()?.recordIds ?? []);
+    return this.records().filter(r => ids.has(r.recordId));
   });
   readonly blockers = computed(() => {
     const e = this.enrollment();
@@ -173,7 +197,7 @@ export class CiEnrollmentCardComponent {
   });
 
   open = false;
-  draft: CiEnrollment | null = null;
+  draft: ProgramEnrollment | null = null;
   showWithdraw = false;
   withdrawReason = '';
 
@@ -181,20 +205,24 @@ export class CiEnrollmentCardComponent {
     effect(() => {
       const e = this.enrollment();
       if (e?.key !== this.draft?.key || e?.status !== this.draft?.status) {
-        this.draft = e ? { ...e, fieldSeasonIds: [...e.fieldSeasonIds], attestation: { ...e.attestation } } : null;
+        this.draft = e ? {
+          ...e, recordIds: [...e.recordIds],
+          attestation: { ...e.attestation, confirmations: { ...e.attestation.confirmations } },
+        } : null;
       }
     });
   }
 
   startEnrollment(): void {
-    this.service.start(this.customerId(), this.cropYear(), this.seasons().filter(s => s.status === 'Final').map(s => s.seasonId));
+    this.service.start(this.programKey(), this.customerId(), this.year(),
+      this.records().filter(r => r.status === 'Final').map(r => r.recordId));
     this.open = true;
   }
 
-  toggleSeason(seasonId: string, included: boolean): void {
+  toggleRecord(recordId: string, included: boolean): void {
     if (!this.draft) return;
-    const ids = this.draft.fieldSeasonIds.filter(id => id !== seasonId);
-    this.draft.fieldSeasonIds = included ? [...ids, seasonId] : ids;
+    const ids = this.draft.recordIds.filter(id => id !== recordId);
+    this.draft.recordIds = included ? [...ids, recordId] : ids;
     this.save();
   }
 

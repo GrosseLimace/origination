@@ -1,4 +1,4 @@
-import { CiComponent, CiReason, CiResult, CoverCrop, FdCicCrop, FieldSeason, IntentionCiSummary, SeasonStatus, Tillage } from '@models';
+import { CiComponent, CiReason, CiResult, CoverCrop, FdCicCrop, FdCicData, IntentionCiSummary, SeasonStatus, Tillage } from '@models';
 
 /**
  * PROTOTYPE ONLY: an illustrative CI estimate so the 45Z capture screens can be walked through
@@ -23,17 +23,17 @@ const NATIONAL: Record<FdCicCrop, NationalDefaults> = {
 };
 
 // Illustrative per-acre soil-carbon credits (g CO2e/ac) and fuel multipliers.
-const TILLAGE_SOC: Record<Tillage, number> = { NoTill: 80_000, ReducedTill: 35_000, Conventional: 0 };
-const TILLAGE_FUEL: Record<Tillage, number> = { NoTill: 0.75, ReducedTill: 0.88, Conventional: 1 };
+const TILLAGE_SOC: Record<Tillage, number> = { NoTill: 80_000, ReducedTill: 35_000, NoneOfTheAbove: 0 };
+const TILLAGE_FUEL: Record<Tillage, number> = { NoTill: 0.75, ReducedTill: 0.88, NoneOfTheAbove: 1 };
 const COVER_SOC: Record<CoverCrop, number> = { None: 0, CoverCrop: 45_000, CoverCropGrazed: 38_000 };
 const MANURE_SOC_PER_LB_N = 180;
 const NI_N2O_REDUCTION = 0.3;
 
 export const TILLAGE_LABELS: Record<Tillage, string> = {
-  NoTill: 'No-till', ReducedTill: 'Reduced till', Conventional: 'Conventional till',
+  ReducedTill: 'Reduced till', NoTill: 'No till', NoneOfTheAbove: 'None of the above',
 };
 export const COVER_LABELS: Record<CoverCrop, string> = {
-  None: 'No cover crop', CoverCrop: 'Cover crop', CoverCropGrazed: 'Cover crop, grazed',
+  CoverCrop: 'Cover crop', CoverCropGrazed: 'Cover crop with grazing', None: 'No cover crop',
 };
 
 /** Maps a planting row's crop label ("Irrigated Corn", "Organic Soybeans", "Milo") to an FD-CIC crop, or null. */
@@ -53,7 +53,7 @@ export function nationalAverage(crop: FdCicCrop): number {
 }
 
 /** The inputs a season still needs before it can be scored, in form order. */
-export function missingInputs(season: Pick<FieldSeason, 'acres' | 'expectedYield' | 'syntheticN' | 'tillage' | 'coverCrop'>): string[] {
+export function missingInputs(season: { acres: number | null } & Pick<FdCicData, 'expectedYield' | 'syntheticN' | 'tillage' | 'coverCrop'>): string[] {
   const missing: string[] = [];
   if (!season.acres || season.acres <= 0) missing.push('acres');
   if (!season.expectedYield || season.expectedYield <= 0) missing.push('expected yield');
@@ -74,10 +74,10 @@ export function seasonStatus(season: ScorableSeason): SeasonStatus {
   return missingInputs(season).length === 0 ? 'Projected' : 'Draft';
 }
 
-type ScoredInputs = Pick<FieldSeason, 'expectedYield' | 'actualYield' | 'syntheticN' | 'niFraction' | 'tillage' | 'coverCrop' | 'manure'>;
+type ScoredInputs = Pick<FdCicData, 'expectedYield' | 'actualYield' | 'syntheticN' | 'niFraction' | 'tillage' | 'coverCrop' | 'manure'>;
 
 /** Just the season fields scoring reads, so any season shape with them can be scored. */
-export type ScorableSeason = ScoredInputs & Pick<FieldSeason, 'acres' | 'status'>;
+export type ScorableSeason = ScoredInputs & { acres: number | null; status: SeasonStatus };
 
 function components(crop: FdCicCrop, s: ScoredInputs): CiComponent[] {
   const n = NATIONAL[crop];
@@ -115,7 +115,7 @@ export function estimateCi(crop: FdCicCrop, season: ScorableSeason): CiResult | 
     const delta = ci - total(components(crop, { ...season, ...baseline }));
     if (Math.abs(delta) >= 1) reasons.push({ label, delta });
   };
-  if (season.tillage !== 'Conventional') effect(TILLAGE_LABELS[season.tillage!], { tillage: 'Conventional' });
+  if (season.tillage !== 'NoneOfTheAbove') effect(TILLAGE_LABELS[season.tillage!], { tillage: 'NoneOfTheAbove' });
   if (season.coverCrop !== 'None') effect(COVER_LABELS[season.coverCrop!], { coverCrop: 'None' });
   if (season.niFraction > 0) effect('Nitrification inhibitor', { niFraction: 0 });
   if (season.manure.length > 0) effect('Manure', { manure: [] });
