@@ -4,9 +4,9 @@
   "label": "USDA FD-CIC v1.2",
   "source": {
     "file": "usda-fdcic-ver1.2_9_11_2026.xlsm",
-    "sha256": "da5c9dc4a1907ffde88bc17cbe046f07915cb207fa8107eed989f42268a4bc26",
+    "sha256": "db3ef7cac515756c9a00d9e74e12e41521feb18c3241abd78016062a2489468a",
     "versionLabel": "Version 1.2",
-    "workbookModified": "2026-10-22T19:22:59Z"
+    "workbookModified": "2026-09-11T14:56:01Z"
   },
   "extractor": {"version":"1","extractedAt":"2026-10-22"},
   "formulaFingerprint": "a2ccea4bf326bc42de747ddea8fe1a45d8879d18d364aa8bb8ba97ef105328d7",

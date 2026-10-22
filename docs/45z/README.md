@@ -9,16 +9,11 @@ to time. This page records which version the app uses and how to move to a new o
 | | |
 |---|---|
 | Method | USDA FD-CIC **v1.2** |
-| Source workbook | `usda-fdcic-ver1.2_9_11_2026.xlsm` (USDA last modified 2026-09-11) |
+| Source workbook | `usda-fdcic-ver1.2_9_11_2026.xlsm` (USDA last modified 2026-09-11), SHA-256 `db3ef7cac515756c9a00d9e74e12e41521feb18c3241abd78016062a2489468a` |
 | Data pack | [api/GrainOriginatorPortal.Api/Content/FdCic/v1.2/](../../api/GrainOriginatorPortal.Api/Content/FdCic/v1.2/) |
 | How it calculates | [fd-cic-v1.2-method.md](fd-cic-v1.2-method.md) |
 | Checked against Excel | 2026-10-22: 7 scored cases matched to 15+ significant digits, and 2 unscorable counties gave Excel's errors ([golden-cases.json](../../api/GrainOriginatorPortal.Api/Content/FdCic/v1.2/golden-cases.json)) |
 | Formula fingerprint | `a2ccea4b…` (full value in the pack's `manifest.json`) |
-
-**Open item:** the copy the v1.2 pack was extracted from was re-saved locally on 2026-10-22 after
-macros were enabled. Its tables and formulas are identical to USDA's file, but its SHA-256 differs from the
-original download. Before go-live, re-download v1.2 from USDA, re-run the extractor and the Excel check
-(steps 2-4 below), and commit the pack so `manifest.json` records the original file's hash.
 
 ## How versions are kept apart
 

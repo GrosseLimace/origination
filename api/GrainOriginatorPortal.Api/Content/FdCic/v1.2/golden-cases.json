@@ -225,7 +225,7 @@
   ],
   "confirmedInExcel": {
     "on": "2026-10-22",
-    "workbookSha256": "da5c9dc4a1907ffde88bc17cbe046f07915cb207fa8107eed989f42268a4bc26",
+    "workbookSha256": "db3ef7cac515756c9a00d9e74e12e41521feb18c3241abd78016062a2489468a",
     "how": "Inputs typed into Crop Inputs column C by tools/fdcic-extract/excel-run.ps1; macros disabled; workbook not saved."
   }
 }
