@@ -871,7 +871,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20261009201625_AddBinSitesModifiedAt'),
 ('20261009201700_DropProducerDetailsBinCapacity'),
 ('20261013163045_RestrictCustomerTradeUnitDeleteAndValidateCustomerFks'),
-('20261020171105_ConvertYearlyBidsToFuturesMonth');
+('20261020171105_ConvertYearlyBidsToFuturesMonth'),
+('20261022142931_ExcludeNotesWithoutTradeUnitFromRecap');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.
@@ -1137,3 +1138,5 @@ ELSE
 --   are unchanged from main. Tables 47, Columns 480, Unique indexes 24, Migrations 93.
 --   Updated 2026-10-20: 20261020171105_ConvertYearlyBidsToFuturesMonth is data-only (Yearly bids onto their
 --   futures month; flat organic prices back to the cash column); no table, column or index row changed.
+--   Updated 2026-10-22: 20261022142931_ExcludeNotesWithoutTradeUnitFromRecap only alters dbo.GetRecapNotes
+--   (skips notes with no trade unit); no table, column or index row changed.
