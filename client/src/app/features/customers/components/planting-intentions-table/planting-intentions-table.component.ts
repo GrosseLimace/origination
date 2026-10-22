@@ -17,17 +17,7 @@ import { environment } from '@env/environment';
 import { CropFieldsPanelComponent } from '../field-plan/crop-fields-panel.component';
 import { CiEnrollmentCardComponent } from '../field-plan/ci-enrollment-card.component';
 import { FieldPlanMockService } from '@core/services/field-plan-mock.service';
-// DEMO ONLY: the two earlier prototypes, for the A/B/C comparison switch.
-import { BesideStripComponent } from '../field-plan-demo/beside/ci-intention-strip.component';
-import { BesideFieldDialogComponent } from '../field-plan-demo/beside/ci-field-dialog.component';
-import { ByFieldViewComponent } from '../field-plan-demo/by-field/field-plan-view.component';
-import { ByFieldLineComponent } from '../field-plan-demo/by-field/field-plan-intention-line.component';
-import { BesideMockService } from '../field-plan-demo/beside/beside-mock.service';
-import { ByFieldMockService } from '../field-plan-demo/by-field/by-field-mock.service';
 
-type DemoOption = 'A' | 'B' | 'C';
-/** DEMO ONLY: which prototype is showing; module state so it outlives the component. */
-const demoState: { option: DemoOption } = { option: 'C' };
 
 type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'tradeUnit';
 type SortDirection = 'none' | 'asc' | 'desc';
@@ -56,10 +46,6 @@ type PlantingRow = PlantingIntention;
     DialogFooterComponent,
     InputComponent,
     CropFieldsPanelComponent,
-    BesideStripComponent,
-    BesideFieldDialogComponent,
-    ByFieldViewComponent,
-    ByFieldLineComponent,
     CiEnrollmentCardComponent
   ],
   templateUrl: './planting-intentions-table.component.html',
@@ -316,24 +302,9 @@ export class PlantingIntentionsTableComponent {
   readonly fieldPlanningEnabled = environment.fieldPlanningEnabled;
   readonly carbonIntensityEnabled = environment.carbonIntensityEnabled;
 
-  // ── DEMO ONLY (demo_FieldPlanCompare): switch between the three field-plan prototypes ──────────
-  // A = 45Z data beside the intention (separate dialog), B = plan by field (grid + simulated roll-up),
-  // C = fields under each crop row. The choice lives in module state so it survives switching
-  // producers and tabs. Remove this block, the field-plan-demo folder and the template switch together.
-  readonly demoOptions = [
-    { id: 'A', label: 'A · 45Z beside intentions' },
-    { id: 'B', label: 'B · Plan by field' },
-    { id: 'C', label: 'C · Fields under each crop' },
-  ] as const;
-  private readonly _demoOption = signal<DemoOption>(demoState.option);
-  get demoOption(): DemoOption { return this._demoOption(); }
-  set demoOption(value: DemoOption) { demoState.option = value; this._demoOption.set(value); }
-
-  private readonly besidePlan = inject(BesideMockService);
-  private readonly byFieldPlan = inject(ByFieldMockService);
   private readonly cropPlan = inject(FieldPlanMockService);
 
-  /** The producer's scored field seasons for the plan year, from whichever option is showing, for the enrollment card. */
+  /** The producer's scored field seasons for the plan year, for the enrollment card. */
   readonly enrollableSeasons = computed<EnrollableSeason[]>(() => {
     const customerId = this.customer().id;
     const year = this.fieldPlanYear;
@@ -344,17 +315,7 @@ export class PlantingIntentionsTableComponent {
       cropLabel, cropYear: year, acres: s.acres, actualYield: s.actualYield, status: s.status, finalCiGPerBu: s.finalCiGPerBu,
     });
 
-    if (this._demoOption() === 'A') {
-      const fields = new Map(this.besidePlan.fields().filter(f => f.customerId === customerId).map(f => [f.fieldKey, f]));
-      const intentions = new Map(this.plantingIntentions().filter(pi => pi.plantingYear === year).map(pi => [pi.id, pi]));
-      return this.besidePlan.seasons().flatMap(s => {
-        const field = fields.get(s.fieldKey);
-        const pi = intentions.get(s.plantingIntentionId);
-        const label = pi ? this.rowCropLabel(pi) : '';
-        return field && pi && scored(label) ? [toRow(s, field, label)] : [];
-      });
-    }
-    const plan = this._demoOption() === 'B' ? this.byFieldPlan : this.cropPlan;
+    const plan = this.cropPlan;
     const fields = new Map<string, { name: string; customerId: number }>(
       plan.fields().filter(f => f.customerId === customerId).map(f => [f.fieldKey, f]));
     return (plan.seasons() as { id: string; fieldKey: string; year: number; cropLabel: string; acres: number | null; actualYield: number | null; status: EnrollableSeason['status']; finalCiGPerBu?: number }[])
@@ -364,23 +325,9 @@ export class PlantingIntentionsTableComponent {
       });
   });
 
-  // Option A
-  besideIntention: PlantingIntention | null = null;
-  // Option B
-  planView: 'crop' | 'field' = 'crop';
   get fieldPlanYear(): number {
     return this.selectedYear() || Math.max(0, ...this.plantingIntentions().map(p => p.plantingYear)) || new Date().getFullYear();
   }
-  get fieldPlanCrops(): Commodity[] {
-    const inScope = { groupNames: this.appState.inScopeGroupNames(), tradeUnitCodes: this.appState.inScopeTradeUnitCodes() };
-    return scopeCommodities(this.plantingCommodities(), inScope);
-  }
-  openFieldPlan(row: PlantingRow): void {
-    this.yearSelect.emit(row.plantingYear);
-    this.planView = 'field';
-  }
-  readonly ciNotScoredHelp = 'The USDA 45Z calculator (FD-CIC v1.0) only scores corn, soybeans, sorghum and canola, so this crop has no CI score.';
-  // ── end DEMO ONLY ───────────────────────────────────────────────────────────────────────────────
 
   /** Fields add up to more than the row: open the normal Edit dialog with the new total filled in,
    *  so the change is saved deliberately, the same way any acreage edit is. */
