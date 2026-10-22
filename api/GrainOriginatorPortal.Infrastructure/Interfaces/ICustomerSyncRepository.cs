@@ -25,6 +25,13 @@ public interface ICustomerSyncRepository
     /// (manual-producer refresh pass). Uses a long command timeout — the view is heavy.</summary>
     Task<List<CurrentCustomerRow>> LoadCurrentCustomerMasterAsync(IReadOnlyCollection<long> customerIds, CancellationToken cancellationToken);
 
+    /// <summary>Reserves <paramref name="count"/> consecutive ids for customers minted from CTRM, from
+    /// <c>dbo.CustomerIdSequence</c> (band [5e15, 6e15), see <c>CustomerIdMinting</c>) via
+    /// <c>sys.sp_sequence_get_range</c> — one round trip however many are needed. A run that aborts after reserving
+    /// leaves a gap in the sequence; gaps are expected and harmless. <paramref name="count"/> &lt;= 0 returns an empty
+    /// list without touching the database.</summary>
+    Task<List<long>> ReserveCustomerIdsAsync(int count, CancellationToken cancellationToken);
+
     void AddCustomer(Customer customer);
     void AddTradeUnit(CustomerTradeUnit tradeUnit);
 

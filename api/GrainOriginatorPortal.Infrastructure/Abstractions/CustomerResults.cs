@@ -8,6 +8,19 @@ public enum AssignTradeUnitsResult
     CustomerNotFound,
 }
 
+/// <summary>
+/// What AssignTradeUnitsAsync did and to which customer id. <see cref="CustomerId"/> is the id the
+/// trade units were written to: the requested id, or — when <see cref="Adopted"/> — an existing
+/// dbo.Customer row that already holds the producer's ScoularId (e.g. a CTRM-minted id), so the
+/// controller returns that customer instead of 404ing on the requested one.
+/// </summary>
+public sealed record AssignTradeUnitsOutcome(AssignTradeUnitsResult Result, long CustomerId, bool Adopted)
+{
+    public static AssignTradeUnitsOutcome Ok(long customerId, bool adopted = false) => new(AssignTradeUnitsResult.Ok, customerId, adopted);
+    public static AssignTradeUnitsOutcome NoCodes(long requested) => new(AssignTradeUnitsResult.NoCodes, requested, false);
+    public static AssignTradeUnitsOutcome CustomerNotFound(long requested) => new(AssignTradeUnitsResult.CustomerNotFound, requested, false);
+}
+
 /// <summary>Outcome of a DeactivateDormantTradeUnitAsync call, so the controller can map to the right HTTP status.</summary>
 public enum DeactivateTradeUnitResult
 {
