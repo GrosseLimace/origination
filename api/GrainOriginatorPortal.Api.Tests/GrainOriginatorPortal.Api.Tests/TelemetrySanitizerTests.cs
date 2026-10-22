@@ -84,4 +84,30 @@ public class TelemetrySanitizerTests
         Assert.DoesNotContain("4025551234", result);
         Assert.Contains("wheat", result);
     }
+
+    [Fact]
+    public void RedactedTargetIdIsClampedToTheColumnLength()
+    {
+        // Redaction lengthens text ("4025551234" -> "[redacted-number]"). A 200-character question full
+        // of numbers would exceed UserClickEvent.TargetId (nvarchar(200)) and fail the whole batch.
+        var question = string.Concat(Enumerable.Repeat("4025551234 ", 18));
+        var redacted = TelemetrySanitizer.Redact(question, "help-no-match");
+
+        Assert.True(redacted!.Length > 200);
+        Assert.Equal(200, GrainOriginatorPortal.Api.Controllers.UsageDashboardController.ClampTargetId(redacted)!.Length);
+        Assert.Equal("short", GrainOriginatorPortal.Api.Controllers.UsageDashboardController.ClampTargetId("short"));
+        Assert.Null(GrainOriginatorPortal.Api.Controllers.UsageDashboardController.ClampTargetId(null));
+    }
+
+    [Fact]
+    public void UnansweredHelpQuestionIsTreatedAsFreeText()
+    {
+        // The Help panel records questions it couldn't answer so the FAQ can be extended. Users type
+        // things like "can't find john smith 4025551234", so the whole free-text treatment applies.
+        var result = TelemetrySanitizer.Redact("cant find john@x.com 4025551234", subFeatureCode: "help-no-match");
+        Assert.Contains("[redacted-email]", result);
+        Assert.Contains("[redacted-number]", result);
+        Assert.DoesNotContain("4025551234", result);
+        Assert.Contains("cant find", result);
+    }
 }
