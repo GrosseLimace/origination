@@ -32,7 +32,6 @@ export class StoredGrainTableComponent {
   public storedGrain = input<StoredGrain[]>([]);
   public customer = input.required<Customer>();
 
-  showSearch = signal(false);
   searchQuery = signal('');
   expandedCommodities = signal(new Set<string>());
 
@@ -49,11 +48,16 @@ export class StoredGrainTableComponent {
   constructor() {
     // Auto-expand the single commodity group so the user doesn't have to click
     // to open it. With multiple groups, start collapsed so the summary is visible.
+    // Re-runs on a group-mode change too, since the group keys change with the mode.
     effect(() => {
       const groups = this.allCommodityGroups();
       this.expandedCommodities.set(
         groups.length === 1 ? new Set([groups[0].key]) : new Set()
       );
+    });
+    // A new set of receipts (another producer) drops the previous search; a group-mode change keeps it.
+    effect(() => {
+      this.storedGrain();
       this.searchQuery.set('');
     });
   }
@@ -97,8 +101,11 @@ export class StoredGrainTableComponent {
       if (rowDate < group.earliestDate) group.earliestDate = rowDate;
     }
 
+    // Order by what the header shows: location alone in Location mode, else crop then location.
     return Array.from(groupMap.values())
-      .sort((a, b) => a.crop.localeCompare(b.crop) || a.location.localeCompare(b.location));
+      .sort((a, b) => mode === 'location'
+        ? a.location.localeCompare(b.location)
+        : a.crop.localeCompare(b.crop) || a.location.localeCompare(b.location));
   });
 
   readonly commodityGroups = computed<CommodityGroup[]>(() => {
@@ -124,7 +131,11 @@ export class StoredGrainTableComponent {
           ...group,
           receipts: matchedReceipts,
           totalBushels: matchedReceipts.reduce((s, r) => s + r.quantity, 0),
-          totalCost: matchedReceipts.reduce((s, r) => s + r.receivableAmount, 0)
+          totalCost: matchedReceipts.reduce((s, r) => s + r.receivableAmount, 0),
+          earliestDate: matchedReceipts.reduce((min, r) => {
+            const d = new Date(r.storageStartDate);
+            return d < min ? d : min;
+          }, new Date(matchedReceipts[0].storageStartDate))
         });
       }
     }
@@ -135,10 +146,6 @@ export class StoredGrainTableComponent {
     this.groupMode.set(mode);
   }
 
-  readonly totalStorageCost = computed(() =>
-    this.allCommodityGroups().reduce((sum, g) => sum + g.totalCost, 0)
-  );
-
   private _formatDate(d: Date | string): string {
     const date = new Date(d);
     return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
@@ -146,11 +153,6 @@ export class StoredGrainTableComponent {
 
   getCost(grainId: string): number {
     return this.grainById().get(grainId)?.receivableAmount ?? 0;
-  }
-
-  clearSearch(): void {
-    this.searchQuery.set('');
-    this.showSearch.set(false);
   }
 
   toggleCommodity(key: string, event: MouseEvent): void {

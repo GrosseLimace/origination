@@ -5,7 +5,24 @@ namespace GrainOriginatorPortal.Api.Models.Requests;
 /// <summary>Used for both initial bid creation and bulk-upsert (edit bids grid).</summary>
 public record UpsertBidSheetBidRequest
 {
-    /// <summary>Location identity — matched by (Name + TradeUnitCode) or (ElevatorCode + TradeUnitCode). Required for bulk upsert; ignored on location-scoped create.</summary>
+    /// <summary>
+    /// The location this bid belongs to. Preferred over Name: locations are company-wide now, so a
+    /// name is no longer unique and resolving by one could land the bid on the wrong elevator.
+    /// </summary>
+    public int? LocationId { get; init; }
+
+    /// <summary>
+    /// Legacy fallback for callers that have no id. Resolved company-wide. Matched by (Name +
+    /// TradeUnitCode) or (ElevatorCode + TradeUnitCode); required for bulk upsert when no id is sent,
+    /// ignored on location-scoped create.
+    /// </summary>
+    /// <remarks>
+    /// The length limit belongs here, on the string. When <see cref="LocationId"/> was inserted above
+    /// this property (2026-09-02) it landed between the attribute and the property it was written for,
+    /// so MaxLength started validating an int and threw InvalidCastException on every bulk save that
+    /// carried a LocationId -- every save from the Edit Bids grid. A request-model test now pins that
+    /// length attributes sit only on strings and collections.
+    /// </remarks>
     [MaxLength(200)]
     public string? Name { get; init; }
 
@@ -34,8 +51,23 @@ public record UpsertBidSheetBidRequest
     [Required]
     public int CropYear { get; init; }
 
-    public int Month { get; init; } = 0; // 0=yearly, 1-12=monthly
+    /// <summary>
+    /// Delivery month, 1-12. Zero -- the old "Yearly" period -- is refused: the business retired it in
+    /// September 2026 because a fed Year cell (nearest open month) and a typed one (the crop year) meant
+    /// different things while sitting side by side. A bid now always names its month.
+    /// </summary>
+    [Range(1, 12, ErrorMessage = "Month must be 1-12. The Yearly period has been retired; choose the delivery month.")]
+    public int Month { get; init; }
 
+    /// <summary>Flat cash price. Empty is allowed: a location may be quoted on basis alone.</summary>
     [MaxLength(50)]
     public string Bid { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Basis, in cents against the board -- "-30" reads as thirty under. Free text like the cash
+    /// field, because originators write the futures month into it ("-40Z" = forty under December).
+    /// A row is deleted only when BOTH prices are empty.
+    /// </summary>
+    [MaxLength(50)]
+    public string BasisBid { get; init; } = string.Empty;
 }

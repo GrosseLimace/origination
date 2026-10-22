@@ -17,7 +17,20 @@ public class BidSheetLocation
     /// units — one row per trade-unit placement.
     /// </summary>
     public string? BarchartLocationKey { get; set; }
-    public string TradeUnitCode { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The trade unit whose desk first added this location. **Provenance only — not a scoping key.**
+    ///
+    /// A location used to belong to a trade unit, and the same elevator was stored once per trade unit
+    /// so each desk had its own row and its own bids. Locations are global now: one row per real
+    /// elevator, one shared set of bids, visible to everyone. Nothing reads this to decide what a user
+    /// may see or change.
+    ///
+    /// Kept because the BarChart picker still reports which desks have placed a listing, and because
+    /// knowing who introduced a row is worth having. Nullable so a location added without a desk in
+    /// view is legal.
+    /// </summary>
+    public string? TradeUnitCode { get; set; }
     public string? GroupName { get; set; }
     public bool IsScoularFacility { get; set; }
     public string CreatedBy { get; set; } = string.Empty;

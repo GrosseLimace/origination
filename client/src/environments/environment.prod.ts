@@ -4,6 +4,9 @@ export const environment = {
   // 'production', which rendered an odd lowercase pill next to the title-cased ones.
   envName: 'Production',
   bidSheetEnabled: true,
+  // "Add from BarChart" picker + fed-bid display. ON since the 2026-10-20 release: the PROD catalog
+  // finished its first full 7-day load on 2026-10-20 (84k listings, 4,024 locations, priced daily).
+  barchartBidsEnabled: true,
   usageDashboardEnabled: true,
   // Daily Digest (recap groups): ON in PROD. Surfaces the /daily-digest route + the
   // "Daily Recap" nav link. NOTE: enabling the UI is only half of launch — the prod

@@ -1,7 +1,5 @@
-using GrainOriginatorPortal.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Controllers;
@@ -20,16 +18,16 @@ namespace GrainOriginatorPortal.Api.Controllers;
 [Route("api/[controller]")]
 public class EntitlementsController : ControllerBase
 {
-    private readonly TradeUnitPreferencesDbContext _entitlementsDb;
+    private readonly IEntitlementsDirectoryService _directory;
     private readonly IRequestContextService _requestContext;
     private readonly ILogger<EntitlementsController> _logger;
 
     public EntitlementsController(
-        TradeUnitPreferencesDbContext entitlementsDb,
+        IEntitlementsDirectoryService directory,
         IRequestContextService requestContext,
         ILogger<EntitlementsController> logger)
     {
-        _entitlementsDb = entitlementsDb;
+        _directory = directory;
         _requestContext = requestContext;
         _logger = logger;
     }
@@ -56,13 +54,8 @@ public class EntitlementsController : ControllerBase
 
         try
         {
-            // Step 1: read ONLY the caller's own rows (UserId == caller). This drives which TUs and
-            // groups we expand, and bounds the read to a handful of rows regardless of directory size.
-            var callerRows = await _entitlementsDb.UserTradeUnitPreferences
-                .AsNoTracking()
-                .Where(r => r.UserId == userId)
-                .Select(r => new { r.TradeUnitCode, r.GroupId })
-                .ToListAsync(ct);
+            // The caller's own rows drive which trade units and groups are expanded.
+            var callerRows = await _directory.GetAssignmentsAsync(userId, ct);
 
             // Caller's own TUs — drives the People filter (must share a TU with caller).
             var callerTuCodes = callerRows
@@ -82,21 +75,21 @@ public class EntitlementsController : ControllerBase
                 .Select(r => r.GroupId!.Value)
                 .ToHashSet();
 
-            // Step 2: read only the rows relevant to the caller — anyone sharing one of the caller's
-            // TUs, plus the caller's own group rows. Filtering in SQL (rather than loading the whole
-            // view and filtering in memory) caps memory to the caller's overlap, removing the
-            // unbounded-materialization / DoS risk if the view grows.
-            var tuFilter = callerTuCodes.ToList();
-            var groupFilter = callerGroupIds.Select(id => (int?)id).ToList();
-            var rows = await _entitlementsDb.UserTradeUnitPreferences
-                .AsNoTracking()
-                .Where(r => tuFilter.Contains(r.TradeUnitCode) || groupFilter.Contains(r.GroupId))
-                .ToListAsync(ct);
+            // Only the rows relevant to the caller: anyone sharing one of their trade units, and every
+            // row in their groups. Both reads filter in SQL, so memory is bounded by the caller's
+            // overlap rather than by the size of the view. Active users only, like the mention
+            // catalog: the daily-recap Logic App sends only to users active in dbo.Users, so a leaver
+            // picked here would be a recipient who silently never gets the recap. People already in a
+            // group are unaffected; they come from the group, not from this list.
+            var colleagueRows = await _directory.GetColleaguesAsync(callerTuCodes, activeOnly: true, ct);
+            var groupRows = callerGroupIds.Count > 0
+                ? await _directory.GetGroupAssignmentsAsync(callerGroupIds, ct)
+                : [];
 
             // People who share ≥1 TU with the caller. The caller is INCLUDED so they can add
             // themselves as a recipient of a recap group (they're in their own trade units, so the
             // recap-group member validation already permits self).
-            var people = rows
+            var people = colleagueRows
                 .Where(r => callerTuCodes.Contains(r.TradeUnitCode))
                 .Where(r => !string.IsNullOrWhiteSpace(r.UserId))
                 .GroupBy(r => r.UserId, StringComparer.OrdinalIgnoreCase)
@@ -118,8 +111,10 @@ public class EntitlementsController : ControllerBase
                 .OrderBy(p => p.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            // Trade Units = the caller's own TUs (deduped + ordered).
-            var tradeUnits = rows
+            // Trade Units = the caller's own TUs (deduped + ordered). Read from the caller's rows, not
+            // the active-only colleague rows: a caller not (or no longer) active in dbo.Users, alone
+            // on a trade unit, would otherwise see their own trade units vanish from the picker.
+            var tradeUnits = callerRows
                 .Where(r => callerTuCodes.Contains(r.TradeUnitCode))
                 .GroupBy(r => r.TradeUnitCode, StringComparer.OrdinalIgnoreCase)
                 .Select(g => new EntitlementTradeUnit
@@ -132,7 +127,7 @@ public class EntitlementsController : ControllerBase
 
             // Groups the caller is a member of (callerGroupIds computed above from the caller's rows).
             // Each group lists its TUs so the Logic App can expand it the same way the entitlements layer does.
-            var groups = rows
+            var groups = groupRows
                 .Where(r => r.GroupId.HasValue && callerGroupIds.Contains(r.GroupId!.Value))
                 .Where(r => !string.IsNullOrWhiteSpace(r.GroupName))
                 .GroupBy(r => r.GroupId!.Value)
@@ -155,13 +150,20 @@ public class EntitlementsController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Entitlements catalog unavailable for {UserId} — returning empty lists", userId);
-            return Ok(new EntitlementsCatalogResponse());
+            return Ok(new EntitlementsCatalogResponse { Degraded = true });
         }
     }
 }
 
 public class EntitlementsCatalogResponse
 {
+    /// <summary>
+    /// True when the catalog could not be read and the lists below are empty because of that, not
+    /// because the caller has nothing. The endpoint still answers 200 so the recap-group editor keeps
+    /// working; this flag is how the client tells "nobody to offer" from "the lookup failed".
+    /// </summary>
+    public bool Degraded { get; set; }
+
     public List<EntitlementPerson> People { get; set; } = [];
     public List<EntitlementTradeUnit> TradeUnits { get; set; } = [];
     public List<EntitlementTradeUnitGroup> Groups { get; set; } = [];

@@ -1,20 +1,29 @@
-import { Component, input, effect, inject, signal } from '@angular/core';
+import { Component, input, effect, inject, signal, computed, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, HarvestWindow } from '@models';
 import { AppStateService } from '@core/services/app-state.service';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
 import { buildLbsPerBushelMap, quantityInBushels, sumInBushels } from '@shared/utils/production-coverage';
+import { parseServerTime } from '@shared/utils/server-time';
 
 @Component({
   selector: 'app-activity-summary',
   standalone: true,
+  // Inputs and signals only. summaryText is a signal written by the effect below; it was a plain
+  // field marked with markForCheck() inside that effect, and marking the view dirty from an effect
+  // that runs during its own refresh made change detection loop (NG0103) when a producer was picked.
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule],
   host: { class: 'block' },
   templateUrl: './activity-summary.component.html'
 })
 export class ActivitySummaryComponent {
   private readonly appState = inject(AppStateService);
-  private _conversionMap: Map<string, number> | null = null;
+
+  /** Commodity code → lbs per bushel. Derived from the signal, so any replacement of the conversion
+   *  list rebuilds it (it used to be cached until the list's length changed). */
+  private readonly _conversionMap = computed(() =>
+    new Map(this.appState.commodityConversions().map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit])));
 
   public customer = input.required<Customer>();
   public contracts = input<Contract[]>([]);
@@ -30,7 +39,20 @@ export class ActivitySummaryComponent {
    *  card; we receive it here as input to avoid a duplicate API fetch. */
   public historicalContracts = input<Contract[]>([]);
 
-  summaryText = '';
+  readonly summaryText = signal('');
+
+  /** The harvest windows failed to load, so the pace sentence is missing for that reason rather
+   *  than because there was nothing to compare. Only said when there are contracts to pace. */
+  readonly harvestPaceUnavailable = computed(() =>
+    this.appState.harvestWindowsLoadFailed() && this.appState.harvestWindows().length === 0
+    && ((this.contracts() || []).length > 0 || (this.historicalContracts() || []).length > 0));
+
+  /** Open contracts left out of the bushel figures because the conversions failed to load — not
+   *  because of their unit. Zero unless the load failed and something was actually left out. */
+  readonly contractsMissingConversions = computed(() => {
+    if (!this.appState.commodityConversionsLoadFailed() || this.appState.commodityConversions().length > 0) return 0;
+    return (this.contracts() || []).filter(c => c && !c.closedDate && quantityInBushels(c, c.quantity || 0, new Map()) == null).length;
+  });
 
   /** localStorage key for the open/closed preference. Persisted rather than held in the component
    *  so the choice survives selecting a different producer — this component is torn down whenever
@@ -75,7 +97,7 @@ export class ActivitySummaryComponent {
       const _conv = this.appState.commodityConversions();
       // Harvest windows drive _generateHarvestPaceSummary's year-over-year comparison.
       const _hw = this.appState.harvestWindows();
-      this.summaryText = this._generateSummaryParagraph();
+      this.summaryText.set(this._generateSummaryParagraph());
     });
   }
 
@@ -425,9 +447,7 @@ export class ActivitySummaryComponent {
       const lastNote = pinnedNote || sorted[0];
       if (!lastNote) return '';
 
-      const raw = typeof lastNote.createdAt === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(lastNote.createdAt as any)
-        ? (lastNote.createdAt as any) + 'Z' : lastNote.createdAt;
-      const lastDate = new Date(raw);
+      const lastDate = parseServerTime(lastNote.createdAt);
       if (isNaN(lastDate.getTime())) return '';
 
       const daysSince = Math.max(0, this._calendarDaysBetween(lastDate, new Date()));
@@ -580,9 +600,7 @@ export class ActivitySummaryComponent {
     if (ownNotes.length === 0) return null;
     let latestMs = 0;
     for (const n of ownNotes) {
-      const raw = typeof n.createdAt === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(n.createdAt as any)
-        ? (n.createdAt as any) + 'Z' : n.createdAt;
-      const t = new Date(raw).getTime();
+      const t = parseServerTime(n.createdAt).getTime();
       if (!isNaN(t) && t > latestMs) latestMs = t;
     }
     if (latestMs === 0) return null;
@@ -594,12 +612,7 @@ export class ActivitySummaryComponent {
   private _lbsPerBushel(productCode: string | undefined | null): number | null {
     const code = (productCode || '').trim().toUpperCase();
     if (!code) return null;
-    const conversions = this.appState.commodityConversions();
-    if (conversions.length === 0) return null;
-    if (!this._conversionMap || this._conversionMap.size !== conversions.length) {
-      this._conversionMap = new Map(conversions.map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit]));
-    }
-    const lbs = this._conversionMap.get(code);
+    const lbs = this._conversionMap().get(code);
     return lbs && lbs > 0 ? lbs : null;
   }
 

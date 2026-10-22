@@ -1,5 +1,53 @@
 [
   {
+    "version": "2026.10.3",
+    "releasedOn": "2026-10-21",
+    "title": "Bid sheets you can share, with bids fed from BarChart",
+    "summary": "The Bid Sheet is rebuilt around named, shareable sheets of company-wide locations, and bids can now come straight from BarChart.",
+    "items": [
+      {
+        "group": "Bid Sheet",
+        "kind": "added",
+        "text": "Bid sheets are now named working sets of locations. Create a sheet, add locations from the map or the picker, and share it with a desk, a group or a recap group. Several sheets can be open at once."
+      },
+      {
+        "group": "Bid Sheet",
+        "kind": "changed",
+        "text": "Locations are company-wide: one row per elevator, no longer tied to a trade unit. You can give a location your own display name on a sheet without changing it for anyone else."
+      },
+      {
+        "group": "Bid Sheet",
+        "kind": "changed",
+        "text": "The grid shows delivery months only, across several crop years at once, with the crop year and the futures board on each column header. The Yearly column is gone; a Yearly bid you had typed now sits on the month its basis letter names."
+      },
+      {
+        "group": "Bid Sheet",
+        "kind": "added",
+        "text": "Show cash, basis or both. The choice is remembered for you and carries to the map, the bids popup and print. A positive basis shows with a leading +."
+      },
+      {
+        "group": "Bid Sheet",
+        "kind": "added",
+        "text": "Pick which columns Edit Bids shows from its header, and export the grid to Excel. Edit Bids refreshes itself, so the header refresh button is gone."
+      },
+      {
+        "group": "Bid Sheet",
+        "kind": "added",
+        "text": "On the map, All locations browses every elevator in the catalog. Clicking a pin shows that location's published bids, filtered by the chosen crop."
+      },
+      {
+        "group": "BarChart bids",
+        "kind": "added",
+        "text": "Add from BarChart: search by name, town, state or zip, tick several locations and add them in one go. Their bids come from the BarChart feed, carry the board symbol, fill every month the bid covers, and refresh daily."
+      },
+      {
+        "group": "BarChart bids",
+        "kind": "added",
+        "text": "A green Feed chip marks a fed bid and a blue Manual chip one you typed. You can override a fed bid by hand until the feed's next run."
+      }
+    ]
+  },
+  {
     "version": "2026.10.2",
     "releasedOn": "2026-10-14",
     "title": "Bin sites with grain on farm, and search by email",

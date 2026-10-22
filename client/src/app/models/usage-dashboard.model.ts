@@ -205,9 +205,6 @@ export interface InsightsEngagement {
   spotLoadsClicks: number;
   unshippedBushelsClicks: number;
   otherCategoryClicks: number;
-  /** Searches run on the Unshipped Bushels page (any of its three search boxes). */
-  unshippedSearches: number;
-  unshippedGroupsExpanded: number;
 }
 
 export interface BidSheetEngagement {

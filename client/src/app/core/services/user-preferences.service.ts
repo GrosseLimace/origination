@@ -47,8 +47,8 @@ export class UserPreferencesService {
       const units = groups.length
         ? pref.selectedTradeUnits.filter(u => available.has(u))
         : pref.selectedTradeUnits;
-      if (groupNames.length) this.appState.selectedGroupNames.set(groupNames);
-      if (units.length)      this.appState.selectedTradeUnits.set(units);
+      if (groupNames.length) this.appState.setSelectedGroupNames(groupNames);
+      if (units.length)      this.appState.setTradeUnits(units);
       this.appState.savePrefsToLocalStorage(groupNames, units);
     });
 

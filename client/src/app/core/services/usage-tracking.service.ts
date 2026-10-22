@@ -26,7 +26,6 @@ export class UsageTrackingService {
     '/insights': 'insights',
     '/dashboard': 'dashboard',
     '/bid-sheet': 'bidsheet',
-    '/unshipped-bushels': 'unshipped-bushels',
     '/daily-digest': 'daily-recap',
     '/usage-dashboard': 'usage-dashboard',
   };

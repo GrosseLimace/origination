@@ -1,6 +1,8 @@
 
     @if (isOpen() && customer()) {
-      <app-dialog [isOpen]="true" [scrollBody]="true" (close)="onCancel()">
+      <!-- Escape does not close: it would discard every unsaved edit, and Escape inside the
+           producer-search and commodity dropdowns would take the whole dialog with it. -->
+      <app-dialog [isOpen]="true" [scrollBody]="true" [closeOnEscape]="false" (close)="onCancel()">
         <app-dialog-header>
           <app-dialog-title>Edit Producer Details</app-dialog-title>
           <app-dialog-description>Update farm details and manage associations for {{ customer()!.name }}</app-dialog-description>

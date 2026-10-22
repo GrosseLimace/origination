@@ -1,0 +1,176 @@
+<div class="absolute top-0 right-0 h-full w-[380px] z-[1000] flex flex-col bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 shadow-xl">
+
+  <!-- Header -->
+  <div class="flex items-start justify-between gap-2 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+    <div class="min-w-0">
+      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ newSheetMode() ? 'Build a bid sheet' : 'Add from BarChart' }}</h3>
+      @if (coverageSummary()) {
+        <p class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400 truncate" [title]="coverageSummary()">{{ coverageSummary() }}</p>
+      }
+    </div>
+    <button (click)="close.emit()" title="Close"
+            class="flex-shrink-0 p-1 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+    </button>
+  </div>
+
+  <div class="px-4 py-3 space-y-2 border-b border-gray-200 dark:border-gray-700">
+    @if (newSheetMode()) {
+      <!-- Optional here on purpose: the confirm step asks for a name if this is still empty, so the
+           user can go straight to picking locations and name the thing once they can see what it is. -->
+      <div>
+        <label class="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Sheet name</label>
+        <input type="text" [ngModel]="sheetNameDraft()" (ngModelChange)="sheetNameDraftChange.emit($event)"
+               placeholder="e.g. West Desk — optional for now"
+               class="w-full text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+      </div>
+    }
+    <div class="relative">
+      <input type="text" [ngModel]="searchText()" (ngModelChange)="onSearchInput($event)"
+             placeholder="Search elevator, site, or town"
+             class="w-full text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white pl-8 pr-7 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+      <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      @if (isTextSearch()) {
+        <button (click)="clearSearch()" title="Clear"
+                class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      }
+    </div>
+
+    <select [ngModel]="stateFilter()" (ngModelChange)="onStateChange($event)"
+            class="w-full text-xs rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green">
+      <option value="">All states we hold</option>
+      @for (s of coverageStates(); track s.state) {
+        <option [value]="s.state">{{ s.state }} ({{ s.locationCount }})</option>
+      }
+    </select>
+
+    <p class="text-[11px] text-gray-400 dark:text-gray-500">
+      {{ isTextSearch() ? 'Searching the whole catalog.' : 'Showing locations near the map view — pan to look elsewhere.' }}
+    </p>
+  </div>
+
+  <!-- One row, used for both the search results and the ticked-elsewhere group below them, so the two
+       cannot drift apart. offList rows skip the map fly-to: those locations are somewhere else by
+       definition, and flying there would move the search out from under the user mid-pick. -->
+  <ng-template #locationRow let-loc let-offList="offList">
+    <button (click)="offList ? toggleSelected(loc) : selectLocation(loc)"
+            [class]="isSelected(loc.locationKey)
+              ? 'w-full text-left px-4 py-2.5 bg-scoular-blue/10 dark:bg-scoular-blue/20 border-l-2 border-scoular-blue transition-colors'
+              : 'w-full text-left px-4 py-2.5 border-l-2 border-transparent hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors'">
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ primaryName(loc) }}</p>
+          <p class="text-[11px] text-gray-500 dark:text-gray-400 truncate">{{ locationSubtitle(loc) }}</p>
+        </div>
+        <div class="flex-shrink-0 flex items-center">
+          <input type="checkbox" (click)="toggleSelected(loc, $event)"
+                 [checked]="isSelected(loc.locationKey)"
+                 [disabled]="alreadyOnSheet(loc)"
+                 [attr.aria-label]="'Select ' + primaryName(loc)"
+                 class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
+        </div>
+      </div>
+      <!-- The ONLY status worth saying: it's already on the sheet you're adding to, so the checkbox is
+           disabled. There used to be a second note whenever the elevator existed as a company-wide row
+           at all — i.e. somebody had added it once, maybe on a sheet you can't even see. That is
+           nobody's concern while picking locations: reusing the shared row instead of duplicating it is
+           what SHOULD happen, it happens either way (see existingLocationId in addSelected), and saying
+           so out loud only raised a question the user has no reason to think about. In new-sheet mode
+           nothing is on the sheet yet, so nothing is dimmed or annotated. -->
+      @if (alreadyOnSheet(loc)) {
+        <p class="mt-1 text-[10px] text-scoular-green-accessible dark:text-scoular-green">
+          Already on this sheet
+        </p>
+      }
+    </button>
+  </ng-template>
+
+  <div class="flex-1 overflow-y-auto">
+    @if (loading()) {
+      <div class="p-4 text-sm text-gray-500 dark:text-gray-400">Searching…</div>
+    } @else if (results().length === 0) {
+      <div class="p-4 space-y-2">
+        <!-- Worded for the case where a batch is already going: saying "found nothing" above a list of
+             the user's own picks reads as a fault, so this is explicit that it is THIS search that is
+             empty. -->
+        <p class="text-sm text-gray-600 dark:text-gray-300">
+          {{ selectedCount() > 0 ? 'Nothing more here.' : 'No BarChart locations found.' }}
+        </p>
+        @if (coverage(); as c) {
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            The feed currently holds {{ c.locationCount.toLocaleString() }} locations in
+            {{ c.states.length }} states{{ topStatesLabel() }}.
+            If the location you want isn't here, add it manually instead.
+          </p>
+        } @else {
+          <!-- Coverage is what explains an empty result, so when it failed to load say the search was
+               geographic rather than leaving the user to assume the feed is broken. -->
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            Try panning the map, searching by name, or picking a state. If the location you want isn't
+            in the feed, add it manually instead.
+          </p>
+        }
+      </div>
+    } @else {
+      <div class="divide-y divide-gray-100 dark:divide-gray-800">
+        @for (loc of results(); track loc.locationKey) {
+          <ng-container *ngTemplateOutlet="locationRow; context: { $implicit: loc, offList: false }" />
+        }
+      </div>
+    }
+
+    <!-- Ticked, but not in what the panel is currently showing. Building a batch means panning around,
+         and without this the earlier picks simply vanish while the footer keeps counting them -- so the
+         user cannot see what they are about to add. Deliberately OUTSIDE the loading branch: a search
+         in flight must not blank the basket, or the count and the list disagree for a second. -->
+    @if (offListSelected().length > 0) {
+      <div class="px-4 py-1.5 bg-gray-50 dark:bg-gray-800/60 border-y border-gray-200 dark:border-gray-700">
+        <p class="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          Still selected ({{ offListSelected().length }}) — not in this view
+        </p>
+      </div>
+      <div class="divide-y divide-gray-100 dark:divide-gray-800">
+        @for (loc of offListSelected(); track loc.locationKey) {
+          <ng-container *ngTemplateOutlet="locationRow; context: { $implicit: loc, offList: true }" />
+        }
+      </div>
+    }
+  </div>
+  @if (selectedCount() > 0) {
+    <!-- Pinned to the panel, deliberately outside the scrolling list: with a few hundred results a
+         footer inside the list is somewhere the user has to go looking for. Appears only once
+         something is ticked, so an untouched panel looks exactly as it did before. -->
+    <div class="shrink-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 space-y-2">
+      <!-- Where these are going. Named so the destination is on screen before the click, the same
+           reason this used to name the trade unit(s) -- now there is exactly one destination, the
+           open sheet, so it is just said once. -->
+      <p class="text-[11px] text-gray-500 dark:text-gray-400">
+        @if (newSheetMode()) {
+          {{ sheetNameDraft().trim() ? 'New sheet "' + sheetNameDraft().trim() + '"' : 'A new sheet — you\'ll name it next' }}
+        } @else {
+          Adding to "{{ sheetName() }}"
+        }
+      </p>
+      <div class="flex items-center gap-2">
+      <button (click)="addSelected()" [disabled]="adding()"
+              class="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-scoular-green-accessible hover:bg-scoular-green transition-colors disabled:opacity-70 disabled:cursor-not-allowed">
+        @if (adding()) {
+          <svg class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          {{ newSheetMode() ? 'Creating sheet…' : 'Adding ' + selectedCount() + ' location' + (selectedCount() === 1 ? '' : 's') + '…' }}
+        } @else {
+          {{ newSheetMode() ? 'Create sheet with ' : 'Add ' }}{{ selectedCount() }} location{{ selectedCount() === 1 ? '' : 's' }}
+        }
+      </button>
+      <button (click)="clearSelection()" title="Clear selection" [disabled]="adding()"
+              class="px-3 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50">
+        Clear
+      </button>
+      </div>
+    </div>
+  }
+</div>

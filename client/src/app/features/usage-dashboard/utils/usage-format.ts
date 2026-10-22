@@ -116,7 +116,6 @@ export const FEATURE_LABELS: Readonly<Record<string, string>> = {
   'dashboard': 'Planting Intention Dashboard',
   'build-a-list': 'Build a List',
   'insights': 'Actionable Insights',
-  'unshipped-bushels': 'Unshipped Bushels',
   'bidsheet': 'Bid Sheet',
   'daily-recap': 'Daily Recap',
   'usage-dashboard': 'Usage Dashboard',

@@ -61,7 +61,6 @@ public class UsageDashboardService : IUsageDashboardService
         ["dashboard"] = "Planting Intention Dashboard",
         ["build-a-list"] = "Build a List",
         ["insights"] = "Actionable Insights",
-        ["unshipped-bushels"] = "Unshipped Bushels",
         ["bidsheet"] = "Bid Sheet",
         ["daily-recap"] = "Daily Recap",
     };
@@ -854,8 +853,6 @@ public class UsageDashboardService : IUsageDashboardService
             OtherCategoryClicks = clicks.Count(c => c.FeatureCode == "insights"
                 && c.SubFeatureCode is not null
                 && !knownInsightCats.Contains(c.SubFeatureCode)),
-            UnshippedSearches = clickTally.CountByFeaturePrefix("unshipped-bushels", "search-"),
-            UnshippedGroupsExpanded = clickTally.Count("unshipped-bushels", "group-expanded"),
         };
 
         var locationEditGroups = clicks
@@ -989,7 +986,6 @@ public class UsageDashboardService : IUsageDashboardService
                     && (r.SubFeatureCode is null || customerSubFeatures.Contains(r.SubFeatureCode))
                     && r.SubFeatureCode != "contracts")
                 || (r.FeatureCode == "insights" && r.SubFeatureCode is not null && customerSubFeatures.Contains(r.SubFeatureCode))
-                || (r.FeatureCode == "unshipped-bushels" && r.SubFeatureCode == "group-expanded")
                 || (r.FeatureCode == "dashboard" && r.SubFeatureCode == "producer-row-click")
                 || (r.FeatureCode == "build-a-list" && r.SubFeatureCode is "member-added" or "member-excluded");
         }

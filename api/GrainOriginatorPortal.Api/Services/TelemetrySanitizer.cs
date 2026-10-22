@@ -21,11 +21,6 @@ public static partial class TelemetrySanitizer
         "library-search-no-match",
         "query-request-submitted",
         "library-search",
-        // Unshipped Bushels search boxes — the page runs entirely client-side, so these terms are
-        // typed straight into telemetry.
-        "search-customer",
-        "search-commodity",
-        "search-contract",
     };
 
     [GeneratedRegex(@"[^\s@]+@[^\s@]+\.[^\s@]+", RegexOptions.Compiled)]

@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, input, output, DestroyRef, OnInit } from '@angular/core';
+import { Component, inject, signal, computed, input, output, DestroyRef, OnInit, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { DecimalPipe } from '@angular/common';
@@ -56,6 +56,7 @@ function blankCommodity(): CheckForm {
 @Component({
   selector: 'app-check-calculator',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, DecimalPipe, AccountingCurrencyPipe, InputComponent, SelectComponent, ButtonComponent],
   templateUrl: './check-calculator.component.html',
 })
@@ -156,6 +157,9 @@ export class CheckCalculatorComponent implements OnInit {
   }
 
   private loadFullCommodities(): void {
+    // Deliberately quiet on failure: the list only feeds the autocomplete. The Commodity field is
+    // free text, the check is computed from the numbers alone, and no "no matches" state is shown,
+    // so a missing list costs the user a suggestion, never a wrong figure.
     this.apiService.getCommodities()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ next: (list) => this.commodityOptions.set(list ?? []), error: () => {} });

@@ -32,8 +32,13 @@
             ></textarea>
 
             <!-- @ mention autocomplete dropdown -->
-            @if (mentionDropdownOpen() && mentionOptions().length > 0) {
+            @if (mentionDropdownOpen() && (mentionOptions().length > 0 || mentionCatalogDegraded())) {
               <div class="absolute left-0 right-0 top-full z-30 mt-1 max-h-60 overflow-y-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg">
+                @if (mentionCatalogDegraded()) {
+                  <div role="status" class="px-3 py-2 text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800">
+                    Some people or trade units couldn't be loaded. If who you need isn't listed, close the note and try again.
+                  </div>
+                }
                 @for (opt of mentionOptions(); track opt.type + ':' + opt.id; let i = $index) {
                   <button
                     type="button"

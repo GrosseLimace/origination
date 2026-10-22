@@ -28,7 +28,7 @@ describe('CTRM failure visibility', () => {
     });
 
     it('records a contract-read failure independently of the ticket read', () => {
-      appState.contractsLoadFailed.set(true);
+      appState.setContractsLoadFailed(true);
 
       expect(appState.contractsLoadFailed()).toBe(true);
       expect(appState.ticketsLoadFailed()).toBe(false);
@@ -87,7 +87,7 @@ describe('CTRM failure visibility', () => {
 
       // Isolate the contract + ticket section and check none of its calls swallow to of([]).
       const from = src.indexOf('// Contract Operations');
-      const to = src.indexOf('getUnappliedTicketsByCustomer');
+      const to = src.indexOf('// Planting Intention Operations');
       expect(from).toBeGreaterThan(-1);
       expect(to).toBeGreaterThan(from);
 

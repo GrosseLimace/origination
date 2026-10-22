@@ -11,13 +11,9 @@ namespace GrainOriginatorPortal.Api.Tests.Services;
 /// </summary>
 /// <remarks>
 /// <para>Scope. <c>ShouldWarmNow</c> is the whole of the gate and is covered exhaustively below. The
-/// per-producer-set failure isolation in the cycle itself is NOT covered here, and cannot be from a
-/// unit test as the code stands: <c>WarmActiveSetsAsync</c> is private (so <c>InternalsVisibleTo</c>
-/// does not reach it), its only caller is <c>ExecuteAsync</c> behind a real one-minute
-/// <c>PeriodicTimer</c>, and <c>CtrmContractReader</c>/<c>CtrmTicketReader</c> are sealed concrete
-/// classes with non-virtual methods and no interface, so neither can be substituted with a reader
-/// that throws. Closing that gap needs a source change, which this test pass deliberately does not
-/// make.</para>
+/// per-producer-set failure isolation in the cycle itself is covered by <c>CtrmKeepWarmCycleTests</c>,
+/// which became possible on 2026-10-13 when the three CTRM reads went behind <c>ICtrmWarmReads</c> and
+/// <c>WarmActiveSetsAsync</c> was made internal.</para>
 ///
 /// <para>The keep-for window the cycle applies to the registry is already covered by
 /// <c>CtrmServeFromWarmCacheTests.TheWarmRegistryTracksRecentSetsAndForgetsOldOnes</c>, so it is not

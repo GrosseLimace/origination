@@ -268,15 +268,13 @@ bounded channels that drop writes rather than block a request):
 | Calculator opened | `calculators` | `profitability-opened` / `check-opened` / `cancel-roll-opened` |
 | Calculator PDF exported | `calculators` | `profitability-pdf` / `check-pdf` / `cancel-roll-pdf` |
 | @mention chosen in a note | `customers` | `notes-mention` |
-| Unshipped Bushels search | `unshipped-bushels` | `search-customer` / `search-commodity` / `search-contract` |
-| Unshipped Bushels producer expanded | `unshipped-bushels` | `group-expanded` |
 
 The calculators are the notable case: they run entirely in the browser and call no API, so these
 click events are the *only* record they exist. Because they have no `screen_enter` (they open as an
 overlay) they never appear in the screen-time chart — they show up in the per-screen interaction
 drill-down, in Underused Features, and on the drill-down's Calculators tab.
 
-Free-text `TargetId`s (library searches, NLQ requests, unshipped searches) pass through
+Free-text `TargetId`s (library searches, NLQ requests) pass through
 `TelemetrySanitizer`, which strips emails, formatted phone numbers, and bare long digit runs.
 
 ## Per-user drill-down
@@ -284,7 +282,7 @@ Free-text `TargetId`s (library searches, NLQ requests, unshipped searches) pass 
 Click any row on the Originator table → `/usage-dashboard/users/:userId?from=…&to=…`. The manager
 filter is not carried over — it narrows who is listed, not one person's numbers.
 Shows an identity card, 4 KPIs, a daily-activity chart, time per screen, and seven per-feature tabs:
-Producer Page · Build a List · Actionable Insights (incl. the Unshipped Bushels page) · Bid Sheet ·
+Producer Page · Build a List · Actionable Insights · Bid Sheet ·
 Planting Dashboard · Calculators · Daily Recap. Each tab ends with that feature's recent activity.
 
 `userId` is validated against the user universe — an out-of-scope id returns 404. One query each for

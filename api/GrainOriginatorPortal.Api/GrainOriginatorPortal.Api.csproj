@@ -31,6 +31,14 @@
          fixed in 2.7.5. Remove this pin once the parent package floors Microsoft.OpenApi >= 2.7.5. -->
     <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.4" />
+    <!-- Pin transitive System.Security.Cryptography.Pkcs for CVE-2026-84008 (GHSA-846f-f764-76mx, High)
+         and CVE-2026-70162 (GHSA-2fmv-rv2c-59x7, Moderate) - .NET DoS, affected 9.0.0-9.0.20 and
+         10.0.0-10.0.12. Microsoft.Data.SqlClient 6.1.4 pulls 9.0.11. Infrastructure's Xml 10.0.13 pin
+         does not lift it here because package pruning drops Xml in this ASP.NET project. NOTE: like
+         the Xml pin, this does NOT reach the deployed web app - Pkcs is not in the publish output; the
+         app loads it from the App Service's .NET runtime, which must be on the October 2026 servicing
+         release. Remove once Microsoft.Data.SqlClient floors Pkcs >= 10.0.13. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.1">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>

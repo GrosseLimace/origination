@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { TestBed } from '@angular/core/testing';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ComponentRef, signal } from '@angular/core';
 import { of, throwError, Subject } from 'rxjs';
-import { ProducerDetails } from '@models';
+import { Commodity, ProducerDetails } from '@models';
 import { EditCustomerDialogComponent } from './edit-customer-dialog.component';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
@@ -68,7 +68,8 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
         },
       ],
     });
-    // happy-dom + JIT can't fetch templateUrl; these rules are class-level.
+    // These rules are class-level, so the template is blanked; the "rendering" describe at the end
+    // of this file covers the real template.
     TestBed.overrideComponent(EditCustomerDialogComponent, {
       set: { template: '', templateUrl: undefined, imports: [] },
     });
@@ -750,5 +751,190 @@ describe('EditCustomerDialogComponent — bin sites', () => {
     expect(component.grainPickerSite()).toBeNull();
     expect(component.grainRowsFor(key)).toHaveLength(0);
     expect(component.hasChanges()).toBe(false);
+  });
+});
+
+// The same dialog through its REAL template. The describes above blank it, so they cannot show
+// whether a change reaches the screen. These cover each way the open dialog changes without a
+// template event of its own: the open itself (inputs), the re-read of the saved details answering
+// after the form rendered (the acres box is a plain field behind ngModel), the producer's
+// memberships and the planting-intention check answering later, and the commodity suggestions
+// closing on a timer after the box loses focus.
+describe('EditCustomerDialogComponent — rendering', () => {
+  let fixture: ComponentFixture<EditCustomerDialogComponent>;
+  let ref: ComponentRef<EditCustomerDialogComponent>;
+  let details$: Subject<ProducerDetails>;
+  let memberships$: Subject<Membership[]>;
+  let intentions$: Subject<PlantingIntention[]>;
+
+  const CORN: Commodity = { id: 2, code: 'YC', name: 'Yellow Corn', category: 'Corn', isActive: true };
+
+  const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
+  const text = (): string => (host().textContent ?? '').replace(/\s+/g, ' ');
+  const acresBox = (): HTMLInputElement => host().querySelector<HTMLInputElement>('input[placeholder="e.g., 1,200"]')!;
+  const commodityBox = (): HTMLInputElement => host().querySelector<HTMLInputElement>('input[placeholder="Add commodities"]')!;
+  const commoditySuggestions = (): string[] =>
+    Array.from(host().querySelectorAll('div.absolute button span.font-medium')).map(s => (s.textContent ?? '').trim());
+
+  /** Renders, then lets ngModel write the form values into the inputs (it does so on a microtask). */
+  async function render(): Promise<void> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  async function open(customer: Customer): Promise<void> {
+    ref.setInput('customer', customer);
+    ref.setInput('isOpen', true);
+    await render();
+  }
+
+  beforeEach(async () => {
+    details$ = new Subject<ProducerDetails>();
+    memberships$ = new Subject<Membership[]>();
+    intentions$ = new Subject<PlantingIntention[]>();
+    await TestBed.configureTestingModule({
+      imports: [EditCustomerDialogComponent],
+      providers: [
+        {
+          provide: ApiService,
+          useValue: {
+            getAllTradeUnits: () => of([]),
+            getCommodities: () => of([CORN]),
+            getPlantingCommodities: () => of([CORN]),
+            getCustomerTradeUnits: () => memberships$.asObservable(),
+            getProducerDetails: () => details$.asObservable(),
+            getPlantingIntentionsByCustomer: () => intentions$.asObservable(),
+            // Non-empty on purpose: the producer-search preload re-fetches while its cache is empty.
+            getCustomers: () => of([makeCustomer({ id: 7, name: 'Other Farm' })]),
+          },
+        },
+        { provide: ToastService, useValue: { error: () => {}, success: () => {} } },
+        {
+          provide: AppStateService,
+          useValue: {
+            inScopeGroupNames: signal<readonly string[]>([]),
+            inScopeTradeUnitCodes: signal<readonly string[]>(['2190', '2210']),
+            commodities: signal<Commodity[]>([]),
+          },
+        },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(EditCustomerDialogComponent);
+    ref = fixture.componentRef;
+    ref.setInput('selectedTradeUnits', ['2190']);
+    fixture.detectChanges();
+  });
+
+  afterEach(() => {
+    document.body.style.overflow = '';
+  });
+
+  it('fills the form from the producer when the parent opens it', async () => {
+    expect(text()).not.toContain('Edit Producer Details');
+
+    await open(makeCustomer({ totalAcres: 120 }));
+
+    expect(text()).toContain('Edit Producer Details');
+    expect(acresBox().value).toBe('120');
+  });
+
+  it('shows the freshly read acres when the details re-read answers after the form rendered', async () => {
+    await open(makeCustomer({ totalAcres: 120 }));
+    expect(acresBox().value).toBe('120');
+
+    // A teammate changed the acres since this page loaded; the user hasn't touched the box.
+    details$.next({ customerId: 42, totalAcres: 300 } as ProducerDetails);
+    await render();
+
+    expect(acresBox().value).toBe('300');
+  });
+
+  it('shows the freshly read acres even when the re-read changes nothing else on screen', async () => {
+    // With contacts, bin sites and links already edited, the re-read leaves those alone and only the
+    // acres box (a plain field) changes, so nothing else in that response marks the view.
+    const other = makeCustomer({ id: 7, scoularId: 'OTHER', name: 'Other Farm' });
+    ref.setInput('allCustomers', [other]);
+    await open(makeCustomer({ totalAcres: 120, linkedProducerIds: ['OTHER'] }));
+    const button = (label: string): HTMLButtonElement =>
+      Array.from(host().querySelectorAll<HTMLButtonElement>('button')).find(b => (b.textContent ?? '').trim() === label)!;
+    const type = (placeholder: string, value: string): void => {
+      const box = host().querySelector<HTMLInputElement>(`input[placeholder="${placeholder}"]`)!;
+      box.value = value;
+      box.dispatchEvent(new Event('input'));
+    };
+    button('Add contact').click();
+    button('Add bin site').click();
+    await render();
+    type('Name', 'Pat');            // blank rows don't count as an edit; named ones do
+    type('Site Name', 'North bins');
+    host().querySelector<HTMLButtonElement>('button[title="Unlink"]')!.click();
+    await render();
+
+    details$.next({ customerId: 42, totalAcres: 300 } as ProducerDetails);
+    await render();
+
+    expect(acresBox().value).toBe('300');
+  });
+
+  it('names a linked producer once the all-producers list arrives after the dialog opened', async () => {
+    // With no trade unit selected, linked producers are looked up in a list fetched in the background.
+    const customers$ = new Subject<Customer[]>();
+    TestBed.inject(ApiService).getCustomers = () => customers$.asObservable();
+    ref.setInput('selectedTradeUnits', []);
+    await open(makeCustomer({ linkedProducerIds: ['OTHER'] }));
+    expect(text()).not.toContain('Other Farm');
+
+    customers$.next([makeCustomer({ id: 7, scoularId: 'OTHER', name: 'Other Farm' })]);
+    await render();
+
+    expect(text()).toContain('Other Farm');
+  });
+
+  it('replaces "Loading trade units…" with the producer\'s chips when the memberships arrive', async () => {
+    await open(makeCustomer());
+    expect(text()).toContain('Loading trade units…');
+
+    memberships$.next([locked('2190'), manual('2210')]);
+    await render();
+
+    expect(text()).not.toContain('Loading trade units…');
+    const chips = Array.from(host().querySelectorAll('span.rounded-full')).map(s => (s.textContent ?? '').trim());
+    expect(chips).toEqual(expect.arrayContaining(['2190', '2210']));
+  });
+
+  it('asks where the acres go once the planting-intention check answers after a removal click', async () => {
+    await open(makeCustomer());
+    memberships$.next([locked('2190'), manual('2210')]);
+    await render();
+
+    host().querySelector<HTMLButtonElement>('button[title="Remove"]')!.click();
+    fixture.detectChanges();
+    expect(text()).toContain('Checking planting intentions…');
+
+    intentions$.next([makeIntention({ tradeUnit: '2210', acres: 390 })]);
+    await render();
+
+    expect(text()).not.toContain('Checking planting intentions…');
+    expect(text()).toContain('Move this producer\'s planting intentions?');
+    expect(text()).toContain('recorded for trade unit 2210');
+  });
+
+  it('closes the commodity suggestions shortly after the box loses focus', async () => {
+    await open(makeCustomer());
+
+    commodityBox().value = 'corn';
+    commodityBox().dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(commoditySuggestions()).toEqual(['Yellow Corn']);
+
+    commodityBox().dispatchEvent(new Event('blur'));
+    fixture.detectChanges();
+    expect(commoditySuggestions()).toEqual(['Yellow Corn']); // a click on a suggestion lands first
+
+    await new Promise(resolve => setTimeout(resolve, 250));
+    fixture.detectChanges();
+
+    expect(commoditySuggestions()).toEqual([]);
   });
 });

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 
 namespace GrainOriginatorPortal.Infrastructure.Data;
@@ -35,13 +36,10 @@ public class ApplicationDbContext : DbContext
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
     public DbSet<BidSheetLocation> BidSheetLocations => Set<BidSheetLocation>();
     public DbSet<BidSheetLocationBid> BidSheetLocationBids => Set<BidSheetLocationBid>();
-    public DbSet<BidSheetLocationOrder> BidSheetLocationOrders => Set<BidSheetLocationOrder>();
     public DbSet<BidSheetPreference> BidSheetPreferences => Set<BidSheetPreference>();
-    public DbSet<BarchartInstrument> BarchartInstruments => Set<BarchartInstrument>();
-    public DbSet<BarchartCurrentQuote> BarchartCurrentQuotes => Set<BarchartCurrentQuote>();
-    public DbSet<BarchartQuoteSnapshot> BarchartQuoteSnapshots => Set<BarchartQuoteSnapshot>();
-    public DbSet<BarchartCommodityMap> BarchartCommodityMaps => Set<BarchartCommodityMap>();
-    public DbSet<BarchartApiCallAudit> BarchartApiCallAudits => Set<BarchartApiCallAudit>();
+    public DbSet<BidSheet> BidSheets => Set<BidSheet>();
+    public DbSet<BidSheetShare> BidSheetShares => Set<BidSheetShare>();
+    public DbSet<BidSheetLocationLink> BidSheetLocationLinks => Set<BidSheetLocationLink>();
     public DbSet<ElevatorCache> ElevatorCaches => Set<ElevatorCache>();
     public DbSet<HarvestWindow> HarvestWindows => Set<HarvestWindow>();
     public DbSet<UserActivity> UserActivities => Set<UserActivity>();
@@ -60,6 +58,16 @@ public class ApplicationDbContext : DbContext
     public DbSet<TeamsChannel> TeamsChannels => Set<TeamsChannel>();
     public DbSet<UsageDashboardExcludedUser> UsageDashboardExcludedUsers => Set<UsageDashboardExcludedUser>();
     public DbSet<MbpLocationSynonym> MbpLocationSynonyms => Set<MbpLocationSynonym>();
+
+    // BarChart bid feed — vendor-loaded landing tables. Written by the ingest API
+    // (api/barchart-ingest); see docs/application-context/Barchart Bid Feed - Database Plan.md.
+    public DbSet<BarchartInstrument> BarchartInstruments => Set<BarchartInstrument>();
+    public DbSet<BarchartCurrentQuote> BarchartCurrentQuotes => Set<BarchartCurrentQuote>();
+    public DbSet<BarchartQuoteSnapshot> BarchartQuoteSnapshots => Set<BarchartQuoteSnapshot>();
+    public DbSet<BarchartCommodityMap> BarchartCommodityMaps => Set<BarchartCommodityMap>();
+    public DbSet<BarchartApiCallAudit> BarchartApiCallAudits => Set<BarchartApiCallAudit>();
+    /// <summary>Read model over dbo.vw_BarchartLocation — one row per elevator listing, for the picker.</summary>
+    public DbSet<BarchartLocationSummary> BarchartLocationSummaries => Set<BarchartLocationSummary>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -584,11 +592,14 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
             entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
 
-            // FK to Customer.Id (the ODS CustomerId surrogate).
+            // FK to Customer.Id (the ODS CustomerId surrogate). NoAction like every other FK into Customer:
+            // these rows are hand-curated trade-unit assignments, and a customer delete must be blocked
+            // by them, not silently take them along. Was Cascade until 2026-10-13; production held 22,491
+            // rows behind it at the time (nothing deletes customers today, so none were ever lost).
             entity.HasOne(e => e.Customer)
                   .WithMany()
                   .HasForeignKey(e => e.CustomerId)
-                  .OnDelete(DeleteBehavior.Cascade);
+                  .OnDelete(DeleteBehavior.NoAction);
 
             // One row per (customer, trade-unit) pair.
             entity.HasIndex(e => new { e.CustomerId, e.TradeUnit })
@@ -645,17 +656,23 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Longitude).IsRequired(false);
             entity.Property(e => e.ElevatorCode).HasMaxLength(50).IsRequired(false);
             entity.Property(e => e.BarchartLocationKey).HasMaxLength(50).IsRequired(false);
-            entity.Property(e => e.TradeUnitCode).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.TradeUnitCode).HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.GroupName).HasMaxLength(200).IsRequired(false);
             entity.Property(e => e.IsScoularFacility).HasDefaultValue(false).IsRequired();
             entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.ModifiedAt).IsRequired(false);
-            entity.HasIndex(e => e.TradeUnitCode).HasDatabaseName("IX_BidSheetLocations_TradeUnitCode");
-            // Non-unique: the same BarChart location may be placed in several trade units, one row per
-            // placement. Nothing sets this column until the Bid Sheet can link a location to the feed.
-            entity.HasIndex(e => e.BarchartLocationKey).HasDatabaseName("IX_BidSheetLocations_BarchartLocationKey");
+            // ONE row per BarChart listing, company-wide. This replaced a per-trade-unit uniqueness rule:
+            // the same elevator used to be stored once per desk, so the map showed it several times over
+            // and the bridge wrote the identical fed price into every copy. Enforced by the database and
+            // not only by a read-then-write check, because the bulk add fires its creates in PARALLEL --
+            // two for the same listing could both pass that check and both insert. Filtered so the many
+            // rows with no BarChart link are exempt.
+            entity.HasIndex(e => e.BarchartLocationKey)
+                  .HasDatabaseName("UQ_BidSheetLocations_BarchartKey")
+                  .IsUnique()
+                  .HasFilter("[BarchartLocationKey] IS NOT NULL");
             entity.HasMany(e => e.Bids).WithOne(b => b.Location).HasForeignKey(b => b.LocationId).OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -671,11 +688,20 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CropYear).IsRequired();
             entity.Property(e => e.Month).HasDefaultValue(0).IsRequired();
             entity.Property(e => e.Bid).HasMaxLength(50).IsRequired();
-            // Feed provenance. Every row is 'Manual' until the Bid Sheet can link a location to the feed;
-            // only the BarChart bridge ever writes 'Barchart'.
+            // Feed provenance. Ownership moves with the value: a user typing over a fed cell flips it to
+            // 'Manual', and the bridge takes it back on its next run. The bridge only ever writes
+            // Source='Barchart'.
             entity.Property(e => e.Source).HasMaxLength(20).HasDefaultValue(BidSources.Manual).IsRequired();
             entity.Property(e => e.BarchartSymbol).HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.BasisBid).HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.BasisSymbol).HasMaxLength(100).IsRequired(false);
+            // Widest value seen in the catalog is 6 characters (MWOU26); 20 leaves room for a longer root.
+            entity.Property(e => e.UnderlyingFuture).HasMaxLength(20).IsRequired(false);
             entity.Property(e => e.QuoteAsOf).IsRequired(false);
+            entity.Property(e => e.CoveredByCropYear).IsRequired(false);
+            entity.Property(e => e.CoveredByMonth).IsRequired(false);
+            entity.Property(e => e.CashChangedAt).IsRequired(false);
+            entity.Property(e => e.BasisChangedAt).IsRequired(false);
             entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);
@@ -683,6 +709,30 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => new { e.LocationId, e.CommodityCode, e.CropYear, e.Month }).IsUnique().HasDatabaseName("UQ_BidSheetLocationBids_Location_Commodity_Year_Month");
         });
 
+        modelBuilder.Entity<BidSheetPreference>(entity =>
+        {
+            entity.ToTable("BidSheetPreferences", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.TradeUnitKey).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.CropCode).HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.Month).IsRequired(false);
+            entity.Property(e => e.CropYear).IsRequired(false);
+            entity.Property(e => e.SelectedColumns).HasColumnType("nvarchar(max)").IsRequired(false);
+            entity.Property(e => e.CropOrder).HasColumnType("nvarchar(max)").IsRequired(false);
+            entity.Property(e => e.HiddenCrops).HasColumnType("nvarchar(max)").IsRequired(false);
+            entity.Property(e => e.SelectedMonths).HasColumnType("nvarchar(max)").IsRequired(false);
+            entity.Property(e => e.SelectedYears).HasColumnType("nvarchar(max)").IsRequired(false);
+            entity.Property(e => e.PrintLayout).HasColumnType("nvarchar(max)").IsRequired(false);
+            entity.Property(e => e.SelectedBidSheetIds).HasMaxLength(200).IsRequired(false);
+            entity.Property(e => e.PriceMode).HasMaxLength(10).IsRequired(false);
+            entity.Property(e => e.ModifiedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.HasIndex(e => new { e.UserId, e.TradeUnitKey }).IsUnique().HasDatabaseName("UQ_BidSheetPreferences_User_TradeUnitKey");
+            entity.HasIndex(e => e.UserId).HasDatabaseName("IX_BidSheetPreferences_UserId");
+        });
+
+        // ── BarChart bid feed ────────────────────────────────────────────────────────
         // Vendor-loaded tables. Prices are DECIMAL(19,4) and all timestamps are DATETIME2(3)
         // stored UTC (the vendor sends offsets; the load SQL converts) per style-guides/sql.md.
         // These tables intentionally carry purpose-built timestamps (FirstSeen/LastSeen/Updated/
@@ -812,38 +862,14 @@ public class ApplicationDbContext : DbContext
                   .IncludeProperties(e => new { e.Endpoint, e.Success });
         });
 
-        modelBuilder.Entity<BidSheetLocationOrder>(entity =>
-        {
-            entity.ToTable("BidSheetLocationOrders", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
-            entity.Property(e => e.TradeUnitKey).HasMaxLength(500).IsRequired();
-            entity.Property(e => e.LocationOrder).HasColumnType("nvarchar(max)").HasDefaultValue("[]").IsRequired();
-            entity.Property(e => e.ModifiedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
-            entity.HasIndex(e => new { e.UserId, e.TradeUnitKey }).IsUnique().HasDatabaseName("UQ_BidSheetLocationOrders_User_TradeUnitKey");
-            entity.HasIndex(e => e.UserId).HasDatabaseName("IX_BidSheetLocationOrders_UserId");
-        });
 
-        modelBuilder.Entity<BidSheetPreference>(entity =>
+        // Read model for the picker. ToView keeps it out of migrations; the view itself is created by
+        // the AddBarchartFeed migration. Keyless because it is a projection, never written to.
+        modelBuilder.Entity<BarchartLocationSummary>(entity =>
         {
-            entity.ToTable("BidSheetPreferences", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
-            entity.Property(e => e.TradeUnitKey).HasMaxLength(500).IsRequired();
-            entity.Property(e => e.CropCode).HasMaxLength(50).IsRequired(false);
-            entity.Property(e => e.Month).IsRequired(false);
-            entity.Property(e => e.CropYear).IsRequired(false);
-            entity.Property(e => e.CropOrder).HasColumnType("nvarchar(max)").IsRequired(false);
-            entity.Property(e => e.HiddenCrops).HasColumnType("nvarchar(max)").IsRequired(false);
-            entity.Property(e => e.SelectedMonths).HasColumnType("nvarchar(max)").IsRequired(false);
-            entity.Property(e => e.PrintLayout).HasColumnType("nvarchar(max)").IsRequired(false);
-            entity.Property(e => e.ModifiedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
-            entity.HasIndex(e => new { e.UserId, e.TradeUnitKey }).IsUnique().HasDatabaseName("UQ_BidSheetPreferences_User_TradeUnitKey");
-            entity.HasIndex(e => e.UserId).HasDatabaseName("IX_BidSheetPreferences_UserId");
+            entity.HasNoKey();
+            entity.ToView("vw_BarchartLocation", schema: "dbo");
         });
-
         modelBuilder.Entity<HarvestWindow>(entity =>
         {
             entity.ToTable("HarvestWindows", schema: "dbo");
@@ -1072,6 +1098,81 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.RecapGroupId).IsRequired();
             entity.Property(e => e.Email).HasMaxLength(256).IsRequired();
             entity.HasIndex(e => e.RecapGroupId).HasDatabaseName("IX_DailyRecapGroupCcEmails_RecapGroupId");
+        });
+
+        modelBuilder.Entity<BidSheet>(entity =>
+        {
+            entity.ToTable("BidSheets", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.OwnerUserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.CropOrder).HasColumnType("nvarchar(max)").IsRequired(false);
+            entity.Property(e => e.HiddenCrops).HasColumnType("nvarchar(max)").IsRequired(false);
+            entity.Property(e => e.SelectedMonths).HasColumnType("nvarchar(max)").IsRequired(false);
+            entity.Property(e => e.SelectedYears).HasColumnType("nvarchar(max)").IsRequired(false);
+            entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.ModifiedAt).IsRequired(false);
+            entity.HasIndex(e => e.OwnerUserId).HasDatabaseName("IX_BidSheets_OwnerUserId");
+            // One name per owner. Neither precedent constrains this and both suffer for it -- two
+            // groups called "West Team" are indistinguishable in a picker that resolves by id.
+            entity.HasIndex(e => new { e.OwnerUserId, e.Name })
+                  .HasDatabaseName("UQ_BidSheets_Owner_Name")
+                  .IsUnique();
+            entity.HasMany(e => e.Shares).WithOne(sh => sh.BidSheet).HasForeignKey(sh => sh.BidSheetId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasMany(e => e.Locations).WithOne(l => l.BidSheet).HasForeignKey(l => l.BidSheetId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BidSheetShare>(entity =>
+        {
+            entity.ToTable("BidSheetShares", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.BidSheetId).IsRequired();
+            // 20 matches DailyRecapGroupMembers.MemberType -- the same discriminator values live in both,
+            // and a column that could hold a longer string than the other invites them to diverge.
+            entity.Property(e => e.MemberType).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.MemberId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.MemberName).HasMaxLength(256).IsRequired(false);
+            entity.Property(e => e.SharedBy).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.SharedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            // Covers the visibility predicate's lookups, which filter on type + id together.
+            entity.HasIndex(e => new { e.MemberType, e.MemberId }).HasDatabaseName("IX_BidSheetShares_Member");
+            // Sharing with the same member twice is a no-op, not a second row. TYPE is part of the key
+            // now: desk "2190" and a person who happens to be called "2190" are different members, and
+            // without the type in the index the second would collide with the first.
+            entity.HasIndex(e => new { e.BidSheetId, e.MemberType, e.MemberId })
+                  .HasDatabaseName("UQ_BidSheetShares_Sheet_Member")
+                  .IsUnique();
+        });
+
+        modelBuilder.Entity<BidSheetLocationLink>(entity =>
+        {
+            entity.ToTable("BidSheetLocationLinks", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.BidSheetId).IsRequired();
+            entity.Property(e => e.BidSheetLocationId).IsRequired();
+            entity.Property(e => e.SortOrder).HasDefaultValue(0).IsRequired();
+            // Same 200 as BidSheetLocations.Name -- it stands in for that value, so it must not be
+            // able to hold a name the canonical column could not.
+            entity.Property(e => e.DisplayName).HasMaxLength(200).IsRequired(false);
+            entity.Property(e => e.AddedBy).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.AddedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            // A location appears on a sheet once. The old JSON-array order had no such guard, so a
+            // double-add put the same row on screen twice.
+            entity.HasIndex(e => new { e.BidSheetId, e.BidSheetLocationId })
+                  .HasDatabaseName("UQ_BidSheetLocationLinks_Sheet_Location")
+                  .IsUnique();
+            // RESTRICT, not cascade. The location delete path clears these links explicitly, after the
+            // user has been shown how many sheets hold the elevator. Restricting means any OTHER path
+            // that tries to remove a location fails loudly instead of quietly emptying someone's sheet.
+            entity.HasOne(e => e.Location)
+                  .WithMany()
+                  .HasForeignKey(e => e.BidSheetLocationId)
+                  .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<UsageDashboardExcludedUser>(entity =>

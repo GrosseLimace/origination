@@ -33,6 +33,17 @@ public static class BidSheetMappings
         CropYear = b.CropYear,
         Month = b.Month,
         Bid = b.Bid,
+        Source = b.Source,
+        BarchartSymbol = b.BarchartSymbol,
+        QuoteAsOf = b.QuoteAsOf,
+        BasisBid = b.BasisBid,
+        BasisSymbol = b.BasisSymbol,
+        UnderlyingFuture = b.UnderlyingFuture,
+        BasisQuoteAsOf = b.BasisQuoteAsOf,
+        CoveredByCropYear = b.CoveredByCropYear,
+        CoveredByMonth = b.CoveredByMonth,
+        CashChangedAt = b.CashChangedAt,
+        BasisChangedAt = b.BasisChangedAt,
         CreatedBy = b.CreatedBy,
         CreatedAt = b.CreatedAt,
         ModifiedBy = b.ModifiedBy,
@@ -49,6 +60,7 @@ public static class BidSheetMappings
         Latitude = l.Latitude,
         Longitude = l.Longitude,
         ElevatorCode = l.ElevatorCode,
+        BarchartLocationKey = l.BarchartLocationKey,
         TradeUnitCode = l.TradeUnitCode,
         GroupName = l.GroupName,
         IsScoularFacility = l.IsScoularFacility,
@@ -59,15 +71,6 @@ public static class BidSheetMappings
         Bids = l.Bids.Select(b => b.ToResponse()).ToList(),
     };
 
-    public static BidSheetLocationOrderResponse ToResponse(this BidSheetLocationOrder o) => new()
-    {
-        Id = o.Id,
-        UserId = o.UserId,
-        TradeUnitKey = o.TradeUnitKey,
-        LocationOrder = o.LocationOrder,
-        ModifiedAt = o.ModifiedAt,
-    };
-
     public static BidSheetPreferenceResponse ToResponse(this BidSheetPreference p) => new()
     {
         Id = p.Id,
@@ -76,10 +79,66 @@ public static class BidSheetMappings
         CropCode = p.CropCode,
         Month = p.Month,
         CropYear = p.CropYear,
+        SelectedColumns = p.SelectedColumns,
         CropOrder = p.CropOrder,
         HiddenCrops = p.HiddenCrops,
         SelectedMonths = p.SelectedMonths,
+        SelectedYears = p.SelectedYears,
         PrintLayout = p.PrintLayout,
+        PriceMode = p.PriceMode,
+        SelectedBidSheetIds = p.SelectedBidSheetIds,
         ModifiedAt = p.ModifiedAt,
+    };
+
+    /// <summary>
+    /// A sheet with its shares and, in row order, the locations behind its links.
+    ///
+    /// <paramref name="callerUserId"/> decides <c>IsOwner</c>. It is passed rather than read from the
+    /// entity so the mapping stays a pure function of what it is given, matching every other mapping
+    /// here; the service is the only place that knows who is asking.
+    /// </summary>
+    public static BidSheetResponse ToResponse(this BidSheet s, string callerUserId) => new()
+    {
+        Id = s.Id,
+        Name = s.Name,
+        OwnerUserId = s.OwnerUserId,
+        IsOwner = string.Equals(s.OwnerUserId, callerUserId, StringComparison.OrdinalIgnoreCase),
+        CropOrder = s.CropOrder,
+        HiddenCrops = s.HiddenCrops,
+        SelectedMonths = s.SelectedMonths,
+        SelectedYears = s.SelectedYears,
+        CreatedBy = s.CreatedBy,
+        CreatedAt = s.CreatedAt,
+        ModifiedBy = s.ModifiedBy,
+        ModifiedAt = s.ModifiedAt,
+        Shares = s.Shares
+            .OrderBy(sh => sh.MemberName ?? sh.MemberId, StringComparer.OrdinalIgnoreCase)
+            .Select(sh => sh.ToResponse())
+            .ToList(),
+        // Order again here rather than trusting the include: a sheet built in memory (a fresh create,
+        // a test) has no ordering applied, and a row order that only holds when it came from SQL is
+        // the kind of thing that works until it quietly does not.
+        // The link's DisplayName wins over the shared row's canonical Name. Locations are company-wide,
+        // so a rename has to stay private to the sheet that made it, or two originators holding the
+        // same elevator overwrite each other's label. Null means "never renamed here", which keeps
+        // following the canonical name as the feed corrects it. Everything else -- id, coords, bids --
+        // is still the shared row's.
+        Locations = s.Locations
+            .OrderBy(l => l.SortOrder)
+            .Where(l => l.Location != null)
+            .Select(l => l.Location!.ToResponse() with { Name = l.DisplayName ?? l.Location!.Name })
+            .ToList(),
+    };
+
+    public static BidSheetShareResponse ToResponse(this BidSheetShare sh) => new()
+    {
+        MemberType = sh.MemberType,
+        MemberId = sh.MemberId,
+        // Only a person share fills UserId. A desk or group id in that field would read to any older
+        // caller as somebody's user id, which is worse than an empty string.
+        UserId = sh.MemberType == BidSheetShareTypes.Person ? sh.MemberId : string.Empty,
+        Name = sh.MemberName,
+        SharedBy = sh.SharedBy,
+        SharedAt = sh.SharedAt,
     };
 }

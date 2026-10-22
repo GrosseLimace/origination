@@ -1,4 +1,4 @@
-import { Component, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, output, signal } from '@angular/core';
 import { CdkDrag, CdkDragHandle } from '@angular/cdk/drag-drop';
 
 import { CalculatorType } from '../models/calculator.model';
@@ -15,6 +15,9 @@ import { CancelRollCalculatorComponent } from './cancel-roll-calculator.componen
   standalone: true,
   imports: [CdkDrag, CdkDragHandle, ProfitabilityCalculatorComponent, CheckCalculatorComponent, CancelRollCalculatorComponent],
   templateUrl: './calculator-widget.component.html',
+  // The template reads only inputs and signals, written from click handlers and the calculators'
+  // columnCount output.
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CalculatorWidgetComponent {
   readonly type = input.required<CalculatorType>();

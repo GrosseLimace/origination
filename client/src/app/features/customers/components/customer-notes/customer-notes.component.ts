@@ -99,6 +99,10 @@ export class CustomerNotesComponent {
    *  above matches that only hit a SECONDARY field (TU description, person email). So "@1084"
    *  surfaces that trade unit, and "@Corn Belt" surfaces the group above trade units whose
    *  location name merely contains "corn" (e.g. "ABI WET BREW CORN"). */
+  /** The API answers 200 even when one of the picker's sources was unreachable; this is the only
+   *  way the user learns the list is incomplete rather than genuinely empty. */
+  readonly mentionCatalogDegraded = computed(() => this.mentionCatalog().degraded === true);
+
   mentionOptions = computed<MentionOption[]>(() => {
     if (!this.mentionDropdownOpen()) return [];
     const q = this.mentionQuery().trim().toLowerCase();
@@ -523,8 +527,9 @@ export class CustomerNotesComponent {
       this.mentionDropdownOpen.set(true);
       // The query now tolerates spaces, so it would otherwise keep matching after a completed
       // mention (e.g. "@Corn Belt and then..."). Close once nothing matches instead of leaving an
-      // empty dropdown open.
-      if (this.mentionOptions().length === 0) this.closeMentionDropdown();
+      // empty dropdown open. A degraded catalog is the exception: the dropdown then carries the
+      // "couldn't load everyone" notice, which matters most exactly when nothing matches.
+      if (this.mentionOptions().length === 0 && !this.mentionCatalogDegraded()) this.closeMentionDropdown();
     } else {
       this.closeMentionDropdown();
     }
@@ -534,6 +539,14 @@ export class CustomerNotesComponent {
   onNoteKeydown(event: KeyboardEvent): void {
     if (!this.mentionDropdownOpen()) return;
     const opts = this.mentionOptions();
+    // Escape always dismisses an open dropdown, including one showing only the degraded-catalog
+    // notice with nothing to pick. preventDefault also stops an enclosing dialog treating the same
+    // keypress as "close the dialog".
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.closeMentionDropdown();
+      return;
+    }
     if (opts.length === 0) return;
     if (event.key === 'ArrowDown') {
       event.preventDefault();
@@ -544,9 +557,6 @@ export class CustomerNotesComponent {
     } else if (event.key === 'Enter') {
       event.preventDefault();
       this.selectMention(opts[this.mentionActiveIndex()]);
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      this.closeMentionDropdown();
     }
   }
 
