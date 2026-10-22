@@ -4,7 +4,8 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
 
 /// <summary>
 /// Represents grain stored at a facility on behalf of a customer.
-/// Source: ctrm.vw_GNTA39D1 joined with originations.vw_CurrentCustomers for numeric CustomerId.
+/// Source: ctrm.vw_GNTA39D1 (ODS) for the holdings; the numeric CustomerId is resolved in C# from the app's own
+/// dbo.Customer by producer code (StoredGrainRepository), not from any ODS customer view.
 /// </summary>
 public class StoredGrain
 {
