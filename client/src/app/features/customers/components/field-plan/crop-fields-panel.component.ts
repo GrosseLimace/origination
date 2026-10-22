@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { Component, ElementRef, computed, inject, input, output, signal, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { FieldPlanMockService } from '@core/services/field-plan-mock.service';
@@ -59,7 +59,7 @@ export class CropFieldsPanelComponent {
   toggle(): void {
     this.expanded.update(e => !e);
     this.expandedChange.emit(this.expanded());
-    if (this.expanded()) this.openAdd();
+    this.adding.set(false);
   }
 
   fieldName(s: FieldSeason): string {
@@ -144,6 +144,21 @@ export class CropFieldsPanelComponent {
     return !!this.newName.trim() && !this._match;
   }
 
+  /** The add-field inputs are open. Closed, it's just an "Add field" button, to keep the row quiet. */
+  readonly adding = signal(false);
+  private readonly nameInput = viewChild<ElementRef<HTMLInputElement>>('nameInput');
+
+  /** Opens the add-field inputs with fresh defaults and puts the cursor in Field name. */
+  startAdd(): void {
+    this.openAdd();
+    this.adding.set(true);
+    setTimeout(() => this.nameInput()?.nativeElement.focus());
+  }
+
+  cancelAdd(): void {
+    this.adding.set(false);
+  }
+
   openAdd(): void {
     const st = this.customer().stateProvince;
     this.newState = st && this.plan.countiesByState[st] ? st : 'KS';
@@ -175,7 +190,7 @@ export class CropFieldsPanelComponent {
     });
     const pi = this.intention();
     this.plan.addSeason(field.fieldKey, pi.id, pi.plantingYear, this.cropLabel(), this.newAcres!);
-    this.openAdd(); // ready for the next field
+    this.adding.set(false); // back to the button: one field at a time keeps the row quiet
   }
 
   countiesFor(state: string): string[] {

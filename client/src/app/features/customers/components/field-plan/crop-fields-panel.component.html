@@ -111,12 +111,18 @@
       </div>
     }
 
-    <!-- Add a field: a name (the producer's existing fields are suggested); FSA numbers and location for a new one -->
-    <div class="rounded-md border border-gray-100 dark:border-gray-800 px-3 py-2">
-      <div class="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Add a field</div>
+    <!-- Add a field: just a button until clicked; then the inputs slide in. A name (the producer's existing
+         fields are suggested); FSA numbers and location for a new one. -->
+    @if (!adding()) {
+      <button type="button" (click)="startAdd()"
+              class="inline-flex items-center gap-1 rounded-md border border-dashed border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200 bg-transparent hover:border-scoular-green-accessible hover:text-scoular-green-accessible dark:hover:text-scoular-green">
+        + Add field
+      </button>
+    } @else {
+    <div class="ci-slide-in rounded-md border border-gray-100 dark:border-gray-800 px-3 py-2">
       <div class="flex flex-wrap items-end gap-2">
         <label class="block text-xs text-gray-600 dark:text-gray-300">Field name
-          <input class="ci-input ci-compact !w-48" [attr.list]="'fields-' + intention().id" placeholder="Name or pick one"
+          <input #nameInput class="ci-input ci-compact !w-48" [attr.list]="'fields-' + intention().id" placeholder="Name or pick one" (keydown.escape)="cancelAdd()"
                  [(ngModel)]="newName" (ngModelChange)="onNameChange()" />
           <datalist [id]="'fields-' + intention().id">
             @for (f of pickable(); track f.fieldKey) { <option [value]="f.name">{{ f.county }}, {{ f.state }}</option> }
@@ -145,11 +151,13 @@
         </label>
         <button type="button" class="h-8 rounded-md px-3 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-50 border-0"
                 [disabled]="!canAdd" (click)="add()">Add field</button>
+        <button type="button" class="h-8 rounded-md px-3 text-sm text-gray-600 dark:text-gray-300 bg-transparent border-0 hover:underline" (click)="cancelAdd()">Cancel</button>
       </div>
       @if (isNewField) {
         <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">FSA numbers can be added later, but a field needs them before the producer gets an enrollment ID.</div>
       }
     </div>
+    }
   </div>
 }
 
