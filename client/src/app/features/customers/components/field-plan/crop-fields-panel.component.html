@@ -3,7 +3,11 @@
         class="group flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-3 py-1 text-left text-sm bg-transparent border border-transparent hover:border-scoular-green-accessible/40 hover:bg-scoular-green-accessible/5 dark:hover:bg-scoular-green/10 transition-colors">
   <span class="text-gray-400 w-3">{{ expanded() ? '▾' : '▸' }}</span>
   <span class="font-medium text-gray-700 dark:text-gray-200">Fields</span>
-  @if (seasons().length === 0) {
+  @if (loadFailed()) {
+    <span class="text-amber-700 dark:text-amber-400">couldn't load</span>
+  } @else if (!loaded()) {
+    <span class="text-gray-500 dark:text-gray-400">loading…</span>
+  } @else if (seasons().length === 0) {
     <span class="text-gray-500 dark:text-gray-400">none yet</span>
   } @else {
     <span class="text-gray-700 dark:text-gray-200">{{ inFields() | number }} of {{ intention().acres | number }} ac</span>
@@ -151,7 +155,7 @@
           <input type="number" min="0" class="ci-input ci-compact !w-24 text-right" [(ngModel)]="newAcres" (keydown.enter)="add()" />
         </label>
         <button type="button" class="h-8 rounded-md px-3 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-50 border-0"
-                [disabled]="!canAdd" (click)="add()">Add field</button>
+                [disabled]="!canAdd || saving()" (click)="add()">{{ saving() ? 'Adding…' : 'Add field' }}</button>
         <button type="button" class="h-8 rounded-md px-3 text-sm text-gray-600 dark:text-gray-300 bg-transparent border-0 hover:underline" (click)="cancelAdd()">Cancel</button>
       </div>
       @if (isNewField) {

@@ -5,7 +5,7 @@ import { CoverCrop, FdCicData, FieldProgramRecord, FieldSeason, ManureApplicatio
 import { FdCicApiService } from '@core/services/fd-cic-api.service';
 import { CiPreviewPanelComponent } from '../../ci-preview-panel.component';
 import { ProgramIntake } from '../program-def';
-import { ProgramRecordMockService } from '../program-record-mock.service';
+import { FieldPlanStore } from '../../store/field-plan.store';
 import { COVER_LABELS, MANURE_OPTIONS, TILLAGE_LABELS, fdCicScoreState, missingInputs } from './fd-cic.data';
 
 const cloneData = (d: FdCicData): FdCicData => ({ ...d, manure: d.manure.map(m => ({ ...m })) });
@@ -24,7 +24,7 @@ const cloneData = (d: FdCicData): FdCicData => ({ ...d, manure: d.manure.map(m =
   styleUrl: '../../field-plan.css',
 })
 export class FdCicIntakeComponent implements ProgramIntake {
-  private readonly records = inject(ProgramRecordMockService);
+  private readonly store = inject(FieldPlanStore);
   private readonly api = inject(FdCicApiService);
 
   readonly record = input.required<FieldProgramRecord>();
@@ -70,7 +70,7 @@ export class FdCicIntakeComponent implements ProgramIntake {
 
   save(): void {
     if (!this.draft || this.disabled()) return;
-    this.records.update({ ...this.record(), data: cloneData(this.draft) });
+    this.store.updateRecord(this.record().id, cloneData(this.draft));
   }
 
   get niPercent(): number {

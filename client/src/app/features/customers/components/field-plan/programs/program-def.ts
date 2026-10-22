@@ -54,7 +54,7 @@ export interface SustainabilityProgramDef<TData = any> {
    */
   chipText?(data: TData): string | null;
 
-  /** The program's input form. Rendered with NgComponentOutlet; writes through ProgramRecordMockService. */
+  /** The program's input form. Rendered with NgComponentOutlet; writes through FieldPlanStore.updateRecord. */
   intake: Type<ProgramIntake>;
 
   /**

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, input, output, inject, DestroyRef, signal } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, input, output, inject, DestroyRef, effect, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -16,6 +16,7 @@ import { environment } from '@env/environment';
 import { CropFieldsPanelComponent } from '../field-plan/crop-fields-panel.component';
 import { ProgramEnrollmentCardComponent } from '../field-plan/programs/program-enrollment-card.component';
 import { ProgramRegistry } from '../field-plan/programs/program-registry';
+import { FieldPlanStore } from '../field-plan/store/field-plan.store';
 
 
 type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'tradeUnit';
@@ -297,8 +298,13 @@ export class PlantingIntentionsTableComponent {
   }
 
   // ── Fields under each crop row + sustainability programs (prototype, behind fieldPlanningEnabled) ──
-  // The row's acres stay the total; fields only break it down (FieldPlanMockService, in memory).
+  // The row's acres stay the total; fields only break it down (FieldPlanStore).
   readonly fieldPlanningEnabled = environment.fieldPlanningEnabled;
+  private readonly fieldPlan = inject(FieldPlanStore);
+  /** Brings the producer's fields and program data in when the producer is shown (once per producer). */
+  private readonly _loadFieldPlan = effect(() => {
+    if (this.fieldPlanningEnabled) this.fieldPlan.ensureLoaded(this.customer().id);
+  });
   /** One enrollment card per program; each shows only once the producer has a field in it. */
   readonly programs = inject(ProgramRegistry).all.filter(p => !!p.enrollment);
 

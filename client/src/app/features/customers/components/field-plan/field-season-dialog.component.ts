@@ -3,12 +3,10 @@ import { CommonModule, NgComponentOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { DialogComponent, DialogContentComponent, DialogDescriptionComponent, DialogFooterComponent, DialogHeaderComponent, DialogTitleComponent } from '@shared/components/dialog/dialog.component';
-import { FieldPlanMockService } from '@core/services/field-plan-mock.service';
+import { FieldPlanStore } from './store/field-plan.store';
 import { FdCicApiService } from '@core/services/fd-cic-api.service';
 import { FieldSeason, ProducerField } from '@models';
 import { ProgramRegistry } from './programs/program-registry';
-import { ProgramRecordMockService } from './programs/program-record-mock.service';
-import { ProgramEnrollmentMockService } from './programs/program-enrollment-mock.service';
 import { fsaKey } from './programs/program-enrollment';
 
 /**
@@ -28,10 +26,8 @@ import { fsaKey } from './programs/program-enrollment';
   styleUrl: './field-plan.css',
 })
 export class FieldSeasonDialogComponent {
-  readonly plan = inject(FieldPlanMockService);
-  private readonly records = inject(ProgramRecordMockService);
+  readonly store = inject(FieldPlanStore);
   private readonly registry = inject(ProgramRegistry);
-  private readonly enrollments = inject(ProgramEnrollmentMockService);
   private readonly fdCic = inject(FdCicApiService);
 
   readonly seasonId = input.required<string>();
@@ -39,12 +35,12 @@ export class FieldSeasonDialogComponent {
   readonly startProgram = input<string | null>(null);
   readonly close = output<void>();
 
-  readonly season = computed(() => this.plan.season(this.seasonId()));
-  readonly field = computed(() => this.plan.field(this.season()?.fieldKey ?? ''));
+  readonly season = computed(() => this.store.season(this.seasonId()));
+  readonly field = computed(() => this.store.field(this.season()?.fieldKey ?? ''));
 
   // ── Programs on this field ─────────────────────────────────────────────────
   readonly programRecords = computed(() =>
-    this.records.forSeason(this.seasonId()).map(record => ({ record, def: this.registry.get(record.programKey)! })).filter(p => p.def));
+    this.store.forSeason(this.seasonId()).map(record => ({ record, def: this.registry.get(record.programKey)! })).filter(p => p.def));
   /** Programs that apply to this crop and aren't on the field yet. */
   readonly addable = computed(() => {
     const s = this.season();
@@ -58,13 +54,13 @@ export class FieldSeasonDialogComponent {
   });
   /** The producer's enrollment for the active program: incoming tickets are assigned its ID. */
   readonly enrollment = computed(() => {
-    this.enrollments.enrollments();
+    this.store.enrollments();
     const a = this.active();
-    return a ? this.records.enrollmentFor(a.record) : undefined;
+    return a ? this.store.enrollmentFor(a.record) : undefined;
   });
   readonly lockedBy = computed(() => {
     const a = this.active();
-    return a ? this.enrollments.lockedBy(a.record.id) : undefined;
+    return a ? this.store.lockedBy(a.record.id) : undefined;
   });
   /** All three FSA numbers are in: the field can join its program enrollments. */
   readonly hasFsa = computed(() => {
@@ -72,7 +68,7 @@ export class FieldSeasonDialogComponent {
     return !!f && !!fsaKey(f);
   });
   /** A finalized program froze this season's acres and location, so they can't change under it. */
-  readonly seasonLocked = computed(() => this.records.hasFinal(this.seasonId()));
+  readonly seasonLocked = computed(() => this.store.hasFinal(this.seasonId()));
   readonly intakeInputs = computed(() => {
     const a = this.active();
     const s = this.season();
@@ -93,21 +89,21 @@ export class FieldSeasonDialogComponent {
     });
     effect(() => {
       const key = this.startProgram();
-      if (key && this.season() && !this.records.find(this.seasonId(), key)) this.addProgram(key);
+      if (key && this.season() && !this.store.find(this.seasonId(), key)) this.addProgram(key);
       else if (key) this.activeKey.set(key);
     });
   }
 
   saveSeason(): void {
     if (this.draftSeason && !this.seasonLocked()) {
-      this.plan.updateSeason(this.draftSeason);
+      this.store.updateSeason(this.draftSeason);
     }
   }
 
   saveField(): void {
     if (!this.draftField || this.seasonLocked()) return;
-    this.plan.updateField(this.draftField);
-    this.records.ensureEnrollments(this.draftField.fieldKey); // FSA numbers in: the enrollment ID can be issued
+    this.store.updateField(this.draftField);
+    void this.store.ensureEnrollments(this.draftField.fieldKey); // FSA numbers in: the enrollment ID can be issued
   }
 
   /** States and counties as USDA's FD-CIC county table names them, so a field's location can be scored. */
@@ -119,14 +115,14 @@ export class FieldSeasonDialogComponent {
     return this.fdCic.counties(state);
   }
 
-  addProgram(key: string): void {
-    if (this.records.add(this.seasonId(), key)) this.activeKey.set(key);
+  async addProgram(key: string): Promise<void> {
+    if (await this.store.addRecord(this.seasonId(), key)) this.activeKey.set(key);
   }
 
-  removeProgram(): void {
+  async removeProgram(): Promise<void> {
     const a = this.active();
     if (!a || a.record.status === 'Final') return;
-    this.records.remove(a.record.id);
+    await this.store.removeRecord(a.record.id);
     this.activeKey.set(null);
   }
 
@@ -134,11 +130,14 @@ export class FieldSeasonDialogComponent {
   showReopen = false;
   reopenReason = '';
 
-  confirmReopen(): void {
+  async confirmReopen(): Promise<void> {
     const a = this.active();
     if (!a || !this.reopenReason.trim()) return;
-    this.records.reopen(a.record.id);
+    // Closed before the save: this view sits under an OnPush table, so only signals redraw after an await.
+    // If the backend refuses, the store says why.
+    const reason = this.reopenReason;
     this.showReopen = false;
     this.reopenReason = '';
+    await this.store.reopen(a.record.id, reason);
   }
 }

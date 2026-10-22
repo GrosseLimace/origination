@@ -84,6 +84,8 @@ export interface FieldProgramRecord<TData = unknown> {
   /** Set when the data was prefilled from the field's previous season. */
   copiedFromYear?: number;
   frozen?: FrozenProgramResult;
+  /** Each time a finalized record was reopened for correction, with the reason given. */
+  reopened?: { reason: string; at: string; frozen: FrozenProgramResult }[];
 }
 
 /** Open: ID issued, producer hasn't signed. Attested: producer signed. Withdrawn: ID retired. */

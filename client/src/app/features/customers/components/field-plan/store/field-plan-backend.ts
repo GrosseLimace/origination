@@ -1,0 +1,75 @@
+import { InjectionToken, inject } from '@angular/core';
+import { EnrollableRecord, FieldProgramRecord, FieldSeason, ProducerField, ProgramEnrollment, ProgramRecordStatus } from '@models';
+import { InMemoryFieldPlanBackend } from './in-memory-field-plan-backend';
+
+/** Everything one producer has in the field plan, every year: what the store holds per producer. */
+export interface FieldPlanSnapshot {
+  fields: ProducerField[];
+  seasons: FieldSeason[];
+  records: FieldProgramRecord[];
+  enrollments: ProgramEnrollment[];
+}
+
+/** A finalized record reopened, and the enrollment whose harvest reopened with it. */
+export interface ReopenResult {
+  record: FieldProgramRecord;
+  enrollment?: ProgramEnrollment;
+}
+
+/**
+ * Where the field plan is kept: the shape of the field-plan API. Each method is one request, and the
+ * comment names the endpoint it maps to. Today `InMemoryFieldPlanBackend` plays the server; once the
+ * database is approved an API-backed implementation replaces it as the one provider of
+ * FIELD_PLAN_BACKEND, and nothing else changes.
+ *
+ * Rules that must hold across users belong to the backend, not the store: issuing enrollment IDs from
+ * one sequence, refusing duplicate claims at attestation, refusing to reopen a field an attested
+ * enrollment holds, and finalizing (the server rescores with its own FD-CIC calculator, so the
+ * client never supplies the score of record). Methods reject (throw) when a rule refuses the change.
+ */
+export interface FieldPlanBackend {
+  /** GET api/field-plan/customer/{customerId} */
+  load(customerId: number): Promise<FieldPlanSnapshot>;
+
+  /** POST api/field-plan/fields */
+  createField(field: Omit<ProducerField, 'fieldKey'>): Promise<ProducerField>;
+  /** PUT api/field-plan/fields/{fieldKey} */
+  updateField(field: ProducerField): Promise<ProducerField>;
+
+  /** POST api/field-plan/seasons */
+  addSeason(season: Omit<FieldSeason, 'id'>): Promise<FieldSeason>;
+  /** PUT api/field-plan/seasons/{id} */
+  updateSeason(season: FieldSeason): Promise<FieldSeason>;
+  /** DELETE api/field-plan/seasons/{id}: takes its unfinalized program records with it. */
+  removeSeason(seasonId: string): Promise<void>;
+
+  /** POST api/field-plan/records */
+  addRecord(record: Omit<FieldProgramRecord, 'id'>): Promise<FieldProgramRecord>;
+  /** PUT api/field-plan/records/{id}: refused once the record is Final. */
+  updateRecord(id: string, data: unknown, status: ProgramRecordStatus): Promise<FieldProgramRecord>;
+  /** DELETE api/field-plan/records/{id}: a Final record is kept. */
+  removeRecord(id: string): Promise<void>;
+  /** POST api/field-plan/records/{id}/finalize: freezes inputs, outputs and the calculator version. */
+  finalize(id: string, by: string): Promise<FieldProgramRecord>;
+  /** POST api/field-plan/records/{id}/reopen: refused while an attested enrollment holds the record. */
+  reopen(id: string, reason: string): Promise<ReopenResult>;
+
+  /**
+   * POST api/field-plan/enrollments: the producer's live enrollment in the program for the year, or a
+   * new one with the next ID in the program's sequence. Undefined for a program without enrollment.
+   */
+  ensureEnrollment(programKey: string, customerId: number, year: number): Promise<ProgramEnrollment | undefined>;
+  /** PUT api/field-plan/enrollments/{key}/attestation: only while Open. */
+  updateAttestation(enrollment: ProgramEnrollment): Promise<ProgramEnrollment>;
+  /** POST api/field-plan/enrollments/{key}/attest: refused while anything is outstanding. */
+  attest(key: string, listed: readonly EnrollableRecord[]): Promise<ProgramEnrollment>;
+  /** PUT api/field-plan/enrollments/{key}/harvest-complete */
+  setHarvestComplete(key: string, complete: boolean): Promise<ProgramEnrollment>;
+  /** POST api/field-plan/enrollments/{key}/withdraw: the ID is retired, never reissued. */
+  withdraw(key: string, reason: string): Promise<ProgramEnrollment>;
+}
+
+export const FIELD_PLAN_BACKEND = new InjectionToken<FieldPlanBackend>('FIELD_PLAN_BACKEND', {
+  providedIn: 'root',
+  factory: () => inject(InMemoryFieldPlanBackend),
+});

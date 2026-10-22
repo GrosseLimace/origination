@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { FieldProgramRecord, FieldSeason, ProducerField } from '@models';
 import { ProgramIntake } from '../program-def';
-import { ProgramRecordMockService } from '../program-record-mock.service';
+import { FieldPlanStore } from '../../store/field-plan.store';
 import type { GrainCraftData } from './graincraft.program';
 
 /** Common hard red winter varieties, offered as suggestions; any variety can be typed. */
@@ -30,7 +30,7 @@ const SUGGESTED_VARIETIES = ['SY Monument', 'Zenda', 'KS Providence', 'Bob Dole'
   `,
 })
 export class GrainCraftIntakeComponent implements ProgramIntake {
-  private readonly records = inject(ProgramRecordMockService);
+  private readonly store = inject(FieldPlanStore);
 
   readonly record = input.required<FieldProgramRecord>();
   readonly season = input.required<FieldSeason>();
@@ -54,6 +54,6 @@ export class GrainCraftIntakeComponent implements ProgramIntake {
 
   save(): void {
     if (this.disabled()) return;
-    this.records.update({ ...this.record(), data: { variety: this.variety } satisfies GrainCraftData });
+    this.store.updateRecord(this.record().id, { variety: this.variety } satisfies GrainCraftData);
   }
 }

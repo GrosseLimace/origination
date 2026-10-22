@@ -1,11 +1,10 @@
 import { Component, ElementRef, computed, inject, input, output, signal, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { FieldPlanMockService } from '@core/services/field-plan-mock.service';
+import { FieldPlanStore } from './store/field-plan.store';
 import { FdCicApiService } from '@core/services/fd-cic-api.service';
 import { Customer, FieldSeason, PlantingIntention } from '@models';
 import { ProgramRegistry } from './programs/program-registry';
-import { ProgramRecordMockService } from './programs/program-record-mock.service';
 import { fsaKey } from './programs/program-enrollment';
 import { FieldSeasonDialogComponent } from './field-season-dialog.component';
 
@@ -27,8 +26,7 @@ import { FieldSeasonDialogComponent } from './field-season-dialog.component';
   styleUrl: './field-plan.css',
 })
 export class CropFieldsPanelComponent {
-  readonly plan = inject(FieldPlanMockService);
-  private readonly records = inject(ProgramRecordMockService);
+  readonly store = inject(FieldPlanStore);
   private readonly registry = inject(ProgramRegistry);
   private readonly fdCic = inject(FdCicApiService);
 
@@ -39,7 +37,10 @@ export class CropFieldsPanelComponent {
   readonly updateTotal = output<number>();
 
   readonly expanded = signal(false);
-  readonly seasons = computed(() => this.plan.seasonsForIntention(this.intention().id));
+  /** The producer's fields are in from the backend (the planting table asks for them). */
+  readonly loaded = computed(() => this.store.isLoaded(this.customer().id));
+  readonly loadFailed = computed(() => this.store.loadFailed(this.customer().id));
+  readonly seasons = computed(() => this.store.seasonsForIntention(this.intention().id));
   readonly inFields = computed(() => this.seasons().reduce((sum, s) => sum + (s.acres ?? 0), 0));
   readonly remaining = computed(() => this.intention().acres - this.inFields());
 
@@ -48,8 +49,8 @@ export class CropFieldsPanelComponent {
   /** One roll-up line per program with records on this row (45Z: the row's CI). */
   readonly summaries = computed(() => this.programs().flatMap(program => {
     const items = this.seasons().flatMap(season => {
-      const record = this.records.find(season.id, program.key);
-      const field = this.plan.field(season.fieldKey);
+      const record = this.store.find(season.id, program.key);
+      const field = this.store.field(season.fieldKey);
       return record && field ? [{ season, record, field }] : [];
     });
     const summary = items.length && program.rowSummary ? program.rowSummary(items, this.intention()) : null;
@@ -66,25 +67,25 @@ export class CropFieldsPanelComponent {
   }
 
   fieldName(s: FieldSeason): string {
-    return this.plan.field(s.fieldKey)?.name ?? 'Field';
+    return this.store.field(s.fieldKey)?.name ?? 'Field';
   }
 
   /** "FSA 1234/5678/3", or a prompt while any of the three is missing. */
   fieldFsa(s: FieldSeason): string {
-    const f = this.plan.field(s.fieldKey);
+    const f = this.store.field(s.fieldKey);
     const fsa = f ? fsaKey(f) : '';
     return fsa ? `FSA ${fsa}` : 'FSA # needed';
   }
 
   fieldPlace(s: FieldSeason): string {
-    const f = this.plan.field(s.fieldKey);
+    const f = this.store.field(s.fieldKey);
     return f ? `${f.county}, ${f.state}` : '';
   }
 
   /** The field's programs as chips: short label, then its score (45Z) or its own short text (GrainCraft), and status. */
   chips(s: FieldSeason) {
-    const field = this.plan.field(s.fieldKey);
-    return this.records.forSeason(s.id).flatMap(record => {
+    const field = this.store.field(s.fieldKey);
+    return this.store.forSeason(s.id).flatMap(record => {
       const program = this.registry.get(record.programKey);
       if (!program || !field) return [];
       const score = record.frozen?.score ?? program.preview(record.data, s, field);
@@ -95,7 +96,7 @@ export class CropFieldsPanelComponent {
 
   /** Programs that apply to this crop and aren't on the field yet: the "Add program" menu. */
   addable(s: FieldSeason) {
-    return this.programs().filter(p => !this.records.find(s.id, p.key));
+    return this.programs().filter(p => !this.store.find(s.id, p.key));
   }
 
   /** The season whose "Add program" menu is open. */
@@ -108,18 +109,17 @@ export class CropFieldsPanelComponent {
 
   /** A field with a finalized program is locked: its acres are part of a frozen result. */
   locked(s: FieldSeason): boolean {
-    return this.records.hasFinal(s.id);
+    return this.store.hasFinal(s.id);
   }
 
   setAcres(s: FieldSeason, value: number): void {
     if (this.locked(s)) return;
-    this.plan.updateSeason({ ...s, acres: Number(value) || 0 });
+    this.store.updateSeason({ ...s, acres: Number(value) || 0 });
   }
 
   remove(s: FieldSeason): void {
     if (this.locked(s)) return;
-    this.records.removeForSeason(s.id);
-    this.plan.removeSeason(s.id);
+    void this.store.removeSeason(s.id);
   }
 
   // ── Add a field: a name and its FSA numbers, or pick one of the producer's fields ─
@@ -134,7 +134,7 @@ export class CropFieldsPanelComponent {
   /** The producer's fields not already on this row, for the name type-ahead. */
   readonly pickable = computed(() => {
     const used = new Set(this.seasons().map(s => s.fieldKey));
-    return this.plan.fieldsFor(this.customer().id).filter(f => !used.has(f.fieldKey));
+    return this.store.fieldsFor(this.customer().id).filter(f => !used.has(f.fieldKey));
   });
 
   private get _match() {
@@ -175,7 +175,7 @@ export class CropFieldsPanelComponent {
   onNameChange(): void {
     const match = this._match;
     if (!match) return;
-    const last = this.plan.lastSeason(match.fieldKey, this.intention().plantingYear)?.acres ?? null;
+    const last = this.store.lastSeason(match.fieldKey, this.intention().plantingYear)?.acres ?? null;
     const left = this.remaining() > 0 ? this.remaining() : null;
     this.newAcres = last && left ? Math.min(last, left) : (last ?? left);
   }
@@ -184,16 +184,25 @@ export class CropFieldsPanelComponent {
     return !!this.newName.trim() && (this.newAcres ?? 0) > 0 && (!this.isNewField || !!this.newCounty);
   }
 
-  add(): void {
-    if (!this.canAdd) return;
-    const field = this._match ?? this.plan.createField({
-      customerId: this.customer().id, name: this.newName.trim(),
-      fsaFarmNo: this.newFsaFarm.trim(), fsaTractNo: this.newFsaTract.trim(), fsaFieldNo: this.newFsaField.trim(),
-      state: this.newState, county: this.newCounty,
-    });
-    const pi = this.intention();
-    this.plan.addSeason(field.fieldKey, pi.id, pi.plantingYear, this.cropLabel(), this.newAcres!);
-    this.adding.set(false); // back to the button: one field at a time keeps the row quiet
+  /** An add is being saved: the form stays open and its button waits. */
+  readonly saving = signal(false);
+
+  async add(): Promise<void> {
+    if (!this.canAdd || this.saving()) return;
+    this.saving.set(true);
+    try {
+      const field = this._match ?? await this.store.createField({
+        customerId: this.customer().id, name: this.newName.trim(),
+        fsaFarmNo: this.newFsaFarm.trim(), fsaTractNo: this.newFsaTract.trim(), fsaFieldNo: this.newFsaField.trim(),
+        state: this.newState, county: this.newCounty,
+      });
+      if (!field) return; // the store has shown why; the form keeps what was typed
+      const pi = this.intention();
+      const season = await this.store.addSeason(field.fieldKey, pi.id, pi.plantingYear, this.cropLabel(), this.newAcres!);
+      if (season) this.adding.set(false); // back to the button: one field at a time keeps the row quiet
+    } finally {
+      this.saving.set(false);
+    }
   }
 
   /** States and counties as USDA's FD-CIC county table names them, so a field's location can be scored. */

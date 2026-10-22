@@ -76,6 +76,30 @@ build.
 finalized be rescored under it? Recommended: yes, with a visible "rescored under vX" note. Finalized fields
 keep their version either way.
 
+## Where field-plan data is kept (database pending approval)
+
+The client keeps fields, field seasons, program records and enrollments in `FieldPlanStore`
+(`client/src/app/features/customers/components/field-plan/store/`). It loads one producer at a time and
+saves through `FIELD_PLAN_BACKEND`. That interface is the shape of the field-plan API: each method names its
+endpoint.
+
+**Today:** `InMemoryFieldPlanBackend` stands in for the server, so nothing survives a reload.
+
+**Once the database is approved:**
+- An API-backed implementation replaces it as the single provider.
+- The API adds four tables in `ApplicationDbContext`: `ProducerField`, `ProducerFieldSeason`,
+  `FieldProgramRecord` and `ProgramEnrollment`.
+- They follow the producer-table conventions:
+  - an `int` identity key and a `long CustomerId` foreign key with `NoAction`;
+  - `CreatedBy/At` and `ModifiedBy/At`;
+  - soft delete through a query filter;
+  - the record's `Data` and frozen result stored as `nvarchar(max)` JSON, like `Note.Mentions`.
+- Access is the same as planting intentions: any signed-in user (accepted risks AR-01 to AR-03).
+- The server owns three rules:
+  - the enrollment ID sequence;
+  - refusing duplicate claims at attestation;
+  - finalizing, which rescores with `FdCicService` rather than trusting the client's number.
+
 ## Updating to a new USDA version
 
 You need Node and, for step 4, Windows with Excel. Treat the downloaded workbook as untrusted: don't enable

@@ -1,12 +1,10 @@
-import { Component, computed, inject, input } from '@angular/core';
+import { Component, computed, inject, input, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { FieldPlanMockService } from '@core/services/field-plan-mock.service';
+import { FieldPlanStore } from '../store/field-plan.store';
 import { TicketFeedMockService } from '@core/services/ticket-feed-mock.service';
 import { EnrollableRecord } from '@models';
 import { ProgramRegistry } from './program-registry';
-import { ProgramRecordMockService } from './program-record-mock.service';
-import { ProgramEnrollmentMockService } from './program-enrollment-mock.service';
 import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment';
 
 /**
@@ -139,7 +137,7 @@ import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment'
                           (click)="completeHarvest()">Mark harvest complete</button>
                 </div>
               }
-              @for (o of harvestLeftOpen; track o.fieldName) {
+              @for (o of harvestLeftOpen(); track o.fieldName) {
                 <div class="text-amber-800 dark:text-amber-300">{{ o.fieldName }} couldn't be finalized: still needs {{ o.missing.join(', ') }}.</div>
               }
             </div>
@@ -170,9 +168,7 @@ import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment'
   `,
 })
 export class ProgramEnrollmentCardComponent {
-  private readonly service = inject(ProgramEnrollmentMockService);
-  private readonly recordStore = inject(ProgramRecordMockService);
-  private readonly plan = inject(FieldPlanMockService);
+  private readonly store = inject(FieldPlanStore);
   private readonly registry = inject(ProgramRegistry);
   private readonly ticketFeed = inject(TicketFeedMockService);
 
@@ -192,10 +188,10 @@ export class ProgramEnrollmentCardComponent {
     const customerId = this.customerId();
     const year = this.year();
     const program = this.program();
-    return this.recordStore.records().flatMap(r => {
+    return this.store.records().flatMap(r => {
       if (!program || r.programKey !== program.key) return [];
-      const season = this.plan.season(r.seasonId);
-      const field = season && this.plan.field(season.fieldKey);
+      const season = this.store.season(r.seasonId);
+      const field = season && this.store.field(season.fieldKey);
       if (!season || !field || field.customerId !== customerId || season.year !== year) return [];
       return [{
         recordId: r.id, seasonId: season.id, fieldKey: field.fieldKey, fieldName: field.name, fsa: fsaKey(field),
@@ -207,16 +203,10 @@ export class ProgramEnrollmentCardComponent {
     });
   });
 
-  readonly enrollment = computed(() => {
-    this.service.enrollments();
-    return this.service.current(this.programKey(), this.customerId(), this.year());
-  });
+  readonly enrollment = computed(() => this.store.current(this.programKey(), this.customerId(), this.year()));
   /** Fields in the program with all three FSA numbers: the ones that can join the enrollment. */
   readonly withFsaCount = computed(() => this.records().filter(r => !!r.fsa).length);
-  readonly withdrawn = computed(() => {
-    this.service.enrollments();
-    return this.service.withdrawn(this.programKey(), this.customerId(), this.year());
-  });
+  readonly withdrawn = computed(() => this.store.withdrawn(this.programKey(), this.customerId(), this.year()));
   readonly tickets = computed(() => {
     const e = this.enrollment();
     return e ? this.ticketFeed.forEnrollment(e.enrollmentId) : [];
@@ -231,7 +221,8 @@ export class ProgramEnrollmentCardComponent {
   showWithdraw = false;
   withdrawReason = '';
   newTicketBushels: number | null = null;
-  harvestLeftOpen: { fieldName: string; missing: string[] }[] = [];
+  /** Set after the save, so a signal: this card sits under an OnPush table. */
+  readonly harvestLeftOpen = signal<{ fieldName: string; missing: string[] }[]>([]);
 
   addTicket(): void {
     const e = this.enrollment();
@@ -244,23 +235,24 @@ export class ProgramEnrollmentCardComponent {
     this.ticketFeed.remove(ticketNo);
   }
 
-  completeHarvest(): void {
+  async completeHarvest(): Promise<void> {
     const e = this.enrollment();
     if (!e) return;
     const names = new Map(this.records().map(r => [r.recordId, r.fieldName]));
-    this.harvestLeftOpen = this.recordStore.completeHarvest(e)
-      .map(o => ({ fieldName: names.get(o.recordId) ?? 'A field', missing: o.missing }));
+    const leftOpen = await this.store.completeHarvest(e);
+    this.harvestLeftOpen.set(leftOpen.map(o => ({ fieldName: names.get(o.recordId) ?? 'A field', missing: o.missing })));
   }
 
-  withdraw(): void {
+  async withdraw(): Promise<void> {
     const e = this.enrollment();
-    if (!e) return;
-    this.service.withdraw(e.key, this.withdrawReason);
+    if (!e || !this.withdrawReason.trim()) return;
+    const reason = this.withdrawReason;
     this.showWithdraw = false;
     this.withdrawReason = '';
+    await this.store.withdraw(e.key, reason);
   }
 
-  issueNew(): void {
-    this.service.ensureFor(this.programKey(), this.customerId(), this.year());
+  async issueNew(): Promise<void> {
+    await this.store.ensureEnrollment(this.programKey(), this.customerId(), this.year());
   }
 }
