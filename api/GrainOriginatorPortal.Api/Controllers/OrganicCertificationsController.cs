@@ -94,4 +94,45 @@ public class OrganicCertificationsController : ControllerBase
     public async Task<ActionResult<IReadOnlyList<OrganicMissingCertificateResponse>>> GetMissingCertificates(
         CancellationToken cancellationToken = default)
         => Ok(await _service.GetMissingCertificatesAsync(cancellationToken));
+
+    // -------------------------------------------------------------------------
+    /// <summary>
+    /// The most recent nightly runs and whether each one finished. Newest first.
+    /// </summary>
+    /// <remarks>
+    /// The operational view: did last night's feed finish, and the one before that. Answers that
+    /// without anyone opening a SQL client.
+    ///
+    /// Only runs carrying a run total appear. Replays and intraday one-off edits do not, by design:
+    /// they are not runs and have nothing to be short of.
+    /// </remarks>
+    [HttpGet("runs")]
+    [ProducesResponseType(typeof(IReadOnlyList<OrganicRunCompletenessResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<IReadOnlyList<OrganicRunCompletenessResponse>>> GetRecentRuns(
+        [FromQuery] int take = 14,
+        CancellationToken cancellationToken = default)
+        => Ok(await _service.GetRecentRunsAsync(take, cancellationToken));
+
+    // -------------------------------------------------------------------------
+    /// <summary>
+    /// Whether one nightly run finished, by its feed run id.
+    /// </summary>
+    /// <remarks>
+    /// Four outcomes. <b>Complete</b> means every position is accounted for, and is the only state
+    /// in which a producer's absence from the run means anything. <b>Incomplete</b> means the run
+    /// died or is still going. <b>Invalid</b> means the run contradicts itself and its numbers
+    /// cannot be trusted. <b>NotAssessable</b> means no message carried a total, which is what a
+    /// replay or an intraday edit looks like.
+    ///
+    /// A skipped producer fills its position exactly as a stored certification does, so a run where
+    /// the sender skipped 23 producers is still complete.
+    /// </remarks>
+    [HttpGet("runs/{feedRunId}")]
+    [ProducesResponseType(typeof(OrganicRunCompletenessResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<OrganicRunCompletenessResponse>> GetRunCompleteness(
+        string feedRunId,
+        CancellationToken cancellationToken = default)
+        => Ok(await _service.GetRunCompletenessAsync(feedRunId, cancellationToken));
 }

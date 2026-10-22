@@ -212,6 +212,20 @@ read as progress. A rejected message still carries its position — it occupied 
 All three are optional. One-off intraday edits carry none of them, and that absence is how we
 recognise them.
 
+**We assess this automatically, and you can ask us the answer.**
+`GET /api/organic-certifications/runs` lists recent runs newest first;
+`GET /api/organic-certifications/runs/{feedRunId}` gives one. Four outcomes:
+
+| Outcome | Meaning |
+| --- | --- |
+| `Complete` | Every position accounted for. The only state in which a producer's absence means anything. |
+| `Incomplete` | Consistent but short — the run died, or is still going. Names the missing positions. |
+| `Invalid` | Contradicts itself: disagreeing totals, a position above the total, two producers at one position, or a message with no position. The numbers cannot be trusted. |
+| `NotAssessable` | No message carried a total. Replays and intraday edits look like this by design. |
+
+Useful to both of us when a run looks wrong, because it names the missing positions rather than
+leaving either side to compare counts by hand.
+
 ## The skip endpoint
 
 ```
