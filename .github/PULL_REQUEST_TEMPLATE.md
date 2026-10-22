@@ -22,6 +22,7 @@ Fixes #(issue number)
 - [ ] I have performed a self-review
 - [ ] I have commented my code where necessary
 - [ ] I have updated the documentation
+- [ ] Help content (`help-faq.json`) updated for any user-facing change, or not needed
 - [ ] My changes generate no new warnings
 
 ## Security Checklist

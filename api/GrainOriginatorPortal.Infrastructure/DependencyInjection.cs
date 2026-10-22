@@ -2,6 +2,7 @@ using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Infrastructure.Sync;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -125,6 +126,15 @@ public static class DependencyInjection
         services.AddSingleton<CtrmTicketReader>();
         services.AddSingleton<CtrmWarmRegistry>();
 
+        // Customer sync. The CTRM customer readers are singletons like CtrmContractReader: they share the
+        // singleton ICtrmGraphQlClient and hold no per-request state. The feeders and the factory are SCOPED
+        // because the feeders hold the scoped ICustomerSyncRepository; CustomerSyncService resolves the factory
+        // from each run's own scope, never from the root.
+        services.AddSingleton<CtrmCustomerReader>();
+        services.AddSingleton<CtrmCustomerActivityReader>();
+        services.AddScoped<OdsCustomerSyncSource>();
+        services.AddScoped<CtrmCustomerSyncSource>();
+        services.AddScoped<ICustomerSyncSourceFactory, CustomerSyncSourceFactory>();
 
         // Scoped: one per HTTP request, so the provenance middleware reports what THIS request's
         // repositories actually did rather than what was configured when it arrived.

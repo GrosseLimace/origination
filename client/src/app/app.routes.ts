@@ -62,6 +62,13 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./features/whats-new/pages/whats-new/whats-new.component').then(m => m.WhatsNewComponent)
   },
+  // Self-help: every question, by category or search. The Help panel itself isn't a route — it opens
+  // over whatever page the user is on.
+  {
+    path: 'help',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/help/pages/help/help.component').then(m => m.HelpComponent)
+  },
   {
     path: '**',
     redirectTo: ''

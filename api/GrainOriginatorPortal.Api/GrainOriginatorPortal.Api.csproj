@@ -16,10 +16,13 @@
     a token; the notes describe internal work and are streamed by WhatsNewController behind
     [Authorize] instead. The Remove is required because the Web SDK globs **\*.json as Content
     by default, which would publish a second, public copy alongside the embedded one.
+    The self-help content (HelpController) follows the same rule for the same reason.
   -->
   <ItemGroup>
     <Content Remove="Content\whats-new.json" />
     <EmbeddedResource Include="Content\whats-new.json" />
+    <Content Remove="Content\help-faq.json" />
+    <EmbeddedResource Include="Content\help-faq.json" />
   </ItemGroup>
 
   <ItemGroup>

@@ -36,9 +36,12 @@ public class PlantingIntentionsController : ControllerBase
     // -------------------------------------------------------------------------
     /// <summary>Gets all planting intentions for a specific customer. Open to any authenticated
     /// originator — trade-unit entitlements are a UX default, not an access-control boundary.</summary>
-    [HttpGet("customer/{customerId:int}")]
+    // long, not int: customer ids minted from dbo.CustomerIdSequence sit above 5e15, and an onboarding candidate
+    // from the CTRM search carries a negative placeholder of the same size. An int constraint matched neither, so
+    // the request fell through to the SPA's index page and the client saw HTML where it expected JSON.
+    [HttpGet("customer/{customerId:long}")]
     [ProducesResponseType(typeof(List<PlantingIntentionResponse>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<PlantingIntentionResponse>>> GetByCustomer(int customerId, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<List<PlantingIntentionResponse>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
         // Open to any rep — no per-producer object-level authz by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
         return Ok(await _service.GetByCustomerAsync(customerId, cancellationToken));

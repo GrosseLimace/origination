@@ -104,6 +104,9 @@ public static class FeatureNameMapper
         // Where the browser sends its error telemetry: read once per session, plumbing only.
         if (p.StartsWith("/api/clienttelemetry"))
             return ("system", "client-telemetry");
+        // Self-help content, loaded once when the Help panel or page first opens.
+        if (p.StartsWith("/api/help"))
+            return ("system", "help");
 
         return ("other", null);
     }
