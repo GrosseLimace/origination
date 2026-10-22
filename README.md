@@ -270,7 +270,7 @@ Last Updated: 2026-10-22
 | @azure/msal-browser | 5.4.0 | MIT | MSAL browser runtime |
 | @microsoft/applicationinsights-web | 3.4.5 | MIT | Browser error telemetry to Application Insights (pinned exact; loaded lazily, only when the server returns a connection string). Brings 10 transitive packages, all MIT, none with install scripts: the @microsoft/applicationinsights-* family at 3.4.5, applicationinsights-shims 3.0.1, dynamicproto-js 2.0.5, @nevware21/ts-async 0.5.5, @nevware21/ts-utils 0.16.0 |
 | @it/design-system | 0.1.1 | Internal | Scoular IT design system components |
-| @cws/workspace | 0.2.0 | Internal | SPIKE: Contract Workspace shell, routes and provider bundle, mounted at `/cws` (local only, `cwsSpikeEnabled`). Vendored from `client/vendor/cws/`; the 16 `@cws/*` packages are released together at one version |
+| @cws/workspace | 0.2.0 | Internal | SPIKE: Contract Workspace shell, routes and provider bundle, mounted at `/cws` (gated by `contractWorkspaceEnabled`; on locally only). Vendored from `client/vendor/cws/`; the 16 `@cws/*` packages are released together at one version |
 | @cws/features-home | 0.2.0 | Internal | SPIKE: CWS contract grid |
 | @cws/features-approvals | 0.2.0 | Internal | SPIKE: CWS approval queues |
 | @cws/features-pricing | 0.2.0 | Internal | SPIKE: CWS pricing and pricing approvals |

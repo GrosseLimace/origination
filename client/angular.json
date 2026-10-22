@@ -37,11 +37,6 @@
                 "glob": "favicon.ico",
                 "input": "src",
                 "output": ""
-              },
-              {
-                "glob": "cws-auth.html",
-                "input": "src",
-                "output": ""
               }
             ],
             "styles": [

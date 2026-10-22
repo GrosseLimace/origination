@@ -62,8 +62,8 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./features/whats-new/pages/whats-new/whats-new.component').then(m => m.WhatsNewComponent)
   },
-  // SPIKE: the Contract Workspace on sample data. Local only; never enable in a deployed env.
-  environment.cwsSpikeEnabled
+  // The Contract Workspace (CWS) at /cws. Each environment file turns it on or off.
+  environment.contractWorkspaceEnabled
     ? {
         path: 'cws',
         canActivate: [authGuard],
