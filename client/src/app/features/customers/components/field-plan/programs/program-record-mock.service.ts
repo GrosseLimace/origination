@@ -1,26 +1,24 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { FieldPlanMockService } from '@core/services/field-plan-mock.service';
-import { TicketFeedMockService } from '@core/services/ticket-feed-mock.service';
 import { FieldProgramRecord, FieldSeason, ProgramEnrollment } from '@models';
 import { ProgramRegistry } from './program-registry';
 import { ProgramEnrollmentMockService } from './program-enrollment-mock.service';
 
 /**
  * PROTOTYPE ONLY: in-memory sustainability program records, one per program per field season. The
- * program's definition decides what its data holds, when it is complete, what it takes from tickets
- * and what is frozen at finalize; this store applies the shared lifecycle:
+ * program's definition decides what its data holds, when it is complete and what is frozen at
+ * finalize; this store applies the shared lifecycle:
  *
  *   added (the producer's enrollment ID is issued if they have none) → Draft → Ready (scored)
- *   → tickets arrive under the split → harvest complete → Final (frozen), reopenable with a reason
- *     unless the producer's attested enrollment holds it.
+ *   → actual yield entered after harvest → enrollment's harvest marked complete → Final (frozen),
+ *     reopenable with a reason unless the producer's attested enrollment holds it.
  *
- * Originators never finalize: harvest complete for the split does.
+ * Originators never finalize field by field: marking the enrollment's harvest complete does.
  */
 @Injectable({ providedIn: 'root' })
 export class ProgramRecordMockService {
   private readonly registry = inject(ProgramRegistry);
   private readonly plan = inject(FieldPlanMockService);
-  private readonly tickets = inject(TicketFeedMockService);
   private readonly enrollments = inject(ProgramEnrollmentMockService);
   readonly records = signal<FieldProgramRecord[]>([]);
   private _nextId = 1;
@@ -51,12 +49,22 @@ export class ProgramRecordMockService {
     return season && field ? this.enrollments.current(record.programKey, field.customerId, season.year) : undefined;
   }
 
+  /** Every record in an enrollment: the producer's records in its program and year. */
+  forEnrollment(enrollment: ProgramEnrollment): FieldProgramRecord[] {
+    return this.records().filter(r => {
+      if (r.programKey !== enrollment.programKey) return false;
+      const season = this.plan.season(r.seasonId);
+      const field = season && this.plan.field(season.fieldKey);
+      return !!season && !!field && field.customerId === enrollment.customerId && season.year === enrollment.year;
+    });
+  }
+
   // ── Writes ────────────────────────────────────────────────────────────────
 
   /**
    * Adds a program to a field season. The data starts from the program's defaults, plus whatever the
-   * program carries over from the field's last season in it, plus anything already on tickets. The
-   * producer's enrollment ID for the program and year is issued now if they don't have one.
+   * program carries over from the field's last season in it. The producer's enrollment ID for the
+   * program and year is issued now if they don't have one.
    */
   add(seasonId: string, programKey: string): FieldProgramRecord | undefined {
     const season = this.plan.season(seasonId);
@@ -80,7 +88,6 @@ export class ProgramRecordMockService {
         copiedFromYear = priorSeason.year;
       }
     }
-    data = { ...data, ...def.fromTickets(this.tickets.forSplit(field.splitId, season.year), season) };
 
     const record: FieldProgramRecord = { id: `r${this._nextId++}`, seasonId, programKey, data, status: 'Draft', copiedFromYear };
     record.status = this._status(record, season);
@@ -99,37 +106,19 @@ export class ProgramRecordMockService {
     this.records.update(rs => rs.map(r => (r.id === record.id ? next : r)));
   }
 
-  /** Re-reads the tickets under the season's split into its open program records (45Z: actual yield). */
-  syncTickets(seasonId: string): void {
-    const season = this.plan.season(seasonId);
-    const field = season && this.plan.field(season.fieldKey);
-    if (!season || !field) return;
-    const tickets = this.tickets.forSplit(field.splitId, season.year);
-    this.records.update(rs => rs.map(r => {
-      const def = this.registry.get(r.programKey);
-      if (r.seasonId !== seasonId || r.status === 'Final' || !def) return r;
-      const next = { ...r, data: { ...(r.data as object), ...def.fromTickets(tickets, season) } };
-      next.status = this._status(next, season);
-      return next;
-    }));
-  }
-
   /**
-   * Harvest is complete for the season's split: takes the final ticket figures and finalizes every
-   * program record that has nothing missing. Returns the ones left open, with what they still need.
+   * Harvest is complete for the enrollment: finalizes every record in it that has nothing missing.
+   * Returns the ones left open, with what they still need (45Z: usually the actual yield).
    */
-  completeHarvest(seasonId: string): { programKey: string; missing: string[] }[] {
-    const season = this.plan.season(seasonId);
-    const field = season && this.plan.field(season.fieldKey);
-    if (!season || !field) return [];
-    this.tickets.setHarvestComplete(field.splitId, season.year, true);
-    this.syncTickets(seasonId);
-    const leftOpen: { programKey: string; missing: string[] }[] = [];
-    for (const r of this.forSeason(seasonId).filter(x => x.status !== 'Final')) {
+  completeHarvest(enrollment: ProgramEnrollment): { recordId: string; missing: string[] }[] {
+    this.enrollments.setHarvestComplete(enrollment.key, true);
+    const leftOpen: { recordId: string; missing: string[] }[] = [];
+    for (const r of this.forEnrollment(enrollment).filter(x => x.status !== 'Final')) {
       const def = this.registry.get(r.programKey)!;
+      const season = this.plan.season(r.seasonId)!;
       const missing = def.finalizeMissing(r.data, season);
-      if (missing.length) leftOpen.push({ programKey: r.programKey, missing });
-      else this.finalize(r.id, 'CTRM tickets');
+      if (missing.length) leftOpen.push({ recordId: r.id, missing });
+      else this.finalize(r.id, 'harvest complete');
     }
     return leftOpen;
   }
@@ -148,18 +137,18 @@ export class ProgramRecordMockService {
   }
 
   /**
-   * Reopens a finalized record for correction (and the split's harvest with it). Refused while the
-   * producer's attested enrollment holds it.
+   * Reopens a finalized record for correction, and its enrollment's harvest with it. Refused while
+   * the producer's attested enrollment holds it.
    */
   reopen(id: string): boolean {
     const current = this.record(id);
     const season = current && this.plan.season(current.seasonId);
-    const field = season && this.plan.field(season.fieldKey);
-    if (!current || !season || !field || current.status !== 'Final' || this.enrollments.lockedBy(id)) return false;
+    if (!current || !season || current.status !== 'Final' || this.enrollments.lockedBy(id)) return false;
     const reopened: FieldProgramRecord = { ...current, frozen: undefined, status: 'Draft' };
     reopened.status = this._status(reopened, season);
     this.records.update(rs => rs.map(r => (r.id === id ? reopened : r)));
-    this.tickets.setHarvestComplete(field.splitId, season.year, false);
+    const enrollment = this.enrollmentFor(reopened);
+    if (enrollment) this.enrollments.setHarvestComplete(enrollment.key, false);
     return true;
   }
 

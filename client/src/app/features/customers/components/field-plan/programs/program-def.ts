@@ -1,5 +1,5 @@
 import { InputSignal, Type } from '@angular/core';
-import { FieldProgramRecord, FieldSeason, FieldTicket, FrozenProgramResult, ProducerField, ProgramScore } from '@models';
+import { FieldProgramRecord, FieldSeason, FrozenProgramResult, ProducerField, ProgramScore } from '@models';
 
 /**
  * A sustainability program a field can take part in (45Z first, others later). Everything that is
@@ -28,11 +28,12 @@ export interface SustainabilityProgramDef<TData = any> {
   preview(data: TData, season: FieldSeason, field: ProducerField): ProgramScore | null;
 
   /**
-   * What the program takes from the tickets delivered under the field's split (45Z: actual yield =
-   * bushels ÷ acres). Applied as tickets arrive and again when harvest is complete; {} for nothing.
+   * What the field should have delivered on the enrollment's tickets (45Z: acres × actual yield, in
+   * bushels), or null while unknown. The enrollment totals it and checks it against the tickets.
+   * Leave it out for a program that doesn't reconcile against deliveries.
    */
-  fromTickets(tickets: readonly FieldTicket[], season: FieldSeason): Partial<TData>;
-  /** What still stands between the record and Final once harvest is complete. */
+  production?(data: TData, season: FieldSeason): number | null;
+  /** What still stands between the record and Final when the enrollment's harvest is marked complete. */
   finalizeMissing(data: TData, season: FieldSeason): string[];
   /** The audit copy of inputs and outputs stored at finalize. */
   freeze(data: TData, season: FieldSeason, field: ProducerField): Omit<FrozenProgramResult, 'finalizedBy' | 'finalizedAt'>;

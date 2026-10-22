@@ -24,8 +24,9 @@ export function formatEnrollmentId(prefix: string, year: number, seq: number): s
 /**
  * What still stands between an open enrollment and Attested. `listed` is every record the producer
  * has in the program that year; each must be scored (Ready or Final) — harvest isn't needed. `others`
- * is every other enrollment (any producer), whose attested snapshots are checked so a field (split) is
- * never claimed twice in the same program and year.
+ * is every other enrollment (any producer), whose attested snapshots are checked so a field is never
+ * claimed twice in the same program and year — matched by the field itself or by its FSA farm/tract/
+ * field numbers, which catches a landlord and a tenant both enrolling it.
  */
 export function enrollmentBlockers(
   enrollment: ProgramEnrollment,
@@ -49,16 +50,52 @@ export function enrollmentBlockers(
   const claims = new Map<string, string>();
   for (const o of others) {
     if (o.key === enrollment.key || o.status !== 'Attested' || o.programKey !== enrollment.programKey || o.year !== enrollment.year) continue;
-    for (const r of o.snapshot ?? []) claims.set(r.fieldKey, o.enrollmentId);
+    for (const r of o.snapshot ?? []) {
+      claims.set(`field:${r.fieldKey}`, o.enrollmentId);
+      if (r.fsa) claims.set(`fsa:${r.fsa}`, o.enrollmentId);
+    }
   }
   for (const r of listed) {
-    const by = claims.get(r.fieldKey);
+    const by = claims.get(`field:${r.fieldKey}`) ?? (r.fsa ? claims.get(`fsa:${r.fsa}`) : undefined);
     if (by) blockers.push(`${r.fieldName} is already in ${by}`);
   }
   return blockers;
 }
 
-/** Whether a ticket's keyed enrollment ID matches the enrollment its split belongs to. */
-export function ticketEnrollmentMismatch(keyed: string, expected: string | undefined): boolean {
-  return !!expected && keyed.trim().toUpperCase() !== expected.toUpperCase();
+export interface FsaNumbers { fsaFarmNo: string; fsaTractNo: string; fsaFieldNo: string }
+
+/** "farm/tract/field", or '' until all three are filled in. */
+export function fsaKey(f: FsaNumbers): string {
+  const parts = [f.fsaFarmNo, f.fsaTractNo, f.fsaFieldNo].map(p => (p ?? '').trim());
+  return parts.every(p => p) ? parts.join('/') : '';
+}
+
+/** How far delivered bushels may differ from the fields' production before the check flags it. */
+export const DELIVERY_TOLERANCE = 0.1;
+
+export interface DeliveryCheck {
+  delivered: number;
+  /** Total production of the fields that have it (45Z: acres × actual yield). */
+  production: number;
+  /** Fields with no production figure yet (no actual yield). */
+  fieldsWithout: number;
+  /** delivered ÷ production − 1, or null with no production yet. */
+  gap: number | null;
+  flagged: boolean;
+}
+
+/**
+ * The enrollment's ticket check: bushels on its tickets against what its fields produced. Tickets
+ * carry the enrollment ID, not a field, so the check is for the enrollment as a whole. Flags a gap
+ * beyond the tolerance either way (more delivered than produced is the one an auditor cares about).
+ */
+export function deliveryCheck(ticketBushels: readonly number[], fieldProduction: readonly (number | null | undefined)[]): DeliveryCheck {
+  const delivered = ticketBushels.reduce((sum, b) => sum + b, 0);
+  const known = fieldProduction.filter((p): p is number => typeof p === 'number' && p > 0);
+  const production = known.reduce((sum, p) => sum + p, 0);
+  const gap = production > 0 ? delivered / production - 1 : null;
+  return {
+    delivered, production, fieldsWithout: fieldProduction.length - known.length, gap,
+    flagged: gap !== null && Math.abs(gap) > DELIVERY_TOLERANCE,
+  };
 }

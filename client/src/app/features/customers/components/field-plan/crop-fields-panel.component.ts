@@ -2,15 +2,14 @@ import { Component, computed, inject, input, output, signal } from '@angular/cor
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { FieldPlanMockService } from '@core/services/field-plan-mock.service';
-import { CtrmSplitMockService } from '@core/services/ctrm-split-mock.service';
-import { CtrmSplit, Customer, FieldSeason, PlantingIntention } from '@models';
+import { Customer, FieldSeason, PlantingIntention } from '@models';
 import { ProgramRegistry } from './programs/program-registry';
 import { ProgramRecordMockService } from './programs/program-record-mock.service';
 import { FieldSeasonDialogComponent } from './field-season-dialog.component';
 
 /**
- * The fields under one crop row. A field is one of the producer's CTRM split IDs, looked up rather than
- * typed, because tickets are delivered under the split. The row's acres stay the total (what the
+ * The fields under one crop row. A field is a name plus its FSA farm/tract/field numbers, entered once
+ * and picked by name after that. The row's acres stay the total (what the
  * dashboard counts); fields break it down. Adding a field pre-fills the acres not yet in a field, so a crop on one field needs
  * no extra typing. When the fields add up to more than the total, the row offers to update it — the
  * only way field data ever changes an intention, and it goes through the normal Edit dialog.
@@ -29,7 +28,6 @@ export class CropFieldsPanelComponent {
   readonly plan = inject(FieldPlanMockService);
   private readonly records = inject(ProgramRecordMockService);
   private readonly registry = inject(ProgramRegistry);
-  private readonly ctrmSplits = inject(CtrmSplitMockService);
 
   readonly intention = input.required<PlantingIntention>();
   readonly customer = input.required<Customer>();
@@ -60,6 +58,12 @@ export class CropFieldsPanelComponent {
 
   fieldName(s: FieldSeason): string {
     return this.plan.field(s.fieldKey)?.name ?? 'Field';
+  }
+
+  /** "FSA 1234/5678/3". */
+  fieldFsa(s: FieldSeason): string {
+    const f = this.plan.field(s.fieldKey);
+    return f ? `FSA ${f.fsaFarmNo}/${f.fsaTractNo}/${f.fsaFieldNo}` : '';
   }
 
   fieldPlace(s: FieldSeason): string {
@@ -94,70 +98,60 @@ export class CropFieldsPanelComponent {
     this.plan.removeSeason(s.id);
   }
 
-  // ── Add a field: look up one of the producer's CTRM split IDs ───────────────
-  newSplit = '';
+  // ── Add a field: a name and its FSA numbers, or pick one of the producer's fields ─
+  newName = '';
+  newFsaFarm = '';
+  newFsaTract = '';
+  newFsaField = '';
   newState = 'KS';
   newCounty = '';
   newAcres: number | null = null;
 
-  /**
-   * The producer's CTRM splits for the type-ahead: expired splits and splits already on this row are
-   * left out. Bin-site splits are listed (so nobody wonders where they went) but can't be added.
-   */
-  readonly splitOptions = computed(() => {
+  /** The producer's fields not already on this row, for the name type-ahead. */
+  readonly pickable = computed(() => {
     const used = new Set(this.seasons().map(s => s.fieldKey));
-    return this.ctrmSplits.splitsFor(this.customer())
-      .filter(sp => !sp.expired && !used.has(sp.splitId))
-      .map(split => ({
-        split,
-        label: split.kind === 'Bin'
-          ? `${split.splitId} · ${split.fieldName} · bin site, not a field`
-          : `${split.splitId} · ${split.fieldName} · ${split.splitPercent}%`,
-      }));
+    return this.plan.fieldsFor(this.customer().id).filter(f => !used.has(f.fieldKey));
   });
 
-  /** The split the type-ahead text points at: its ID typed or picked, or its exact field name. */
-  get pickedSplit(): CtrmSplit | undefined {
-    const text = this.newSplit.trim().toUpperCase();
-    if (!text) return undefined;
-    const id = text.split(/[\s·]/)[0];
-    return this.splitOptions().find(o => o.split.splitId === id || o.split.fieldName === text)?.split;
+  private get _match() {
+    const name = this.newName.trim().toLowerCase();
+    return name ? this.pickable().find(f => f.name.toLowerCase() === name) : undefined;
   }
 
-  /** A split this producer hasn't used as a field before: ask for its location once. */
+  /** A name that isn't one of the producer's fields: a new field, which needs its FSA numbers and location. */
   get isNewField(): boolean {
-    const sp = this.pickedSplit;
-    return !!sp && sp.kind === 'Field' && !this.plan.field(sp.splitId);
+    return !!this.newName.trim() && !this._match;
   }
 
   openAdd(): void {
     const st = this.customer().stateProvince;
     this.newState = st && this.plan.countiesByState[st] ? st : 'KS';
     this.newCounty = this.plan.countiesByState[this.newState][0];
-    this.newSplit = '';
+    this.newName = '';
+    this.newFsaFarm = this.newFsaTract = this.newFsaField = '';
     this.newAcres = this.remaining() > 0 ? this.remaining() : null;
   }
 
-  /** Picking a field used before pre-fills its acres from last time, capped at what's left to place. */
-  onSplitChange(): void {
-    const sp = this.pickedSplit;
-    if (!sp || !this.plan.field(sp.splitId)) return;
-    const last = this.plan.lastSeason(sp.splitId, this.intention().plantingYear)?.acres ?? null;
+  /** Picking a known field pre-fills its acres from last time, capped at what's left to place. */
+  onNameChange(): void {
+    const match = this._match;
+    if (!match) return;
+    const last = this.plan.lastSeason(match.fieldKey, this.intention().plantingYear)?.acres ?? null;
     const left = this.remaining() > 0 ? this.remaining() : null;
     this.newAcres = last && left ? Math.min(last, left) : (last ?? left);
   }
 
   get canAdd(): boolean {
-    const sp = this.pickedSplit;
-    return !!sp && sp.kind === 'Field' && (this.newAcres ?? 0) > 0 && (!this.isNewField || !!this.newCounty);
+    const fsaComplete = !!(this.newFsaFarm.trim() && this.newFsaTract.trim() && this.newFsaField.trim());
+    return !!this.newName.trim() && (this.newAcres ?? 0) > 0 && (!this.isNewField || (fsaComplete && !!this.newCounty));
   }
 
   add(): void {
-    const sp = this.pickedSplit;
-    if (!this.canAdd || !sp) return;
-    const field = this.plan.field(sp.splitId) ?? this.plan.createField({
-      splitId: sp.splitId, customerId: this.customer().id, name: sp.fieldName,
-      splitPercent: sp.splitPercent, effectiveDate: sp.effectiveDate, state: this.newState, county: this.newCounty,
+    if (!this.canAdd) return;
+    const field = this._match ?? this.plan.createField({
+      customerId: this.customer().id, name: this.newName.trim(),
+      fsaFarmNo: this.newFsaFarm.trim(), fsaTractNo: this.newFsaTract.trim(), fsaFieldNo: this.newFsaField.trim(),
+      state: this.newState, county: this.newCounty,
     });
     const pi = this.intention();
     this.plan.addSeason(field.fieldKey, pi.id, pi.plantingYear, this.cropLabel(), this.newAcres!);

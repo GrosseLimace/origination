@@ -1,28 +1,27 @@
 import { Injectable, signal } from '@angular/core';
-import { FieldTicket } from '@models';
+import { EnrollmentTicket } from '@models';
 
 /**
- * PROTOTYPE ONLY: stands in for the CTRM ticket feed for fields. A ticket is delivered under a split
- * ID and, for a sustainability program, carries the enrollment ID too. "Harvest complete" for a split
- * is what finalizes its program records. Tickets here are entered by hand from the field dialog's
- * simulation box; the real ones come from CTRM (Ticket.CustomerCode is the split ID).
+ * PROTOTYPE ONLY: stands in for the CTRM ticket feed for sustainability programs. An incoming ticket
+ * is assigned a program enrollment ID (producer + program + year), not a field. Tickets here are
+ * entered by hand from the enrollment card's simulation box; the real ones come from CTRM.
  */
 @Injectable({ providedIn: 'root' })
 export class TicketFeedMockService {
-  readonly tickets = signal<FieldTicket[]>([]);
-  /** `${splitId}|${cropYear}` for splits whose harvest is complete. */
-  readonly harvested = signal<ReadonlySet<string>>(new Set());
+  readonly tickets = signal<EnrollmentTicket[]>([]);
   private _nextNo = 1;
 
-  forSplit(splitId: string, cropYear: number): FieldTicket[] {
-    return this.tickets().filter(t => t.splitId === splitId && t.cropYear === cropYear);
+  /** Tickets assigned this enrollment ID (as keyed, case and spaces ignored). */
+  forEnrollment(enrollmentId: string): EnrollmentTicket[] {
+    const id = enrollmentId.trim().toUpperCase();
+    return this.tickets().filter(t => t.enrollmentId.trim().toUpperCase() === id);
   }
 
-  add(splitId: string, cropYear: number, netBushels: number, enrollmentId: string): FieldTicket {
-    const ticket: FieldTicket = {
+  add(enrollmentId: string, netBushels: number): EnrollmentTicket {
+    const ticket: EnrollmentTicket = {
       ticketNo: `T${String(this._nextNo++).padStart(6, '0')}`,
       date: new Date().toISOString().slice(0, 10),
-      netBushels, splitId, enrollmentId: enrollmentId.trim(), cropYear,
+      netBushels, enrollmentId: enrollmentId.trim(),
     };
     this.tickets.update(ts => [...ts, ticket]);
     return ticket;
@@ -30,17 +29,5 @@ export class TicketFeedMockService {
 
   remove(ticketNo: string): void {
     this.tickets.update(ts => ts.filter(t => t.ticketNo !== ticketNo));
-  }
-
-  isHarvestComplete(splitId: string, cropYear: number): boolean {
-    return this.harvested().has(`${splitId}|${cropYear}`);
-  }
-
-  setHarvestComplete(splitId: string, cropYear: number, complete: boolean): void {
-    this.harvested.update(h => {
-      const next = new Set(h);
-      complete ? next.add(`${splitId}|${cropYear}`) : next.delete(`${splitId}|${cropYear}`);
-      return next;
-    });
   }
 }

@@ -5,9 +5,7 @@ import { CoverCrop, FdCicData, FieldProgramRecord, FieldSeason, ManureApplicatio
 import { COVER_LABELS, TILLAGE_LABELS, estimateCi, fdCicCropFor, missingInputs } from '@shared/utils/ci-illustrative';
 import { CiPreviewPanelComponent } from '../../ci-preview-panel.component';
 import { ProgramIntake } from '../program-def';
-import { ProgramRecordMockService } from '../program-record-mock.service';
-import { TicketFeedMockService } from '@core/services/ticket-feed-mock.service';
-import { MANURE_OPTIONS, fdCicScorable } from './fd-cic.data';
+import { ProgramRecordMockService } from '../program-record-mock.service';import { MANURE_OPTIONS, fdCicScorable } from './fd-cic.data';
 
 const cloneData = (d: FdCicData): FdCicData => ({ ...d, manure: d.manure.map(m => ({ ...m })) });
 
@@ -26,7 +24,6 @@ const cloneData = (d: FdCicData): FdCicData => ({ ...d, manure: d.manure.map(m =
 })
 export class FdCicIntakeComponent implements ProgramIntake {
   private readonly records = inject(ProgramRecordMockService);
-  private readonly ticketFeed = inject(TicketFeedMockService);
 
   readonly record = input.required<FieldProgramRecord>();
   readonly season = input.required<FieldSeason>();
@@ -57,11 +54,6 @@ export class FdCicIntakeComponent implements ProgramIntake {
   });
   readonly missing = computed(() => missingInputs({ ...this.stored(), acres: this.season().acres }));
   readonly isFinal = computed(() => this.record().status === 'Final');
-  /** The tickets behind the actual yield, or null before the first one. */
-  readonly ticketSummary = computed(() => {
-    const tickets = this.ticketFeed.forSplit(this.field().splitId, this.season().year);
-    return tickets.length ? { count: tickets.length, bushels: tickets.reduce((sum, t) => sum + t.netBushels, 0) } : null;
-  });
 
   constructor() {
     effect(() => {

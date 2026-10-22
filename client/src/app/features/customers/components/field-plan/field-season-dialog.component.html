@@ -3,23 +3,24 @@
   <app-dialog-header>
     <app-dialog-title>{{ draftField.name }} · {{ draftSeason.year }}</app-dialog-title>
     <app-dialog-description>
-      {{ draftField.splitId }} · {{ draftSeason.cropLabel }} · {{ draftField.county }} County, {{ draftField.state }} · Changes save as you go.
+      {{ draftSeason.cropLabel }} · FSA {{ draftField.fsaFarmNo }}/{{ draftField.fsaTractNo }}/{{ draftField.fsaFieldNo }} · {{ draftField.county }} County, {{ draftField.state }} · Changes save as you go.
     </app-dialog-description>
   </app-dialog-header>
 
   <app-dialog-content>
     <div class="space-y-6">
-      <!-- The field: a CTRM split, plus the location and acres programs need -->
+      <!-- The field: entered once, reused every year -->
       <div>
-        <h4 class="font-semibold text-gray-900 dark:text-white">Field</h4>
+        <h4 class="font-semibold text-gray-900 dark:text-white">Field <span class="text-sm font-normal text-gray-500">(kept for every year)</span></h4>
         <div class="mt-2 grid gap-3 sm:grid-cols-4">
-          <div class="text-sm">
-            <span class="text-gray-700 dark:text-gray-300">CTRM split</span>
-            <div class="mt-1 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 px-3 py-2">
-              <div class="font-medium text-gray-900 dark:text-white">{{ draftField.splitId }}</div>
-              <div class="text-xs text-gray-500 dark:text-gray-400">{{ draftField.splitPercent }}% · effective {{ draftField.effectiveDate | date:'MM/dd/yy' }}</div>
-            </div>
-          </div>
+          <label class="block text-sm sm:col-span-1"><span class="text-gray-700 dark:text-gray-300">Field name</span>
+            <input class="ci-input" [(ngModel)]="draftField.name" (ngModelChange)="saveField()" /></label>
+          <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">FSA farm #</span>
+            <input class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftField.fsaFarmNo" (ngModelChange)="saveField()" /></label>
+          <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">Tract #</span>
+            <input class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftField.fsaTractNo" (ngModelChange)="saveField()" /></label>
+          <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">Field #</span>
+            <input class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftField.fsaFieldNo" (ngModelChange)="saveField()" /></label>
           <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">State</span>
             <select class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftField.state" (ngModelChange)="draftField.county = countiesFor($event)[0] || ''; saveField()">
               @for (st of plan.states; track st) { <option [value]="st">{{ st }}</option> }
@@ -31,7 +32,6 @@
           <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">{{ draftSeason.year }} acres</span>
             <input type="number" min="0" class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftSeason.acres" (ngModelChange)="saveSeason()" /></label>
         </div>
-        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Name, split % and effective date come from CTRM.</p>
       </div>
 
       <!-- Sustainability programs on this field -->
@@ -63,11 +63,11 @@
               }
             </div>
 
-            <!-- The enrollment ID the tickets carry -->
+            <!-- The enrollment ID incoming tickets are assigned -->
             @if (enrollment(); as e) {
               <div class="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-scoular-green-accessible/40 bg-scoular-green-accessible/5 px-4 py-2 text-sm">
                 <span class="font-semibold text-scoular-green-accessible dark:text-scoular-green">Enrollment {{ e.enrollmentId }}</span>
-                <span class="text-gray-700 dark:text-gray-300">Put <span class="font-medium">{{ e.enrollmentId }}</span> and split <span class="font-medium">{{ draftField.splitId }}</span> on this field's tickets.</span>
+                <span class="text-gray-700 dark:text-gray-300">Incoming {{ a.def.shortLabel }} tickets from this producer are assigned <span class="font-medium">{{ e.enrollmentId }}</span>.</span>
                 @if (e.status === 'Open') {
                   <span class="text-amber-700 dark:text-amber-400">Not yet attested by the producer.</span>
                 } @else {
@@ -104,58 +104,6 @@
         }
       </div>
 
-      <!-- PROTOTYPE ONLY: stands in for the CTRM ticket feed under this split -->
-      @if (programRecords().length) {
-        <div class="rounded-lg border-2 border-dashed border-amber-400 dark:border-amber-600 bg-amber-50/50 dark:bg-amber-900/10 p-4 space-y-3 text-sm">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <span class="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">Prototype: simulate CTRM tickets under {{ draftField.splitId }}</span>
-            <span class="text-gray-700 dark:text-gray-300">{{ tickets().length }} ticket{{ tickets().length === 1 ? '' : 's' }} · {{ deliveredBushels() | number:'1.0-0' }} bu</span>
-          </div>
-          @if (tickets().length) {
-            <table class="w-full text-left">
-              <thead class="text-xs uppercase text-gray-500 dark:text-gray-400">
-                <tr><th class="py-1">Ticket</th><th>Date</th><th>Split</th><th>Enrollment ID</th><th class="text-right">Net bu</th><th class="w-8"></th></tr>
-              </thead>
-              <tbody>
-                @for (t of tickets(); track t.ticketNo) {
-                  <tr class="border-t border-amber-200/60 dark:border-amber-800/40">
-                    <td class="py-1">{{ t.ticketNo }}</td>
-                    <td>{{ t.date | date:'MM/dd/yy' }}</td>
-                    <td>{{ t.splitId }}</td>
-                    <td [class]="mismatch(t) ? 'font-semibold text-red-700 dark:text-red-400' : ''">
-                      {{ t.enrollmentId || '—' }}
-                      @if (mismatch(t)) { <span title="Doesn't match this field's enrollment">⚠ doesn't match {{ fieldEnrollmentIds().join(' / ') }}</span> }
-                    </td>
-                    <td class="text-right tabular-nums">{{ t.netBushels | number:'1.0-0' }}</td>
-                    <td class="text-right">
-                      @if (!harvestComplete()) {
-                        <button type="button" class="text-gray-400 hover:text-red-600 bg-transparent border-0 p-0" (click)="removeTicket(t)" [attr.aria-label]="'Remove ' + t.ticketNo">✕</button>
-                      }
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          }
-          @if (harvestComplete()) {
-            <div class="text-gray-700 dark:text-gray-300">Harvest complete for {{ draftField.splitId }}.</div>
-          } @else {
-            <div class="flex flex-wrap items-end gap-2">
-              <label class="block text-xs text-gray-600 dark:text-gray-300">Net bushels
-                <input type="number" min="0" class="ci-input ci-compact !w-28 text-right" [(ngModel)]="newTicketBushels" (focus)="newTicketEnrollmentId || prefillTicket()" (keydown.enter)="addTicket()" /></label>
-              <label class="block text-xs text-gray-600 dark:text-gray-300">Enrollment ID on ticket
-                <input class="ci-input ci-compact !w-40" [(ngModel)]="newTicketEnrollmentId" placeholder="e.g. CI-2026-000001" /></label>
-              <button type="button" class="h-8 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 disabled:opacity-50"
-                      [disabled]="!newTicketBushels" (click)="addTicket()">Add ticket</button>
-              <button type="button" class="h-8 rounded-md px-3 font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green border-0 disabled:opacity-50"
-                      [disabled]="!tickets().length" (click)="completeHarvest()">Mark harvest complete</button>
-            </div>
-          }
-          @for (o of harvestLeftOpen; track o.label) {
-            <div class="text-amber-800 dark:text-amber-300">{{ o.label }} couldn't be finalized: still needs {{ o.missing.join(', ') }}.</div>
-          }
-        </div>
-      }
     </div>
   </app-dialog-content>
 
@@ -174,7 +122,7 @@
         <span class="text-gray-700 dark:text-gray-300">Why does it need correcting?</span>
         <textarea rows="3" class="ci-input" [(ngModel)]="reopenReason"></textarea>
       </label>
-      <p class="text-xs text-gray-500 dark:text-gray-400">Reopening also reopens harvest for this split. The reason is kept in the field's history.</p>
+      <p class="text-xs text-gray-500 dark:text-gray-400">Reopening also reopens the enrollment's harvest. The reason is kept in the field's history.</p>
       <div class="flex justify-end gap-2">
         <app-button variant="outline" (onClick)="showReopen = false">Cancel</app-button>
         <app-button variant="default" [disabled]="!reopenReason.trim()" (onClick)="confirmReopen()">Reopen</app-button>

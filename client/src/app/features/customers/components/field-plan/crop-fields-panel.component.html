@@ -25,7 +25,7 @@
             <tr class="border-b border-gray-100 dark:border-gray-800">
               <td class="py-1.5 pr-3">
                 <span class="font-medium text-gray-900 dark:text-white">{{ fieldName(s) }}</span>
-                <div class="text-xs text-gray-500 dark:text-gray-400">{{ s.fieldKey }} · {{ fieldPlace(s) }}</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">{{ fieldFsa(s) }} · {{ fieldPlace(s) }}</div>
               </td>
               <td class="py-1.5 pr-3 w-32">
                 <div class="flex items-center gap-1">
@@ -83,15 +83,23 @@
       </div>
     }
 
-    <!-- Add a field: look up one of the producer's CTRM split IDs; location only the first time a split is used -->
+    <!-- Add a field: a name (the producer's existing fields are suggested); FSA numbers and location only for a new one -->
     <div class="flex max-w-3xl flex-wrap items-end gap-2">
-      <label class="block text-xs text-gray-600 dark:text-gray-300">Field (CTRM split)
-        <input class="ci-input ci-compact !w-72" [attr.list]="'splits-' + intention().id" placeholder="Split ID or field name"
-               [(ngModel)]="newSplit" (ngModelChange)="onSplitChange()" />
-        <datalist [id]="'splits-' + intention().id">
-          @for (o of splitOptions(); track o.split.splitId) { <option [value]="o.label"></option> }
+      <label class="block text-xs text-gray-600 dark:text-gray-300">Field name
+        <input class="ci-input ci-compact !w-48" [attr.list]="'fields-' + intention().id" placeholder="Name or pick one"
+               [(ngModel)]="newName" (ngModelChange)="onNameChange()" />
+        <datalist [id]="'fields-' + intention().id">
+          @for (f of pickable(); track f.fieldKey) { <option [value]="f.name">FSA {{ f.fsaFarmNo }}/{{ f.fsaTractNo }}/{{ f.fsaFieldNo }}</option> }
         </datalist>
       </label>
+      @if (isNewField) {
+        <label class="block text-xs text-gray-600 dark:text-gray-300">FSA farm #
+          <input class="ci-input ci-compact !w-20" [(ngModel)]="newFsaFarm" /></label>
+        <label class="block text-xs text-gray-600 dark:text-gray-300">Tract #
+          <input class="ci-input ci-compact !w-20" [(ngModel)]="newFsaTract" /></label>
+        <label class="block text-xs text-gray-600 dark:text-gray-300">Field #
+          <input class="ci-input ci-compact !w-16" [(ngModel)]="newFsaField" /></label>
+      }
       @if (isNewField) {
         <label class="block text-xs text-gray-600 dark:text-gray-300">State
           <select class="ci-input ci-compact !w-20" [(ngModel)]="newState" (ngModelChange)="newCounty = countiesFor($event)[0] || ''">
@@ -110,14 +118,8 @@
       <button type="button" class="h-8 rounded-md px-3 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-50 border-0"
               [disabled]="!canAdd" (click)="add()">Add field</button>
     </div>
-    @if (pickedSplit; as sp) {
-      @if (sp.kind === 'Bin') {
-        <div class="text-xs text-amber-700 dark:text-amber-400">{{ sp.splitId }} is a bin site, not a field. Add the fields that went into the bin instead.</div>
-      } @else {
-        <div class="text-xs text-gray-500 dark:text-gray-400">{{ sp.name }} · {{ sp.splitPercent }}% · effective {{ sp.effectiveDate | date:'MM/dd/yy' }}</div>
-      }
-    } @else if (newSplit.trim()) {
-      <div class="text-xs text-amber-700 dark:text-amber-400">Not one of this producer's CTRM splits. Set the field up as a split in CTRM first.</div>
+    @if (isNewField) {
+      <div class="text-xs text-gray-500 dark:text-gray-400">New field: enter its FSA farm, tract and field numbers from the producer's FSA-578.</div>
     }
     @if (programs().length === 0) {
       <div class="text-xs text-gray-400 dark:text-gray-500">🌱 No sustainability programs apply to {{ cropLabel() }}.</div>

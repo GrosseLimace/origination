@@ -5,8 +5,8 @@ import { blankAttestation, enrollmentBlockers, formatEnrollmentId } from './prog
 
 /**
  * PROTOTYPE ONLY: in-memory program enrollments, one live enrollment per producer per program per
- * year. The ID is issued the moment the producer's first field enters the program (so it can go on
- * tickets with the split ID); attesting records the producer's signature. Nothing is persisted.
+ * year. The ID is issued the moment the producer's first field enters the program, so incoming
+ * tickets can be assigned it; attesting records the producer's signature. Nothing is persisted.
  */
 @Injectable({ providedIn: 'root' })
 export class ProgramEnrollmentMockService {
@@ -65,6 +65,13 @@ export class ProgramEnrollmentMockService {
     };
     this.enrollments.update(es => es.map(x => (x.key === key ? attested : x)));
     return attested;
+  }
+
+  /** Records (or clears) harvest complete for the enrollment. Finalizing its fields is ProgramRecordMockService's job. */
+  setHarvestComplete(key: string, complete: boolean): void {
+    this.enrollments.update(es => es.map(e => (e.key === key
+      ? { ...e, harvestCompleteAt: complete ? new Date().toISOString() : undefined }
+      : e)));
   }
 
   /**
