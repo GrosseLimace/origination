@@ -1,5 +1,5 @@
 import { InputSignal, Type } from '@angular/core';
-import { FieldProgramRecord, FieldSeason, FrozenProgramResult, ProducerField, ProgramScore } from '@models';
+import { FieldProgramRecord, FieldSeason, FieldTicket, FrozenProgramResult, ProducerField, ProgramScore } from '@models';
 
 /**
  * A sustainability program a field can take part in (45Z first, others later). Everything that is
@@ -27,14 +27,15 @@ export interface SustainabilityProgramDef<TData = any> {
   /** The live score, or null while inputs are missing. */
   preview(data: TData, season: FieldSeason, field: ProducerField): ProgramScore | null;
 
-  /** Numbers only known at the end of the season, asked for when finalizing (45Z: actual yield). */
-  finalizeInputs: { key: keyof TData & string; label: string }[];
-  /** What still stands between the record and Final. */
+  /**
+   * What the program takes from the tickets delivered under the field's split (45Z: actual yield =
+   * bushels ÷ acres). Applied as tickets arrive and again when harvest is complete; {} for nothing.
+   */
+  fromTickets(tickets: readonly FieldTicket[], season: FieldSeason): Partial<TData>;
+  /** What still stands between the record and Final once harvest is complete. */
   finalizeMissing(data: TData, season: FieldSeason): string[];
   /** The audit copy of inputs and outputs stored at finalize. */
   freeze(data: TData, season: FieldSeason, field: ProducerField): Omit<FrozenProgramResult, 'finalizedBy' | 'finalizedAt'>;
-  /** The confirmation shown when finalizing. */
-  finalizeStatement(season: FieldSeason): string;
 
   /** A one-line roll-up for a crop row, or null to show none. */
   rowSummary?(items: { season: FieldSeason; record: FieldProgramRecord<TData> }[], intention: { id: number; acres: number }): string | null;

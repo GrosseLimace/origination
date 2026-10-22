@@ -54,8 +54,11 @@ export class FieldPlanMockService {
 
   // ── Writes ────────────────────────────────────────────────────────────────
 
+  /** Adds a field for a CTRM split. A split already known is returned as it is: one field per split. */
   createField(field: Omit<ProducerField, 'fieldKey'>): ProducerField {
-    const created = { ...field, fieldKey: crypto.randomUUID() };
+    const existing = this.field(field.splitId);
+    if (existing) return existing;
+    const created: ProducerField = { ...field, fieldKey: field.splitId };
     this.fields.update(fs => [...fs, created]);
     return created;
   }

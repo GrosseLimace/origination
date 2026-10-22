@@ -15,8 +15,11 @@
       </label>
       <label class="block text-sm">
         <span class="text-gray-700 dark:text-gray-300">Actual yield (bu/ac)</span>
-        <input type="number" class="ci-input" disabled [ngModel]="draft.actualYield" placeholder="Entered when you finalize" />
-        <span class="text-xs text-gray-500 dark:text-gray-400">After harvest, when the field is finalized.</span>
+        <input type="number" class="ci-input" disabled [ngModel]="stored().actualYield" placeholder="From this field's tickets" />
+        <span class="text-xs text-gray-500 dark:text-gray-400">
+          @if (ticketSummary(); as t) { From {{ t.count }} ticket{{ t.count === 1 ? '' : 's' }} · {{ t.bushels | number:'1.0-0' }} bu under {{ field().splitId }}. }
+          @else { From the tickets delivered under {{ field().splitId }}. }
+        </span>
       </label>
       <label class="block text-sm">
         <span class="text-gray-700 dark:text-gray-300">Total synthetic N (lbs N/ac)</span>

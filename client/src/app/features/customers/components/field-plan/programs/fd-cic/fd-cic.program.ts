@@ -42,11 +42,15 @@ export const FD_CIC_PROGRAM: SustainabilityProgramDef<FdCicData> = {
     return r ? { value: r.ciGPerBu, unit: 'g CO₂e/bu', unitShort: 'g/bu', vsBaseline: r.vsNational } : null;
   },
 
-  finalizeInputs: [{ key: 'actualYield', label: 'Actual yield (bu/ac)' }],
+  /** Actual yield: every bushel delivered under the field's split, over its acres. */
+  fromTickets(tickets, season) {
+    const bushels = tickets.reduce((sum, t) => sum + t.netBushels, 0);
+    return { actualYield: bushels > 0 && season.acres ? Math.round((bushels / season.acres) * 10) / 10 : null };
+  },
 
   finalizeMissing(data, season) {
     const missing = missingInputs({ ...data, acres: season.acres });
-    if (!data.actualYield || data.actualYield <= 0) missing.push('actual yield');
+    if (!data.actualYield || data.actualYield <= 0) missing.push('actual yield (no tickets yet)');
     return missing;
   },
 
@@ -55,7 +59,7 @@ export const FD_CIC_PROGRAM: SustainabilityProgramDef<FdCicData> = {
     const r = estimateCi(crop, fdCicScorable(data, season, 'Final'))!;
     return {
       inputs: {
-        crop: season.cropLabel, fdCicCrop: crop, cropYear: season.year, field: field.name,
+        crop: season.cropLabel, fdCicCrop: crop, cropYear: season.year, field: field.name, splitId: field.splitId,
         state: field.state, county: field.county, acres: season.acres,
         expectedYield: data.expectedYield, actualYield: data.actualYield,
         syntheticN: data.syntheticN, niPercent: Math.round(data.niFraction * 100),
@@ -70,8 +74,6 @@ export const FD_CIC_PROGRAM: SustainabilityProgramDef<FdCicData> = {
       calculatorVersion: FD_CIC_CALCULATOR_VERSION,
     };
   },
-
-  finalizeStatement: season => `I confirm these practices and yields were provided by the producer for the ${season.year} crop year.`,
 
   /** The crop row's CI: bushel-weighted, with acres not yet in a field at the national average. */
   rowSummary(items, intention) {
@@ -98,6 +100,6 @@ export const FD_CIC_PROGRAM: SustainabilityProgramDef<FdCicData> = {
       { key: 'firstPointOfAggregationAck', short: 'first-point-of-aggregation acknowledgment',
         label: 'Scoular, as first point of aggregation, holds and allocates the CI of this grain; the producer makes no other claim on it.' },
     ],
-    attestedNote: 'Delivery lots in the CI ledger will carry this ID.',
+    attestedNote: 'Tickets carry this ID with the field\'s split ID; delivery lots in the CI ledger point back to it.',
   },
 };

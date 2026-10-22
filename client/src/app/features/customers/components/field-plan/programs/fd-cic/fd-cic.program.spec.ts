@@ -4,7 +4,9 @@ import { FD_CIC_PROGRAM } from './fd-cic.program';
 import { FD_CIC_CALCULATOR_VERSION } from './fd-cic.data';
 
 const season: FieldSeason = { id: 's1', fieldKey: 'f1', plantingIntentionId: 1, year: 2026, cropLabel: 'Corn', acres: 80 };
-const field: ProducerField = { fieldKey: 'f1', customerId: 9, name: 'North 80', state: 'KS', county: 'Pratt' };
+const field: ProducerField = {
+  fieldKey: 'TATOB28', splitId: 'TATOB28', customerId: 9, name: 'PENKA #1 IRR', splitPercent: 50, effectiveDate: '2024-09-01', state: 'KS', county: 'Pratt',
+};
 const data = (overrides: Partial<FdCicData> = {}): FdCicData => ({ ...FD_CIC_PROGRAM.blankData(), expectedYield: 200, syntheticN: 180, ...overrides });
 
 describe('45Z program (USDA FD-CIC v1.2 inputs)', () => {
@@ -30,12 +32,18 @@ describe('45Z program (USDA FD-CIC v1.2 inputs)', () => {
     expect(FD_CIC_PROGRAM.appliesTo('Hard Red Winter Wheat')).toBe(false);
   });
 
-  it('should ask for actual yield at finalize and freeze the workbook\'s inputs and outputs with the version', () => {
-    expect(FD_CIC_PROGRAM.finalizeMissing(data(), season)).toEqual(['actual yield']);
+  it('should take actual yield from the split\'s tickets: every bushel over the acres', () => {
+    const t = (netBushels: number) => ({ ticketNo: 'T1', date: '2026-10-01', netBushels, splitId: 'TATOB28', enrollmentId: 'CI-2026-000001', cropYear: 2026 });
+    expect(FD_CIC_PROGRAM.fromTickets([t(9000), t(7420)], season)).toEqual({ actualYield: 205.3 });
+    expect(FD_CIC_PROGRAM.fromTickets([], season)).toEqual({ actualYield: null });
+  });
+
+  it('should need tickets before finalizing and freeze the workbook\'s inputs and outputs with the version', () => {
+    expect(FD_CIC_PROGRAM.finalizeMissing(data(), season)).toEqual(['actual yield (no tickets yet)']);
     const frozen = FD_CIC_PROGRAM.freeze(data({ actualYield: 205, tillage: 'NoTill' }), season, field);
     expect(frozen.calculatorVersion).toBe(FD_CIC_CALCULATOR_VERSION);
     expect(frozen.calculatorVersion).toContain('FD-CIC v1.2');
-    expect(frozen.inputs).toMatchObject({ state: 'KS', county: 'Pratt', acres: 80, actualYield: 205, tillage: 'No till', coverCrop: 'No cover crop', niPercent: 0 });
+    expect(frozen.inputs).toMatchObject({ splitId: 'TATOB28', state: 'KS', county: 'Pratt', acres: 80, actualYield: 205, tillage: 'No till', coverCrop: 'No cover crop', niPercent: 0 });
     expect(frozen.outputs).toHaveProperty('nationalAverage');
     expect(frozen.score.value).toBeCloseTo(frozen.outputs['ciGPerBu'] as number, 6);
   });

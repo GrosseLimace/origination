@@ -2,8 +2,9 @@ import { EnrollableRecord, ProgramAttestation, ProgramEnrollment } from '@models
 
 /**
  * PROTOTYPE ONLY: the enrollment rules every program shares, kept pure so the server can be built and
- * tested against the same cases. A producer's finalized field records for one program and year are
- * enrolled under one signed attestation, and attesting issues the Enrollment ID.
+ * tested against the same cases. A producer's enrollment in a program for a year gets its ID as soon
+ * as their first field enters the program, so the ID can go on tickets from the first delivery; the
+ * producer's signed attestation follows, and can be recorded any time before harvest.
  */
 
 export type AttestationStatement = { key: string; label: string; short: string };
@@ -21,10 +22,10 @@ export function formatEnrollmentId(prefix: string, year: number, seq: number): s
 }
 
 /**
- * What still stands between a draft enrollment and Attested. `listed` is the enrollment's records as
- * they are now; `others` is every other enrollment (any producer), whose attested snapshots are
- * checked so a field is never claimed twice in the same program and year. A field another buyer or
- * program holds is covered by the producer's own attestation.
+ * What still stands between an open enrollment and Attested. `listed` is every record the producer
+ * has in the program that year; each must be scored (Ready or Final) — harvest isn't needed. `others`
+ * is every other enrollment (any producer), whose attested snapshots are checked so a field (split) is
+ * never claimed twice in the same program and year.
  */
 export function enrollmentBlockers(
   enrollment: ProgramEnrollment,
@@ -34,8 +35,8 @@ export function enrollmentBlockers(
 ): string[] {
   const blockers: string[] = [];
   if (listed.length === 0) blockers.push('at least one field');
-  const notFinal = listed.filter(r => r.status !== 'Final');
-  if (notFinal.length) blockers.push(`finalize ${notFinal.map(r => r.fieldName).join(', ')}`);
+  const unscored = listed.filter(r => r.status === 'Draft');
+  if (unscored.length) blockers.push(`finish the inputs for ${unscored.map(r => r.fieldName).join(', ')}`);
 
   const a = enrollment.attestation;
   if (!a.signerName.trim()) blockers.push('who signed');
@@ -48,11 +49,16 @@ export function enrollmentBlockers(
   const claims = new Map<string, string>();
   for (const o of others) {
     if (o.key === enrollment.key || o.status !== 'Attested' || o.programKey !== enrollment.programKey || o.year !== enrollment.year) continue;
-    for (const r of o.snapshot ?? []) claims.set(r.fieldKey, o.enrollmentId!);
+    for (const r of o.snapshot ?? []) claims.set(r.fieldKey, o.enrollmentId);
   }
   for (const r of listed) {
     const by = claims.get(r.fieldKey);
     if (by) blockers.push(`${r.fieldName} is already in ${by}`);
   }
   return blockers;
+}
+
+/** Whether a ticket's keyed enrollment ID matches the enrollment its split belongs to. */
+export function ticketEnrollmentMismatch(keyed: string, expected: string | undefined): boolean {
+  return !!expected && keyed.trim().toUpperCase() !== expected.toUpperCase();
 }

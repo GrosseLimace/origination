@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { EnrollableRecord, ProgramEnrollment } from '@models';
-import { AttestationStatement, blankAttestation, enrollmentBlockers, formatEnrollmentId } from './program-enrollment';
+import { AttestationStatement, blankAttestation, enrollmentBlockers, formatEnrollmentId, ticketEnrollmentMismatch } from './program-enrollment';
 
 const statements: AttestationStatement[] = [
   { key: 'notEnrolledElsewhere', label: 'Not enrolled elsewhere.', short: '"not enrolled elsewhere" confirmation' },
@@ -8,32 +8,33 @@ const statements: AttestationStatement[] = [
 ];
 
 const record = (overrides: Partial<EnrollableRecord> = {}): EnrollableRecord => ({
-  recordId: 'r1', seasonId: 's1', fieldKey: 'f1', fieldName: 'North 80', cropLabel: 'Corn', year: 2026, acres: 80, status: 'Final', ...overrides,
+  recordId: 'r1', seasonId: 's1', fieldKey: 'TATOB28', fieldName: 'PENKA #1 IRR', cropLabel: 'Corn', year: 2026, acres: 80, status: 'Ready', ...overrides,
 });
 
 const enrollment = (overrides: Partial<ProgramEnrollment> = {}): ProgramEnrollment => ({
-  key: 'k1', programKey: 'p', enrollmentId: null, customerId: 9, year: 2026, status: 'Draft', recordIds: ['r1'],
-  attestation: { ...blankAttestation(statements), signerName: 'Pat', signedOn: '2026-11-02', confirmations: { notEnrolledElsewhere: true, consent: true } },
+  key: 'k1', programKey: 'p', enrollmentId: 'CI-2026-000002', customerId: 9, year: 2026, status: 'Open',
+  attestation: { ...blankAttestation(statements), signerName: 'Pat', signedOn: '2026-05-02', confirmations: { notEnrolledElsewhere: true, consent: true } },
   ...overrides,
 });
 
 describe('program enrollment rules', () => {
-  it('should pass a signed enrollment of finalized fields', () => {
+  it('should let the producer attest before harvest, once every field is scored', () => {
     expect(enrollmentBlockers(enrollment(), [record()], [], statements)).toEqual([]);
+    expect(enrollmentBlockers(enrollment(), [record({ status: 'Final' })], [], statements)).toEqual([]);
   });
 
-  it('should list each unconfirmed statement from the program, unfinalized fields and the signature', () => {
+  it('should list each unconfirmed statement from the program, unscored fields and the signature', () => {
     const e = enrollment({ attestation: { ...blankAttestation(statements), method: 'Paper' } });
-    expect(enrollmentBlockers(e, [record({ status: 'Ready' })], [], statements)).toEqual([
-      'finalize North 80', 'who signed', 'date signed', 'the signed form\'s document reference',
+    expect(enrollmentBlockers(e, [record({ status: 'Draft' })], [], statements)).toEqual([
+      'finish the inputs for PENKA #1 IRR', 'who signed', 'date signed', 'the signed form\'s document reference',
       '"not enrolled elsewhere" confirmation', 'consent to audit',
     ]);
     expect(enrollmentBlockers(enrollment(), [], [], statements)).toEqual(['at least one field']);
   });
 
-  it('should block a field already in another attested enrollment of the same program and year only', () => {
+  it('should block a split already in another attested enrollment of the same program and year only', () => {
     const other = enrollment({ key: 'k2', enrollmentId: 'CI-2026-000001', customerId: 10, status: 'Attested', snapshot: [record()] });
-    expect(enrollmentBlockers(enrollment(), [record()], [other], statements)).toEqual(['North 80 is already in CI-2026-000001']);
+    expect(enrollmentBlockers(enrollment(), [record()], [other], statements)).toEqual(['PENKA #1 IRR is already in CI-2026-000001']);
     expect(enrollmentBlockers(enrollment(), [record()], [{ ...other, programKey: 'other' }], statements)).toEqual([]);
     expect(enrollmentBlockers(enrollment(), [record()], [{ ...other, year: 2025 }], statements)).toEqual([]);
     expect(enrollmentBlockers(enrollment(), [record()], [{ ...other, status: 'Withdrawn' }], statements)).toEqual([]);
@@ -41,5 +42,12 @@ describe('program enrollment rules', () => {
 
   it('should format IDs with the program\'s prefix', () => {
     expect(formatEnrollmentId('CI', 2026, 123)).toBe('CI-2026-000123');
+  });
+
+  it('should flag a ticket whose enrollment ID doesn\'t match its split\'s enrollment', () => {
+    expect(ticketEnrollmentMismatch('ci-2026-000001 ', 'CI-2026-000001')).toBe(false);
+    expect(ticketEnrollmentMismatch('CI-2026-000011', 'CI-2026-000001')).toBe(true);
+    expect(ticketEnrollmentMismatch('', 'CI-2026-000001')).toBe(true);
+    expect(ticketEnrollmentMismatch('CI-2026-000001', undefined)).toBe(false);
   });
 });

@@ -11,12 +11,52 @@
  * to fields or seasons. Producer-level sign-off is a ProgramEnrollment per program per year.
  */
 
-export interface ProducerField {
-  fieldKey: string;
-  customerId: number;
+/**
+ * One row of CTRM's Customer Splits Inquiry: a "combined customer" (split) ID under a producer's
+ * primary ID. Tickets are delivered under the split ID, which is what ties a delivery to a field.
+ */
+export interface CtrmSplit {
+  /** e.g. "TATOB28". */
+  splitId: string;
+  /** The producer's primary CTRM ID, e.g. "TATOBIN". */
+  primaryCustomerId: string;
+  /** CTRM's combined customer name, e.g. "T-A TOBIN - PENKA #1 IRR". */
   name: string;
+  /** The name without the producer prefix, e.g. "PENKA #1 IRR". */
+  fieldName: string;
+  /** 0–100, e.g. 66.667. */
+  splitPercent: number;
+  /** yyyy-mm-dd. */
+  effectiveDate: string;
+  expired: boolean;
+  /** A bin-site split collects grain from several fields, so it isn't a field itself. */
+  kind: 'Field' | 'Bin';
+}
+
+/** A producer's field: one CTRM split, plus the location 45Z needs. Keyed by the split ID. */
+export interface ProducerField {
+  /** The CTRM split ID. */
+  fieldKey: string;
+  splitId: string;
+  customerId: number;
+  /** From CTRM; read-only here. */
+  name: string;
+  splitPercent: number;
+  effectiveDate: string;
   state: string;
   county: string;
+}
+
+/** A scale ticket delivered under a split. PROTOTYPE: simulated until the CTRM ticket feed is wired. */
+export interface FieldTicket {
+  ticketNo: string;
+  /** yyyy-mm-dd. */
+  date: string;
+  netBushels: number;
+  splitId: string;
+  /** As keyed on the ticket; checked against the split's enrollment. */
+  enrollmentId: string;
+  cropYear: number;
 }
 
 /** One field's share of one planting intention (crop row). */
@@ -66,7 +106,8 @@ export interface FieldProgramRecord<TData = unknown> {
   frozen?: FrozenProgramResult;
 }
 
-export type EnrollmentStatus = 'Draft' | 'Attested' | 'Withdrawn';
+/** Open: ID issued, producer hasn't signed. Attested: producer signed. Withdrawn: ID retired. */
+export type EnrollmentStatus = 'Open' | 'Attested' | 'Withdrawn';
 
 /** The producer's signed statement for one program year. Confirmations are keyed by the program's statements. */
 export interface ProgramAttestation {
@@ -78,10 +119,11 @@ export interface ProgramAttestation {
   confirmations: Record<string, boolean>;
 }
 
-/** A finalized program record as an enrollment lists it. */
+/** A program record as its enrollment lists it. */
 export interface EnrollableRecord {
   recordId: string;
   seasonId: string;
+  /** The split ID. */
   fieldKey: string;
   fieldName: string;
   cropLabel: string;
@@ -92,22 +134,22 @@ export interface EnrollableRecord {
 }
 
 /**
- * One producer's enrollment in one program for one year: the ID downstream records (45Z: delivery
- * lots in the CI ledger) point back to. Issued when the producer attests; never reused, even after
- * a withdrawal.
+ * One producer's enrollment in one program for one year: the ID that goes on tickets alongside the
+ * split ID, and that downstream records (45Z: delivery lots in the CI ledger) point back to. Issued
+ * when the producer's first field enters the program, before harvest; never reused, even after a
+ * withdrawal. Every record the producer has in the program that year belongs to it.
  */
 export interface ProgramEnrollment {
   key: string;
   programKey: string;
-  enrollmentId: string | null;
+  enrollmentId: string;
   customerId: number;
   year: number;
   status: EnrollmentStatus;
-  recordIds: string[];
   attestation: ProgramAttestation;
   attestedBy?: string;
   attestedAt?: string;
-  /** The listed records as they stood when attested. */
+  /** The producer's records as they stood when attested (projected scores before harvest). */
   snapshot?: EnrollableRecord[];
   withdrawnReason?: string;
 }
