@@ -79,8 +79,12 @@ export const FD_CIC_PROGRAM: SustainabilityProgramDef<FdCicData> = {
     if (!crop) return null;
     const s = summarizeIntention(crop, intention, items.map(i => fdCicScorable(i.record.data, i.season, toStatus(i.record.status))));
     if (s.ciGPerBu === null) return null;
-    const pct = Math.abs(Math.round((s.vsNational ?? 0) * 100));
-    return `CI ${Math.round(s.ciGPerBu).toLocaleString()} g/bu ${(s.vsNational ?? 0) <= 0 ? '▼' : '▲'}${pct}% vs national`;
+    const vs = s.vsNational ?? 0;
+    const pct = Math.abs(Math.round(vs * 100));
+    return {
+      text: `CI ${Math.round(s.ciGPerBu).toLocaleString()} g/bu`,
+      change: { text: `${vs <= 0 ? '▼' : '▲'}${pct}% vs national`, better: vs <= 0 },
+    };
   },
 
   // A getter, so the program and its form can import each other without a load-order trap.

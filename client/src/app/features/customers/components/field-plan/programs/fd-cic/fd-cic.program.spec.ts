@@ -53,8 +53,14 @@ describe('45Z program (USDA FD-CIC v1.2 inputs)', () => {
     expect(FD_CIC_PROGRAM.copyForward(last, 'Corn', 'Corn')).not.toHaveProperty('actualYield');
   });
 
-  it('should roll a crop row up to a CI line', () => {
-    const text = FD_CIC_PROGRAM.rowSummary!([{ season, record: { id: 'r1', seasonId: 's1', programKey: FD_CIC_PROGRAM.key, data: data(), status: 'Ready' } }], { id: 1, acres: 80 });
-    expect(text).toMatch(/^CI [\d,]+ g\/bu [▼▲]\d+% vs national$/);
+  it('should roll a crop row up to a CI line, with its change against national marked better when lower', () => {
+    const row = (d: FdCicData) => FD_CIC_PROGRAM.rowSummary!([{ season, record: { id: 'r1', seasonId: 's1', programKey: FD_CIC_PROGRAM.key, data: d, status: 'Ready' } }], { id: 1, acres: 80 })!;
+    const low = row(data({ tillage: 'NoTill', coverCrop: 'CoverCrop', niFraction: 1 }));
+    expect(low.text).toMatch(/^CI [\d,]+ g\/bu$/);
+    expect(low.change).toMatchObject({ better: true });
+    expect(low.change!.text).toMatch(/^▼\d+% vs national$/);
+    const high = row(data({ syntheticN: 400 }));
+    expect(high.change).toMatchObject({ better: false });
+    expect(high.change!.text).toMatch(/^▲\d+% vs national$/);
   });
 });

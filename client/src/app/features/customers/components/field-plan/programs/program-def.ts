@@ -38,8 +38,11 @@ export interface SustainabilityProgramDef<TData = any> {
   /** The audit copy of inputs and outputs stored at finalize. */
   freeze(data: TData, season: FieldSeason, field: ProducerField): Omit<FrozenProgramResult, 'finalizedBy' | 'finalizedAt'>;
 
-  /** A one-line roll-up for a crop row, or null to show none. */
-  rowSummary?(items: { season: FieldSeason; record: FieldProgramRecord<TData> }[], intention: { id: number; acres: number }): string | null;
+  /**
+   * A one-line roll-up for a crop row, or null to show none: the main figure (45Z: "CI 2,629 g/bu")
+   * and, optionally, its change against the program's baseline, which is shown green when better.
+   */
+  rowSummary?(items: { season: FieldSeason; record: FieldProgramRecord<TData> }[], intention: { id: number; acres: number }): RowSummary | null;
   /**
    * The short text on the field's program chip when the program has no score to show, e.g.
    * GrainCraft's variety. Programs with a score (45Z) leave it out and the chip shows the score.
@@ -62,6 +65,13 @@ export interface SustainabilityProgramDef<TData = any> {
     /** Shown once an enrollment is attested, e.g. what downstream records carry the ID. */
     attestedNote: string;
   };
+}
+
+/** A crop row's roll-up for one program. */
+export interface RowSummary {
+  text: string;
+  /** e.g. "▼59% vs national"; `better` colours it green (amber when worse). */
+  change?: { text: string; better: boolean };
 }
 
 /** The inputs every program's intake component takes. */

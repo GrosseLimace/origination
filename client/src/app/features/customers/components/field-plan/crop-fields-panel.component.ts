@@ -49,8 +49,8 @@ export class CropFieldsPanelComponent {
       const record = this.records.find(season.id, program.key);
       return record ? [{ season, record }] : [];
     });
-    const text = items.length && program.rowSummary ? program.rowSummary(items, this.intention()) : null;
-    return text ? [{ programKey: program.key, label: program.shortLabel, text }] : [];
+    const summary = items.length && program.rowSummary ? program.rowSummary(items, this.intention()) : null;
+    return summary ? [{ programKey: program.key, label: program.shortLabel, ...summary }] : [];
   }));
 
   /** Tells the table this crop row is the one being worked on, so it can highlight it. */
