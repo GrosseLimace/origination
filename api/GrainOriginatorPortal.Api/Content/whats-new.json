@@ -1,5 +1,48 @@
 [
   {
+    "version": "2026.10.4",
+    "releasedOn": "2026-10-22",
+    "title": "Producers straight from CTRM, and help inside the app",
+    "summary": "Add a producer as soon as they are set up in CTRM, and get answers from a new Help panel on any page.",
+    "items": [
+      {
+        "group": "Producers",
+        "kind": "changed",
+        "text": "Producers now come from CTRM, the customer master, instead of the ODS. Names, addresses, contact details, NOP ID and ACH payment details are refreshed from CTRM every night."
+      },
+      {
+        "group": "Producers",
+        "kind": "added",
+        "text": "Searching to add a producer now looks in CTRM directly, so a producer set up in CTRM today can be found and added right away, without waiting for the next day."
+      },
+      {
+        "group": "Help",
+        "kind": "added",
+        "text": "A new Help panel answers questions about the Workbench. Click the ? at the top right, next to your profile menu, then type a question or pick a suggestion. Answers include steps and buttons that take you straight to the right place."
+      },
+      {
+        "group": "Help",
+        "kind": "added",
+        "text": "Can't find a producer? Help can check your trade units, search every trade unit and CTRM, and tell you where the producer is and how to open or add them."
+      },
+      {
+        "group": "Help",
+        "kind": "added",
+        "text": "Browse every help topic on the Help page, from Help in the profile menu. If you still need help, Still need help? gathers the details support asks for and walks you through opening a ServiceNow ticket."
+      },
+      {
+        "group": "Daily Recap",
+        "kind": "fixed",
+        "text": "A note on a producer with no trade unit could stop the Daily Recap going out to some groups. The recap now goes out as normal."
+      },
+      {
+        "group": "Daily Recap",
+        "kind": "changed",
+        "text": "Notes on a producer with no trade unit are left out of the Daily Recap. Before adding a note, make sure the producer has a trade unit; you can check or add one in Edit Producer."
+      }
+    ]
+  },
+  {
     "version": "2026.10.3",
     "releasedOn": "2026-10-21",
     "title": "Bid sheets you can share, with bids fed from BarChart",
