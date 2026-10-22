@@ -237,7 +237,7 @@ Azure AD bearer tokens via `Microsoft.Identity.Web`. All API endpoints require a
 
 ## Software Bill of Materials (SBOM)
 
-Last Updated: 2026-10-20
+Last Updated: 2026-10-22
 
 ### Backend Dependencies (C# / .NET 10)
 
@@ -281,7 +281,7 @@ Last Updated: 2026-10-20
 | tslib | 2.8.1 | 0BSD | TypeScript runtime helpers |
 | zone.js | 0.15.1 | MIT | Angular change detection zone |
 | tailwindcss | 4.2.1 | MIT | Utility-first CSS framework |
-| vitest | 4.1.11 | MIT | Unit testing framework (CVE fix: ≥4.1.0; security fix ≥4.1.11: `@vitest/mocker` registered a redirect-mock target without checking Vite’s file-serving allowlist, so a client reaching the dev server’s unauthenticated HMR socket could read files outside the project root — `@vitest/ui` and `@vitest/coverage-v8` pinned to the same version to keep the family in lockstep) |
+| vitest | 4.1.12 | MIT | Unit testing framework (CVE fix: ≥4.1.0; security fix ≥4.1.12: `@vitest/mocker` pasted the module URL and export names from an unauthenticated manual-mock registration straight into generated JavaScript, allowing code injection, and on Windows a backslash `..` path slipped past the 4.1.11 redirect allowlist — GHSA-qxg6-89mg-rqv8 / GHSA-xp26-3454-mjgp; earlier fix ≥4.1.11: `@vitest/mocker` registered a redirect-mock target without checking Vite’s file-serving allowlist, so a client reaching the dev server’s unauthenticated HMR socket could read files outside the project root — `@vitest/ui` and `@vitest/coverage-v8` pinned to the same version to keep the family in lockstep) |
 | typescript | 5.9.3 | Apache-2.0 | TypeScript compiler |
 | esbuild | ≥0.28.1 | MIT | Bundler — transitive (via @angular/build, vitest), pinned in `overrides` (security fix: RCE via NPM_CONFIG_REGISTRY + Windows path traversal, ≥0.28.1) |
 | vite | ≥7.3.7 <8 | MIT | Dev server/bundler + Vitest engine — transitive (via @angular/build, vitest), pinned in `overrides` (security fixes: `server.fs.deny` bypass + launch-editor NTLM disclosure on Windows ≥7.3.5; launch-editor passed `%` unescaped to cmd.exe on Windows via the dev server's /__open-in-editor, letting %VAR% expand into a command ≥7.3.7 (GHSA-698v-4r3x-3vcv) — the old ≥7.3.5 floor sat inside that range. Row previously omitted the `<8` bound the override has always carried) |

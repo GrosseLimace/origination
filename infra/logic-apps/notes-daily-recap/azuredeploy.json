@@ -1104,10 +1104,16 @@
                                         "type": "string"
                                       },
                                       "ScoularId": {
-                                        "type": "string"
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ]
                                       },
                                       "TradeUnit": {
-                                        "type": "string"
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ]
                                       }
                                     },
                                     "required": [
