@@ -1,9 +1,9 @@
-import { Component, computed, effect, inject, input } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { FieldPlanMockService } from '@core/services/field-plan-mock.service';
 import { TicketFeedMockService } from '@core/services/ticket-feed-mock.service';
-import { EnrollableRecord, ProgramEnrollment } from '@models';
+import { EnrollableRecord } from '@models';
 import { ProgramRegistry } from './program-registry';
 import { ProgramRecordMockService } from './program-record-mock.service';
 import { ProgramEnrollmentMockService } from './program-enrollment-mock.service';
@@ -15,7 +15,6 @@ import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment'
  * from the first delivery; every field they have in the program that year is in it. The card holds:
  *
  * - the fields, each with its projected or final result and its FSA numbers;
- * - the producer's signed attestation (statements from the program), recordable before harvest;
  * - the tickets assigned the ID, checked against the fields' production (acres × actual yield);
  * - "harvest complete", which finalizes every field that has its actual yield.
  *
@@ -36,12 +35,7 @@ import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment'
         <span class="text-sm">
           @if (e) {
             <span class="rounded-full bg-scoular-green-accessible/15 px-2 py-0.5 font-semibold text-scoular-green-accessible dark:text-scoular-green">{{ e.enrollmentId }}</span>
-            <span class="ml-2 text-gray-600 dark:text-gray-300">{{ records().length }} field{{ records().length === 1 ? '' : 's' }} ·</span>
-            @if (e.status === 'Attested') {
-              <span class="text-gray-600 dark:text-gray-300">attested {{ e.attestation.signedOn }}</span>
-            } @else {
-              <span class="text-amber-700 dark:text-amber-400">not yet attested</span>
-            }
+            <span class="ml-2 text-gray-600 dark:text-gray-300">{{ records().length }} field{{ records().length === 1 ? '' : 's' }}</span>
             @if (e.harvestCompleteAt) { <span class="ml-1 text-gray-600 dark:text-gray-300">· harvest complete</span> }
             @if (check()?.flagged) { <span class="ml-1 font-semibold text-red-700 dark:text-red-400">· ⚠ tickets don't match production</span> }
           } @else {
@@ -63,7 +57,6 @@ import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment'
           } @else {
             <p class="text-gray-600 dark:text-gray-300">
               Incoming tickets for this producer's {{ p.shortLabel }} grain are assigned <span class="font-semibold">{{ e.enrollmentId }}</span>.
-              @if (e.status === 'Open') { Until the producer attests, bushels under it shouldn't be counted toward the program. }
             </p>
 
             <!-- Fields -->
@@ -95,48 +88,8 @@ import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment'
                   }
                 </tbody>
               </table>
-              @if (e.status === 'Attested' && unattestedCount()) {
-                <p class="mt-1 text-xs text-amber-700 dark:text-amber-400">{{ unattestedCount() }} field(s) added since the producer attested; they aren't covered by the signed attestation.</p>
-              }
             </div>
-
-            <!-- Producer attestation -->
-            @if (draft) {
-              <fieldset [disabled]="e.status !== 'Open'" class="space-y-3">
-                <div class="font-medium text-gray-900 dark:text-white">Producer attestation</div>
-                <div class="grid gap-3 sm:grid-cols-4">
-                  <label class="block"><span class="text-gray-700 dark:text-gray-300">Signed by</span>
-                    <input class="ci-input" [(ngModel)]="draft.attestation.signerName" (ngModelChange)="save()" /></label>
-                  <label class="block"><span class="text-gray-700 dark:text-gray-300">Date signed</span>
-                    <input type="date" class="ci-input" [(ngModel)]="draft.attestation.signedOn" (ngModelChange)="save()" /></label>
-                  <label class="block"><span class="text-gray-700 dark:text-gray-300">How</span>
-                    <select class="ci-input" [(ngModel)]="draft.attestation.method" (ngModelChange)="save()">
-                      <option value="eSign">E-signature</option><option value="Paper">Signed paper form</option>
-                    </select></label>
-                  <label class="block"><span class="text-gray-700 dark:text-gray-300">Document # {{ draft.attestation.method === 'Paper' ? '' : '(optional)' }}</span>
-                    <input class="ci-input" [(ngModel)]="draft.attestation.documentRef" (ngModelChange)="save()" /></label>
-                </div>
-                <div class="space-y-1 text-gray-700 dark:text-gray-300">
-                  @for (s of p.enrollment!.statements; track s.key) {
-                    <label class="flex items-start gap-2"><input type="checkbox" class="mt-1" [(ngModel)]="draft.attestation.confirmations[s.key]" (ngModelChange)="save()" />
-                      {{ s.label }}</label>
-                  }
-                </div>
-              </fieldset>
-            }
-
-            @if (e.status === 'Open') {
-              @if (blockers().length) {
-                <div class="rounded-md bg-amber-50 dark:bg-amber-900/30 px-3 py-2 text-amber-900 dark:text-amber-200">Still needed: {{ blockers().join('; ') }}.</div>
-              }
-              <button type="button" class="rounded-md bg-scoular-green-accessible px-3 py-1.5 text-white border-0 disabled:opacity-50"
-                      [disabled]="blockers().length > 0" (click)="attest()">Record producer attestation</button>
-            } @else {
-              <div class="flex flex-wrap items-center justify-between gap-2 rounded-md bg-blue-50 dark:bg-blue-900/30 px-3 py-2 text-blue-900 dark:text-blue-200">
-                <span>🔒 {{ e.enrollmentId }} attested by {{ e.attestedBy }}. {{ p.enrollment!.attestedNote }}</span>
-                <button type="button" class="underline bg-transparent border-0 p-0" (click)="showWithdraw = true">Withdraw…</button>
-              </div>
-            }
+            <!-- Producer attestation: to be designed; the service still supports it (attest, statements). -->
 
             <!-- Tickets assigned this ID, checked against production; harvest complete finalizes -->
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
@@ -195,13 +148,13 @@ import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment'
               <div class="space-y-2">
                 <label class="block"><span class="text-gray-700 dark:text-gray-300">Why is it being withdrawn?</span>
                   <textarea rows="2" class="ci-input" [(ngModel)]="withdrawReason"></textarea></label>
-                <p class="text-xs text-gray-500 dark:text-gray-400">{{ e.enrollmentId }} and anything attested are kept; the ID is never reissued.</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">{{ e.enrollmentId }} is kept on record and never reissued.</p>
                 <div class="flex gap-2">
                   <button type="button" class="rounded-md border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-1" (click)="showWithdraw = false">Cancel</button>
                   <button type="button" class="rounded-md bg-red-600 px-3 py-1 text-white border-0 disabled:opacity-50" [disabled]="!withdrawReason.trim()" (click)="withdraw()">Withdraw</button>
                 </div>
               </div>
-            } @else if (e.status === 'Open') {
+            } @else {
               <button type="button" class="text-xs text-gray-500 underline bg-transparent border-0 p-0" (click)="showWithdraw = true">Withdraw this enrollment…</button>
             }
           }
@@ -263,16 +216,6 @@ export class ProgramEnrollmentCardComponent {
     this.service.enrollments();
     return this.service.withdrawn(this.programKey(), this.customerId(), this.year());
   });
-  readonly blockers = computed(() => {
-    const e = this.enrollment();
-    return e ? this.service.blockers(e, this.records()) : [];
-  });
-  /** Fields added after the producer signed. */
-  readonly unattestedCount = computed(() => {
-    const signed = new Set((this.enrollment()?.snapshot ?? []).map(r => r.recordId));
-    return this.records().filter(r => !signed.has(r.recordId)).length;
-  });
-
   readonly tickets = computed(() => {
     const e = this.enrollment();
     return e ? this.ticketFeed.forEnrollment(e.enrollmentId) : [];
@@ -284,29 +227,10 @@ export class ProgramEnrollmentCardComponent {
   });
 
   open = false;
-  draft: ProgramEnrollment | null = null;
   showWithdraw = false;
   withdrawReason = '';
   newTicketBushels: number | null = null;
   harvestLeftOpen: { fieldName: string; missing: string[] }[] = [];
-
-  constructor() {
-    effect(() => {
-      const e = this.enrollment();
-      if (e?.key !== this.draft?.key || e?.status !== this.draft?.status) {
-        this.draft = e ? { ...e, attestation: { ...e.attestation, confirmations: { ...e.attestation.confirmations } } } : null;
-      }
-    });
-  }
-
-  save(): void {
-    if (this.draft) this.service.update(this.draft);
-  }
-
-  attest(): void {
-    const e = this.enrollment();
-    if (e) this.service.attest(e.key, this.records());
-  }
 
   addTicket(): void {
     const e = this.enrollment();

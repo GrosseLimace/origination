@@ -74,11 +74,6 @@
               <div class="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-scoular-green-accessible/40 bg-scoular-green-accessible/5 px-4 py-2 text-sm">
                 <span class="font-semibold text-scoular-green-accessible dark:text-scoular-green">Enrollment {{ e.enrollmentId }}</span>
                 <span class="text-gray-700 dark:text-gray-300">Incoming {{ a.def.shortLabel }} tickets from this producer are assigned <span class="font-medium">{{ e.enrollmentId }}</span>.</span>
-                @if (e.status === 'Open') {
-                  <span class="text-amber-700 dark:text-amber-400">Not yet attested by the producer.</span>
-                } @else {
-                  <span class="text-gray-500 dark:text-gray-400">Attested {{ e.attestation.signedOn }}.</span>
-                }
               </div>
             } @else {
               <div class="rounded-lg bg-amber-50 dark:bg-amber-900/30 px-4 py-2 text-sm text-amber-800 dark:text-amber-300">
@@ -90,7 +85,7 @@
               <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 px-4 py-3 text-sm text-blue-900 dark:text-blue-200">
                 <span>🔒 Finalized from {{ fz.finalizedBy }}@if (fz.score; as sc) {: {{ sc.value | number:'1.0-0' }} {{ sc.unit }}} ({{ fz.calculatorVersion }}). Locked for audit.</span>
                 @if (lockedBy(); as enrolled) {
-                  <span>In attested enrollment {{ enrolled.enrollmentId }}. Withdraw the enrollment to correct this field.</span>
+                  <span>Locked by enrollment {{ enrolled.enrollmentId }}.</span>
                 } @else {
                   <button type="button" class="underline bg-transparent border-0 p-0" (click)="showReopen = true">Reopen to correct…</button>
                 }
