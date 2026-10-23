@@ -203,6 +203,70 @@ describe('FieldPlanStore', () => {
     });
   });
 
+  describe('copying inputs between fields', () => {
+    const practices = (r: { data: unknown }, actualYield: number | null = null): FdCicData =>
+      ({ ...scored(r, actualYield), tillage: 'NoTill', coverCrop: 'CoverCrop', niFraction: 0.5 });
+
+    it('should copy every input but the actual yield onto a field of the same crop, and keep that field\'s actual yield', async () => {
+      const z1 = (await store.addRecord(corn.id, FD_CIC_PROGRAM.key))!;
+      store.updateRecord(z1.id, practices(z1, 205));
+      const second = (await store.addSeason((await newField('PENKA #2', 'TATOB29')).fieldKey, 1, 2026, 'Corn', 120))!;
+      const z2 = (await store.addRecord(second.id, FD_CIC_PROGRAM.key))!;
+      store.updateRecord(z2.id, { ...(z2.data as FdCicData), actualYield: 190 });
+
+      expect(store.copySources(second.id, FD_CIC_PROGRAM.key).map(c => c.fieldName)).toEqual(['PENKA #1 IRR']);
+      expect(store.copyTargets(z1.id)).toEqual([{ seasonId: second.id, fieldName: 'PENKA #2', cropLabel: 'Corn', effect: 'replace' }]);
+      expect(await store.copyInputs(z1.id, [second.id])).toEqual({ copied: 1, skipped: 0 });
+
+      expect(store.record(z2.id)).toMatchObject({
+        status: 'Ready', copiedFromField: 'PENKA #1 IRR',
+        data: { expectedYield: 200, syntheticN: 180, tillage: 'NoTill', coverCrop: 'CoverCrop', niFraction: 0.5, actualYield: 190 },
+      });
+      expect(store.record(z1.id)?.copiedFromField).toBeUndefined();
+      expect((await backend.load(9)).records.find(r => r.id === z2.id)?.copiedFromField).toBe('PENKA #1 IRR');
+    });
+
+    it('should copy only tillage and cover crop onto another crop, and add the program where it\'s missing', async () => {
+      const z1 = (await store.addRecord(corn.id, FD_CIC_PROGRAM.key))!;
+      store.updateRecord(z1.id, practices(z1));
+      const soy = (await store.addSeason((await newField('WEST 80', 'TATOB31')).fieldKey, 2, 2026, 'Soybeans', 80))!;
+      const corn2 = (await store.addSeason((await newField('PENKA #2', 'TATOB29')).fieldKey, 1, 2026, 'Corn', 120))!;
+
+      expect(store.copyTargets(z1.id).map(t => [t.fieldName, t.effect])).toEqual([['PENKA #2', 'empty'], ['WEST 80', 'partial']]);
+      expect(await store.copyInputs(z1.id, [soy.id, corn2.id])).toEqual({ copied: 2, skipped: 0 });
+
+      expect(store.find(soy.id, FD_CIC_PROGRAM.key)?.data).toMatchObject({ tillage: 'NoTill', coverCrop: 'CoverCrop', syntheticN: null, niFraction: 0 });
+      expect(store.find(soy.id, FD_CIC_PROGRAM.key)?.status).toBe('Draft');
+      expect(store.find(corn2.id, FD_CIC_PROGRAM.key)).toMatchObject({ status: 'Ready', data: { syntheticN: 180, niFraction: 0.5 } });
+    });
+
+    it('should only offer the producer\'s other fields in the same year', async () => {
+      const z1 = (await store.addRecord(corn.id, FD_CIC_PROGRAM.key))!;
+      const nextYear = (await store.addSeason(north.fieldKey, 2, 2027, 'Corn', 80))!;
+      await store.addRecord(nextYear.id, FD_CIC_PROGRAM.key);
+      const neighbour = (await store.addSeason((await newField('NEIGHBOUR', 'SMITH01', 11)).fieldKey, 7, 2026, 'Corn', 80))!;
+      await store.addRecord(neighbour.id, FD_CIC_PROGRAM.key);
+
+      expect(store.copySources(corn.id, FD_CIC_PROGRAM.key)).toEqual([]);
+      expect(store.copyTargets(z1.id)).toEqual([]);
+      expect(await store.copyInputs(z1.id, [nextYear.id, neighbour.id, corn.id])).toEqual({ copied: 0, skipped: 3 });
+    });
+
+    it('should list a finalized field as locked and never copy onto it', async () => {
+      const z1 = (await store.addRecord(corn.id, FD_CIC_PROGRAM.key))!;
+      store.updateRecord(z1.id, practices(z1));
+      const second = (await store.addSeason((await newField('PENKA #2', 'TATOB29')).fieldKey, 1, 2026, 'Corn', 120))!;
+      const z2 = (await store.addRecord(second.id, FD_CIC_PROGRAM.key))!;
+      store.updateRecord(z2.id, scored(z2, 210));
+      await store.completeHarvest(store.enrollmentFor(z2)!);
+      expect(store.record(z2.id)?.status).toBe('Final');
+
+      expect(store.copyTargets(z1.id)).toEqual([{ seasonId: second.id, fieldName: 'PENKA #2', cropLabel: 'Corn', effect: 'locked' }]);
+      expect(await store.copyInputs(z1.id, [second.id])).toEqual({ copied: 0, skipped: 1 });
+      expect(store.record(z2.id)?.data).toMatchObject({ tillage: 'NoneOfTheAbove', actualYield: 210 });
+    });
+  });
+
   describe('saving and loading', () => {
     it('should show an edit at once and save it once, after typing pauses, with the latest value', async () => {
       vi.useFakeTimers();

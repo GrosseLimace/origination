@@ -95,11 +95,11 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
     return copy(created);
   }
 
-  async updateRecord(id: string, data: unknown, status: ProgramRecordStatus): Promise<FieldProgramRecord> {
+  async updateRecord(id: string, data: unknown, status: ProgramRecordStatus, copiedFromField?: string): Promise<FieldProgramRecord> {
     const i = this.indexOf(this.records, r => r.id === id, 'program record');
     if (this.records[i].status === 'Final') throw new Error('This record is finalized; reopen it to make changes.');
     if (status === 'Final') throw new Error('Records are finalized by harvest complete, not by saving.');
-    this.records[i] = { ...this.records[i], data: copy(data), status };
+    this.records[i] = { ...this.records[i], data: copy(data), status, ...(copiedFromField ? { copiedFromField } : {}) };
     return copy(this.records[i]);
   }
 

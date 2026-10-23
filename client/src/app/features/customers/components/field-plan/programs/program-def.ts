@@ -19,7 +19,11 @@ export interface SustainabilityProgramDef<TData = any> {
   appliesTo(cropLabel: string): boolean;
   /** A new record's data, with the program's defaults chosen. */
   blankData(): TData;
-  /** What carries over from the field's previous season in this program, or null for nothing. */
+  /**
+   * What carries over from one record's data to another in this program, or null for nothing: from the
+   * field's previous season, and from another field this year ("copy from" / "copy to"). Crop-specific
+   * inputs should only carry between the same crop.
+   */
   copyForward(prior: TData, priorCropLabel: string, cropLabel: string): Partial<TData> | null;
 
   /** Inputs still needed before the program can score the field (Draft until empty). */

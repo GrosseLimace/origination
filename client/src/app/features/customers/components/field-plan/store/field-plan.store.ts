@@ -5,6 +5,28 @@ import { ProgramRegistry } from '../programs/program-registry';
 import { enrollmentBlockers } from '../programs/program-enrollment';
 import { FIELD_PLAN_BACKEND, FieldPlanSnapshot } from './field-plan-backend';
 
+/** Another field this year whose program inputs can be copied onto a field. */
+export interface CopySource {
+  recordId: string;
+  fieldName: string;
+  cropLabel: string;
+  status: FieldProgramRecord['status'];
+  /** On the same crop row as the field being copied onto. */
+  sameRow: boolean;
+}
+
+/** A field this year that a record's inputs can be copied onto, and what copying would do there. */
+export interface CopyTarget {
+  seasonId: string;
+  fieldName: string;
+  cropLabel: string;
+  /**
+   * empty: the field has no inputs for the program yet. replace: its inputs will be replaced.
+   * partial: a different crop, so only the inputs the program carries between crops. locked: finalized.
+   */
+  effect: 'empty' | 'replace' | 'partial' | 'locked';
+}
+
 /** How long typing pauses before an edit is saved. */
 export const SAVE_DEBOUNCE_MS = 400;
 
@@ -382,6 +404,90 @@ export class FieldPlanStore {
     await this.write('withdraw the enrollment', async () => this.putEnrollment(await this.backend.withdraw(key, reason)));
   }
 
+  // ── Copying inputs between fields (same producer, program and year) ────────
+
+  /**
+   * The producer's other fields in the program this year whose inputs can be copied onto this season:
+   * this crop row's first, then the rest by name. Ones the program would carry nothing from are left out.
+   */
+  copySources(seasonId: string, programKey: string): CopySource[] {
+    const target = this.season(seasonId);
+    const customerId = target && this.customerOfSeason(seasonId);
+    const def = this.registry.get(programKey);
+    if (!target || customerId === undefined || !def) return [];
+    return this.records()
+      .flatMap(r => {
+        const season = this.season(r.seasonId);
+        const field = season && this.field(season.fieldKey);
+        if (r.programKey !== programKey || !season || !field || season.id === seasonId || season.year !== target.year
+          || field.customerId !== customerId || !carries(def.copyForward(r.data, season.cropLabel, target.cropLabel))) return [];
+        return [{ recordId: r.id, fieldName: field.name, cropLabel: season.cropLabel, status: r.status, sameRow: season.plantingIntentionId === target.plantingIntentionId }];
+      })
+      .sort((a, b) => Number(b.sameRow) - Number(a.sameRow) || a.fieldName.localeCompare(b.fieldName));
+  }
+
+  /** The producer's other fields this year that a record's inputs can be copied onto, by name. */
+  copyTargets(sourceRecordId: string): CopyTarget[] {
+    const source = this.record(sourceRecordId);
+    const from = source && this.season(source.seasonId);
+    const customerId = from && this.customerOfSeason(from.id);
+    const def = source && this.registry.get(source.programKey);
+    if (!source || !from || customerId === undefined || !def) return [];
+    const full = Object.keys(def.copyForward(source.data, from.cropLabel, from.cropLabel) ?? {}).length;
+    return this.seasons()
+      .flatMap(season => {
+        const field = this.field(season.fieldKey);
+        if (season.id === from.id || season.year !== from.year || field?.customerId !== customerId || !def.appliesTo(season.cropLabel)) return [];
+        const carried = def.copyForward(source.data, from.cropLabel, season.cropLabel);
+        if (!carries(carried)) return [];
+        const existing = this.find(season.id, source.programKey);
+        const effect: CopyTarget['effect'] = existing?.status === 'Final' ? 'locked'
+          : Object.keys(carried!).length < full ? 'partial'
+          : existing && JSON.stringify(existing.data) !== JSON.stringify(def.blankData()) ? 'replace'
+          : 'empty';
+        return [{ seasonId: season.id, fieldName: field.name, cropLabel: season.cropLabel, effect }];
+      })
+      .sort((a, b) => a.fieldName.localeCompare(b.fieldName));
+  }
+
+  /**
+   * Copies a record's inputs onto other field seasons this year, by the program's copy rule (45Z: every
+   * input for the same crop, tillage and cover crop only across crops, never the actual yield). The
+   * program is added where a field doesn't have it; finalized ones are skipped. Each copied record
+   * keeps the source field's name.
+   */
+  async copyInputs(sourceRecordId: string, targetSeasonIds: readonly string[]): Promise<{ copied: number; skipped: number }> {
+    const source = this.record(sourceRecordId);
+    const from = source && this.season(source.seasonId);
+    const sourceField = from && this.field(from.fieldKey);
+    const def = source && this.registry.get(source.programKey);
+    const result = { copied: 0, skipped: 0 };
+    if (!source || !from || !sourceField || !def) return result;
+    const allowed = new Set(this.copyTargets(sourceRecordId).filter(t => t.effect !== 'locked').map(t => t.seasonId));
+    for (const seasonId of targetSeasonIds) {
+      const season = this.season(seasonId);
+      if (!season || !allowed.has(seasonId)) {
+        result.skipped++;
+        continue;
+      }
+      const target = this.find(seasonId, source.programKey) ?? await this.addRecord(seasonId, source.programKey);
+      if (!target || target.status === 'Final') {
+        result.skipped++;
+        continue;
+      }
+      const data = { ...(target.data as object), ...def.copyForward(source.data, from.cropLabel, season.cropLabel) };
+      const status = this.statusOf({ ...target, data }, season);
+      const saved = await this.write('copy the inputs', () => this.backend.updateRecord(target.id, data, status, sourceField.name));
+      if (saved) {
+        this.putRecord(saved);
+        result.copied++;
+      } else {
+        result.skipped++;
+      }
+    }
+    return result;
+  }
+
   // ── Internals ────────────────────────────────────────────────────────────
 
   private statusOf(record: FieldProgramRecord, season: FieldSeason): FieldProgramRecord['status'] {
@@ -457,4 +563,9 @@ export class FieldPlanStore {
   private setLoad(customerId: number, state: LoadState): void {
     this._load.update(m => new Map(m).set(customerId, state));
   }
+}
+
+/** A copy rule's result carries something. */
+function carries(carried: object | null | undefined): boolean {
+  return !!carried && Object.keys(carried).length > 0;
 }

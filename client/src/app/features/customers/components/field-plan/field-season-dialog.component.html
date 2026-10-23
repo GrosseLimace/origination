@@ -59,9 +59,65 @@
             <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
               <span class="text-gray-600 dark:text-gray-300">{{ a.def.label }}</span>
               @if (a.record.status !== 'Final') {
-                <button type="button" class="text-xs text-gray-500 hover:text-red-600 bg-transparent border-0 p-0" (click)="removeProgram()">Remove from this field</button>
+                <div class="flex flex-wrap items-center gap-3">
+                  @if (copySources().length) {
+                    <label class="text-xs text-gray-600 dark:text-gray-300">Copy from
+                      <select class="ci-input ci-compact !inline-block !w-56" [disabled]="copying()" [ngModel]="''" (ngModelChange)="pickCopySource($event)">
+                        <option value="" disabled>another field…</option>
+                        @for (c of copySources(); track c.recordId) {
+                          <option [value]="c.recordId">{{ c.fieldName }} · {{ c.cropLabel }}{{ c.status === 'Draft' ? ' · incomplete' : '' }}</option>
+                        }
+                      </select>
+                    </label>
+                  }
+                  @if (copyTargets().length) {
+                    <button type="button" class="text-xs text-scoular-green-accessible dark:text-scoular-green bg-transparent border-0 p-0 hover:underline"
+                            (click)="showCopyTo.set(!showCopyTo())">Copy to other fields…</button>
+                  }
+                  <button type="button" class="text-xs text-gray-500 hover:text-red-600 bg-transparent border-0 p-0" (click)="removeProgram()">Remove from this field</button>
+                </div>
               }
             </div>
+
+            @if (pendingCopyFrom()) {
+              <div class="flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 dark:bg-amber-900/30 px-4 py-2 text-sm text-amber-800 dark:text-amber-300">
+                Replace this field's {{ a.def.shortLabel }} inputs with the other field's? The actual yield stays.
+                <button type="button" class="rounded-md bg-scoular-green-accessible px-2.5 py-1 text-white border-0" (click)="copyFrom(pendingCopyFrom()!)">Copy</button>
+                <button type="button" class="bg-transparent border-0 p-0 underline text-inherit" (click)="pendingCopyFrom.set(null)">Cancel</button>
+              </div>
+            }
+
+            @if (showCopyTo()) {
+              <div class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3 text-sm space-y-2">
+                <div class="font-medium text-gray-900 dark:text-white">Copy this field's {{ a.def.shortLabel }} inputs to</div>
+                @for (t of copyTargets(); track t.seasonId) {
+                  <label class="flex items-center gap-2" [class.opacity-50]="t.effect === 'locked'">
+                    <input type="checkbox" [disabled]="t.effect === 'locked'" [checked]="copyToPicked().has(t.seasonId)" (change)="toggleCopyTo(t.seasonId)" />
+                    <span class="text-gray-900 dark:text-white">{{ t.fieldName }}</span>
+                    <span class="text-gray-500 dark:text-gray-400">· {{ t.cropLabel }} ·
+                      @switch (t.effect) {
+                        @case ('empty') { no inputs yet }
+                        @case ('replace') { its inputs will be replaced }
+                        @case ('partial') { different crop: only the inputs that carry across crops }
+                        @case ('locked') { finalized; reopen it first }
+                      }
+                    </span>
+                  </label>
+                }
+                <div class="flex gap-2 pt-1">
+                  <button type="button" class="rounded-md bg-scoular-green-accessible px-3 py-1 text-white border-0 disabled:opacity-50"
+                          [disabled]="!copyToPicked().size || copying()" (click)="copyTo()">
+                    {{ copying() ? 'Copying…' : 'Copy to ' + copyToPicked().size + ' field' + (copyToPicked().size === 1 ? '' : 's') }}
+                  </button>
+                  <button type="button" class="rounded-md border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-1" (click)="showCopyTo.set(false)">Cancel</button>
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">Actual yields are never copied. Edit each field afterwards for what's different.</div>
+              </div>
+            }
+
+            @if (a.record.copiedFromField && a.record.status !== 'Final') {
+              <div class="text-xs text-gray-500 dark:text-gray-400">Copied from {{ a.record.copiedFromField }}. Edit what's different.</div>
+            }
 
             <!-- The producer's enrollment ID (programs with an enrollment only) -->
             @if (!a.def.enrollment) {

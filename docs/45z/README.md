@@ -96,6 +96,7 @@ endpoint.
   - `CreatedBy/At` and `ModifiedBy/At`;
   - soft delete through a query filter;
   - the record's `Data` and frozen result stored as `nvarchar(max)` JSON, like `Note.Mentions`.
+  - `FieldProgramRecord.CopiedFromField`: the field a record's inputs were copied from this year, if any.
 - Access is the same as planting intentions: any signed-in user (accepted risks AR-01 to AR-03).
 - The server owns three rules:
   - the enrollment ID sequence;

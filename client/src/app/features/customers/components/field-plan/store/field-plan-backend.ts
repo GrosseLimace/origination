@@ -45,8 +45,11 @@ export interface FieldPlanBackend {
 
   /** POST api/field-plan/records */
   addRecord(record: Omit<FieldProgramRecord, 'id'>): Promise<FieldProgramRecord>;
-  /** PUT api/field-plan/records/{id}: refused once the record is Final. */
-  updateRecord(id: string, data: unknown, status: ProgramRecordStatus): Promise<FieldProgramRecord>;
+  /**
+   * PUT api/field-plan/records/{id}: refused once the record is Final. `copiedFromField` is sent when the
+   * data was copied from another field, and kept with the record.
+   */
+  updateRecord(id: string, data: unknown, status: ProgramRecordStatus, copiedFromField?: string): Promise<FieldProgramRecord>;
   /** DELETE api/field-plan/records/{id}: a Final record is kept. */
   removeRecord(id: string): Promise<void>;
   /** POST api/field-plan/records/{id}/finalize: freezes inputs, outputs and the calculator version. */

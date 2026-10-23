@@ -5,6 +5,7 @@ import { ButtonComponent } from '@shared/components/button/button.component';
 import { DialogComponent, DialogContentComponent, DialogDescriptionComponent, DialogFooterComponent, DialogHeaderComponent, DialogTitleComponent } from '@shared/components/dialog/dialog.component';
 import { FieldPlanStore } from './store/field-plan.store';
 import { FdCicApiService } from '@core/services/fd-cic-api.service';
+import { ToastService } from '@core/services/toast.service';
 import { FieldSeason, ProducerField } from '@models';
 import { ProgramRegistry } from './programs/program-registry';
 
@@ -28,6 +29,7 @@ export class FieldSeasonDialogComponent {
   readonly store = inject(FieldPlanStore);
   private readonly registry = inject(ProgramRegistry);
   private readonly fdCic = inject(FdCicApiService);
+  private readonly toast = inject(ToastService);
 
   readonly seasonId = input.required<string>();
   /** Opens straight onto this program, adding it to the field if it isn't there yet. */
@@ -117,6 +119,68 @@ export class FieldSeasonDialogComponent {
     if (!a || a.record.status === 'Final') return;
     await this.store.removeRecord(a.record.id);
     this.activeKey.set(null);
+  }
+
+  // ── Copy inputs from / to the producer's other fields this year ────────────
+  /** Other fields whose inputs for the active program can be copied onto this one. */
+  readonly copySources = computed(() => {
+    const a = this.active();
+    return a && a.record.status !== 'Final' ? this.store.copySources(this.seasonId(), a.record.programKey) : [];
+  });
+  /** Other fields this field's inputs for the active program can be copied onto. */
+  readonly copyTargets = computed(() => {
+    const a = this.active();
+    return a && a.record.status !== 'Final' ? this.store.copyTargets(a.record.id) : [];
+  });
+  /** The source picked in "Copy from", waiting for the replace confirmation. Signals: the dialog sits under an OnPush table. */
+  readonly pendingCopyFrom = signal<string | null>(null);
+  readonly showCopyTo = signal(false);
+  readonly copyToPicked = signal<ReadonlySet<string>>(new Set());
+  readonly copying = signal(false);
+
+  /** Picking a source copies at once onto a field with no inputs yet, and asks first otherwise. */
+  pickCopySource(recordId: string): void {
+    const a = this.active();
+    if (!a || !recordId) return;
+    const def = this.registry.get(a.record.programKey);
+    const hasInputs = !!def && JSON.stringify(a.record.data) !== JSON.stringify(def.blankData());
+    if (hasInputs) this.pendingCopyFrom.set(recordId);
+    else void this.copyFrom(recordId);
+  }
+
+  async copyFrom(recordId: string): Promise<void> {
+    this.pendingCopyFrom.set(null);
+    this.copying.set(true);
+    try {
+      const { copied } = await this.store.copyInputs(recordId, [this.seasonId()]);
+      if (copied) this.toast.success('Inputs copied. Edit what\'s different.');
+    } finally {
+      this.copying.set(false);
+    }
+  }
+
+  toggleCopyTo(seasonId: string): void {
+    this.copyToPicked.update(set => {
+      const next = new Set(set);
+      if (next.has(seasonId)) next.delete(seasonId);
+      else next.add(seasonId);
+      return next;
+    });
+  }
+
+  async copyTo(): Promise<void> {
+    const a = this.active();
+    const picked = [...this.copyToPicked()];
+    if (!a || !picked.length) return;
+    this.copying.set(true);
+    try {
+      const { copied, skipped } = await this.store.copyInputs(a.record.id, picked);
+      if (copied) this.toast.success(`Copied to ${copied} field${copied === 1 ? '' : 's'}${skipped ? `; ${skipped} skipped` : ''}.`);
+      this.showCopyTo.set(false);
+      this.copyToPicked.set(new Set());
+    } finally {
+      this.copying.set(false);
+    }
   }
 
   // ── Reopen (the same for every program) ────────────────────────────────────

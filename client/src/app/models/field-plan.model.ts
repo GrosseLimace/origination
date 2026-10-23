@@ -93,6 +93,8 @@ export interface FieldProgramRecord<TData = unknown> {
   status: ProgramRecordStatus;
   /** Set when the data was prefilled from the field's previous season. */
   copiedFromYear?: number;
+  /** Set when the data was copied from another field this year (its name then), kept for the audit trail. */
+  copiedFromField?: string;
   frozen?: FrozenProgramResult;
   /** Each time a finalized record was reopened for correction, with the reason given. */
   reopened?: { reason: string; at: string; frozen: FrozenProgramResult }[];
