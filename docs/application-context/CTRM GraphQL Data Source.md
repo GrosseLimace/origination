@@ -8,7 +8,7 @@
 
 Every contract and ticket read — the producer screen, and everything behind Build-a-List, Actionable Insights and the crop-year dashboard — comes from CTRM directly through the **Scoular.GraphQL** API (formerly DB2Connector.GraphQL, AB#33220), not from the ODS views. The ODS was measurably drifting weeks behind CTRM (a hedge roll five weeks late, ticket tails eleven weeks late, one row mixing two points in time), and CTRM is the system of record. The switch happened in August 2026.
 
-Endpoint: `https://apiqa.scoular.com/internal/graphql` (APIM behind an Application Gateway WAF; the old `/internal/db2/graphql` path answers identically for now and is retired). Auth is Entra client-credentials; the secret is `Ctrm--ClientSecret` in Key Vault and is never in `appsettings`.
+Endpoint: `https://apiqa.scoular.com/internal/graphql` (APIM behind an Application Gateway WAF; the old `/internal/db2/graphql` path answers identically for now and is retired). Auth is an Entra app-only token: from the App Service managed identity where `Ctrm:UseManagedIdentity` is on, otherwise client-credentials with the secret `Ctrm--ClientSecret` from Key Vault, never in `appsettings` (see [Managed identity instead of the client secret](#managed-identity-instead-of-the-client-secret-in-progress-2026-10-23)).
 
 ## How reads are routed
 
@@ -99,6 +99,20 @@ The API's own status taxonomy is handled explicitly: business validation → HTT
 Base `appsettings.json` documents every key with a `// Key` sibling. Per environment: `Source`, `GraphQlUri`, `TenantId`, `ClientId`, `Audience`, `PageSize`, `PageConcurrency`, `TradeUnitCacheMinutes` (15), `TradeUnitContractStrategy` (`tradeUnit`; `aliased` and `perProducer` remain), `TradeUnitReadWindowYears` (3), `TradeUnitReadPageConcurrency` (4), `TradeUnitPerProducerConcurrency` (8), `TradeUnitContractConcurrency` (2), `TradeUnitContractMaxPagesPerChunk` (100), `TradeUnitTicketMaxPagesPerWindow` (200), `TradeUnitMaxConcurrentRequests` (6), `BackgroundMaxDeferSeconds` (20), `ServerTimeoutRetries` (0) / `ServerTimeoutRetryDelaySeconds` (8), `InteractiveServerTimeoutRetries` (0) / `InteractiveServerTimeoutRetryDelaySeconds` (3), `InteractivePageConcurrency` (4), `InteractiveWindowSplit` (1 = off), `CrossBookedAppliedTickets` (false), `LiveCacheSeconds`, `TicketLookbackDays` (1095), `HistoricalTicketCacheMinutes`, `RecentTicketDays` (30; Spot Loads).
 
 To enable an environment: copy Dev's `Ctrm` block, add `Ctrm--ClientSecret` to that environment's Key Vault, confirm APIM egress (no custom NSG rule needed), restart.
+
+### Managed identity instead of the client secret (in progress, 2026-10-23)
+
+Scoular is moving Azure-hosted apps off shared secrets. On 2026-10-22 integrations (Titus) granted **Db2.Read.All** and **Customers.Read.All** on `scoular-graphql-api` to each App Service's system-assigned managed identity — the same two roles the secret registrations hold:
+
+| Environment | App Service | Managed identity object id |
+|---|---|---|
+| Dev | `app-origination-dev-eus` | `7ff98598-94a0-42cb-81d9-87a6200cb3d9` |
+| QA | `app-origination-qa-eus` | `14bc8ee3-de60-48ea-a2f5-5064ad568371` |
+| PROD | `app-origination-eus` | `a60a898f-0008-4bca-83a9-5bb05dc9d435` |
+
+`Ctrm:UseManagedIdentity` (`CtrmCredentialFactory`) switches it on per environment; `Audience` does not change. Startup logs `CTRM GraphQL credential: ManagedIdentity|ClientSecret|None`. Off App Service the switch is ignored, so laptops keep using the nonprod secret from user-secrets — which is why only the PROD secret can be revoked at the end, not the nonprod one.
+
+Order: Dev (on 2026-10-23, proven; its vault secret deleted the same day) → QA (on 2026-10-23) → PROD. Rollback per environment is the App Service setting `Ctrm__UseManagedIdentity=false`, which only works while `Ctrm--ClientSecret` is still in that vault, so delete the vault secrets only after all three are proven. **Before PROD:** the gateway rate limit is keyed per identity and the raised 3,000/60 s belongs to `scoular-graphql-client-prod` (table below) — the PROD managed identity needs the same raise first or it gets the default 1,000. A failed token or a 401/403 makes the customer sync stop without using anything read from CTRM, so a bad switch cannot deactivate customers.
 
 ## Turning CTRM on in Production (runbook)
 
