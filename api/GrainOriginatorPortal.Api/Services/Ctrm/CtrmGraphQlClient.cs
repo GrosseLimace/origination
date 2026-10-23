@@ -75,7 +75,8 @@ public sealed class CtrmGraphQlClient : ICtrmGraphQlClient
             _logger.LogError("CTRM token acquisition failed [{ErrorCode}] [{ErrorCategory}]: {ExceptionType}",
                 "INFRASTRUCTURE_CTRM_TOKEN", "Infrastructure", ex.GetType().Name);
             return Fail<T>(CtrmReadStatus.TokenFailure, null, null,
-                $"Could not acquire a CTRM token ({ex.GetType().Name}) — check the Ctrm--ClientSecret Key Vault " +
+                $"Could not acquire a CTRM token ({ex.GetType().Name}) — with Ctrm:UseManagedIdentity on, check the " +
+                "App Service's system-assigned identity is enabled; otherwise check the Ctrm--ClientSecret Key Vault " +
                 "secret and that the app registration holds a role on the CTRM API. No request was sent.");
         }
 
@@ -109,8 +110,9 @@ public sealed class CtrmGraphQlClient : ICtrmGraphQlClient
             if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
                 && !LooksLikeHtml(body))
                 return Fail<T>(CtrmReadStatus.Unauthorized, httpStatus, null,
-                    "APIM refused the request — either the Ctrm--ClientSecret Key Vault secret is empty or has " +
-                    "expired, or the app registration no longer holds a role on the CTRM API.", correlationId);
+                    "APIM refused the request — the calling identity (the managed identity with Ctrm:UseManagedIdentity " +
+                    "on, otherwise the app registration) holds no role on the CTRM API or is not accepted by the gateway, " +
+                    "or the Ctrm--ClientSecret Key Vault secret has expired.", correlationId);
 
             if (response.StatusCode == HttpStatusCode.TooManyRequests)
                 return Fail<T>(CtrmReadStatus.Throttled, httpStatus, null,

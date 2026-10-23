@@ -367,25 +367,22 @@ builder.Services.AddSingleton<IGraphDirectoryClient>(sp =>
 builder.Services.AddSingleton<IAppAccessService, AppAccessService>();
 
 // CTRM GraphQL client (DB2Connector.GraphQL spike) — singleton so the cached token is shared.
-// Unlike Graph, this API is not an Azure first-party resource: it needs client credentials
-// against its own app registration, so this is the one place in the app using a
-// ClientSecretCredential. The secret comes from Key Vault as 'Ctrm--ClientSecret' (Key Vault
-// maps '--' to ':'); when any piece is missing the credential stays null and the client reports
+// With Ctrm:UseManagedIdentity on App Service, tokens come from the managed identity (app roles on
+// scoular-graphql-api), the same way Graph is done above. Otherwise it is client credentials with
+// the secret from Key Vault as 'Ctrm--ClientSecret' (Key Vault maps '--' to ':') — always the case
+// on a laptop. When nothing usable is configured the credential stays null and the client reports
 // NotConfigured. That is a FAILED read, not a fallback: with Ctrm:Source=ctrm the contract and ticket
 // screens show a load error. Rolling back to ODS is the setting Ctrm__Source=ods.
-// Longer term the cleaner shape is an app-role grant to the App Service managed identity, which
-// would remove the secret entirely and match how Graph is done above.
 builder.Services.AddSingleton<GrainOriginatorPortal.Infrastructure.Ctrm.ICtrmGraphQlClient>(sp =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
-    var tenantId = config.GetValue<string>("Ctrm:TenantId")?.Trim();
-    var clientId = config.GetValue<string>("Ctrm:ClientId")?.Trim();
-    var clientSecret = config.GetValue<string>("Ctrm:ClientSecret")?.Trim();
+    var isAppService = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEBSITE_SITE_NAME"));
+    var (ctrmCredential, ctrmCredentialKind) =
+        GrainOriginatorPortal.Api.Services.Ctrm.CtrmCredentialFactory.Create(config, isAppService);
 
-    Azure.Core.TokenCredential? ctrmCredential =
-        !string.IsNullOrEmpty(tenantId) && !string.IsNullOrEmpty(clientId) && !string.IsNullOrEmpty(clientSecret)
-            ? new ClientSecretCredential(tenantId, clientId, clientSecret)
-            : null;
+    // Logged once so a deployed environment shows which identity it is calling CTRM as.
+    sp.GetRequiredService<ILogger<GrainOriginatorPortal.Api.Services.Ctrm.CtrmGraphQlClient>>()
+        .LogInformation("CTRM GraphQL credential: {CtrmCredentialKind}", ctrmCredentialKind);
 
     return new GrainOriginatorPortal.Api.Services.Ctrm.CtrmGraphQlClient(
         ctrmCredential,
