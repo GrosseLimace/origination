@@ -33,9 +33,8 @@ export interface SustainabilityProgramDef<TData = any> {
   previewNote?(data: TData, season: FieldSeason, field: ProducerField): string | null;
 
   /**
-   * What the field should have delivered on the enrollment's tickets (45Z: acres × actual yield, in
-   * bushels), or null while unknown. The enrollment totals it and checks it against the tickets.
-   * Leave it out for a program that doesn't reconcile against deliveries.
+   * The field's production (45Z: acres × actual yield, in bushels), or null while unknown, shown on
+   * the enrollment card. Leave it out for a program that doesn't track production.
    */
   production?(data: TData, season: FieldSeason): number | null;
   /** What still stands between the record and Final when the enrollment's harvest is marked complete. */

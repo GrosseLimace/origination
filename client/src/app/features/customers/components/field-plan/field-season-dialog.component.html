@@ -64,7 +64,7 @@
               }
             </div>
 
-            <!-- The enrollment ID incoming tickets are assigned (programs with an enrollment only) -->
+            <!-- The producer's enrollment ID (programs with an enrollment only) -->
             @if (!a.def.enrollment) {
               <!-- no producer-level enrollment for this program -->
             } @else if (!hasFsa()) {
@@ -74,7 +74,6 @@
             } @else if (enrollment(); as e) {
               <div class="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-scoular-green-accessible/40 bg-scoular-green-accessible/5 px-4 py-2 text-sm">
                 <span class="font-semibold text-scoular-green-accessible dark:text-scoular-green">Enrollment {{ e.enrollmentId }}</span>
-                <span class="text-gray-700 dark:text-gray-300">Incoming {{ a.def.shortLabel }} tickets from this producer are assigned <span class="font-medium">{{ e.enrollmentId }}</span>.</span>
               </div>
             } @else {
               <div class="rounded-lg bg-amber-50 dark:bg-amber-900/30 px-4 py-2 text-sm text-amber-800 dark:text-amber-300">

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { EnrollableRecord, ProgramEnrollment } from '@models';
-import { AttestationStatement, blankAttestation, deliveryCheck, enrollmentBlockers, formatEnrollmentId, fsaKey } from './program-enrollment';
+import { AttestationStatement, blankAttestation, enrollmentBlockers, formatEnrollmentId, fsaKey } from './program-enrollment';
 
 const statements: AttestationStatement[] = [
   { key: 'notEnrolledElsewhere', label: 'Not enrolled elsewhere.', short: '"not enrolled elsewhere" confirmation' },
@@ -50,18 +50,5 @@ describe('program enrollment rules', () => {
     expect(formatEnrollmentId('CI', 2026, 123)).toBe('CI-2026-000123');
     expect(fsaKey({ fsaFarmNo: '1234', fsaTractNo: '5678', fsaFieldNo: '3' })).toBe('1234/5678/3');
     expect(fsaKey({ fsaFarmNo: '1234', fsaTractNo: ' ', fsaFieldNo: '3' })).toBe('');
-  });
-});
-
-describe('deliveryCheck', () => {
-  it('should compare ticket bushels with the fields\' production and flag a gap over 10%', () => {
-    expect(deliveryCheck([8000, 8000], [16400])).toMatchObject({ delivered: 16000, production: 16400, flagged: false });
-    expect(deliveryCheck([19000], [16400]).flagged).toBe(true);
-    expect(deliveryCheck([12000], [16400]).flagged).toBe(true);
-  });
-
-  it('should leave fields without an actual yield out, and not flag before any production is known', () => {
-    expect(deliveryCheck([16000], [16400, null])).toMatchObject({ production: 16400, fieldsWithout: 1, flagged: false });
-    expect(deliveryCheck([5000], [null, undefined])).toMatchObject({ gap: null, flagged: false, fieldsWithout: 2 });
   });
 });

@@ -3,7 +3,7 @@ import { EnrollableRecord, ProgramAttestation, ProgramEnrollment } from '@models
 /**
  * PROTOTYPE ONLY: the enrollment rules every program shares, kept pure so the server can be built and
  * tested against the same cases. A producer's enrollment in a program for a year gets its ID as soon
- * as their first field enters the program, so the ID can go on tickets from the first delivery; the
+ * as their first field enters the program, before harvest; the
  * producer's signed attestation follows, and can be recorded any time before harvest.
  */
 
@@ -70,34 +70,4 @@ export interface FsaNumbers { fsaFarmNo: string; fsaTractNo: string; fsaFieldNo:
 export function fsaKey(f: FsaNumbers): string {
   const parts = [f.fsaFarmNo, f.fsaTractNo, f.fsaFieldNo].map(p => (p ?? '').trim());
   return parts.every(p => p) ? parts.join('/') : '';
-}
-
-/** How far delivered bushels may differ from the fields' production before the check flags it. */
-export const DELIVERY_TOLERANCE = 0.1;
-
-export interface DeliveryCheck {
-  delivered: number;
-  /** Total production of the fields that have it (45Z: acres × actual yield). */
-  production: number;
-  /** Fields with no production figure yet (no actual yield). */
-  fieldsWithout: number;
-  /** delivered ÷ production − 1, or null with no production yet. */
-  gap: number | null;
-  flagged: boolean;
-}
-
-/**
- * The enrollment's ticket check: bushels on its tickets against what its fields produced. Tickets
- * carry the enrollment ID, not a field, so the check is for the enrollment as a whole. Flags a gap
- * beyond the tolerance either way (more delivered than produced is the one an auditor cares about).
- */
-export function deliveryCheck(ticketBushels: readonly number[], fieldProduction: readonly (number | null | undefined)[]): DeliveryCheck {
-  const delivered = ticketBushels.reduce((sum, b) => sum + b, 0);
-  const known = fieldProduction.filter((p): p is number => typeof p === 'number' && p > 0);
-  const production = known.reduce((sum, p) => sum + p, 0);
-  const gap = production > 0 ? delivered / production - 1 : null;
-  return {
-    delivered, production, fieldsWithout: fieldProduction.length - known.length, gap,
-    flagged: gap !== null && Math.abs(gap) > DELIVERY_TOLERANCE,
-  };
 }

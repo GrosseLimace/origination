@@ -2,18 +2,16 @@ import { Component, computed, inject, input, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { FieldPlanStore } from '../store/field-plan.store';
-import { TicketFeedMockService } from '@core/services/ticket-feed-mock.service';
 import { EnrollableRecord } from '@models';
 import { ProgramRegistry } from './program-registry';
-import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment';
+import { fsaKey } from './program-enrollment';
 
 /**
  * A producer's enrollment in one sustainability program for one year, above the planting table. The
- * ID is issued with the producer's first field in the program, so incoming tickets can be assigned it
- * from the first delivery; every field they have in the program that year is in it. The card holds:
+ * ID is issued with the producer's first field in the program; every field they have in the program
+ * that year is in it. The card holds:
  *
- * - the fields, each with its projected or final result and its FSA numbers;
- * - the tickets assigned the ID, checked against the fields' production (acres × actual yield);
+ * - the fields, each with its projected or final result, its FSA numbers and its production;
  * - "harvest complete", which finalizes every field that has its actual yield.
  *
  * Shows nothing until the producer has a field in the program. PROTOTYPE ONLY (in memory).
@@ -48,7 +46,6 @@ import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment'
             <span class="rounded-full bg-scoular-green-accessible/15 px-2 py-0.5 font-semibold text-scoular-green-accessible dark:text-scoular-green">{{ e.enrollmentId }}</span>
             <span class="ml-2 text-gray-600 dark:text-gray-300">{{ records().length }} field{{ records().length === 1 ? '' : 's' }}</span>
             @if (e.harvestCompleteAt) { <span class="ml-1 text-gray-600 dark:text-gray-300">· harvest complete</span> }
-            @if (check()?.flagged) { <span class="ml-1 font-semibold text-red-700 dark:text-red-400">· ⚠ tickets don't match production</span> }
           } @else {
             <span class="text-amber-700 dark:text-amber-400">{{ withFsaCount() ? 'No live enrollment' : 'No enrollment ID yet: fields need FSA numbers' }}</span>
           }
@@ -66,10 +63,6 @@ import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment'
               <button type="button" class="rounded-md bg-scoular-green-accessible px-3 py-1.5 text-white border-0" (click)="issueNew()">Issue a new enrollment ID</button>
             }
           } @else {
-            <p class="text-gray-600 dark:text-gray-300">
-              Incoming tickets for this producer's {{ p.shortLabel }} grain are assigned <span class="font-semibold">{{ e.enrollmentId }}</span>.
-            </p>
-
             <!-- Fields -->
             <div>
               <div class="font-medium text-gray-900 dark:text-white">Fields</div>
@@ -102,53 +95,13 @@ import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment'
             </div>
             <!-- Producer attestation: to be designed; the service still supports it (attest, statements). -->
 
-            <!-- Tickets assigned this ID, checked against production; harvest complete finalizes -->
-            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <span class="font-medium text-gray-900 dark:text-white">Tickets assigned {{ e.enrollmentId }}</span>
-                <span class="text-gray-700 dark:text-gray-300">{{ tickets().length }} ticket{{ tickets().length === 1 ? '' : 's' }} · {{ check()?.delivered | number:'1.0-0' }} bu</span>
-              </div>
-              @if (tickets().length) {
-                <table class="w-full text-left">
-                  <thead class="text-xs uppercase text-gray-500 dark:text-gray-400">
-                    <tr><th class="py-1">Ticket</th><th>Date</th><th>Enrollment ID</th><th class="text-right">Net bu</th><th class="w-8"></th></tr>
-                  </thead>
-                  <tbody>
-                    @for (t of tickets(); track t.ticketNo) {
-                      <tr class="border-t border-gray-100 dark:border-gray-700">
-                        <td class="py-1">{{ t.ticketNo }}</td>
-                        <td>{{ t.date | date:'MM/dd/yy' }}</td>
-                        <td>{{ t.enrollmentId }}</td>
-                        <td class="text-right tabular-nums">{{ t.netBushels | number:'1.0-0' }}</td>
-                        <td class="text-right">
-                          @if (!e.harvestCompleteAt) {
-                            <button type="button" class="text-gray-400 hover:text-red-600 bg-transparent border-0 p-0" (click)="removeTicket(t.ticketNo)" [attr.aria-label]="'Remove ' + t.ticketNo">✕</button>
-                          }
-                        </td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
-              }
-              @if (check(); as c) {
-                <div [class]="c.flagged ? 'rounded-md bg-red-50 dark:bg-red-900/30 px-3 py-2 text-red-800 dark:text-red-300' : 'text-gray-700 dark:text-gray-300'">
-                  Delivered {{ c.delivered | number:'1.0-0' }} bu against {{ c.production | number:'1.0-0' }} bu produced (acres × actual yield)
-                  @if (c.gap !== null) { · {{ c.gap >= 0 ? '+' : '' }}{{ c.gap | percent:'1.0-1' }} }
-                  @if (c.flagged) { — more than {{ tolerance | percent }} off. Check the tickets and the fields' actual yields. }
-                  @if (c.fieldsWithout) { <span class="text-gray-500"> · {{ c.fieldsWithout }} field(s) still need an actual yield.</span> }
-                </div>
-              }
+            <!-- Harvest complete finalizes every field that has its actual yield -->
+            <div class="space-y-2">
               @if (e.harvestCompleteAt) {
                 <div class="text-gray-700 dark:text-gray-300">Harvest marked complete {{ e.harvestCompleteAt | date:'MM/dd/yy' }}.</div>
               } @else {
-                <div class="flex flex-wrap items-end gap-2">
-                  <label class="block text-xs text-gray-600 dark:text-gray-300">Net bushels
-                    <input type="number" min="0" class="ci-input ci-compact !w-28 text-right" [(ngModel)]="newTicketBushels" (keydown.enter)="addTicket()" /></label>
-                  <button type="button" class="h-8 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 disabled:opacity-50"
-                          [disabled]="!newTicketBushels" (click)="addTicket()">Add ticket</button>
-                  <button type="button" class="h-8 rounded-md px-3 font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green border-0"
-                          (click)="completeHarvest()">Mark harvest complete</button>
-                </div>
+                <button type="button" class="h-8 rounded-md px-3 font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green border-0"
+                        (click)="completeHarvest()">Mark harvest complete</button>
               }
               @for (o of harvestLeftOpen(); track o.fieldName) {
                 <div class="text-amber-800 dark:text-amber-300">{{ o.fieldName }} couldn't be finalized: still needs {{ o.missing.join(', ') }}.</div>
@@ -183,13 +136,11 @@ import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment'
 export class ProgramEnrollmentCardComponent {
   private readonly store = inject(FieldPlanStore);
   private readonly registry = inject(ProgramRegistry);
-  private readonly ticketFeed = inject(TicketFeedMockService);
 
   readonly programKey = input.required<string>();
   readonly customerId = input.required<number>();
   readonly year = input.required<number>();
 
-  readonly tolerance = DELIVERY_TOLERANCE;
   /** The program, if it has a producer-level enrollment (otherwise the card shows nothing). */
   readonly program = computed(() => {
     const def = this.registry.get(this.programKey());
@@ -229,33 +180,12 @@ export class ProgramEnrollmentCardComponent {
   /** Fields in the program with all three FSA numbers: the ones that can join the enrollment. */
   readonly withFsaCount = computed(() => this.records().filter(r => !!r.fsa).length);
   readonly withdrawn = computed(() => this.store.withdrawn(this.programKey(), this.customerId(), this.year()));
-  readonly tickets = computed(() => {
-    const e = this.enrollment();
-    return e ? this.ticketFeed.forEnrollment(e.enrollmentId) : [];
-  });
-  /** Ticket bushels against the fields' production; null for a program that doesn't reconcile deliveries. */
-  readonly check = computed(() => {
-    if (!this.program()?.production) return null;
-    return deliveryCheck(this.tickets().map(t => t.netBushels), this.records().map(r => r.production));
-  });
 
   open = false;
   showWithdraw = false;
   withdrawReason = '';
-  newTicketBushels: number | null = null;
   /** Set after the save, so a signal: this card sits under an OnPush table. */
   readonly harvestLeftOpen = signal<{ fieldName: string; missing: string[] }[]>([]);
-
-  addTicket(): void {
-    const e = this.enrollment();
-    if (!e || !this.newTicketBushels || this.newTicketBushels <= 0 || e.harvestCompleteAt) return;
-    this.ticketFeed.add(e.enrollmentId, this.newTicketBushels);
-    this.newTicketBushels = null;
-  }
-
-  removeTicket(ticketNo: string): void {
-    this.ticketFeed.remove(ticketNo);
-  }
 
   async completeHarvest(): Promise<void> {
     const e = this.enrollment();

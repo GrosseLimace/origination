@@ -15,7 +15,7 @@ const FD_CIC_PROGRAM = createFdCicProgram(fakeFdCicApi());
 
 /**
  * A made-up second program, to prove a new program needs no change to the field, record or
- * enrollment code: its own data, its own score and attestation, no delivery reconciliation, and it
+ * enrollment code: its own data, its own score and attestation, no production figure, and it
  * lives on the same field season as 45Z.
  */
 interface WaterData { irrigatedInches: number | null; meterReading: number | null }

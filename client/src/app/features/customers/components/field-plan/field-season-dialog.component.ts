@@ -52,7 +52,7 @@ export class FieldSeasonDialogComponent {
     const all = this.programRecords();
     return all.find(p => p.record.programKey === this.activeKey()) ?? (all.length ? all[0] : null);
   });
-  /** The producer's enrollment for the active program: incoming tickets are assigned its ID. */
+  /** The producer's enrollment for the active program. */
   readonly enrollment = computed(() => {
     this.store.enrollments();
     const a = this.active();

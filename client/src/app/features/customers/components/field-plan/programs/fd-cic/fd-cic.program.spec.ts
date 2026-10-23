@@ -58,7 +58,7 @@ describe('45Z program (USDA FD-CIC on the API)', () => {
     expect(program.appliesTo('Hard Red Winter Wheat')).toBe(false);
   });
 
-  it('should give the field\'s production for the ticket check: acres × actual yield', () => {
+  it('should give the field\'s production: acres × actual yield', () => {
     expect(program.production!(data({ actualYield: 205 }), season)).toBe(16400);
     expect(program.production!(data(), season)).toBeNull();
   });

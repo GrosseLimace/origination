@@ -24,20 +24,6 @@ export interface ProducerField {
   county: string;
 }
 
-/**
- * A scale ticket assigned to a program enrollment. The ticket carries the enrollment ID, not a
- * field: bushels are checked against the enrollment's fields as a whole. PROTOTYPE: simulated until
- * the CTRM ticket feed is wired.
- */
-export interface EnrollmentTicket {
-  ticketNo: string;
-  /** yyyy-mm-dd. */
-  date: string;
-  netBushels: number;
-  /** As assigned on the ticket. */
-  enrollmentId: string;
-}
-
 /** One field's share of one planting intention (crop row). */
 export interface FieldSeason {
   id: string;
@@ -116,13 +102,13 @@ export interface EnrollableRecord {
   score?: ProgramScore;
   /** Why there is no score yet when the inputs are in, e.g. "calculating…" (see the program's previewNote). */
   scoreNote?: string;
-  /** What the field should have delivered (45Z: acres × actual yield, in bushels), for the ticket check. */
+  /** The field's production (45Z: acres × actual yield, in bushels). */
   production?: number | null;
 }
 
 /**
- * One producer's enrollment in one program for one year: the ID that incoming tickets are assigned,
- * and that downstream records (45Z: delivery lots in the CI ledger) point back to. Issued when the
+ * One producer's enrollment in one program for one year: the ID that downstream records (45Z:
+ * delivery lots in the CI ledger) point back to. Issued when the
  * producer's first field enters the program, before harvest; never reused, even after a withdrawal.
  * Every record the producer has in the program that year belongs to it.
  */

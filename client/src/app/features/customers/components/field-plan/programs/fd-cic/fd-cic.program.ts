@@ -89,7 +89,7 @@ export function createFdCicProgram(api: FdCicApiService): SustainabilityProgramD
       return state.score.scorable ? null : 'no USDA data';
     },
 
-    /** Bushels the field should have delivered: acres × actual yield, checked against the enrollment's tickets. */
+    /** The field's production: acres × actual yield. */
     production: (data, season) => (data.actualYield && season.acres ? data.actualYield * season.acres : null),
 
     finalizeMissing(data, season, field) {
@@ -167,7 +167,7 @@ export function createFdCicProgram(api: FdCicApiService): SustainabilityProgramD
         { key: 'firstPointOfAggregationAck', short: 'first-point-of-aggregation acknowledgment',
           label: 'Scoular, as first point of aggregation, holds and allocates the CI of this grain; the producer makes no other claim on it.' },
       ],
-      attestedNote: 'Incoming tickets are assigned this ID; delivery lots in the CI ledger point back to it.',
+      attestedNote: 'Delivery lots in the CI ledger point back to this ID.',
     },
   };
 }
