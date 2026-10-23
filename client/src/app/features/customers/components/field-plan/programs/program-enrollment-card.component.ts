@@ -26,35 +26,36 @@ import { fsaKey } from './program-enrollment';
     @if (program(); as p) {
     @if (records().length || e || withdrawn().length) {
     <div class="rounded-lg border border-scoular-green-accessible/40 dark:border-scoular-green/40 bg-white dark:bg-gray-800">
-      <button type="button" class="flex w-full flex-wrap items-center justify-between gap-2 bg-transparent border-0 px-4 py-3 text-left" (click)="open = !open">
-        <span class="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-          <span class="font-semibold text-gray-900 dark:text-white">🌱 {{ p.shortLabel }} enrollment · {{ year() }}</span>
-          @for (s of summaries(); track s.text) {
-            <span class="text-gray-800 dark:text-gray-100" title="Bushel-weighted across this producer's scored fields">
-              <span class="font-semibold">{{ s.text }}</span>
-              @if (s.change; as ch) {
-                <span class="ml-1 font-medium" [class]="ch.better ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'">{{ ch.text }}</span>
-              }
-            </span>
-          }
-          @if (summaries().length && scoredCount() < records().length) {
-            <span class="text-xs text-gray-500 dark:text-gray-400">{{ scoredCount() }} of {{ records().length }} fields scored</span>
-          }
-        </span>
-        <span class="text-sm">
-          @if (e) {
-            <span class="rounded-full bg-scoular-green-accessible/15 px-2 py-0.5 font-semibold text-scoular-green-accessible dark:text-scoular-green">{{ e.enrollmentId }}</span>
-            <span class="ml-2 text-gray-600 dark:text-gray-300">{{ records().length }} field{{ records().length === 1 ? '' : 's' }}</span>
-            @if (e.harvestCompleteAt) { <span class="ml-1 text-gray-600 dark:text-gray-300">· harvest complete</span> }
-          } @else {
-            <span class="text-amber-700 dark:text-amber-400">{{ withFsaCount() ? 'No live enrollment' : 'No enrollment ID yet: fields need FSA numbers' }}</span>
-          }
-          <span class="ml-2 text-gray-400">{{ open ? '▾' : '▸' }}</span>
-        </span>
+      <!-- One short line: program, ID and each crop's CI; units, field counts and status are inside -->
+      <button type="button" class="flex w-full flex-wrap items-center gap-x-3 gap-y-1 bg-transparent border-0 px-4 py-2.5 text-left text-sm" (click)="open = !open">
+        <span class="w-3 text-gray-400">{{ open ? '▾' : '▸' }}</span>
+        <span class="font-semibold text-gray-900 dark:text-white">🌱 {{ p.shortLabel }} · {{ year() }}</span>
+        @if (e) {
+          <span class="rounded-full bg-scoular-green-accessible/15 px-2 py-0.5 text-xs font-semibold text-scoular-green-accessible dark:text-scoular-green">{{ e.enrollmentId }}</span>
+          @if (e.harvestCompleteAt) { <span class="text-xs text-gray-500 dark:text-gray-400" title="Harvest marked complete">✓ harvest</span> }
+        } @else {
+          <span class="text-amber-700 dark:text-amber-400">{{ withFsaCount() ? 'No live enrollment' : 'No enrollment ID yet' }}</span>
+        }
+        @for (s of summaries(); track s.text) {
+          <span class="text-gray-800 dark:text-gray-100" [title]="s.text + (s.change ? ', ' + s.change.text : '') + ' (bushel-weighted)'">
+            <span class="font-semibold">{{ s.short ?? s.text }}</span>
+            @if (s.change; as ch) {
+              <span class="ml-1 font-medium" [class]="ch.better ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'">{{ ch.short ?? ch.text }}</span>
+            }
+          </span>
+        }
       </button>
 
       @if (open) {
         <div class="space-y-4 border-t border-gray-100 dark:border-gray-700 px-4 py-4 text-sm">
+          @if (summaries().length) {
+            <p class="text-gray-600 dark:text-gray-300">
+              {{ scoredCount() }} of {{ records().length }} field{{ records().length === 1 ? '' : 's' }} scored. Bushel-weighted:
+              @for (s of summaries(); track s.text; let last = $last) {
+                <span class="font-medium text-gray-900 dark:text-white">{{ s.text }}</span>@if (s.change) { ({{ s.change.text }}) }@if (!last) {; }
+              }
+            </p>
+          }
           @if (!e) {
             @if (!withFsaCount()) {
               <p class="text-gray-600 dark:text-gray-300">Add FSA farm, tract and field numbers to a field in {{ p.shortLabel }} to issue this producer's enrollment ID.</p>

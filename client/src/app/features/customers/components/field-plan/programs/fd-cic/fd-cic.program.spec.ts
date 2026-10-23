@@ -93,9 +93,9 @@ describe('45Z program (USDA FD-CIC on the API)', () => {
     it('should show the CI line, marked better when below national', () => {
       const low = program.rowSummary!([{ season, field, record: record(data({ tillage: 'NoTill', coverCrop: 'CoverCrop', niFraction: 1 })) }], { id: 1, acres: 80 })!;
       expect(low.text).toBe('CI 4,600 g/bu');
-      expect(low.change).toEqual({ text: '▼23% vs national', better: true });
+      expect(low.change).toEqual({ text: '▼23% vs national', short: '▼23%', better: true });
       const high = program.rowSummary!([{ season, field, record: record(data({ syntheticN: 400 })) }], { id: 1, acres: 80 })!;
-      expect(high.change).toEqual({ text: '▲17% vs national', better: false });
+      expect(high.change).toEqual({ text: '▲17% vs national', short: '▲17%', better: false });
     });
 
     it('should count acres not yet in a scored field at the national average', () => {
@@ -113,7 +113,7 @@ describe('45Z program (USDA FD-CIC on the API)', () => {
         { season: small, field, record: record(data({ expectedYield: 100, syntheticN: 100 })) },
         { season: unscored, field, record: record(program.blankData()) },
       ]);
-      expect(summaries).toEqual([{ text: 'CI 5,820 g/bu', change: { text: '▼3% vs national', better: true } }]);
+      expect(summaries).toEqual([{ text: 'CI 5,820 g/bu', short: 'CI 5,820', change: { text: '▼3% vs national', short: '▼3%', better: true } }]);
     });
 
     it('should give one enrollment CI per crop, never averaging corn and soybeans together', () => {
@@ -123,6 +123,7 @@ describe('45Z program (USDA FD-CIC on the API)', () => {
         { season: soy, field, record: record(data({ syntheticN: 0 })) },
       ]);
       expect(summaries.map(s => s.text)).toEqual(['Corn CI 5,900 g/bu', 'Soybean CI 5,000 g/bu']);
+      expect(summaries.map(s => s.short)).toEqual(['Corn 5,900', 'Soybean 5,000']);
     });
 
     it('should use a finalized field\'s frozen score, not a new calculation', () => {

@@ -48,9 +48,11 @@ export function createFdCicProgram(api: FdCicApiService): SustainabilityProgramD
     const unassignedBu = Math.max(fillToAcres - scoredAcres, 0) * (scoredBu / scoredAcres);
     const ci = (fields.reduce((sum, f) => sum + f.ci * f.acres * f.yieldUsed, 0) + national * unassignedBu) / (scoredBu + unassignedBu);
     const vs = ci / national - 1;
+    const pct = `${vs <= 0 ? '▼' : '▲'}${Math.abs(Math.round(vs * 100))}%`;
     return {
       text: `CI ${Math.round(ci).toLocaleString()} g/bu`,
-      change: { text: `${vs <= 0 ? '▼' : '▲'}${Math.abs(Math.round(vs * 100))}% vs national`, better: vs <= 0 },
+      short: `CI ${Math.round(ci).toLocaleString()}`,
+      change: { text: `${pct} vs national`, short: pct, better: vs <= 0 },
     };
   };
 
@@ -148,7 +150,11 @@ export function createFdCicProgram(api: FdCicApiService): SustainabilityProgramD
       }
       return [...byCrop].flatMap(([crop, group]) => {
         const summary = weightedCi(group, 0);
-        return summary ? [{ ...summary, text: byCrop.size > 1 ? `${crop} ${summary.text}` : summary.text }] : [];
+        if (!summary) return [];
+        // Several crops: name each ("Corn CI 2,874 g/bu", short "Corn 2,874"); one crop: just "CI".
+        return [byCrop.size > 1
+          ? { ...summary, text: `${crop} ${summary.text}`, short: summary.short?.replace(/^CI/, crop) }
+          : summary];
       });
     },
 

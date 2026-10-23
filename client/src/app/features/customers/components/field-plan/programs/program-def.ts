@@ -79,8 +79,10 @@ export interface SustainabilityProgramDef<TData = any> {
 /** A crop row's roll-up for one program. */
 export interface RowSummary {
   text: string;
-  /** e.g. "▼59% vs national"; `better` colours it green (amber when worse). */
-  change?: { text: string; better: boolean };
+  /** The figure alone for tight spots, e.g. a collapsed enrollment card: "Corn 2,874". Falls back to `text`. */
+  short?: string;
+  /** e.g. "▼59% vs national" (short: "▼59%"); `better` colours it green (amber when worse). */
+  change?: { text: string; short?: string; better: boolean };
 }
 
 /** The inputs every program's intake component takes. */
