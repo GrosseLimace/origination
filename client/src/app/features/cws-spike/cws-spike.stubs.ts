@@ -15,8 +15,6 @@ import { HttpBackend, HttpErrorResponse, HttpEvent, HttpRequest } from '@angular
 import { Observable, of, throwError } from 'rxjs';
 
 import type {
-  ApprovalActionResult,
-  ApprovalActionSource,
   ApprovalContract,
   ApprovalContractSource,
   ContractAuditEntry,
@@ -27,6 +25,7 @@ import type {
   ContractTemplateSource,
   FormConfigAdminSource,
   MarketMonthConfigRow,
+  NotifyTraderAnswer,
   PricingSource,
   PricingWriteResult,
   TradeUnitValuesSource,
@@ -322,7 +321,7 @@ export class HostContractLogSource implements ContractLogSource {
     return of(remoteLoaded([]));
   }
 
-  notifyTrader(): Observable<void> {
+  notifyTrader(): Observable<NotifyTraderAnswer> {
     return throwError(() => new Error(NOTHING_WRITTEN));
   }
 }
@@ -401,17 +400,6 @@ export class HostApprovalContractSource implements ApprovalContractSource {
         warnings: ['Rendered from a host stub. No CTRM call was made.'],
       }),
     );
-  }
-}
-
-@Injectable()
-export class HostApprovalActionSource implements ApprovalActionSource {
-  approve(): Observable<ApprovalActionResult> {
-    return throwError(() => new Error(NOTHING_WRITTEN));
-  }
-
-  reject(): Observable<ApprovalActionResult> {
-    return throwError(() => new Error(NOTHING_WRITTEN));
   }
 }
 

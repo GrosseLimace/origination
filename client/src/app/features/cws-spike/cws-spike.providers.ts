@@ -1,5 +1,5 @@
 /*
- * SPIKE: the Contract Workspace (CWS) 0.2.0 mounted whole under /cws.
+ * SPIKE: the Contract Workspace (CWS) 0.3.0 mounted whole under /cws.
  *
  * provideCwsWorkspace(CWS_SPIKE_CONFIG) is the real contract. Passing a tokenProvider makes CWS use
  * Origination's own MSAL session for the Contracts API token (cws-host-token-provider.ts) instead of
@@ -10,7 +10,6 @@
 import type { Provider } from '@angular/core';
 import { HttpBackend } from '@angular/common/http';
 import {
-  APPROVAL_ACTION_SOURCE,
   APPROVAL_CONTRACT_SOURCE,
   AVAILABILITY_SOURCE,
   CONTRACT_DETAIL_SOURCE,
@@ -40,7 +39,6 @@ import type { CwsWorkspaceConfig } from '@cws/workspace';
 import { environment } from '../../../environments/environment';
 import { originationCwsTokenProvider } from './cws-host-token-provider';
 import {
-  HostApprovalActionSource,
   HostApprovalContractSource,
   HostAvailabilitySource,
   HostContractDetailSource,
@@ -96,7 +94,6 @@ export const CWS_SAMPLE_DATA_PROVIDERS: Provider[] = [
   { provide: CONTRACT_WRITE_SOURCE, useClass: HostContractWriteSource },
   { provide: CONTRACT_NUMBER_SOURCE, useClass: HostContractNumberSource },
   { provide: FORM_CONFIG_ADMIN_SOURCE, useClass: HostFormConfigAdminSource },
-  { provide: APPROVAL_ACTION_SOURCE, useClass: HostApprovalActionSource },
   HostOfflineBackend,
   { provide: HttpBackend, useExisting: HostOfflineBackend },
 ];
