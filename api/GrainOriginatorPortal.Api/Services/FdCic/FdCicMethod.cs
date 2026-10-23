@@ -32,6 +32,17 @@ public sealed record FdCicComponents(
     double UreaLime);
 
 /// <summary>
+/// One CI component split into what the form's inputs change and what the method fixes. Not a USDA output:
+/// it explains the formulas, so it lives with the method that implements them.
+/// </summary>
+/// <param name="Key">The component's name in <see cref="FdCicComponents"/>, camel-cased (e.g. "soilCarbon").</param>
+/// <param name="Total">The component's value, g CO2e/bu; the same number as in <see cref="FdCicComponents"/>.</param>
+/// <param name="Fixed">The part no input changes (a national figure or crop constant); 0 when none.</param>
+/// <param name="FixedLabel">What the fixed part is, e.g. "Lime"; null when <paramref name="Fixed"/> is 0 by design.</param>
+/// <param name="Drivers">The form inputs that change the rest, in the form's words; empty when nothing does.</param>
+public sealed record FdCicComponentPart(string Key, string Label, double Total, double Fixed, string? FixedLabel, IReadOnlyList<string> Drivers);
+
+/// <summary>
 /// A calculated score, or the reason USDA's tables can't score this crop and place (where Excel shows
 /// #N/A or #VALUE!). <see cref="Ci"/> and <see cref="Components"/> are null when unscorable.
 /// </summary>
@@ -59,6 +70,12 @@ public interface IFdCicMethod
 
     /// <summary>Scores valid input (see <see cref="FdCicInputRules"/>) against a pack's tables.</summary>
     FdCicResult Calculate(FdCicPack pack, FdCicInput input);
+
+    /// <summary>
+    /// Splits a score's components into the part the field's inputs change and the part the method fixes,
+    /// with the inputs that drive each, so the screen never suggests an input changes what it can't.
+    /// </summary>
+    IReadOnlyList<FdCicComponentPart> Breakdown(FdCicPack pack, FdCicInput input, FdCicComponents components);
 }
 
 /// <summary>
@@ -133,6 +150,30 @@ public sealed class FdCicMethodV1 : IFdCicMethod
             national.Total,
             (ci - national.Total) / national.Total,                                   // C98
             null);
+    }
+
+    // What drives each component in v1.2, read off Calculate above (docs/45z/fd-cic-v1.2-method.md, "What the
+    // inputs change"). A new method for a new USDA version must review these alongside its formulas.
+    private const string NRate = "N rate", Inhibitor = "Nitrification inhibitor", Manure = "Manure",
+        Tillage = "Tillage", Cover = "Cover crop", Yield = "Yield", County = "County";
+    private static readonly string[] N2oDrivers = [NRate, Inhibitor, Manure, Tillage, Cover, Yield, County];
+
+    public IReadOnlyList<FdCicComponentPart> Breakdown(FdCicPack pack, FdCicInput input, FdCicComponents c)
+    {
+        var k = pack.Constants;
+        var crop = k.Crop(input.Crop) ?? throw new ArgumentException($"Unknown crop {input.Crop}.", nameof(input));
+        var national = crop.National;
+        double nFixation = crop.NFixationGN2oPerBu * k.GwpN2o;                        // in C79 (direct N2O), soybeans only
+        return
+        [
+            new("nFertilizer", "Nitrogen fertilizer", c.NFertilizer, 0, null, [NRate, Yield]),             // C70
+            new("directN2o", "Field N₂O, direct", c.DirectN2o, nFixation, nFixation != 0 ? "Soybean N fixation" : null, N2oDrivers), // C79
+            new("indirectN2o", "Field N₂O, indirect", c.IndirectN2o, 0, null, N2oDrivers),                // C80
+            new("soilCarbon", "Soil carbon (credit)", c.SoilCarbon, 0, null, [Tillage, Cover, County]),   // C72
+            new("onFarmEnergy", "On-farm energy", c.OnFarmEnergy, national.OnFarmOther, "Other on-farm energy", [Tillage, Cover]), // C82: fuel × practice + other
+            new("otherChemicals", "Other chemicals", c.OtherChemicals, c.OtherChemicals, "Other chemicals", []), // C83: national
+            new("ureaLime", "Urea & lime", c.UreaLime, national.Lime, "Lime", [NRate, Yield]),            // C84: urea × NUI + lime
+        ];
     }
 
     private static FdCicResult Unscorable(string? mlra, double yieldForCi, FdCicNationalAverage national, string reason) =>

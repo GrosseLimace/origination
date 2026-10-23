@@ -77,6 +77,7 @@ describe('45Z program (USDA FD-CIC on the API)', () => {
     expect(frozen.inputs).toMatchObject({ splitId: 'TATOB28', splitPercent: 50, state: 'KS', county: 'Pratt', acres: 80, actualYield: 205, tillage: 'No till', coverCrop: 'No cover crop', niPercent: 0 });
     expect(frozen.outputs).toMatchObject({ ciGPerBu: 5300, nationalAverage: 6000, yieldUsed: 205, mlra: '78', usdaVersion: '1.2', usdaWorkbookSha256: 'db3e', usdaFormulaFingerprint: 'a2cc' });
     expect(frozen.score!.value).toBe(5300);
+    expect(frozen.outputs['breakdown']).toContainEqual({ key: 'otherChemicals', label: 'Other chemicals', total: 470, fixed: 470, fixedLabel: 'Other chemicals', drivers: [] });
   });
 
   it('should copy last year\'s practices by the crop rules, never the actual yield', () => {

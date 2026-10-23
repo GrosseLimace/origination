@@ -131,6 +131,10 @@ public sealed class FdCicService : IFdCicService
                 OtherChemicals = c.OtherChemicals,
                 UreaLime = c.UreaLime,
             },
+            Breakdown = c is null ? [] : method.Breakdown(pack, input, c).Select(p => new FdCicComponentPartResponse
+            {
+                Key = p.Key, Label = p.Label, Total = p.Total, Fixed = p.Fixed, FixedLabel = p.FixedLabel, Drivers = p.Drivers,
+            }).ToList(),
             Ci = result.Ci,
             NationalAverage = result.NationalAverage,
             ChangeFraction = result.ChangeFraction,

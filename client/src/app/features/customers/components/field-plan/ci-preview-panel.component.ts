@@ -2,20 +2,11 @@ import { Component, computed, input, linkedSignal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FdCicScore, FdCicScoreState } from '@models';
 
-const COMPONENT_LABELS: { key: keyof NonNullable<FdCicScore['components']>; label: string }[] = [
-  { key: 'nFertilizer', label: 'Nitrogen fertilizer' },
-  { key: 'directN2o', label: 'Field N₂O, direct' },
-  { key: 'indirectN2o', label: 'Field N₂O, indirect' },
-  { key: 'onFarmEnergy', label: 'On-farm energy' },
-  { key: 'otherChemicals', label: 'Other chemicals' },
-  { key: 'ureaLime', label: 'Urea & lime' },
-  { key: 'soilCarbon', label: 'Soil carbon (credit)' },
-];
-
 /**
  * One field's CI from the USDA FD-CIC calculator on the API: the raw number (never a comparison with the
- * national average, which would suggest it decides whether a field qualifies), a bar per component, and
- * what each of the field's choices is worth. Shown beside
+ * national average, which would suggest it decides whether a field qualifies), the part of each component
+ * this field's inputs change (with which inputs), the fixed USDA figures apart from them so nobody thinks
+ * an input could lower those, and what each of the field's choices is worth. Shown beside
  * the field form so every change has a visible effect. While a new score is on its way the last one
  * stays up, dimmed, so the number doesn't flicker as the originator types.
  */
@@ -45,9 +36,10 @@ const COMPONENT_LABELS: { key: keyof NonNullable<FdCicScore['components']>; labe
           </div>
 
           <div class="space-y-1.5" [class.opacity-60]="updating()">
-            @for (c of components(); track c.key) {
+            <div class="text-xs font-semibold text-gray-700 dark:text-gray-200">Changed by this field's inputs</div>
+            @for (c of adjustable(); track c.key) {
               <div>
-                <div class="flex justify-between text-xs text-gray-600 dark:text-gray-300">
+                <div class="flex justify-between gap-2 text-xs text-gray-600 dark:text-gray-300">
                   <span>{{ c.label }}</span>
                   <span class="tabular-nums">{{ c.value | number:'1.0-0' }}</span>
                 </div>
@@ -55,9 +47,23 @@ const COMPONENT_LABELS: { key: keyof NonNullable<FdCicScore['components']>; labe
                   <div class="h-full rounded" [style.width.%]="barWidth(c.value)"
                        [class]="c.value < 0 ? 'bg-green-600' : 'bg-scoular-green-accessible'"></div>
                 </div>
+                <div class="text-[11px] text-gray-500 dark:text-gray-400">{{ c.drivers }}</div>
               </div>
             }
           </div>
+
+          @if (fixedParts().length) {
+            <div class="space-y-1" [class.opacity-60]="updating()">
+              <div class="text-xs font-semibold text-gray-500 dark:text-gray-400">USDA defaults (no input changes these)</div>
+              @for (f of fixedParts(); track f.label) {
+                <div class="flex justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+                  <span>🔒 {{ f.label }}</span>
+                  <span class="tabular-nums">{{ f.value | number:'1.0-0' }}</span>
+                </div>
+              }
+              <div class="text-[11px] text-gray-500 dark:text-gray-400">National figures in {{ s.label }}. The calculator has no input for these.</div>
+            </div>
+          }
 
           @if (s.effects.length > 0) {
             <div [class.opacity-60]="updating()">
@@ -112,12 +118,16 @@ export class CiPreviewPanelComponent {
     const s = this.state();
     return s?.status === 'error' ? s.message : '';
   });
-  readonly components = computed(() => {
-    const c = this.shown()?.components;
-    return c ? COMPONENT_LABELS.map(({ key, label }) => ({ key, label, value: c[key] })) : [];
-  });
+  /** Each component's part that the field's inputs change, with the inputs that change it. */
+  readonly adjustable = computed(() => (this.shown()?.breakdown ?? [])
+    .filter(b => b.drivers.length > 0)
+    .map(b => ({ key: b.key, label: b.label, value: b.total - b.fixed, drivers: b.drivers.join(', ') })));
+  /** The fixed USDA parts (other chemicals, lime, other on-farm energy, soybean N fixation): never adjustable. */
+  readonly fixedParts = computed(() => (this.shown()?.breakdown ?? [])
+    .filter(b => b.fixed !== 0 && b.fixedLabel)
+    .map(b => ({ label: b.fixedLabel!, value: b.fixed })));
 
-  private readonly maxComponent = computed(() => Math.max(1, ...this.components().map(c => Math.abs(c.value))));
+  private readonly maxComponent = computed(() => Math.max(1, ...this.adjustable().map(c => Math.abs(c.value))));
 
   barWidth(value: number): number {
     return Math.round((Math.abs(value) / this.maxComponent()) * 100);

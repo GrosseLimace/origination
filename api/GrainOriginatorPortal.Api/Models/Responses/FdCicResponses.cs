@@ -55,6 +55,11 @@ public record FdCicScoreResponse
     public string? Mlra { get; init; }
     public required double YieldForCi { get; init; }
     public FdCicComponentsResponse? Components { get; init; }
+    /// <summary>
+    /// Not a USDA output: each component split into the part the field's inputs change and the part the
+    /// method fixes (national figures), with the inputs that drive it. Empty when unscorable.
+    /// </summary>
+    public required IReadOnlyList<FdCicComponentPartResponse> Breakdown { get; init; }
     /// <summary>g CO2e/bu; null when unscorable.</summary>
     public double? Ci { get; init; }
     public required double NationalAverage { get; init; }
@@ -72,6 +77,18 @@ public record FdCicEffectResponse
 {
     public required string Label { get; init; }
     public required double Delta { get; init; }
+}
+
+public record FdCicComponentPartResponse
+{
+    /// <summary>e.g. "soilCarbon", as in <see cref="FdCicComponentsResponse"/>.</summary>
+    public required string Key { get; init; }
+    public required string Label { get; init; }
+    public required double Total { get; init; }
+    /// <summary>The part no input changes; <see cref="Total"/> − <see cref="Fixed"/> is what the inputs drive.</summary>
+    public required double Fixed { get; init; }
+    public string? FixedLabel { get; init; }
+    public required IReadOnlyList<string> Drivers { get; init; }
 }
 
 public record FdCicComponentsResponse

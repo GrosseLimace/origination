@@ -162,6 +162,9 @@ its macros. The tools read it as data, and the Excel check runs with macros forc
    - "Formulas unchanged" means a tables-only update: no calculator code changes.
    - Any formula change needs a calculator review. Update the method write-up as `fd-cic-v1.3-method.md`
      and add a v1.3 calculator next to v1.2.
+   - The new calculator's `Breakdown` (which inputs drive each component, and which parts are fixed
+     national figures) must be reviewed with its formulas; see §2.15 of the method write-up.
+     `FdCicBreakdownTests` checks it against the arithmetic.
    - Check the new constants and coverage against USDA's release notes or User Guide.
 4. **Confirm the test cases in Excel.** Copy `golden-cases.json` from the previous pack, add cases for anything
    the release changed, then fill in Excel's results:

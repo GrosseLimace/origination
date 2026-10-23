@@ -110,6 +110,8 @@ export function createFdCicProgram(api: FdCicApiService): SustainabilityProgramD
         outputs: {
           ciGPerBu: score.ci, nationalAverage: score.nationalAverage, vsNational: score.changeFraction,
           yieldUsed: score.yieldForCi, mlra: score.mlra, components: { ...score.components },
+          // Which part of each component the inputs drove and which was a fixed USDA figure, under this version.
+          breakdown: score.breakdown.map(b => ({ ...b, drivers: [...b.drivers] })),
           usdaVersion: score.version, usdaWorkbookSha256: score.sourceSha256, usdaFormulaFingerprint: score.formulaFingerprint,
         },
         score: toProgramScore(score),

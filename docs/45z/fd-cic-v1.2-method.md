@@ -332,6 +332,23 @@ For soybean, direct = 208.0 + 2319.5 + 1934.5 = 4461.97, which matches `B15`.
 
 The other national components (N-fertilizer upstream, energy, chemicals, urea, lime) are hard-coded and cannot be derived from this workbook. They presumably come from GREET.
 
+### 2.15 What the inputs change, and what is fixed
+
+Read off §2.14. The app's score panel shows the adjustable parts with their drivers, and the fixed parts
+apart as USDA defaults, so nobody is led to think an input could lower them. `FdCicMethodV1.Breakdown`
+returns this split, and `FdCicBreakdownTests` checks it against the arithmetic for every test case:
+changing an input must leave every component that doesn't list it unchanged, and never move a fixed part.
+
+| Component | Changed by | Fixed part (no input changes it) |
+|---|---|---|
+| Nitrogen fertilizer (C70) | N rate, yield | none |
+| Field N₂O, direct (C79) | N rate, inhibitor, manure, tillage, cover crop, yield, county | soybean N fixation (`7.3 × 265`, soybeans only) |
+| Field N₂O, indirect (C80) | N rate, inhibitor, manure, tillage, cover crop, yield, county | none |
+| Soil carbon (C72) | tillage, cover crop, county | none |
+| On-farm energy (C82) | the fuel part: tillage, cover crop | `Natl.OtherEnergy` (other on-farm energy) |
+| Other chemicals (C83) | nothing | all of it (`Natl.OtherChem`) |
+| Urea & lime (C84) | the urea part: N rate, yield | `Natl.Lime` |
+
 ---
 
 ## 3. Lookup tables

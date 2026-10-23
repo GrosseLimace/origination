@@ -27,6 +27,24 @@ export interface FdCicComponents {
   ureaLime: number;
 }
 
+/**
+ * One CI component split into the part the field's inputs change and the part the calculator fixes
+ * (a national figure), with the inputs that drive it. Not a USDA output: the API's method explains its
+ * own formulas, so a new USDA version brings its own split.
+ */
+export interface FdCicComponentPart {
+  /** e.g. "soilCarbon", as in FdCicComponents. */
+  key: string;
+  label: string;
+  total: number;
+  /** The part no input changes; total − fixed is what the inputs drive. */
+  fixed: number;
+  /** What the fixed part is, e.g. "Lime"; null when there's none. */
+  fixedLabel: string | null;
+  /** The form inputs that change the rest, e.g. ["Tillage", "Cover crop"]; empty when nothing does. */
+  drivers: string[];
+}
+
 /** A score and the exact USDA version that produced it. */
 export interface FdCicScore {
   version: string;
@@ -42,6 +60,8 @@ export interface FdCicScore {
   mlra: string | null;
   yieldForCi: number;
   components: FdCicComponents | null;
+  /** Each component split into what the inputs change and the fixed USDA part; empty when not scorable. */
+  breakdown: FdCicComponentPart[];
   /** g CO₂e/bu; null when not scorable. */
   ci: number | null;
   nationalAverage: number;
