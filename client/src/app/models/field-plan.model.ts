@@ -151,6 +151,8 @@ export interface EnrollableRecord {
   fieldKey: string;
   fieldName: string;
   splitId: string;
+  /** The field's enrollment ID in the program for the year, derived from split ID + crop year. */
+  enrollmentId: string;
   cropLabel: string;
   year: number;
   acres: number | null;
@@ -163,15 +165,15 @@ export interface EnrollableRecord {
 }
 
 /**
- * One producer's enrollment in one program for one year: the ID that downstream records (45Z:
- * delivery lots in the CI ledger) point back to. Issued when the
- * producer's first field enters the program, before harvest; never reused, even after a withdrawal.
- * Every record the producer has in the program that year belongs to it.
+ * One producer's enrollment in one program for one year: what harvest complete, attestation and
+ * withdrawal apply to. Created when the producer's first field enters the program, before harvest; every
+ * record the producer has in the program that year belongs to it. It has no ID of its own: each field in
+ * it has one, derived from its split ID and the crop year (enrollmentIdFor), which is what downstream
+ * records (45Z: delivery lots in the CI ledger) point back to and what a ticket resolves to.
  */
 export interface ProgramEnrollment {
   key: string;
   programKey: string;
-  enrollmentId: string;
   customerId: number;
   year: number;
   status: EnrollmentStatus;

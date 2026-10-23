@@ -59,6 +59,11 @@ export class FieldSeasonDialogComponent {
     const a = this.active();
     return a ? this.store.enrollmentFor(a.record) : undefined;
   });
+  /** The active program's enrollment ID for this field, derived from its split ID and the crop year. */
+  readonly enrollmentId = computed(() => {
+    const a = this.active();
+    return a ? this.store.enrollmentIdOf(a.record) ?? '' : '';
+  });
   readonly heldBy = computed(() => {
     const a = this.active();
     return a ? this.store.heldBy(a.record.id) : undefined;

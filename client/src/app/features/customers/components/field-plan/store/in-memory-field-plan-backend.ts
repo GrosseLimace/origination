@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { EnrollableRecord, FieldProgramRecord, FieldSeason, ProducerField, ProgramEnrollment, ProgramRecordStatus } from '@models';
 import { ProgramRegistry } from '../programs/program-registry';
-import { blankAttestation, enrollmentBlockers, formatEnrollmentId } from '../programs/program-enrollment';
+import { blankAttestation, enrollmentBlockers } from '../programs/program-enrollment';
 import type { FieldPlanBackend, FieldPlanSnapshot, ReopenResult } from './field-plan-backend';
 
 /** A deep copy, as a JSON round trip, the way data comes back from the API (undefined fields drop out). */
@@ -10,8 +10,7 @@ const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 /**
  * PROTOTYPE ONLY: plays the field-plan server in the browser until the database is approved. It holds
  * every producer's fields, seasons, program records and enrollments in memory (a reload starts over)
- * and enforces the rules the real server will own: one enrollment ID sequence per program, duplicate
- * claims refused at attestation, no reopening a field an attested enrollment holds, and locking.
+ * and enforces the rules the real server will own: duplicate claims refused at attestation, no reopening a field an attested enrollment holds, and locking.
  * Everything handed out is a copy, as if it had come over the wire.
  */
 @Injectable({ providedIn: 'root' })
@@ -24,8 +23,6 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
   private enrollments: ProgramEnrollment[] = [];
   private nextSeasonId = 1;
   private nextRecordId = 1;
-  /** Per program, so each program's IDs run from 000001 across every producer and year. */
-  private readonly nextSeq = new Map<string, number>();
 
   async load(customerId: number): Promise<FieldPlanSnapshot> {
     const fields = this.fields.filter(f => f.customerId === customerId);
@@ -155,10 +152,8 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
     const existing = this.enrollments.find(e => e.programKey === programKey && e.customerId === customerId && e.year === year && e.status !== 'Withdrawn');
     const config = this.registry.get(programKey)?.enrollment;
     if (existing || !config) return existing && copy(existing);
-    const seq = this.nextSeq.get(programKey) ?? 1;
-    this.nextSeq.set(programKey, seq + 1);
     const created: ProgramEnrollment = {
-      key: crypto.randomUUID(), programKey, enrollmentId: formatEnrollmentId(config.idPrefix, year, seq),
+      key: crypto.randomUUID(), programKey,
       customerId, year, status: 'Open', attestation: blankAttestation(config.statements),
     };
     this.enrollments.push(created);

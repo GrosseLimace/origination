@@ -2,7 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import { EnrollableRecord, FieldProgramRecord, FieldSeason, ProducerField, ProgramEnrollment } from '@models';
 import { ToastService } from '@core/services/toast.service';
 import { ProgramRegistry } from '../programs/program-registry';
-import { enrollmentBlockers } from '../programs/program-enrollment';
+import { enrollmentBlockers, enrollmentIdFor } from '../programs/program-enrollment';
 import { FIELD_PLAN_BACKEND, FieldPlanSnapshot } from './field-plan-backend';
 
 /** Another field this year whose program inputs can be copied onto a field. */
@@ -42,12 +42,12 @@ type LoadState = 'loading' | 'loaded' | 'error';
  * Writes come in two kinds:
  * - edits while typing (`updateRecord`, `updateField`, `updateSeason`) apply at once, so scores and chips
  *   move, and are saved after a pause, latest value wins, one save in flight per item;
- * - structural changes (add, remove, lock, reopen, harvest complete, withdraw, issue an ID) wait for
+ * - structural changes (add, remove, lock, reopen, harvest complete, withdraw, enroll) wait for
  *   the backend, after any pending edits are saved, and return a Promise.
  * A failed save shows an error and reloads the producer from the backend, so the screen never shows
  * something that wasn't kept.
  *
- * The program lifecycle: added (the producer's enrollment ID is issued with it) → Draft → Ready (scored) → actual yield entered → the enrollment's harvest marked complete →
+ * The program lifecycle: added (the producer's enrollment starts with it; the field's ID is derived) → Draft → Ready (scored) → actual yield entered → the enrollment's harvest marked complete →
  * Locked (the harvest estimate frozen; never an official result), unlockable with a reason unless the producer's attested enrollment holds it.
  * Originators never lock field by field.
  */
@@ -163,6 +163,30 @@ export class FieldPlanStore {
       const field = season && this.field(season.fieldKey);
       return !!season && !!field && field.customerId === enrollment.customerId && season.year === enrollment.year;
     });
+  }
+
+  /** A record's enrollment ID: its program's prefix, the crop year and the field's split ID. Undefined without enrollment. */
+  enrollmentIdOf(record: FieldProgramRecord): string | undefined {
+    const prefix = this.registry.get(record.programKey)?.enrollment?.idPrefix;
+    const season = this.season(record.seasonId);
+    const field = season && this.field(season.fieldKey);
+    return prefix && season && field ? enrollmentIdFor(prefix, season.year, field.splitId) : undefined;
+  }
+
+  /**
+   * Finds a field's enrollment from identifiers the system already has: a split ID and a crop year (what a
+   * ticket carries), so nobody types an enrollment ID. Undefined when that split isn't a field in the
+   * program that year. A withdrawn enrollment still resolves, with its withdrawn status.
+   */
+  resolveEnrollment(programKey: string, splitId: string, cropYear: number):
+    { enrollmentId: string; field: ProducerField; season: FieldSeason; record: FieldProgramRecord; enrollment?: ProgramEnrollment } | undefined {
+    const field = this.field(splitId.trim().toUpperCase());
+    const season = field && this.seasons().find(s => s.fieldKey === field.fieldKey && s.year === cropYear && this.find(s.id, programKey));
+    const record = season && this.find(season.id, programKey);
+    const enrollmentId = record && this.enrollmentIdOf(record);
+    if (!field || !season || !record || !enrollmentId) return undefined;
+    const enrollment = this.current(programKey, field.customerId, cropYear) ?? this.withdrawn(programKey, field.customerId, cropYear).at(-1);
+    return { enrollmentId, field, season, record, enrollment };
   }
 
   // ── Reads: enrollments ───────────────────────────────────────────────────
@@ -312,7 +336,7 @@ export class FieldPlanStore {
     });
   }
 
-  /** Issues the producer's enrollment ID for each program on the field that doesn't have one. Called when a program is added. */
+  /** Starts the producer's enrollment for each program on the field that doesn't have a live one. Called when a program is added. */
   async ensureEnrollments(fieldKey: string): Promise<void> {
     const field = this.field(fieldKey);
     if (!field) return;
@@ -327,9 +351,9 @@ export class FieldPlanStore {
     }
   }
 
-  /** The producer's live enrollment, or a new one with its ID issued now (e.g. after a withdrawal). */
+  /** The producer's live enrollment, or a new one (e.g. re-enrolling after a withdrawal, under the same field IDs). */
   async ensureEnrollment(programKey: string, customerId: number, year: number): Promise<ProgramEnrollment | undefined> {
-    return this.write('issue the enrollment ID', async () => {
+    return this.write('enroll the producer', async () => {
       const e = await this.backend.ensureEnrollment(programKey, customerId, year);
       if (e) this.putEnrollment(e);
       return e;
@@ -395,10 +419,7 @@ export class FieldPlanStore {
     });
   }
 
-  /**
-   * Withdraws an enrollment with a reason. Its ID and snapshot are kept and the ID is never reissued;
-   * the producer's next program input starts a new enrollment with a new ID.
-   */
+  /** Withdraws an enrollment with a reason, which is kept. Re-enrolling later uses the same derived field IDs. */
   async withdraw(key: string, reason: string): Promise<void> {
     if (!reason.trim()) return;
     await this.write('withdraw the enrollment', async () => this.putEnrollment(await this.backend.withdraw(key, reason)));

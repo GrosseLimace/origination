@@ -87,7 +87,7 @@ export class CropFieldsPanelComponent {
       if (!program || !field) return [];
       const score = record.frozen?.score ?? program.preview(record.data, s, field);
       const text = score ? null : (program.chipText?.(record.data) ?? program.previewNote?.(record.data, s, field) ?? null);
-      return [{ programKey: program.key, label: program.shortLabel, status: record.status, score, text }];
+      return [{ programKey: program.key, label: program.shortLabel, status: record.status, score, text, enrollmentId: this.store.enrollmentIdOf(record) ?? '' }];
     });
   }
 

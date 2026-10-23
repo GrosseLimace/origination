@@ -10,7 +10,7 @@ import { join } from 'node:path';
  */
 describe('field plan wording: estimates, never final or official', () => {
   const dir = join(process.cwd(), 'src', 'app', 'features', 'customers', 'components', 'field-plan');
-  const files = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap(e =>
+  const files = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((e: { name: string; isDirectory(): boolean }) =>
     e.isDirectory() ? files(join(d, e.name)) : /\.(html|ts)$/.test(e.name) && !e.name.endsWith('.spec.ts') ? [join(d, e.name)] : []);
   const sources = files(dir).map(f => ({ f, text: readFileSync(f, 'utf8') }));
 
@@ -22,7 +22,7 @@ describe('field plan wording: estimates, never final or official', () => {
     // Markup lines (in .html files and inline templates) that mention "official".
     const markup = sources
       .filter(({ f, text }) => f.endsWith('.html') || text.includes('template: `'))
-      .flatMap(({ f, text }) => text.split('\n').filter(l => /official/i.test(l) && /<|\{\{|@if/.test(l)).map(line => ({ f, line })));
+      .flatMap(({ f, text }) => text.split('\n').filter((l: string) => /official/i.test(l) && /<|\{\{|@if/.test(l)).map((line: string) => ({ f, line })));
     expect(markup.length).toBeGreaterThan(0);
     for (const { f, line } of markup) {
       // The words shown, with tags, bindings and control flow removed; each "official" in them must be

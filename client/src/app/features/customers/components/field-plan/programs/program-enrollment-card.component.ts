@@ -11,9 +11,9 @@ import { LadderRow, atOrBelowTarget, ciLadder } from './ci-ladder';
 type CardField = EnrollableRecord & { result: FieldResult; official: string };
 
 /**
- * A producer's enrollment in one sustainability program for one year, above the planting table. The
- * ID is issued with the producer's first field in the program; every field they have in the program
- * that year is in it. The card holds:
+ * A producer's enrollment in one sustainability program for one year, above the planting table. It starts
+ * with the producer's first field in the program, and every field they have in the program that year is
+ * in it, each with its own derived ID (e.g. CI-2026-TATOB43; nobody types one). The card holds:
  *
  * - "bushels by CI": per crop, the scored fields lowest CI first with their bushels and a running total,
  *   and a target box ("at or below 3,000 g/bu → 69,000 bu"). Never one producer-wide average:
@@ -40,10 +40,10 @@ type CardField = EnrollableRecord & { result: FieldResult; official: string };
         <span class="w-3 text-gray-400">{{ open ? '▾' : '▸' }}</span>
         <span class="font-semibold text-gray-900 dark:text-white">🌱 {{ p.shortLabel }} · {{ year() }}</span>
         @if (e) {
-          <span class="rounded-full bg-scoular-green-accessible/15 px-2 py-0.5 text-xs font-semibold text-scoular-green-accessible dark:text-scoular-green">{{ e.enrollmentId }}</span>
+          <span class="text-xs text-gray-600 dark:text-gray-300">{{ records().length }} field{{ records().length === 1 ? '' : 's' }}</span>
           @if (e.harvestCompleteAt) { <span class="text-xs text-gray-500 dark:text-gray-400" title="Harvest marked complete">✓ harvest</span> }
         } @else {
-          <span class="text-amber-700 dark:text-amber-400">{{ records().length ? 'No live enrollment' : 'No enrollment ID yet' }}</span>
+          <span class="text-amber-700 dark:text-amber-400">{{ records().length ? 'Withdrawn' : 'Not enrolled yet' }}</span>
         }
         @for (g of groups(); track g.group) {
           <span class="text-gray-800 dark:text-gray-100">
@@ -57,8 +57,8 @@ type CardField = EnrollableRecord & { result: FieldResult; official: string };
         <div class="space-y-5 border-t border-gray-100 dark:border-gray-700 px-4 py-4 text-sm">
           @if (!e) {
             @if (records().length) {
-              <p class="text-gray-600 dark:text-gray-300">The last enrollment was withdrawn. Issue a new ID for this producer's {{ records().length }} field(s) in {{ p.shortLabel }}.</p>
-              <button type="button" class="rounded-md bg-scoular-green-accessible px-3 py-1.5 text-white border-0" (click)="issueNew()">Issue a new enrollment ID</button>
+              <p class="text-gray-600 dark:text-gray-300">This producer's {{ p.shortLabel }} enrollment was withdrawn. Re-enrolling makes their {{ records().length }} field(s) live again under the same IDs.</p>
+              <button type="button" class="rounded-md bg-scoular-green-accessible px-3 py-1.5 text-white border-0" (click)="reEnroll()">Re-enroll</button>
             }
           } @else {
             @if (p.official; as o) {
@@ -80,7 +80,7 @@ type CardField = EnrollableRecord & { result: FieldResult; official: string };
                 </div>
                 <table class="mt-1 w-full text-left">
                   <thead class="text-xs uppercase text-gray-500 dark:text-gray-400">
-                    <tr><th class="py-1 text-right pr-4">CI {{ g.unitShort }}</th><th>Field</th><th>Split ID</th><th class="text-right">Acres</th><th class="text-right">Bushels</th><th class="text-right">At or below this CI</th>@if (p.official) { <th class="text-right">Official</th> }</tr>
+                    <tr><th class="py-1 text-right pr-4">CI {{ g.unitShort }}</th><th>Field</th><th>Enrollment ID</th><th class="text-right">Acres</th><th class="text-right">Bushels</th><th class="text-right">At or below this CI</th>@if (p.official) { <th class="text-right">Official</th> }</tr>
                   </thead>
                   <tbody>
                     @for (row of g.ladder; track row.item.recordId) {
@@ -90,7 +90,7 @@ type CardField = EnrollableRecord & { result: FieldResult; official: string };
                           <span class="text-xs text-gray-500"> estimate · {{ row.item.status === 'Locked' ? 'locked' : 'projected' }}</span>
                         </td>
                         <td class="text-gray-900 dark:text-white">{{ row.item.fieldName }}</td>
-                        <td class="text-gray-600 dark:text-gray-300">{{ row.item.splitId }}</td>
+                        <td class="text-gray-600 dark:text-gray-300">{{ row.item.enrollmentId }}</td>
                         <td class="text-right text-gray-600 dark:text-gray-300">{{ row.item.acres | number }}</td>
                         <td class="text-right tabular-nums text-gray-600 dark:text-gray-300">
                           @if (row.item.result.bushels !== null) {
@@ -111,7 +111,7 @@ type CardField = EnrollableRecord & { result: FieldResult; official: string };
                 <div class="font-medium text-gray-900 dark:text-white">Not scored yet</div>
                 <ul class="mt-1 space-y-0.5 text-gray-600 dark:text-gray-300">
                   @for (r of unscored(); track r.recordId) {
-                    <li>{{ r.fieldName }} ({{ r.splitId }}) · {{ r.cropLabel }} · {{ r.acres | number }} ac ·
+                    <li>{{ r.fieldName }} ({{ r.enrollmentId }}) · {{ r.cropLabel }} · {{ r.acres | number }} ac ·
                       <span class="text-amber-700 dark:text-amber-400">{{ r.scoreNote ?? 'needs inputs' }}</span></li>
                   }
                 </ul>
@@ -136,7 +136,7 @@ type CardField = EnrollableRecord & { result: FieldResult; official: string };
               <div class="space-y-2">
                 <label class="block"><span class="text-gray-700 dark:text-gray-300">Why is it being withdrawn?</span>
                   <textarea rows="2" class="ci-input" [(ngModel)]="withdrawReason"></textarea></label>
-                <p class="text-xs text-gray-500 dark:text-gray-400">{{ e.enrollmentId }} is kept on record and never reissued.</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">The withdrawal and its reason are kept. Re-enrolling later uses the same field IDs.</p>
                 <div class="flex gap-2">
                   <button type="button" class="rounded-md border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-1" (click)="showWithdraw = false">Cancel</button>
                   <button type="button" class="rounded-md bg-red-600 px-3 py-1 text-white border-0 disabled:opacity-50" [disabled]="!withdrawReason.trim()" (click)="withdraw()">Withdraw</button>
@@ -148,7 +148,7 @@ type CardField = EnrollableRecord & { result: FieldResult; official: string };
           }
 
           @for (w of withdrawn(); track w.key) {
-            <div class="text-xs text-gray-500 dark:text-gray-400">Withdrawn: {{ w.enrollmentId }} · {{ w.withdrawnReason }}</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">Withdrawn earlier: {{ w.withdrawnReason }}</div>
           }
         </div>
       }
@@ -189,7 +189,7 @@ export class ProgramEnrollmentCardComponent {
     const program = this.program()!;
     const results = new Map((program.fieldResults?.(this.items()) ?? []).map(r => [r.recordId, r]));
     return this.items().map(({ record: r, season, field }) => ({
-      recordId: r.id, seasonId: season.id, fieldKey: field.fieldKey, fieldName: field.name, splitId: field.splitId,
+      recordId: r.id, seasonId: season.id, fieldKey: field.fieldKey, fieldName: field.name, splitId: field.splitId, enrollmentId: this.store.enrollmentIdOf(r) ?? '',
       cropLabel: season.cropLabel, year: season.year, acres: season.acres, status: r.status,
       score: r.frozen?.score ?? program.preview(r.data, season, field) ?? undefined,
       scoreNote: program.previewNote?.(r.data, season, field) ?? undefined,
@@ -263,7 +263,7 @@ export class ProgramEnrollmentCardComponent {
     await this.store.withdraw(e.key, reason);
   }
 
-  async issueNew(): Promise<void> {
+  async reEnroll(): Promise<void> {
     await this.store.ensureEnrollment(this.programKey(), this.customerId(), this.year());
   }
 }

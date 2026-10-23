@@ -100,10 +100,26 @@ endpoint.
   - `FieldProgramRecord.Official` (JSON, nullable): the official result, kept apart from the estimate (see
     [Estimate vs official CI](#estimate-vs-official-ci)). It may become its own table once its shape is known.
 - Access is the same as planting intentions: any signed-in user (accepted risks AR-01 to AR-03).
-- The server owns three rules:
-  - the enrollment ID sequence;
+- The server owns two rules:
   - refusing duplicate claims at attestation (a split ID in two enrollments of one program and year);
   - locking the harvest estimate, which rescores with `FdCicService` rather than trusting the client's number.
+
+## Enrollment identifier
+
+Each field in a program has an enrollment ID **derived** from identifiers the system already has, not issued
+from a counter: `{program prefix}-{crop year}-{split ID}`, e.g. `CI-2026-TATOB43`. Nobody types it, and in
+particular the scale or ticket-entry user never keys an extra ID: a ticket carries the split ID, its crop year
+is known, and `FieldPlanStore.resolveEnrollment(program, splitId, cropYear)` finds the field, its record and
+the producer's enrollment. The server will offer the same as `GET api/field-plan/enrollment?programKey&splitId&cropYear`.
+
+- The producer's enrollment (producer + program + year) still groups the fields for harvest complete,
+  attestation and withdrawal, but has no display ID of its own.
+- Withdrawal is kept with its reason. Re-enrolling makes the producer live again under the **same** field
+  IDs, since they derive from split and year.
+- The format lives in one function, `enrollmentIdFor` (`client/.../field-plan/programs/program-enrollment.ts`).
+- **Open (technical design):** the final format; where the crop year comes from (ticket date, contract or
+  CTRM crop year); a split growing two crops in one program year (the crop would need to be in the key);
+  whether auditors need the ID stored as well as derived.
 
 ## Estimate vs official CI
 

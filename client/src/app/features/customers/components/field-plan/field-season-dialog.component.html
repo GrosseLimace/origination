@@ -128,11 +128,12 @@
               <!-- no producer-level enrollment for this program -->
             } @else if (enrollment(); as e) {
               <div class="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-scoular-green-accessible/40 bg-scoular-green-accessible/5 px-4 py-2 text-sm">
-                <span class="font-semibold text-scoular-green-accessible dark:text-scoular-green">Enrollment {{ e.enrollmentId }}</span>
+                <span class="font-semibold text-scoular-green-accessible dark:text-scoular-green">Enrollment {{ enrollmentId() }}</span>
+                <span class="text-gray-600 dark:text-gray-300">From the split ID and crop year; nobody needs to type it.</span>
               </div>
             } @else {
               <div class="rounded-lg bg-amber-50 dark:bg-amber-900/30 px-4 py-2 text-sm text-amber-800 dark:text-amber-300">
-                No live enrollment (the last one was withdrawn). Issue a new ID from the enrollment card above the planting table.
+                The producer's enrollment was withdrawn. Re-enroll from the enrollment card above the planting table; this field keeps {{ enrollmentId() }}.
               </div>
             }
 
@@ -140,7 +141,7 @@
               <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 px-4 py-3 text-sm text-blue-900 dark:text-blue-200">
                 <span>🔒 Harvest estimate locked ({{ fz.calculatorVersion }}, at {{ fz.lockedBy }})@if (fz.score; as sc) {: {{ sc.value | number:'1.0-0' }} {{ sc.unit }}}.@if (a.def.official; as o) { Not an official {{ o.resultName }}.}</span>
                 @if (heldBy(); as enrolled) {
-                  <span>Held by attested enrollment {{ enrolled.enrollmentId }}.</span>
+                  <span>Held by the producer's attested {{ a.def.shortLabel }} enrollment.</span>
                 } @else {
                   <button type="button" class="underline bg-transparent border-0 p-0" (click)="showReopen = true">Unlock to correct…</button>
                 }

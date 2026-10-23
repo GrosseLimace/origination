@@ -76,12 +76,12 @@ export interface SustainabilityProgramDef<TData = any> {
   };
 
   /**
-   * Producer-level enrollment, for programs that have one (45Z): an ID per producer per year, issued
-   * when the producer's first field enters the program, plus the producer's signed attestation. A
-   * program without it records field data only.
+   * Enrollment, for programs that have one (45Z): each field's ID for the year, derived from its split ID
+   * and the crop year, grouped per producer for harvest complete, attestation and withdrawal. A program
+   * without it records field data only.
    */
   enrollment?: {
-    /** Enrollment IDs read `${idPrefix}-${year}-000001`. */
+    /** Enrollment IDs read `${idPrefix}-${cropYear}-${splitId}` (provisional; see enrollmentIdFor). */
     idPrefix: string;
     /** What the producer confirms when attesting; keys are stored with the answers. */
     statements: { key: string; label: string; short: string }[];

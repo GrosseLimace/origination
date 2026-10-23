@@ -2,8 +2,8 @@ import { EnrollableRecord, ProgramAttestation, ProgramEnrollment } from '@models
 
 /**
  * PROTOTYPE ONLY: the enrollment rules every program shares, kept pure so the server can be built and
- * tested against the same cases. A producer's enrollment in a program for a year gets its ID as soon
- * as their first field enters the program, before harvest; the
+ * tested against the same cases. A producer's enrollment in a program for a year starts as soon as
+ * their first field enters the program, before harvest, and each field's ID is derived (enrollmentIdFor); the
  * producer's signed attestation follows, and can be recorded any time before harvest.
  */
 
@@ -16,9 +16,14 @@ export function blankAttestation(statements: readonly AttestationStatement[]): P
   };
 }
 
-/** "CI-2026-000123". */
-export function formatEnrollmentId(prefix: string, year: number, seq: number): string {
-  return `${prefix}-${year}-${String(seq).padStart(6, '0')}`;
+/**
+ * A field's enrollment ID in a program for a crop year, e.g. "CI-2026-TATOB43": derived from what the
+ * system already has, so nobody types it. A ticket carries the split ID and its crop year is known, so the
+ * enrollment resolves from those (FieldPlanStore.resolveEnrollment). PROVISIONAL: the exact format is
+ * still to be settled in the technical design; this is the only place it lives.
+ */
+export function enrollmentIdFor(prefix: string, cropYear: number, splitId: string): string {
+  return `${prefix}-${cropYear}-${splitId.trim().toUpperCase()}`;
 }
 
 /**
@@ -47,14 +52,13 @@ export function enrollmentBlockers(
     if (!a.confirmations[s.key]) blockers.push(s.short);
   }
 
-  const claims = new Map<string, string>();
+  const claims = new Set<string>();
   for (const o of others) {
     if (o.key === enrollment.key || o.status !== 'Attested' || o.programKey !== enrollment.programKey || o.year !== enrollment.year) continue;
-    for (const r of o.snapshot ?? []) claims.set(r.splitId, o.enrollmentId);
+    for (const r of o.snapshot ?? []) claims.add(r.splitId);
   }
   for (const r of listed) {
-    const by = claims.get(r.splitId);
-    if (by) blockers.push(`${r.fieldName} (${r.splitId}) is already in ${by}`);
+    if (claims.has(r.splitId)) blockers.push(`${r.fieldName} (${r.enrollmentId}) is already in another attested enrollment`);
   }
   return blockers;
 }

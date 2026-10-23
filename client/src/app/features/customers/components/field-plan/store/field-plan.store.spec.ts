@@ -92,30 +92,35 @@ describe('FieldPlanStore', () => {
       expect(store.forSeason(corn.id)).toHaveLength(2);
       expect((z.data as FdCicData).tillage).toBe('NoneOfTheAbove');
       expect(w.data).toEqual({ irrigatedInches: null, meterReading: null });
-      expect(store.enrollmentFor(z)?.enrollmentId).toBe('CI-2026-000001');
-      expect(store.enrollmentFor(w)?.enrollmentId).toBe('WS-2026-000001');
+      expect(store.enrollmentIdOf(z)).toBe('CI-2026-TATOB28');
+      expect(store.enrollmentIdOf(w)).toBe('WS-2026-TATOB28');
+      expect(store.enrollmentFor(z)).not.toBe(store.enrollmentFor(w));
       expect((await store.addRecord(corn.id, WATER_PROGRAM.key))?.id).toBe(w.id);
     });
 
-    it('should issue the enrollment ID with the first field, and put every later field in the same enrollment', async () => {
+    it('should enroll the producer with their first field, give each field its own derived ID, and keep one enrollment per year', async () => {
       const z1 = (await store.addRecord(corn.id, FD_CIC_PROGRAM.key))!;
-      expect(store.enrollmentFor(z1)).toMatchObject({ enrollmentId: 'CI-2026-000001', status: 'Open' });
+      expect(store.enrollmentFor(z1)).toMatchObject({ status: 'Open', customerId: 9, year: 2026 });
       const second = (await store.addSeason((await newField('PENKA #2', 'TATOB29')).fieldKey, 1, 2026, 'Corn', 120))!;
       const z2 = (await store.addRecord(second.id, FD_CIC_PROGRAM.key))!;
-      expect(store.enrollmentFor(z2)?.enrollmentId).toBe('CI-2026-000001');
+      expect(store.enrollmentFor(z2)).toBe(store.enrollmentFor(z1));
+      expect([store.enrollmentIdOf(z1), store.enrollmentIdOf(z2)]).toEqual(['CI-2026-TATOB28', 'CI-2026-TATOB29']);
       expect(store.forEnrollment(store.enrollmentFor(z1)!).map(r => r.id)).toEqual([z1.id, z2.id]);
 
       const nextYear = (await store.addSeason(north.fieldKey, 2, 2027, 'Corn', 80))!;
       const next = (await store.addRecord(nextYear.id, FD_CIC_PROGRAM.key))!;
-      expect(store.enrollmentFor(next)?.enrollmentId).toBe('CI-2027-000002');
+      expect(store.enrollmentIdOf(next)).toBe('CI-2027-TATOB28');
+      expect(store.enrollmentFor(next)).not.toBe(store.enrollmentFor(z1));
     });
 
-    it('should issue the enrollment ID as soon as a field enters the program', async () => {
-      const rented = await newField('RENTED 80', 'SMITH01', 11);
-      const season = (await store.addSeason(rented.fieldKey, 5, 2026, 'Corn', 80))!;
-      const z = (await store.addRecord(season.id, FD_CIC_PROGRAM.key))!;
-      expect(store.enrollmentFor(z)?.enrollmentId).toBe('CI-2026-000001');
-      expect(store.forEnrollment(store.enrollmentFor(z)!).map(r => r.id)).toEqual([z.id]);
+    it('should resolve a split ID and crop year to the field\'s enrollment, so nobody types an ID', async () => {
+      const z = (await store.addRecord(corn.id, FD_CIC_PROGRAM.key))!;
+      expect(store.resolveEnrollment(FD_CIC_PROGRAM.key, 'tatob28', 2026)).toMatchObject({
+        enrollmentId: 'CI-2026-TATOB28', field: { splitId: 'TATOB28' }, season: { id: corn.id }, record: { id: z.id }, enrollment: { status: 'Open' },
+      });
+      expect(store.resolveEnrollment(FD_CIC_PROGRAM.key, 'TATOB28', 2025)).toBeUndefined();
+      expect(store.resolveEnrollment(FD_CIC_PROGRAM.key, 'NOSUCH1', 2026)).toBeUndefined();
+      expect(store.resolveEnrollment(WATER_PROGRAM.key, 'TATOB28', 2026)).toBeUndefined();
     });
 
     it('should refuse to make one producer\'s split another producer\'s field', async () => {
@@ -124,14 +129,17 @@ describe('FieldPlanStore', () => {
       expect(toast).toHaveBeenCalledWith('Couldn\'t add the field. Split TATOB28 is another producer\'s field.');
     });
 
-    it('should retire a withdrawn ID and issue a new one with the next program input', async () => {
+    it('should keep a withdrawal with its reason, and re-enroll under the same field IDs', async () => {
       const z = (await store.addRecord(corn.id, FD_CIC_PROGRAM.key))!;
       await store.withdraw(store.enrollmentFor(z)!.key, 'Producer enrolled elsewhere');
       expect(store.enrollmentFor(z)).toBeUndefined();
-      expect(store.withdrawn(FD_CIC_PROGRAM.key, 9, 2026)[0]).toMatchObject({ enrollmentId: 'CI-2026-000001', withdrawnReason: 'Producer enrolled elsewhere' });
-      const second = (await store.addSeason((await newField('PENKA #2', 'TATOB29')).fieldKey, 1, 2026, 'Corn', 120))!;
-      const z2 = (await store.addRecord(second.id, FD_CIC_PROGRAM.key))!;
-      expect(store.enrollmentFor(z2)?.enrollmentId).toBe('CI-2026-000002');
+      expect(store.withdrawn(FD_CIC_PROGRAM.key, 9, 2026)[0]).toMatchObject({ withdrawnReason: 'Producer enrolled elsewhere' });
+      expect(store.resolveEnrollment(FD_CIC_PROGRAM.key, 'TATOB28', 2026)?.enrollment?.status).toBe('Withdrawn');
+
+      await store.ensureEnrollment(FD_CIC_PROGRAM.key, 9, 2026);
+      expect(store.enrollmentFor(z)?.status).toBe('Open');
+      expect(store.enrollmentIdOf(z)).toBe('CI-2026-TATOB28');
+      expect(store.withdrawn(FD_CIC_PROGRAM.key, 9, 2026)).toHaveLength(1);
     });
 
     it('should copy forward from the field\'s last season in the same program', async () => {
@@ -181,7 +189,7 @@ describe('FieldPlanStore', () => {
       const e = store.enrollmentFor(z)!;
       await store.updateAttestation({ ...e, attestation: { ...e.attestation, signerName: 'Pat', signedOn: '2026-05-02',
         confirmations: Object.fromEntries(FD_CIC_PROGRAM.enrollment!.statements.map(s => [s.key, true])) } });
-      const listed = [{ recordId: z.id, seasonId: corn.id, fieldKey: north.fieldKey, fieldName: north.name, splitId: north.splitId, cropLabel: 'Corn', year: 2026, acres: 80, status: 'Ready' as const }];
+      const listed = [{ recordId: z.id, seasonId: corn.id, fieldKey: north.fieldKey, fieldName: north.name, splitId: north.splitId, enrollmentId: 'CI-2026-TATOB28', cropLabel: 'Corn', year: 2026, acres: 80, status: 'Ready' as const }];
       expect((await store.attest(e.key, listed))?.status).toBe('Attested');
 
       store.updateRecord(z.id, scored(z, 205));
