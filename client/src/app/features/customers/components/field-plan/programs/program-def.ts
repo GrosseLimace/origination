@@ -49,6 +49,11 @@ export interface SustainabilityProgramDef<TData = any> {
    */
   rowSummary?(items: { season: FieldSeason; record: FieldProgramRecord<TData>; field: ProducerField }[], intention: { id: number; acres: number }): RowSummary | null;
   /**
+   * The producer's figures for the year across all their fields in the program, for the enrollment
+   * card's header (45Z: bushel-weighted CI, one per crop). Empty or left out shows none.
+   */
+  enrollmentSummary?(items: { season: FieldSeason; record: FieldProgramRecord<TData>; field: ProducerField }[]): RowSummary[];
+  /**
    * The short text on the field's program chip when the program has no score to show, e.g.
    * GrainCraft's variety. Programs with a score (45Z) leave it out and the chip shows the score.
    */

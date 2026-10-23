@@ -104,6 +104,27 @@ describe('45Z program (USDA FD-CIC on the API)', () => {
       expect(row.text).toBe('CI 5,950 g/bu');
     });
 
+    it('should give the producer\'s enrollment CI weighted by each scored field\'s bushels, leaving unscored fields out', () => {
+      // 80 ac × 200 bu at 5,900 and 40 ac × 100 bu at 5,500: (5,900×16,000 + 5,500×4,000) ÷ 20,000 = 5,820.
+      const small: FieldSeason = { ...season, id: 's2', acres: 40 };
+      const unscored: FieldSeason = { ...season, id: 's3', acres: 500 };
+      const summaries = program.enrollmentSummary!([
+        { season, field, record: record(data()) },
+        { season: small, field, record: record(data({ expectedYield: 100, syntheticN: 100 })) },
+        { season: unscored, field, record: record(program.blankData()) },
+      ]);
+      expect(summaries).toEqual([{ text: 'CI 5,820 g/bu', change: { text: '▼3% vs national', better: true } }]);
+    });
+
+    it('should give one enrollment CI per crop, never averaging corn and soybeans together', () => {
+      const soy: FieldSeason = { ...season, id: 's2', cropLabel: 'Organic Soybeans' };
+      const summaries = program.enrollmentSummary!([
+        { season, field, record: record(data()) },
+        { season: soy, field, record: record(data({ syntheticN: 0 })) },
+      ]);
+      expect(summaries.map(s => s.text)).toEqual(['Corn CI 5,900 g/bu', 'Soybean CI 5,000 g/bu']);
+    });
+
     it('should use a finalized field\'s frozen score, not a new calculation', () => {
       const frozen = { inputs: {}, outputs: { yieldUsed: 200, nationalAverage: 6000 }, score: { value: 4800, unit: 'g CO₂e/bu', unitShort: 'g/bu' },
         calculatorVersion: 'USDA FD-CIC v1.2', finalizedBy: 'harvest complete', finalizedAt: '2026-10-01' };

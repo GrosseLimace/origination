@@ -29,7 +29,20 @@ import { DELIVERY_TOLERANCE, deliveryCheck, fsaKey } from './program-enrollment'
     @if (records().length || e || withdrawn().length) {
     <div class="rounded-lg border border-scoular-green-accessible/40 dark:border-scoular-green/40 bg-white dark:bg-gray-800">
       <button type="button" class="flex w-full flex-wrap items-center justify-between gap-2 bg-transparent border-0 px-4 py-3 text-left" (click)="open = !open">
-        <span class="text-sm font-semibold text-gray-900 dark:text-white">🌱 {{ p.shortLabel }} enrollment · {{ year() }}</span>
+        <span class="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+          <span class="font-semibold text-gray-900 dark:text-white">🌱 {{ p.shortLabel }} enrollment · {{ year() }}</span>
+          @for (s of summaries(); track s.text) {
+            <span class="text-gray-800 dark:text-gray-100" title="Bushel-weighted across this producer's scored fields">
+              <span class="font-semibold">{{ s.text }}</span>
+              @if (s.change; as ch) {
+                <span class="ml-1 font-medium" [class]="ch.better ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'">{{ ch.text }}</span>
+              }
+            </span>
+          }
+          @if (summaries().length && scoredCount() < records().length) {
+            <span class="text-xs text-gray-500 dark:text-gray-400">{{ scoredCount() }} of {{ records().length }} fields scored</span>
+          }
+        </span>
         <span class="text-sm">
           @if (e) {
             <span class="rounded-full bg-scoular-green-accessible/15 px-2 py-0.5 font-semibold text-scoular-green-accessible dark:text-scoular-green">{{ e.enrollmentId }}</span>
@@ -183,25 +196,34 @@ export class ProgramEnrollmentCardComponent {
     return def?.enrollment ? def : undefined;
   });
 
-  /** Every record the producer has in this program for the year: the enrollment's fields. */
-  readonly records = computed<EnrollableRecord[]>(() => {
+  /** Every record the producer has in this program for the year, with its season and field. */
+  private readonly items = computed(() => {
     const customerId = this.customerId();
     const year = this.year();
     const program = this.program();
-    return this.store.records().flatMap(r => {
-      if (!program || r.programKey !== program.key) return [];
-      const season = this.store.season(r.seasonId);
+    return this.store.records().flatMap(record => {
+      if (!program || record.programKey !== program.key) return [];
+      const season = this.store.season(record.seasonId);
       const field = season && this.store.field(season.fieldKey);
-      if (!season || !field || field.customerId !== customerId || season.year !== year) return [];
-      return [{
-        recordId: r.id, seasonId: season.id, fieldKey: field.fieldKey, fieldName: field.name, fsa: fsaKey(field),
-        cropLabel: season.cropLabel, year, acres: season.acres, status: r.status,
-        score: r.frozen?.score ?? program.preview(r.data, season, field) ?? undefined,
-        scoreNote: program.previewNote?.(r.data, season, field) ?? undefined,
-        production: program.production ? program.production(r.data, season) : undefined,
-      }];
+      return season && field && field.customerId === customerId && season.year === year ? [{ record, season, field }] : [];
     });
   });
+
+  /** The enrollment's fields, as listed in the card. */
+  readonly records = computed<EnrollableRecord[]>(() => {
+    const program = this.program()!;
+    return this.items().map(({ record: r, season, field }) => ({
+      recordId: r.id, seasonId: season.id, fieldKey: field.fieldKey, fieldName: field.name, fsa: fsaKey(field),
+      cropLabel: season.cropLabel, year: season.year, acres: season.acres, status: r.status,
+      score: r.frozen?.score ?? program.preview(r.data, season, field) ?? undefined,
+      scoreNote: program.previewNote?.(r.data, season, field) ?? undefined,
+      production: program.production ? program.production(r.data, season) : undefined,
+    }));
+  });
+
+  /** The producer's figures across all their fields in the program (45Z: bushel-weighted CI per crop). */
+  readonly summaries = computed(() => this.program()?.enrollmentSummary?.(this.items()) ?? []);
+  readonly scoredCount = computed(() => this.records().filter(r => !!r.score).length);
 
   readonly enrollment = computed(() => this.store.current(this.programKey(), this.customerId(), this.year()));
   /** Fields in the program with all three FSA numbers: the ones that can join the enrollment. */
