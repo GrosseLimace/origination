@@ -24,9 +24,9 @@ export function formatEnrollmentId(prefix: string, year: number, seq: number): s
 /**
  * What still stands between an open enrollment and Attested. `listed` is every record the producer
  * has in the program that year; each must be scored (Ready or Final) — harvest isn't needed. `others`
- * is every other enrollment (any producer), whose attested snapshots are checked so a field is never
- * claimed twice in the same program and year — matched by the field itself or by its FSA farm/tract/
- * field numbers, which catches a landlord and a tenant both enrolling it.
+ * is every other enrollment (any producer), whose attested snapshots are checked so a field (a CTRM
+ * split) is never claimed twice in the same program and year. A landlord and a tenant are expected to
+ * have separate split IDs for their shares (being confirmed with the business).
  */
 export function enrollmentBlockers(
   enrollment: ProgramEnrollment,
@@ -36,8 +36,6 @@ export function enrollmentBlockers(
 ): string[] {
   const blockers: string[] = [];
   if (listed.length === 0) blockers.push('at least one field');
-  const noFsa = listed.filter(r => !r.fsa);
-  if (noFsa.length) blockers.push(`FSA numbers for ${noFsa.map(r => r.fieldName).join(', ')}`);
   const unscored = listed.filter(r => r.status === 'Draft');
   if (unscored.length) blockers.push(`finish the inputs for ${unscored.map(r => r.fieldName).join(', ')}`);
 
@@ -52,22 +50,11 @@ export function enrollmentBlockers(
   const claims = new Map<string, string>();
   for (const o of others) {
     if (o.key === enrollment.key || o.status !== 'Attested' || o.programKey !== enrollment.programKey || o.year !== enrollment.year) continue;
-    for (const r of o.snapshot ?? []) {
-      claims.set(`field:${r.fieldKey}`, o.enrollmentId);
-      if (r.fsa) claims.set(`fsa:${r.fsa}`, o.enrollmentId);
-    }
+    for (const r of o.snapshot ?? []) claims.set(r.splitId, o.enrollmentId);
   }
   for (const r of listed) {
-    const by = claims.get(`field:${r.fieldKey}`) ?? (r.fsa ? claims.get(`fsa:${r.fsa}`) : undefined);
-    if (by) blockers.push(`${r.fieldName} is already in ${by}`);
+    const by = claims.get(r.splitId);
+    if (by) blockers.push(`${r.fieldName} (${r.splitId}) is already in ${by}`);
   }
   return blockers;
-}
-
-export interface FsaNumbers { fsaFarmNo: string; fsaTractNo: string; fsaFieldNo: string }
-
-/** "farm/tract/field", or '' until all three are filled in. */
-export function fsaKey(f: FsaNumbers): string {
-  const parts = [f.fsaFarmNo, f.fsaTractNo, f.fsaFieldNo].map(p => (p ?? '').trim());
-  return parts.every(p => p) ? parts.join('/') : '';
 }

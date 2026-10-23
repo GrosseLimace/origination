@@ -89,6 +89,8 @@ endpoint.
 - An API-backed implementation replaces it as the single provider.
 - The API adds four tables in `ApplicationDbContext`: `ProducerField`, `ProducerFieldSeason`,
   `FieldProgramRecord` and `ProgramEnrollment`.
+- `ProducerField` is keyed by the CTRM `SplitId` (unique), with `SplitPercent`, `EffectiveDate`, the split's
+  name as CTRM had it, and the `State` and `County` entered for 45Z (see [CTRM splits](#ctrm-splits-the-fields)).
 - They follow the producer-table conventions:
   - an `int` identity key and a `long CustomerId` foreign key with `NoAction`;
   - `CreatedBy/At` and `ModifiedBy/At`;
@@ -97,8 +99,33 @@ endpoint.
 - Access is the same as planting intentions: any signed-in user (accepted risks AR-01 to AR-03).
 - The server owns three rules:
   - the enrollment ID sequence;
-  - refusing duplicate claims at attestation;
+  - refusing duplicate claims at attestation (a split ID in two enrollments of one program and year);
   - finalizing, which rescores with `FdCicService` rather than trusting the client's number.
+
+## CTRM splits: the fields
+
+A field-plan field is one of the producer's CTRM split IDs (combined customer IDs, e.g. `TATOB43` "T-A TOBIN
+- JARBOE WEST", 100%). Producers set up a split per field, and tickets are delivered under it, which is
+what will tie a delivery to a field. Originators pick the split from a type-ahead; they never type a field
+name or FSA numbers. The split's name, split % and effective date come from CTRM and are read-only. State
+and county are asked once, the first time a split is used, because 45Z scores by county. Expired splits are
+hidden; bin-site splits are listed but can't be fields.
+
+- **Endpoint:** `GET api/ctrm-splits/customer/{customerId}` returns `{ source, splits }`, with every split
+  including expired and bin-site ones. A producer without a CTRM code is a 404; a failed CTRM read is a
+  503, never an empty list.
+- **Source today: sample data.** The CTRM GraphQL query for splits isn't known yet, and CTRM blocks schema
+  introspection (`HC0046`), so `SampleCtrmSplitReader` returns a made-up list built from the producer's
+  code. The screen says "Sample split IDs" while `source` is `sample`.
+- **Switching to CTRM:** `CtrmSplitReader` is built and tested against a placeholder query
+  (`CtrmQueries.SplitsByCustomer`, `CtrmSplitDto`). Once Lisa/Travis confirm the splits root field and
+  field names:
+  1. Replace the query text and the DTO's property names.
+  2. Set `CtrmQueries.SplitsQueryConfirmed = true`.
+  3. Set `Ctrm:SplitsSource` to `ctrm` per environment. Until step 2, `ctrm` stops the API at startup, so a
+     guessed query is never sent.
+- **Open:** confirming that a landlord's and a tenant's shares are separate split IDs (the duplicate check
+  relies on it), and whether 45Z acres should be the whole field or the producer's share.
 
 ## Updating to a new USDA version
 

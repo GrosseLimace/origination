@@ -63,7 +63,7 @@ export interface SustainabilityProgramDef<TData = any> {
 
   /**
    * Producer-level enrollment, for programs that have one (45Z): an ID per producer per year, issued
-   * once a field in the program has its FSA numbers, plus the producer's signed attestation. A
+   * when the producer's first field enters the program, plus the producer's signed attestation. A
    * program without it records field data only.
    */
   enrollment?: {

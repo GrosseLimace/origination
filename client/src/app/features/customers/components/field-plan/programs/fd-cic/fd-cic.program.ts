@@ -111,7 +111,7 @@ export function createFdCicProgram(api: FdCicApiService): SustainabilityProgramD
       return {
         inputs: {
           crop: season.cropLabel, fdCicCrop: fdCicCropFor(season.cropLabel), cropYear: season.year, field: field.name,
-          fsaFarmNo: field.fsaFarmNo, fsaTractNo: field.fsaTractNo, fsaFieldNo: field.fsaFieldNo,
+          splitId: field.splitId, splitPercent: field.splitPercent,
           state: field.state, county: field.county, acres: season.acres,
           expectedYield: data.expectedYield, actualYield: data.actualYield,
           syntheticN: data.syntheticN, niPercent: Math.round(data.niFraction * 100),

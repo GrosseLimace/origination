@@ -42,15 +42,21 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
 
   // ── Fields and seasons ───────────────────────────────────────────────────
 
+  /** A field is one CTRM split, so its key is the split ID, and a split is one producer's field. */
   async createField(field: Omit<ProducerField, 'fieldKey'>): Promise<ProducerField> {
-    const created: ProducerField = { ...copy(field), fieldKey: crypto.randomUUID() };
+    const splitId = field.splitId.trim().toUpperCase();
+    const existing = this.fields.find(f => f.fieldKey === splitId);
+    if (existing && existing.customerId !== field.customerId) throw new Error(`Split ${splitId} is another producer's field.`);
+    if (existing) return copy(existing);
+    const created: ProducerField = { ...copy(field), splitId, fieldKey: splitId };
     this.fields.push(created);
     return copy(created);
   }
 
+  /** Only the location changes: the split ID, name, split % and effective date are CTRM's. */
   async updateField(field: ProducerField): Promise<ProducerField> {
     const i = this.indexOf(this.fields, f => f.fieldKey === field.fieldKey, 'field');
-    this.fields[i] = { ...copy(field), customerId: this.fields[i].customerId };
+    this.fields[i] = { ...this.fields[i], state: field.state, county: field.county };
     return copy(this.fields[i]);
   }
 

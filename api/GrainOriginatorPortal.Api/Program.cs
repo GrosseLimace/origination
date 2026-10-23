@@ -351,6 +351,7 @@ builder.Services.AddScoped<ITeamsDirectoryService, TeamsDirectoryService>();
 builder.Services.AddSingleton(GrainOriginatorPortal.Api.Services.FdCic.FdCicSettings.From(builder.Configuration));
 builder.Services.AddSingleton<GrainOriginatorPortal.Api.Services.FdCic.IFdCicMethod, GrainOriginatorPortal.Api.Services.FdCic.FdCicMethodV1>();
 builder.Services.AddSingleton<GrainOriginatorPortal.Api.Services.FdCic.IFdCicService, GrainOriginatorPortal.Api.Services.FdCic.FdCicService>();
+builder.Services.AddScoped<GrainOriginatorPortal.Api.Services.Ctrm.IProducerSplitService, GrainOriginatorPortal.Api.Services.Ctrm.ProducerSplitService>();
 
 // Graph directory client (app-access spike) — singleton so the cached Graph token is shared.
 // Credential split mirrors the Key Vault bootstrap at the top of this file: managed identity

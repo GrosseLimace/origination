@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { EnrollableRecord, ProgramEnrollment } from '@models';
-import { AttestationStatement, blankAttestation, enrollmentBlockers, formatEnrollmentId, fsaKey } from './program-enrollment';
+import { AttestationStatement, blankAttestation, enrollmentBlockers, formatEnrollmentId } from './program-enrollment';
 
 const statements: AttestationStatement[] = [
   { key: 'notEnrolledElsewhere', label: 'Not enrolled elsewhere.', short: '"not enrolled elsewhere" confirmation' },
@@ -8,7 +8,7 @@ const statements: AttestationStatement[] = [
 ];
 
 const record = (overrides: Partial<EnrollableRecord> = {}): EnrollableRecord => ({
-  recordId: 'r1', seasonId: 's1', fieldKey: 'f1', fieldName: 'Penka #1', fsa: '1234/5678/3', cropLabel: 'Corn', year: 2026, acres: 80, status: 'Ready', ...overrides,
+  recordId: 'r1', seasonId: 's1', fieldKey: 'TATOB28', fieldName: 'Penka #1', splitId: 'TATOB28', cropLabel: 'Corn', year: 2026, acres: 80, status: 'Ready', ...overrides,
 });
 
 const enrollment = (overrides: Partial<ProgramEnrollment> = {}): ProgramEnrollment => ({
@@ -32,23 +32,17 @@ describe('program enrollment rules', () => {
     expect(enrollmentBlockers(enrollment(), [], [], statements)).toEqual(['at least one field']);
   });
 
-  it('should need FSA numbers on every field before the producer attests', () => {
-    expect(enrollmentBlockers(enrollment(), [record({ fsa: '' })], [], statements)).toEqual(['FSA numbers for Penka #1']);
-  });
-
-  it('should block a field already in another attested enrollment of the same program and year, by field or FSA numbers', () => {
-    const other = enrollment({ key: 'k2', enrollmentId: 'CI-2026-000001', customerId: 10, status: 'Attested', snapshot: [record({ fieldKey: 'landlord-f' })] });
-    // A landlord's field with the same FSA numbers.
-    expect(enrollmentBlockers(enrollment(), [record()], [other], statements)).toEqual(['Penka #1 is already in CI-2026-000001']);
-    expect(enrollmentBlockers(enrollment(), [record({ fsa: '1234/5678/4' })], [other], statements)).toEqual([]);
+  it('should block a split already in another attested enrollment of the same program and year', () => {
+    const other = enrollment({ key: 'k2', enrollmentId: 'CI-2026-000001', customerId: 10, status: 'Attested', snapshot: [record()] });
+    expect(enrollmentBlockers(enrollment(), [record()], [other], statements)).toEqual(['Penka #1 (TATOB28) is already in CI-2026-000001']);
+    // A landlord's and a tenant's shares are separate split IDs.
+    expect(enrollmentBlockers(enrollment(), [record({ fieldKey: 'TATOB29', splitId: 'TATOB29' })], [other], statements)).toEqual([]);
     expect(enrollmentBlockers(enrollment(), [record()], [{ ...other, programKey: 'other' }], statements)).toEqual([]);
     expect(enrollmentBlockers(enrollment(), [record()], [{ ...other, year: 2025 }], statements)).toEqual([]);
     expect(enrollmentBlockers(enrollment(), [record()], [{ ...other, status: 'Withdrawn' }], statements)).toEqual([]);
   });
 
-  it('should format IDs with the program\'s prefix, and FSA keys only when complete', () => {
+  it('should format IDs with the program\'s prefix', () => {
     expect(formatEnrollmentId('CI', 2026, 123)).toBe('CI-2026-000123');
-    expect(fsaKey({ fsaFarmNo: '1234', fsaTractNo: '5678', fsaFieldNo: '3' })).toBe('1234/5678/3');
-    expect(fsaKey({ fsaFarmNo: '1234', fsaTractNo: ' ', fsaFieldNo: '3' })).toBe('');
   });
 });

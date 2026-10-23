@@ -3,24 +3,23 @@
   <app-dialog-header>
     <app-dialog-title>{{ draftField.name }} · {{ draftSeason.year }}</app-dialog-title>
     <app-dialog-description>
-      {{ draftSeason.cropLabel }} · {{ hasFsa() ? 'FSA ' + draftField.fsaFarmNo + '/' + draftField.fsaTractNo + '/' + draftField.fsaFieldNo : 'FSA # needed' }} · {{ draftField.county }} County, {{ draftField.state }} · Changes save as you go.
+      {{ draftSeason.cropLabel }} · Split {{ draftField.splitId }} · {{ draftField.county }} County, {{ draftField.state }} · Changes save as you go.
     </app-dialog-description>
   </app-dialog-header>
 
   <app-dialog-content>
     <div class="space-y-6">
-      <!-- The field: entered once, reused every year -->
+      <!-- The field: a CTRM split, set up once and reused every year -->
       <div>
         <h4 class="font-semibold text-gray-900 dark:text-white">Field <span class="text-sm font-normal text-gray-500">(kept for every year)</span></h4>
-        <div class="mt-2 grid gap-3 sm:grid-cols-4">
-          <label class="block text-sm sm:col-span-1"><span class="text-gray-700 dark:text-gray-300">Field name</span>
-            <input class="ci-input" [(ngModel)]="draftField.name" (ngModelChange)="saveField()" /></label>
-          <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">FSA farm #</span>
-            <input class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftField.fsaFarmNo" (ngModelChange)="saveField()" /></label>
-          <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">Tract #</span>
-            <input class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftField.fsaTractNo" (ngModelChange)="saveField()" /></label>
-          <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">Field #</span>
-            <input class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftField.fsaFieldNo" (ngModelChange)="saveField()" /></label>
+        <dl class="mt-2 grid gap-3 text-sm sm:grid-cols-4">
+          <div><dt class="text-gray-500 dark:text-gray-400">CTRM split ID</dt><dd class="font-medium text-gray-900 dark:text-white">{{ draftField.splitId }}</dd></div>
+          <div><dt class="text-gray-500 dark:text-gray-400">Field name</dt><dd class="font-medium text-gray-900 dark:text-white">{{ draftField.name }}</dd></div>
+          <div><dt class="text-gray-500 dark:text-gray-400">Producer's split</dt><dd class="text-gray-900 dark:text-white">{{ +draftField.splitPercent.toFixed(3) }}%</dd></div>
+          <div><dt class="text-gray-500 dark:text-gray-400">Effective</dt><dd class="text-gray-900 dark:text-white">{{ draftField.effectiveDate | date:'MM/dd/yyyy' }}</dd></div>
+        </dl>
+        <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">From CTRM; change these there.</div>
+        <div class="mt-3 grid gap-3 sm:grid-cols-4">
           <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">State</span>
             <select class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftField.state" (ngModelChange)="draftField.county = ''; saveField()">
               @for (st of states(); track st) { <option [value]="st">{{ st }}</option> }
@@ -67,10 +66,6 @@
             <!-- The producer's enrollment ID (programs with an enrollment only) -->
             @if (!a.def.enrollment) {
               <!-- no producer-level enrollment for this program -->
-            } @else if (!hasFsa()) {
-              <div class="rounded-lg bg-amber-50 dark:bg-amber-900/30 px-4 py-2 text-sm text-amber-800 dark:text-amber-300">
-                Add this field's FSA farm, tract and field numbers above to get the producer's {{ a.def.shortLabel }} enrollment ID.
-              </div>
             } @else if (enrollment(); as e) {
               <div class="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-scoular-green-accessible/40 bg-scoular-green-accessible/5 px-4 py-2 text-sm">
                 <span class="font-semibold text-scoular-green-accessible dark:text-scoular-green">Enrollment {{ e.enrollmentId }}</span>

@@ -4,14 +4,13 @@ import { FormsModule } from '@angular/forms';
 import { FieldPlanStore } from '../store/field-plan.store';
 import { EnrollableRecord } from '@models';
 import { ProgramRegistry } from './program-registry';
-import { fsaKey } from './program-enrollment';
 
 /**
  * A producer's enrollment in one sustainability program for one year, above the planting table. The
  * ID is issued with the producer's first field in the program; every field they have in the program
  * that year is in it. The card holds:
  *
- * - the fields, each with its projected or final result, its FSA numbers and its production;
+ * - the fields, each with its CTRM split ID, its projected or final result and its production;
  * - "harvest complete", which finalizes every field that has its actual yield.
  *
  * Shows nothing until the producer has a field in the program. PROTOTYPE ONLY (in memory).
@@ -34,7 +33,7 @@ import { fsaKey } from './program-enrollment';
           <span class="rounded-full bg-scoular-green-accessible/15 px-2 py-0.5 text-xs font-semibold text-scoular-green-accessible dark:text-scoular-green">{{ e.enrollmentId }}</span>
           @if (e.harvestCompleteAt) { <span class="text-xs text-gray-500 dark:text-gray-400" title="Harvest marked complete">✓ harvest</span> }
         } @else {
-          <span class="text-amber-700 dark:text-amber-400">{{ withFsaCount() ? 'No live enrollment' : 'No enrollment ID yet' }}</span>
+          <span class="text-amber-700 dark:text-amber-400">{{ records().length ? 'No live enrollment' : 'No enrollment ID yet' }}</span>
         }
         @for (s of summaries(); track s.text) {
           <span class="text-gray-800 dark:text-gray-100" [title]="s.text + (s.change ? ', ' + s.change.text : '') + ' (bushel-weighted)'">
@@ -57,10 +56,8 @@ import { fsaKey } from './program-enrollment';
             </p>
           }
           @if (!e) {
-            @if (!withFsaCount()) {
-              <p class="text-gray-600 dark:text-gray-300">Add FSA farm, tract and field numbers to a field in {{ p.shortLabel }} to issue this producer's enrollment ID.</p>
-            } @else {
-              <p class="text-gray-600 dark:text-gray-300">The last enrollment was withdrawn. Issue a new ID for this producer's {{ withFsaCount() }} field(s) in {{ p.shortLabel }}.</p>
+            @if (records().length) {
+              <p class="text-gray-600 dark:text-gray-300">The last enrollment was withdrawn. Issue a new ID for this producer's {{ records().length }} field(s) in {{ p.shortLabel }}.</p>
               <button type="button" class="rounded-md bg-scoular-green-accessible px-3 py-1.5 text-white border-0" (click)="issueNew()">Issue a new enrollment ID</button>
             }
           } @else {
@@ -69,13 +66,13 @@ import { fsaKey } from './program-enrollment';
               <div class="font-medium text-gray-900 dark:text-white">Fields</div>
               <table class="mt-1 w-full text-left">
                 <thead class="text-xs uppercase text-gray-500 dark:text-gray-400">
-                  <tr><th class="py-1">Field</th><th>FSA farm/tract/field</th><th>Crop</th><th class="text-right">Acres</th><th class="text-right">Production (bu)</th><th class="text-right">{{ p.shortLabel }} result</th></tr>
+                  <tr><th class="py-1">Field</th><th>Split ID</th><th>Crop</th><th class="text-right">Acres</th><th class="text-right">Production (bu)</th><th class="text-right">{{ p.shortLabel }} result</th></tr>
                 </thead>
                 <tbody>
                   @for (r of records(); track r.recordId) {
                     <tr class="border-t border-gray-100 dark:border-gray-700">
                       <td class="py-1 text-gray-900 dark:text-white">{{ r.fieldName }}</td>
-                      <td [class]="r.fsa ? 'text-gray-600 dark:text-gray-300' : 'text-amber-700 dark:text-amber-400'">{{ r.fsa || 'FSA # needed' }}</td>
+                      <td class="text-gray-600 dark:text-gray-300">{{ r.splitId }}</td>
                       <td class="text-gray-600 dark:text-gray-300">{{ r.cropLabel }}</td>
                       <td class="text-right text-gray-600 dark:text-gray-300">{{ r.acres | number }}</td>
                       <td class="text-right text-gray-600 dark:text-gray-300">
@@ -165,7 +162,7 @@ export class ProgramEnrollmentCardComponent {
   readonly records = computed<EnrollableRecord[]>(() => {
     const program = this.program()!;
     return this.items().map(({ record: r, season, field }) => ({
-      recordId: r.id, seasonId: season.id, fieldKey: field.fieldKey, fieldName: field.name, fsa: fsaKey(field),
+      recordId: r.id, seasonId: season.id, fieldKey: field.fieldKey, fieldName: field.name, splitId: field.splitId,
       cropLabel: season.cropLabel, year: season.year, acres: season.acres, status: r.status,
       score: r.frozen?.score ?? program.preview(r.data, season, field) ?? undefined,
       scoreNote: program.previewNote?.(r.data, season, field) ?? undefined,
@@ -178,8 +175,6 @@ export class ProgramEnrollmentCardComponent {
   readonly scoredCount = computed(() => this.records().filter(r => !!r.score).length);
 
   readonly enrollment = computed(() => this.store.current(this.programKey(), this.customerId(), this.year()));
-  /** Fields in the program with all three FSA numbers: the ones that can join the enrollment. */
-  readonly withFsaCount = computed(() => this.records().filter(r => !!r.fsa).length);
   readonly withdrawn = computed(() => this.store.withdrawn(this.programKey(), this.customerId(), this.year()));
 
   open = false;

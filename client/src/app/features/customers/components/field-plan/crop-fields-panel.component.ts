@@ -3,14 +3,15 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { FieldPlanStore } from './store/field-plan.store';
 import { FdCicApiService } from '@core/services/fd-cic-api.service';
-import { Customer, FieldSeason, PlantingIntention } from '@models';
+import { CtrmSplitApiService } from '@core/services/ctrm-split-api.service';
+import { CtrmSplit, Customer, FieldSeason, PlantingIntention } from '@models';
 import { ProgramRegistry } from './programs/program-registry';
-import { fsaKey } from './programs/program-enrollment';
 import { FieldSeasonDialogComponent } from './field-season-dialog.component';
 
 /**
- * The fields under one crop row. A field is a name plus its FSA farm/tract/field numbers, entered once
- * and picked by name after that. The row's acres stay the total (what the
+ * The fields under one crop row. A field is one of the producer's CTRM split IDs, looked up rather than
+ * typed, because tickets are delivered under the split; its location is asked for the first time it's
+ * used. The row's acres stay the total (what the
  * dashboard counts); fields break it down. Adding a field pre-fills the acres not yet in a field, so a crop on one field needs
  * no extra typing. When the fields add up to more than the total, the row offers to update it — the
  * only way field data ever changes an intention, and it goes through the normal Edit dialog.
@@ -29,6 +30,7 @@ export class CropFieldsPanelComponent {
   readonly store = inject(FieldPlanStore);
   private readonly registry = inject(ProgramRegistry);
   private readonly fdCic = inject(FdCicApiService);
+  private readonly ctrmSplits = inject(CtrmSplitApiService);
 
   readonly intention = input.required<PlantingIntention>();
   readonly customer = input.required<Customer>();
@@ -70,16 +72,11 @@ export class CropFieldsPanelComponent {
     return this.store.field(s.fieldKey)?.name ?? 'Field';
   }
 
-  /** "FSA 1234/5678/3", or a prompt while any of the three is missing. */
-  fieldFsa(s: FieldSeason): string {
+  /** "TATOB43 · Pratt, KS · 50%": the split ID, where it is, and the producer's share when not all of it. */
+  fieldLine(s: FieldSeason): string {
     const f = this.store.field(s.fieldKey);
-    const fsa = f ? fsaKey(f) : '';
-    return fsa ? `FSA ${fsa}` : 'FSA # needed';
-  }
-
-  fieldPlace(s: FieldSeason): string {
-    const f = this.store.field(s.fieldKey);
-    return f ? `${f.county}, ${f.state}` : '';
+    if (!f) return '';
+    return [f.splitId, `${f.county}, ${f.state}`, f.splitPercent < 100 ? `${+f.splitPercent.toFixed(3)}%` : ''].filter(Boolean).join(' · ');
   }
 
   /** The field's programs as chips: short label, then its score (45Z) or its own short text (GrainCraft), and status. */
@@ -122,40 +119,68 @@ export class CropFieldsPanelComponent {
     void this.store.removeSeason(s.id);
   }
 
-  // ── Add a field: a name and its FSA numbers, or pick one of the producer's fields ─
-  newName = '';
-  newFsaFarm = '';
-  newFsaTract = '';
-  newFsaField = '';
+  // ── Add a field: look up one of the producer's CTRM split IDs ─────────────
+  newSplit = '';
   newState = 'KS';
   newCounty = '';
   newAcres: number | null = null;
 
-  /** The producer's fields not already on this row, for the name type-ahead. */
-  readonly pickable = computed(() => {
-    const used = new Set(this.seasons().map(s => s.fieldKey));
-    return this.store.fieldsFor(this.customer().id).filter(f => !used.has(f.fieldKey));
+  /** The producer's CTRM splits as they load. */
+  readonly splits = computed(() => this.ctrmSplits.splitsFor(this.customer().id));
+  readonly splitsError = computed(() => {
+    const s = this.splits();
+    return s.status === 'error' ? s.message : '';
+  });
+  /** The API is serving sample splits until the CTRM splits query is confirmed: say so. */
+  readonly sampleSplits = computed(() => {
+    const s = this.splits();
+    return s.status === 'done' && s.source === 'sample';
   });
 
-  private get _match() {
-    const name = this.newName.trim().toLowerCase();
-    return name ? this.pickable().find(f => f.name.toLowerCase() === name) : undefined;
+  /**
+   * The type-ahead: the producer's splits, less expired ones and those already on this row. Bin-site
+   * splits are listed (so nobody wonders where they went) but can't be added: a bin isn't a field.
+   */
+  readonly splitOptions = computed(() => {
+    const state = this.splits();
+    if (state.status !== 'done') return [];
+    const used = new Set(this.seasons().map(s => s.fieldKey));
+    return state.splits
+      .filter(sp => !sp.expired && !used.has(sp.splitId))
+      .map(split => ({
+        split,
+        value: `${split.splitId} · ${split.fieldName}`,
+        label: split.kind === 'Bin' ? 'bin site, not a field' : `${+split.splitPercent.toFixed(3)}%`,
+      }));
+  });
+
+  /** The split the type-ahead text points at: its ID typed or picked, or its exact field name. */
+  get pickedSplit(): CtrmSplit | undefined {
+    const text = this.newSplit.trim().toUpperCase();
+    if (!text) return undefined;
+    const id = text.split(/[s·]/)[0];
+    return this.splitOptions().find(o => o.split.splitId === id || o.split.fieldName.toUpperCase() === text)?.split;
   }
 
-  /** A name that isn't one of the producer's fields: a new field, which needs its FSA numbers and location. */
+  /** A split this producer hasn't used as a field yet: its location is asked for once. */
   get isNewField(): boolean {
-    return !!this.newName.trim() && !this._match;
+    const sp = this.pickedSplit;
+    return !!sp && sp.kind === 'Field' && !this.store.field(sp.splitId);
+  }
+
+  retrySplits(): void {
+    this.ctrmSplits.retry(this.customer().id);
   }
 
   /** The add-field inputs are open. Closed, it's just an "Add field" button, to keep the row quiet. */
   readonly adding = signal(false);
-  private readonly nameInput = viewChild<ElementRef<HTMLInputElement>>('nameInput');
+  private readonly splitInput = viewChild<ElementRef<HTMLInputElement>>('splitInput');
 
-  /** Opens the add-field inputs with fresh defaults and puts the cursor in Field name. */
+  /** Opens the add-field inputs with fresh defaults and puts the cursor in the split look-up. */
   startAdd(): void {
     this.openAdd();
     this.adding.set(true);
-    setTimeout(() => this.nameInput()?.nativeElement.focus());
+    setTimeout(() => this.splitInput()?.nativeElement.focus());
   }
 
   cancelAdd(): void {
@@ -166,35 +191,35 @@ export class CropFieldsPanelComponent {
     // The producer's own state to start with; the county is picked from USDA's list for it.
     this.newState = this.customer().stateProvince || 'KS';
     this.newCounty = '';
-    this.newName = '';
-    this.newFsaFarm = this.newFsaTract = this.newFsaField = '';
+    this.newSplit = '';
     this.newAcres = this.remaining() > 0 ? this.remaining() : null;
   }
 
-  /** Picking a known field pre-fills its acres from last time, capped at what's left to place. */
-  onNameChange(): void {
-    const match = this._match;
-    if (!match) return;
-    const last = this.store.lastSeason(match.fieldKey, this.intention().plantingYear)?.acres ?? null;
+  /** Picking a split that's been a field before pre-fills its acres from last time, capped at what's left to place. */
+  onSplitChange(): void {
+    const sp = this.pickedSplit;
+    if (!sp || !this.store.field(sp.splitId)) return;
+    const last = this.store.lastSeason(sp.splitId, this.intention().plantingYear)?.acres ?? null;
     const left = this.remaining() > 0 ? this.remaining() : null;
     this.newAcres = last && left ? Math.min(last, left) : (last ?? left);
   }
 
   get canAdd(): boolean {
-    return !!this.newName.trim() && (this.newAcres ?? 0) > 0 && (!this.isNewField || !!this.newCounty);
+    const sp = this.pickedSplit;
+    return !!sp && sp.kind === 'Field' && (this.newAcres ?? 0) > 0 && (!this.isNewField || !!this.newCounty);
   }
 
   /** An add is being saved: the form stays open and its button waits. */
   readonly saving = signal(false);
 
   async add(): Promise<void> {
-    if (!this.canAdd || this.saving()) return;
+    const sp = this.pickedSplit;
+    if (!this.canAdd || !sp || this.saving()) return;
     this.saving.set(true);
     try {
-      const field = this._match ?? await this.store.createField({
-        customerId: this.customer().id, name: this.newName.trim(),
-        fsaFarmNo: this.newFsaFarm.trim(), fsaTractNo: this.newFsaTract.trim(), fsaFieldNo: this.newFsaField.trim(),
-        state: this.newState, county: this.newCounty,
+      const field = this.store.field(sp.splitId) ?? await this.store.createField({
+        splitId: sp.splitId, customerId: this.customer().id, name: sp.fieldName,
+        splitPercent: sp.splitPercent, effectiveDate: sp.effectiveDate, state: this.newState, county: this.newCounty,
       });
       if (!field) return; // the store has shown why; the form keeps what was typed
       const pi = this.intention();

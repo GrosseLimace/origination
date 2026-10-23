@@ -7,10 +7,9 @@ import { FieldPlanStore } from './store/field-plan.store';
 import { FdCicApiService } from '@core/services/fd-cic-api.service';
 import { FieldSeason, ProducerField } from '@models';
 import { ProgramRegistry } from './programs/program-registry';
-import { fsaKey } from './programs/program-enrollment';
 
 /**
- * One field on one crop row: its name, FSA numbers and location, its acres this year, and the
+ * One field on one crop row: its CTRM split (ID, name, split %) and location, its acres this year, and the
  * sustainability programs it takes part in. Each program brings its own form (rendered from the
  * program registry) and shows the producer's enrollment ID for that program. Nobody finalizes here:
  * marking the enrollment's harvest complete does. Edits save as they are made.
@@ -62,11 +61,6 @@ export class FieldSeasonDialogComponent {
     const a = this.active();
     return a ? this.store.lockedBy(a.record.id) : undefined;
   });
-  /** All three FSA numbers are in: the field can join its program enrollments. */
-  readonly hasFsa = computed(() => {
-    const f = this.field();
-    return !!f && !!fsaKey(f);
-  });
   /** A finalized program froze this season's acres and location, so they can't change under it. */
   readonly seasonLocked = computed(() => this.store.hasFinal(this.seasonId()));
   readonly intakeInputs = computed(() => {
@@ -103,7 +97,6 @@ export class FieldSeasonDialogComponent {
   saveField(): void {
     if (!this.draftField || this.seasonLocked()) return;
     this.store.updateField(this.draftField);
-    void this.store.ensureEnrollments(this.draftField.fieldKey); // FSA numbers in: the enrollment ID can be issued
   }
 
   /** States and counties as USDA's FD-CIC county table names them, so a field's location can be scored. */

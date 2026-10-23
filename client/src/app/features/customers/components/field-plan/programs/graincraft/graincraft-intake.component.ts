@@ -25,7 +25,7 @@ const SUGGESTED_VARIETIES = ['SY Monument', 'Zenda', 'KS Providence', 'Bob Dole'
           @for (v of varieties; track v) { <option [value]="v"></option> }
         </datalist>
       </label>
-      <p class="text-xs text-gray-500 dark:text-gray-400">GrainCraft needs the variety grown on each wheat field. The field's name, FSA numbers and acres above are shared with every program.</p>
+      <p class="text-xs text-gray-500 dark:text-gray-400">GrainCraft needs the variety grown on each wheat field. The field's CTRM split, location and acres above are shared with every program.</p>
     </fieldset>
   `,
 })

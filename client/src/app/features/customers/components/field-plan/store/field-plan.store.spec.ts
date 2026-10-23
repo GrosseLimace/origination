@@ -41,8 +41,10 @@ describe('FieldPlanStore', () => {
   let north: ProducerField;
   let corn: FieldSeason;
 
-  const newField = async (name: string, fsaFieldNo: string, customerId = 9) =>
-    (await store.createField({ customerId, name, fsaFarmNo: '1234', fsaTractNo: '5678', fsaFieldNo, state: 'KS', county: 'Pratt' }))!;
+  /** One of the producer's CTRM splits made a field. */
+  const split = (splitId: string, name: string, customerId = 9) =>
+    ({ splitId, customerId, name, splitPercent: 100, effectiveDate: '2018-10-01', state: 'KS', county: 'Pratt' });
+  const newField = async (name: string, splitId: string, customerId = 9) => (await store.createField(split(splitId, name, customerId)))!;
 
   const scored = (r: { data: unknown }, actualYield: number | null = null) =>
     ({ ...(r.data as FdCicData), expectedYield: 200, syntheticN: 180, actualYield });
@@ -51,15 +53,17 @@ describe('FieldPlanStore', () => {
     TestBed.configureTestingModule({ providers: [{ provide: SUSTAINABILITY_PROGRAMS, useValue: [FD_CIC_PROGRAM, WATER_PROGRAM] }] });
     store = TestBed.inject(FieldPlanStore);
     backend = TestBed.inject(InMemoryFieldPlanBackend);
-    north = await newField('Penka #1 irrigated', '3');
+    north = await newField('PENKA #1 IRR', 'TATOB28');
     corn = (await store.addSeason(north.fieldKey, 1, 2026, 'Corn', 80))!;
   });
 
   afterEach(() => vi.useRealTimers());
 
   describe('fields and seasons', () => {
-    it('should keep a field\'s name and FSA numbers, once, and reuse it on another crop row', async () => {
-      expect(north).toMatchObject({ name: 'Penka #1 irrigated', fsaFarmNo: '1234', fsaTractNo: '5678', fsaFieldNo: '3' });
+    it('should key a field by its CTRM split ID, once, and reuse it on another crop row', async () => {
+      expect(north).toMatchObject({ fieldKey: 'TATOB28', splitId: 'TATOB28', name: 'PENKA #1 IRR', splitPercent: 100 });
+      expect(await store.createField(split('tatob28', 'PENKA #1 IRR'))).toEqual(north);
+      expect(store.fieldsFor(9)).toHaveLength(1);
       await store.addSeason(north.fieldKey, 2, 2027, 'Soybeans', 80);
       expect(store.fieldsFor(9)).toHaveLength(1);
       expect(store.seasonsForIntention(2)).toHaveLength(1);
@@ -96,7 +100,7 @@ describe('FieldPlanStore', () => {
     it('should issue the enrollment ID with the first field, and put every later field in the same enrollment', async () => {
       const z1 = (await store.addRecord(corn.id, FD_CIC_PROGRAM.key))!;
       expect(store.enrollmentFor(z1)).toMatchObject({ enrollmentId: 'CI-2026-000001', status: 'Open' });
-      const second = (await store.addSeason((await newField('Penka #2', '4')).fieldKey, 1, 2026, 'Corn', 120))!;
+      const second = (await store.addSeason((await newField('PENKA #2', 'TATOB29')).fieldKey, 1, 2026, 'Corn', 120))!;
       const z2 = (await store.addRecord(second.id, FD_CIC_PROGRAM.key))!;
       expect(store.enrollmentFor(z2)?.enrollmentId).toBe('CI-2026-000001');
       expect(store.forEnrollment(store.enrollmentFor(z1)!).map(r => r.id)).toEqual([z1.id, z2.id]);
@@ -106,24 +110,18 @@ describe('FieldPlanStore', () => {
       expect(store.enrollmentFor(next)?.enrollmentId).toBe('CI-2027-000002');
     });
 
-    it('should hold back the enrollment ID until a field in the program has its FSA numbers', async () => {
-      const noFsa = (await store.createField({ customerId: 11, name: 'Rented 80', fsaFarmNo: '', fsaTractNo: '', fsaFieldNo: '', state: 'KS', county: 'Pratt' }))!;
-      const season = (await store.addSeason(noFsa.fieldKey, 5, 2026, 'Corn', 80))!;
+    it('should issue the enrollment ID as soon as a field enters the program', async () => {
+      const rented = await newField('RENTED 80', 'SMITH01', 11);
+      const season = (await store.addSeason(rented.fieldKey, 5, 2026, 'Corn', 80))!;
       const z = (await store.addRecord(season.id, FD_CIC_PROGRAM.key))!;
-      expect(store.enrollmentFor(z)).toBeUndefined();
-      expect(store.current(FD_CIC_PROGRAM.key, 11, 2026)).toBeUndefined();
-
-      store.updateField({ ...noFsa, fsaFarmNo: '4321', fsaTractNo: '8765', fsaFieldNo: '1' });
-      await store.ensureEnrollments(noFsa.fieldKey);
       expect(store.enrollmentFor(z)?.enrollmentId).toBe('CI-2026-000001');
+      expect(store.forEnrollment(store.enrollmentFor(z)!).map(r => r.id)).toEqual([z.id]);
     });
 
-    it('should leave a field without FSA numbers out of the enrollment (and out of harvest complete)', async () => {
-      const z1 = (await store.addRecord(corn.id, FD_CIC_PROGRAM.key))!;
-      const noFsa = (await store.createField({ customerId: 9, name: 'Rented 80', fsaFarmNo: '4321', fsaTractNo: '', fsaFieldNo: '', state: 'KS', county: 'Pratt' }))!;
-      const z2 = (await store.addRecord((await store.addSeason(noFsa.fieldKey, 1, 2026, 'Corn', 80))!.id, FD_CIC_PROGRAM.key))!;
-      expect(store.forEnrollment(store.enrollmentFor(z1)!).map(r => r.id)).toEqual([z1.id]);
-      expect(store.enrollmentFor(z2)).toBeUndefined();
+    it('should refuse to make one producer\'s split another producer\'s field', async () => {
+      const toast = vi.spyOn(TestBed.inject(ToastService), 'error');
+      expect(await store.createField(split('TATOB28', 'PENKA #1 IRR', 11))).toBeUndefined();
+      expect(toast).toHaveBeenCalledWith('Couldn\'t add the field. Split TATOB28 is another producer\'s field.');
     });
 
     it('should retire a withdrawn ID and issue a new one with the next program input', async () => {
@@ -131,7 +129,7 @@ describe('FieldPlanStore', () => {
       await store.withdraw(store.enrollmentFor(z)!.key, 'Producer enrolled elsewhere');
       expect(store.enrollmentFor(z)).toBeUndefined();
       expect(store.withdrawn(FD_CIC_PROGRAM.key, 9, 2026)[0]).toMatchObject({ enrollmentId: 'CI-2026-000001', withdrawnReason: 'Producer enrolled elsewhere' });
-      const second = (await store.addSeason((await newField('Penka #2', '4')).fieldKey, 1, 2026, 'Corn', 120))!;
+      const second = (await store.addSeason((await newField('PENKA #2', 'TATOB29')).fieldKey, 1, 2026, 'Corn', 120))!;
       const z2 = (await store.addRecord(second.id, FD_CIC_PROGRAM.key))!;
       expect(store.enrollmentFor(z2)?.enrollmentId).toBe('CI-2026-000002');
     });
@@ -156,12 +154,12 @@ describe('FieldPlanStore', () => {
     it('should finalize every field with its actual yield, using the latest typed values, and leave the rest open', async () => {
       const z1 = (await store.addRecord(corn.id, FD_CIC_PROGRAM.key))!;
       store.updateRecord(z1.id, scored(z1, 205)); // not saved yet: harvest complete saves it first
-      const second = (await store.addSeason((await newField('Penka #2', '4')).fieldKey, 1, 2026, 'Corn', 120))!;
+      const second = (await store.addSeason((await newField('PENKA #2', 'TATOB29')).fieldKey, 1, 2026, 'Corn', 120))!;
       const z2 = (await store.addRecord(second.id, FD_CIC_PROGRAM.key))!;
       store.updateRecord(z2.id, scored(z2)); // no actual yield yet
 
       const leftOpen = await store.completeHarvest(store.enrollmentFor(z1)!);
-      expect(store.record(z1.id)).toMatchObject({ status: 'Final', frozen: { finalizedBy: 'harvest complete', inputs: { actualYield: 205, fsaFieldNo: '3' } } });
+      expect(store.record(z1.id)).toMatchObject({ status: 'Final', frozen: { finalizedBy: 'harvest complete', inputs: { actualYield: 205, splitId: 'TATOB28' } } });
       expect(leftOpen).toEqual([{ recordId: z2.id, missing: ['actual yield'] }]);
       expect(store.record(z2.id)?.status).toBe('Ready');
       expect(store.current(FD_CIC_PROGRAM.key, 9, 2026)?.harvestCompleteAt).toBeDefined();
@@ -182,7 +180,7 @@ describe('FieldPlanStore', () => {
       const e = store.enrollmentFor(z)!;
       await store.updateAttestation({ ...e, attestation: { ...e.attestation, signerName: 'Pat', signedOn: '2026-05-02',
         confirmations: Object.fromEntries(FD_CIC_PROGRAM.enrollment!.statements.map(s => [s.key, true])) } });
-      const listed = [{ recordId: z.id, seasonId: corn.id, fieldKey: north.fieldKey, fieldName: north.name, fsa: '1234/5678/3', cropLabel: 'Corn', year: 2026, acres: 80, status: 'Ready' as const }];
+      const listed = [{ recordId: z.id, seasonId: corn.id, fieldKey: north.fieldKey, fieldName: north.name, splitId: north.splitId, cropLabel: 'Corn', year: 2026, acres: 80, status: 'Ready' as const }];
       expect((await store.attest(e.key, listed))?.status).toBe('Attested');
 
       store.updateRecord(z.id, scored(z, 205));
@@ -243,7 +241,7 @@ describe('FieldPlanStore', () => {
     it('should say so, change nothing, and keep the form\'s values when a structural change is refused', async () => {
       const toast = vi.spyOn(TestBed.inject(ToastService), 'error');
       vi.spyOn(backend, 'createField').mockRejectedValueOnce(new Error('Server unavailable'));
-      expect(await store.createField({ customerId: 9, name: 'Back 40', fsaFarmNo: '', fsaTractNo: '', fsaFieldNo: '', state: 'KS', county: 'Pratt' })).toBeUndefined();
+      expect(await store.createField(split('TATOB30', 'BACK 40'))).toBeUndefined();
       expect(store.fieldsFor(9)).toHaveLength(1);
       expect(toast).toHaveBeenCalledWith('Couldn\'t add the field. Server unavailable');
     });
@@ -264,7 +262,7 @@ describe('FieldPlanStore', () => {
       fresh.ensureLoaded(9);
       await vi.waitFor(() => expect(fresh.isLoaded(9)).toBe(true));
       expect(load).toHaveBeenCalledTimes(1);
-      expect(fresh.fieldsFor(9).map(f => f.name)).toEqual(['Penka #1 irrigated']);
+      expect(fresh.fieldsFor(9).map(f => f.name)).toEqual(['PENKA #1 IRR']);
       expect(fresh.seasonsForIntention(1)).toHaveLength(1);
     });
 

@@ -3,7 +3,7 @@ import { FieldSeason, ProducerField } from '@models';
 import { GRAINCRAFT_PROGRAM } from './graincraft.program';
 
 const season: FieldSeason = { id: 's1', fieldKey: 'f1', plantingIntentionId: 1, year: 2026, cropLabel: 'Hard Red Winter Wheat', acres: 160 };
-const field: ProducerField = { fieldKey: 'f1', customerId: 9, name: 'Home quarter', fsaFarmNo: '1234', fsaTractNo: '5678', fsaFieldNo: '2', state: 'KS', county: 'Pratt' };
+const field: ProducerField = { fieldKey: 'TATOB12', splitId: 'TATOB12', customerId: 9, name: 'HOME QUARTER', splitPercent: 100, effectiveDate: '2018-10-01', state: 'KS', county: 'Pratt' };
 
 describe('GrainCraft program', () => {
   it('should apply to wheat only', () => {
@@ -26,6 +26,6 @@ describe('GrainCraft program', () => {
 
   it('should have no producer-level enrollment, and freeze the variety with the field', () => {
     expect(GRAINCRAFT_PROGRAM.enrollment).toBeUndefined();
-    expect(GRAINCRAFT_PROGRAM.freeze({ variety: 'Zenda' }, season, field).inputs).toMatchObject({ variety: 'Zenda', fsaFieldNo: '2', acres: 160 });
+    expect(GRAINCRAFT_PROGRAM.freeze({ variety: 'Zenda' }, season, field).inputs).toMatchObject({ variety: 'Zenda', splitId: 'TATOB12', acres: 160 });
   });
 });

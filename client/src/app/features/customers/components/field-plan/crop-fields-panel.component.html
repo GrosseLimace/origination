@@ -41,9 +41,7 @@
             <tr class="border-t border-gray-100 dark:border-gray-800 align-top">
               <td class="py-2 pr-3">
                 <button type="button" class="text-left font-medium text-gray-900 dark:text-white bg-transparent border-0 p-0 hover:underline" (click)="open(s)">{{ fieldName(s) }}</button>
-                <div class="text-xs" [class]="fieldFsa(s) === 'FSA # needed' ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'">
-                  {{ fieldFsa(s) }} <span class="text-gray-500 dark:text-gray-400">· {{ fieldPlace(s) }}</span>
-                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">{{ fieldLine(s) }}</div>
               </td>
               <td class="py-2 pr-3">
                 <div class="flex items-center gap-1">
@@ -115,8 +113,8 @@
       </div>
     }
 
-    <!-- Add a field: just a button until clicked; then the inputs slide in. A name (the producer's existing
-         fields are suggested); FSA numbers and location for a new one. -->
+    <!-- Add a field: just a button until clicked; then the inputs slide in. The field is one of the producer's
+         CTRM split IDs, looked up; a split used for the first time also needs its state and county. -->
     @if (!adding()) {
       <button type="button" (click)="startAdd()"
               class="inline-flex items-center gap-1 rounded-md border border-dashed border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200 bg-transparent hover:border-scoular-green-accessible hover:text-scoular-green-accessible dark:hover:text-scoular-green">
@@ -124,42 +122,58 @@
       </button>
     } @else {
     <div class="ci-slide-in rounded-md border border-gray-100 dark:border-gray-800 px-3 py-2">
-      <div class="flex flex-wrap items-end gap-2">
-        <label class="block text-xs text-gray-600 dark:text-gray-300">Field name
-          <input #nameInput class="ci-input ci-compact !w-48" [attr.list]="'fields-' + intention().id" placeholder="Name or pick one" (keydown.escape)="cancelAdd()"
-                 [(ngModel)]="newName" (ngModelChange)="onNameChange()" />
-          <datalist [id]="'fields-' + intention().id">
-            @for (f of pickable(); track f.fieldKey) { <option [value]="f.name">{{ f.county }}, {{ f.state }}</option> }
-          </datalist>
-        </label>
-        @if (isNewField) {
-          <label class="block text-xs text-gray-600 dark:text-gray-300">FSA farm #
-            <input class="ci-input ci-compact !w-20" [(ngModel)]="newFsaFarm" /></label>
-          <label class="block text-xs text-gray-600 dark:text-gray-300">Tract #
-            <input class="ci-input ci-compact !w-20" [(ngModel)]="newFsaTract" /></label>
-          <label class="block text-xs text-gray-600 dark:text-gray-300">Field #
-            <input class="ci-input ci-compact !w-16" [(ngModel)]="newFsaField" /></label>
-          <label class="block text-xs text-gray-600 dark:text-gray-300">State
-            <select class="ci-input ci-compact !w-20" [(ngModel)]="newState" (ngModelChange)="newCounty = ''">
-              @for (st of states(); track st) { <option [value]="st">{{ st }}</option> }
-            </select>
-          </label>
-          <label class="block text-xs text-gray-600 dark:text-gray-300">County
-            <select class="ci-input ci-compact !w-36" [class.ci-missing]="!newCounty" [(ngModel)]="newCounty">
-              <option value="" disabled>County…</option>
-              @for (c of countiesFor(newState); track c) { <option [value]="c">{{ c }}</option> }
-            </select>
-          </label>
+      @switch (splits().status) {
+        @case ('loading') {
+          <div class="text-sm text-gray-600 dark:text-gray-300">Loading the producer's CTRM splits…</div>
         }
-        <label class="block text-xs text-gray-600 dark:text-gray-300">Acres
-          <input type="number" min="0" class="ci-input ci-compact !w-24 text-right" [(ngModel)]="newAcres" (keydown.enter)="add()" />
-        </label>
-        <button type="button" class="h-8 rounded-md px-3 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-50 border-0"
-                [disabled]="!canAdd || saving()" (click)="add()">{{ saving() ? 'Adding…' : 'Add field' }}</button>
-        <button type="button" class="h-8 rounded-md px-3 text-sm text-gray-600 dark:text-gray-300 bg-transparent border-0 hover:underline" (click)="cancelAdd()">Cancel</button>
-      </div>
-      @if (isNewField) {
-        <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">FSA numbers can be added later, but a field needs them before the producer gets an enrollment ID.</div>
+        @case ('error') {
+          <div class="flex flex-wrap items-center gap-2 text-sm text-amber-800 dark:text-amber-300">
+            {{ splitsError() }}
+            <button type="button" class="underline bg-transparent border-0 p-0 text-inherit" (click)="retrySplits()">Try again</button>
+            <button type="button" class="text-gray-600 dark:text-gray-300 bg-transparent border-0 p-0 hover:underline" (click)="cancelAdd()">Cancel</button>
+          </div>
+        }
+        @default {
+          <div class="flex flex-wrap items-end gap-2">
+            <label class="block text-xs text-gray-600 dark:text-gray-300">Split ID
+              <input #splitInput class="ci-input ci-compact !w-64" [attr.list]="'splits-' + intention().id" placeholder="Split ID or field name" (keydown.escape)="cancelAdd()"
+                     [(ngModel)]="newSplit" (ngModelChange)="onSplitChange()" />
+              <datalist [id]="'splits-' + intention().id">
+                @for (o of splitOptions(); track o.split.splitId) { <option [value]="o.value">{{ o.label }}</option> }
+              </datalist>
+            </label>
+            @if (isNewField) {
+              <label class="block text-xs text-gray-600 dark:text-gray-300">State
+                <select class="ci-input ci-compact !w-20" [(ngModel)]="newState" (ngModelChange)="newCounty = ''">
+                  @for (st of states(); track st) { <option [value]="st">{{ st }}</option> }
+                </select>
+              </label>
+              <label class="block text-xs text-gray-600 dark:text-gray-300">County
+                <select class="ci-input ci-compact !w-36" [class.ci-missing]="!newCounty" [(ngModel)]="newCounty">
+                  <option value="" disabled>County…</option>
+                  @for (c of countiesFor(newState); track c) { <option [value]="c">{{ c }}</option> }
+                </select>
+              </label>
+            }
+            <label class="block text-xs text-gray-600 dark:text-gray-300">Acres
+              <input type="number" min="0" class="ci-input ci-compact !w-24 text-right" [(ngModel)]="newAcres" (keydown.enter)="add()" />
+            </label>
+            <button type="button" class="h-8 rounded-md px-3 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-50 border-0"
+                    [disabled]="!canAdd || saving()" (click)="add()">{{ saving() ? 'Adding…' : 'Add field' }}</button>
+            <button type="button" class="h-8 rounded-md px-3 text-sm text-gray-600 dark:text-gray-300 bg-transparent border-0 hover:underline" (click)="cancelAdd()">Cancel</button>
+          </div>
+          @if (pickedSplit; as sp) {
+            <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ sp.name }} · {{ +sp.splitPercent.toFixed(3) }}% · effective {{ sp.effectiveDate | date:'MM/dd/yy' }}
+              @if (sp.kind === 'Bin') { <span class="text-amber-700 dark:text-amber-400"> · a bin site collects grain from several fields, so it can't be a field here.</span> }
+            </div>
+          } @else if (newSplit.trim()) {
+            <div class="mt-1 text-xs text-amber-700 dark:text-amber-400">Not one of this producer's current CTRM splits.</div>
+          }
+          @if (sampleSplits()) {
+            <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">Sample split IDs, until the CTRM splits feed is connected.</div>
+          }
+        }
       }
     </div>
     }

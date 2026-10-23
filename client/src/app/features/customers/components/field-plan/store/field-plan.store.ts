@@ -2,7 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import { EnrollableRecord, FieldProgramRecord, FieldSeason, ProducerField, ProgramEnrollment } from '@models';
 import { ToastService } from '@core/services/toast.service';
 import { ProgramRegistry } from '../programs/program-registry';
-import { enrollmentBlockers, fsaKey } from '../programs/program-enrollment';
+import { enrollmentBlockers } from '../programs/program-enrollment';
 import { FIELD_PLAN_BACKEND, FieldPlanSnapshot } from './field-plan-backend';
 
 /** How long typing pauses before an edit is saved. */
@@ -11,7 +11,7 @@ export const SAVE_DEBOUNCE_MS = 400;
 type LoadState = 'loading' | 'loaded' | 'error';
 
 /**
- * The field plan on the client: producers' fields (name, FSA numbers, location), each field's acres on
+ * The field plan on the client: producers' fields (CTRM splits, with a location), each field's acres on
  * a crop row, its sustainability program records, and the producer's program enrollments.
  *
  * Reads are synchronous signal reads, so templates and computed signals use them directly. A producer's
@@ -25,8 +25,7 @@ type LoadState = 'loading' | 'loaded' | 'error';
  * A failed save shows an error and reloads the producer from the backend, so the screen never shows
  * something that wasn't kept.
  *
- * The program lifecycle: added (the producer's enrollment ID is issued once the field has its FSA
- * numbers) → Draft → Ready (scored) → actual yield entered → the enrollment's harvest marked complete →
+ * The program lifecycle: added (the producer's enrollment ID is issued with it) → Draft → Ready (scored) → actual yield entered → the enrollment's harvest marked complete →
  * Final (frozen), reopenable with a reason unless the producer's attested enrollment holds it.
  * Originators never finalize field by field.
  */
@@ -127,23 +126,20 @@ export class FieldPlanStore {
     return this.forSeason(seasonId).some(r => r.status === 'Final');
   }
 
-  /**
-   * The producer's live enrollment this record belongs to (by program, producer and year). A field
-   * only joins its enrollment once its FSA farm, tract and field numbers are in.
-   */
+  /** The producer's live enrollment this record belongs to (by program, producer and year). */
   enrollmentFor(record: FieldProgramRecord): ProgramEnrollment | undefined {
     const season = this.season(record.seasonId);
     const field = season && this.field(season.fieldKey);
-    return season && field && fsaKey(field) ? this.current(record.programKey, field.customerId, season.year) : undefined;
+    return season && field ? this.current(record.programKey, field.customerId, season.year) : undefined;
   }
 
-  /** Every record in an enrollment: the producer's records in its program and year whose fields have FSA numbers. */
+  /** Every record in an enrollment: the producer's records in its program and year. */
   forEnrollment(enrollment: ProgramEnrollment): FieldProgramRecord[] {
     return this.records().filter(r => {
       if (r.programKey !== enrollment.programKey) return false;
       const season = this.season(r.seasonId);
       const field = season && this.field(season.fieldKey);
-      return !!season && !!field && !!fsaKey(field) && field.customerId === enrollment.customerId && season.year === enrollment.year;
+      return !!season && !!field && field.customerId === enrollment.customerId && season.year === enrollment.year;
     });
   }
 
@@ -171,7 +167,7 @@ export class FieldPlanStore {
 
   // ── Edits while typing (saved after a pause) ─────────────────────────────
 
-  /** Saves a field's name, FSA numbers and location. New FSA numbers may let its enrollments be issued. */
+  /** Saves a field's location. The split ID, name and split % are CTRM's and don't change here. */
   updateField(field: ProducerField): void {
     if (!this.field(field.fieldKey)) return;
     const next = { ...field };
@@ -214,11 +210,13 @@ export class FieldPlanStore {
 
   // ── Structural changes (wait for the backend) ────────────────────────────
 
-  /** Creates a field for the producer. */
+  /** Makes one of the producer's CTRM splits a field (keyed by its split ID), with the location 45Z needs. */
   async createField(field: Omit<ProducerField, 'fieldKey'>): Promise<ProducerField | undefined> {
+    const existing = this.field(field.splitId.trim().toUpperCase());
+    if (existing?.customerId === field.customerId) return existing;
     return this.write('add the field', async () => {
       const created = await this.backend.createField(field);
-      this.fields.update(fs => [...fs, created]);
+      this.fields.update(fs => [...fs.filter(f => f.fieldKey !== created.fieldKey), created]);
       return created;
     });
   }
@@ -245,8 +243,8 @@ export class FieldPlanStore {
 
   /**
    * Adds a program to a field season. The data starts from the program's defaults, plus whatever the
-   * program carries over from the field's last season in it. If the field has its FSA numbers, the
-   * producer's enrollment ID for the program and year is issued now (if they don't have one).
+   * program carries over from the field's last season in it. The producer's enrollment ID for the
+   * program and year is issued now, if they don't have one.
    */
   async addRecord(seasonId: string, programKey: string): Promise<FieldProgramRecord | undefined> {
     const season = this.season(seasonId);
@@ -292,13 +290,10 @@ export class FieldPlanStore {
     });
   }
 
-  /**
-   * Issues the producer's enrollment ID for each program on the field, once the field has its FSA
-   * numbers. Called when a program is added and when the field's FSA numbers change.
-   */
+  /** Issues the producer's enrollment ID for each program on the field that doesn't have one. Called when a program is added. */
   async ensureEnrollments(fieldKey: string): Promise<void> {
     const field = this.field(fieldKey);
-    if (!field || !fsaKey(field)) return;
+    if (!field) return;
     const wanted = new Map<string, { programKey: string; year: number }>();
     for (const r of this.records()) {
       const season = this.season(r.seasonId);

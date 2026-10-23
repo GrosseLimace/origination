@@ -124,6 +124,7 @@ public static class DependencyInjection
         services.AddSingleton<CtrmContractReader>();
         services.AddSingleton<CtrmTicketReader>();
         services.AddSingleton<CtrmWarmRegistry>();
+        AddCtrmSplits(services, configuration);
 
 
         // Scoped: one per HTTP request, so the provenance middleware reports what THIS request's
@@ -169,5 +170,30 @@ public static class DependencyInjection
         services.AddScoped<IMbpLocationSynonymRepository, MbpLocationSynonymRepository>();
 
         return services;
+    }
+
+    /// <summary>
+    /// A producer's CTRM splits (field-plan fields) come from <c>Ctrm:SplitsSource</c>: <c>sample</c> (the
+    /// default) until the CTRM splits query is confirmed, then <c>ctrm</c>. Asking for <c>ctrm</c> before
+    /// <see cref="CtrmQueries.SplitsQueryConfirmed"/> stops startup, so a guessed query is never sent.
+    /// </summary>
+    public static void AddCtrmSplits(IServiceCollection services, IConfiguration configuration)
+    {
+        var source = configuration["Ctrm:SplitsSource"]?.Trim().ToLowerInvariant() ?? "sample";
+        switch (source)
+        {
+            case "" or "sample":
+                services.AddSingleton<ICtrmSplitReader, SampleCtrmSplitReader>();
+                break;
+            case "ctrm" when CtrmQueries.SplitsQueryConfirmed:
+                services.AddSingleton<ICtrmSplitReader, CtrmSplitReader>();
+                break;
+            case "ctrm":
+                throw new InvalidOperationException(
+                    "Ctrm:SplitsSource is 'ctrm', but the CTRM splits query is still a placeholder (CtrmQueries.SplitsQueryConfirmed). Use 'sample' until it is confirmed.");
+            default:
+                throw new InvalidOperationException($"Ctrm:SplitsSource must be 'sample' or 'ctrm', not '{source}'.");
+        }
+        services.AddScoped<ICtrmSplitRepository, CtrmSplitRepository>();
     }
 }

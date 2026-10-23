@@ -32,7 +32,7 @@ export const GRAINCRAFT_PROGRAM: SustainabilityProgramDef<GrainCraftData> = {
   freeze: (data: GrainCraftData, season: FieldSeason, field: ProducerField) => ({
     inputs: {
       crop: season.cropLabel, cropYear: season.year, field: field.name, acres: season.acres,
-      fsaFarmNo: field.fsaFarmNo, fsaTractNo: field.fsaTractNo, fsaFieldNo: field.fsaFieldNo,
+      splitId: field.splitId, splitPercent: field.splitPercent,
       variety: data.variety.trim(),
     },
     outputs: {},

@@ -1,8 +1,8 @@
 /**
  * Fields under planting intentions, and the sustainability programs recorded on them.
  *
- * A ProducerField is durable: a name and a location, entered once and offered again in later years.
- * A FieldSeason is that field's share of one planting intention (one crop row): just its acres. Crop,
+ * A ProducerField is durable: one of the producer's CTRM split IDs plus its location, set up once and
+ * offered again in later years. A FieldSeason is that field's share of one planting intention (one crop row): just its acres. Crop,
  * year, type and trade unit come from the intention row, so they are never entered twice, and the
  * intention's Acres stays the total the dashboard counts.
  *
@@ -11,15 +11,39 @@
  * to fields or seasons. Producer-level sign-off is a ProgramEnrollment per program per year.
  */
 
-/** A producer's field: a name, its FSA farm/tract/field numbers, and the location 45Z needs. */
-export interface ProducerField {
-  fieldKey: string;
-  customerId: number;
-  /** As the producer knows it, e.g. "Penka #1 irrigated". */
+/**
+ * One row of CTRM's Customer Splits Inquiry: a "combined customer" (split) ID under a producer's primary
+ * ID. Producers use split IDs for fields, and tickets are delivered under them.
+ */
+export interface CtrmSplit {
+  /** e.g. "TATOB43". */
+  splitId: string;
+  /** The producer's primary CTRM ID, e.g. "TATOBIN". */
+  primaryCustomerId: string;
+  /** CTRM's combined customer name, e.g. "T-A TOBIN - JARBOE WEST". */
   name: string;
-  fsaFarmNo: string;
-  fsaTractNo: string;
-  fsaFieldNo: string;
+  /** The name without the producer prefix, e.g. "JARBOE WEST". */
+  fieldName: string;
+  /** 0–100, e.g. 66.667. */
+  splitPercent: number;
+  /** yyyy-mm-dd. */
+  effectiveDate: string;
+  expired: boolean;
+  /** A bin-site split collects grain from several fields, so it isn't a field itself. */
+  kind: 'Field' | 'Bin';
+}
+
+/** A producer's field: one CTRM split, plus the location 45Z needs. Keyed by the split ID. */
+export interface ProducerField {
+  /** The split ID. */
+  fieldKey: string;
+  splitId: string;
+  customerId: number;
+  /** From CTRM, e.g. "JARBOE WEST"; read-only here. */
+  name: string;
+  splitPercent: number;
+  /** yyyy-mm-dd. */
+  effectiveDate: string;
   state: string;
   county: string;
 }
@@ -93,8 +117,7 @@ export interface EnrollableRecord {
   seasonId: string;
   fieldKey: string;
   fieldName: string;
-  /** "farm/tract/field", or empty when the FSA numbers aren't all filled in. */
-  fsa: string;
+  splitId: string;
   cropLabel: string;
   year: number;
   acres: number | null;

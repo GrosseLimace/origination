@@ -5,7 +5,7 @@ import { fakeFdCicApi } from './fd-cic.testing';
 
 const season: FieldSeason = { id: 's1', fieldKey: 'f1', plantingIntentionId: 1, year: 2026, cropLabel: 'Irrigated Corn', acres: 80 };
 const field: ProducerField = {
-  fieldKey: 'f1', customerId: 9, name: 'Penka #1 irrigated', fsaFarmNo: '1234', fsaTractNo: '5678', fsaFieldNo: '3', state: 'KS', county: 'Pratt',
+  fieldKey: 'TATOB28', splitId: 'TATOB28', customerId: 9, name: 'PENKA #1 IRR', splitPercent: 50, effectiveDate: '2024-09-01', state: 'KS', county: 'Pratt',
 };
 const program = createFdCicProgram(fakeFdCicApi());
 const data = (overrides: Partial<FdCicData> = {}): FdCicData => ({ ...program.blankData(), expectedYield: 200, syntheticN: 180, ...overrides });
@@ -75,7 +75,7 @@ describe('45Z program (USDA FD-CIC on the API)', () => {
   it('should freeze the inputs, the USDA outputs and the exact USDA version', () => {
     const frozen = program.freeze(data({ actualYield: 205, tillage: 'NoTill' }), season, field);
     expect(frozen.calculatorVersion).toBe('USDA FD-CIC v1.2');
-    expect(frozen.inputs).toMatchObject({ fsaFarmNo: '1234', fsaTractNo: '5678', fsaFieldNo: '3', state: 'KS', county: 'Pratt', acres: 80, actualYield: 205, tillage: 'No till', coverCrop: 'No cover crop', niPercent: 0 });
+    expect(frozen.inputs).toMatchObject({ splitId: 'TATOB28', splitPercent: 50, state: 'KS', county: 'Pratt', acres: 80, actualYield: 205, tillage: 'No till', coverCrop: 'No cover crop', niPercent: 0 });
     expect(frozen.outputs).toMatchObject({ ciGPerBu: 5300, nationalAverage: 6000, yieldUsed: 205, mlra: '78', usdaVersion: '1.2', usdaWorkbookSha256: 'db3e', usdaFormulaFingerprint: 'a2cc' });
     expect(frozen.score!.value).toBe(5300);
   });
