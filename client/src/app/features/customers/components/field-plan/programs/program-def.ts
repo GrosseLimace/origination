@@ -46,10 +46,7 @@ export interface SustainabilityProgramDef<TData = any> {
   /** The audit copy of inputs and outputs stored at finalize. */
   freeze(data: TData, season: FieldSeason, field: ProducerField): Omit<FrozenProgramResult, 'finalizedBy' | 'finalizedAt'>;
 
-  /**
-   * A one-line roll-up for a crop row, or null to show none: the main figure (45Z: "CI 2,629 g/bu")
-   * and, optionally, its change against the program's baseline, which is shown green when better.
-   */
+  /** A one-line roll-up for a crop row, or null to show none (45Z: "CI 2,629 g/bu"). */
   rowSummary?(items: { season: FieldSeason; record: FieldProgramRecord<TData>; field: ProducerField }[], intention: { id: number; acres: number }): RowSummary | null;
   /**
    * The producer's figures for the year across all their fields in the program, for the enrollment
@@ -80,13 +77,14 @@ export interface SustainabilityProgramDef<TData = any> {
   };
 }
 
-/** A crop row's roll-up for one program. */
+/**
+ * A crop row's roll-up for one program. The raw figure only: no comparison with a baseline (45Z: the
+ * national average), which would suggest it decides whether a field qualifies for an opportunity.
+ */
 export interface RowSummary {
   text: string;
   /** The figure alone for tight spots, e.g. a collapsed enrollment card: "Corn 2,874". Falls back to `text`. */
   short?: string;
-  /** e.g. "▼59% vs national" (short: "▼59%"); `better` colours it green (amber when worse). */
-  change?: { text: string; short?: string; better: boolean };
 }
 
 /** The inputs every program's intake component takes. */

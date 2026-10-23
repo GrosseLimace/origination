@@ -36,12 +36,7 @@ import { ProgramRegistry } from './program-registry';
           <span class="text-amber-700 dark:text-amber-400">{{ records().length ? 'No live enrollment' : 'No enrollment ID yet' }}</span>
         }
         @for (s of summaries(); track s.text) {
-          <span class="text-gray-800 dark:text-gray-100" [title]="s.text + (s.change ? ', ' + s.change.text : '') + ' (bushel-weighted)'">
-            <span class="font-semibold">{{ s.short ?? s.text }}</span>
-            @if (s.change; as ch) {
-              <span class="ml-1 font-medium" [class]="ch.better ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'">{{ ch.short ?? ch.text }}</span>
-            }
-          </span>
+          <span class="font-semibold text-gray-800 dark:text-gray-100" [title]="s.text + ' (bushel-weighted)'">{{ s.text }}</span>
         }
       </button>
 
@@ -51,7 +46,7 @@ import { ProgramRegistry } from './program-registry';
             <p class="text-gray-600 dark:text-gray-300">
               {{ scoredCount() }} of {{ records().length }} field{{ records().length === 1 ? '' : 's' }} scored. Bushel-weighted:
               @for (s of summaries(); track s.text; let last = $last) {
-                <span class="font-medium text-gray-900 dark:text-white">{{ s.text }}</span>@if (s.change) { ({{ s.change.text }}) }@if (!last) {; }
+                <span class="font-medium text-gray-900 dark:text-white">{{ s.text }}</span>@if (!last) {; }
               }
             </p>
           }

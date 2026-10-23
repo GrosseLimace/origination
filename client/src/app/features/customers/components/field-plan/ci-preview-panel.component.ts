@@ -13,8 +13,9 @@ const COMPONENT_LABELS: { key: keyof NonNullable<FdCicScore['components']>; labe
 ];
 
 /**
- * One field's CI from the USDA FD-CIC calculator on the API: the number, how it compares to the
- * national average, a bar per component, and what each of the field's choices is worth. Shown beside
+ * One field's CI from the USDA FD-CIC calculator on the API: the raw number (never a comparison with the
+ * national average, which would suggest it decides whether a field qualifies), a bar per component, and
+ * what each of the field's choices is worth. Shown beside
  * the field form so every change has a visible effect. While a new score is on its way the last one
  * stays up, dimmed, so the number doesn't flicker as the originator types.
  */
@@ -41,11 +42,6 @@ const COMPONENT_LABELS: { key: keyof NonNullable<FdCicScore['components']>; labe
           <div [class.opacity-60]="updating()">
             <div class="text-3xl font-bold text-gray-900 dark:text-white">{{ s.ci | number:'1.0-0' }}</div>
             <div class="text-xs text-gray-500 dark:text-gray-400">g CO₂e per bushel</div>
-            <div class="mt-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-sm font-medium"
-                 [class]="better() ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'">
-              {{ better() ? '▼' : '▲' }}{{ changeAbs() | percent:'1.0-0' }}
-              {{ better() ? 'lower' : 'higher' }} than national ({{ s.nationalAverage | number:'1.0-0' }})
-            </div>
           </div>
 
           <div class="space-y-1.5" [class.opacity-60]="updating()">
@@ -116,8 +112,6 @@ export class CiPreviewPanelComponent {
     const s = this.state();
     return s?.status === 'error' ? s.message : '';
   });
-  readonly better = computed(() => (this.shown()?.changeFraction ?? 0) <= 0);
-  readonly changeAbs = computed(() => Math.abs(this.shown()?.changeFraction ?? 0));
   readonly components = computed(() => {
     const c = this.shown()?.components;
     return c ? COMPONENT_LABELS.map(({ key, label }) => ({ key, label, value: c[key] })) : [];

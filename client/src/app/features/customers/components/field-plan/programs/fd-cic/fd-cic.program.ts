@@ -9,7 +9,7 @@ import { COVER_LABELS, TILLAGE_LABELS, fdCicCropFor, fdCicScoreState, missingInp
 export const FD_CIC_PROGRAM_KEY = '45z-fdcic';
 
 const toProgramScore = (s: FdCicScore): ProgramScore =>
-  ({ value: s.ci!, unit: 'g CO₂e/bu', unitShort: 'g/bu', vsBaseline: s.changeFraction ?? undefined });
+  ({ value: s.ci!, unit: 'g CO₂e/bu', unitShort: 'g/bu' });
 
 /**
  * 45Z: the field's feedstock carbon intensity, scored on the API with the USDA FD-CIC calculator, for
@@ -47,13 +47,7 @@ export function createFdCicProgram(api: FdCicApiService): SustainabilityProgramD
     if (scoredBu <= 0) return null;
     const unassignedBu = Math.max(fillToAcres - scoredAcres, 0) * (scoredBu / scoredAcres);
     const ci = (fields.reduce((sum, f) => sum + f.ci * f.acres * f.yieldUsed, 0) + national * unassignedBu) / (scoredBu + unassignedBu);
-    const vs = ci / national - 1;
-    const pct = `${vs <= 0 ? '▼' : '▲'}${Math.abs(Math.round(vs * 100))}%`;
-    return {
-      text: `CI ${Math.round(ci).toLocaleString()} g/bu`,
-      short: `CI ${Math.round(ci).toLocaleString()}`,
-      change: { text: `${pct} vs national`, short: pct, better: vs <= 0 },
-    };
+    return { text: `CI ${Math.round(ci).toLocaleString()} g/bu`, short: `CI ${Math.round(ci).toLocaleString()}` };
   };
 
   return {

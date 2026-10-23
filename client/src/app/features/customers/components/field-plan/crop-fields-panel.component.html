@@ -13,11 +13,7 @@
     <span class="text-gray-700 dark:text-gray-200">{{ inFields() | number }} of {{ intention().acres | number }} ac</span>
   }
   @for (s of summaries(); track s.programKey) {
-    <span class="text-gray-700 dark:text-gray-200">· <span class="font-semibold text-scoular-green-accessible dark:text-scoular-green">🌱 {{ s.label }}</span> {{ s.text }}
-      @if (s.change; as ch) {
-        <span class="font-medium" [class]="ch.better ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'">{{ ch.text }}</span>
-      }
-    </span>
+    <span class="text-gray-700 dark:text-gray-200">· <span class="font-semibold text-scoular-green-accessible dark:text-scoular-green">🌱 {{ s.label }}</span> {{ s.text }}</span>
   }
   @if (remaining() < 0) {
     <span class="text-amber-700 dark:text-amber-400">· {{ -remaining() | number }} ac over the total</span>
@@ -59,11 +55,6 @@
                       <span class="font-semibold">🌱 {{ c.label }}</span>
                       @if (c.score) {
                         <span class="tabular-nums">{{ c.score.value | number:'1.0-0' }} {{ c.score.unitShort }}</span>
-                        @if (c.score.vsBaseline !== undefined) {
-                          <span [class]="c.score.vsBaseline <= 0 ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'">
-                            {{ c.score.vsBaseline <= 0 ? '▼' : '▲' }}{{ absPct(c.score.vsBaseline) }}%
-                          </span>
-                        }
                       } @else if (c.text) {
                         <span>{{ c.text }}</span>
                       } @else {

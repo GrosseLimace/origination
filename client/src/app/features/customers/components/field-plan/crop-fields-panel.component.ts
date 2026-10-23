@@ -248,7 +248,4 @@ export class CropFieldsPanelComponent {
     this.openProgram = programKey;
   }
 
-  absPct(fraction: number | undefined): number {
-    return Math.abs(Math.round((fraction ?? 0) * 100));
-  }
 }

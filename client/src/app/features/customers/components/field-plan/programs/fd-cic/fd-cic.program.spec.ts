@@ -39,8 +39,7 @@ describe('45Z program (USDA FD-CIC on the API)', () => {
   it('should show the API\'s score, and say why there is none while calculating or when USDA has no data', () => {
     const score = program.preview(data(), season, field)!;
     expect(score).toMatchObject({ unitShort: 'g/bu', unit: 'g CO₂e/bu' });
-    expect(score.value).toBe(5900);
-    expect(score.vsBaseline).toBeCloseTo(-100 / 6000, 9);
+    expect(score).toEqual({ value: 5900, unit: 'g CO₂e/bu', unitShort: 'g/bu' });
     expect(program.previewNote!(data(), season, field)).toBeNull();
 
     const loading = createFdCicProgram(fakeFdCicApi('loading'));
@@ -90,12 +89,11 @@ describe('45Z program (USDA FD-CIC on the API)', () => {
     const record = (d: FdCicData, frozen?: FieldProgramRecord['frozen']): FieldProgramRecord<FdCicData> =>
       ({ id: 'r1', seasonId: 's1', programKey: program.key, data: d, status: frozen ? 'Final' : 'Ready', frozen });
 
-    it('should show the CI line, marked better when below national', () => {
+    it('should show the raw CI, with no comparison to the national average', () => {
       const low = program.rowSummary!([{ season, field, record: record(data({ tillage: 'NoTill', coverCrop: 'CoverCrop', niFraction: 1 })) }], { id: 1, acres: 80 })!;
-      expect(low.text).toBe('CI 4,600 g/bu');
-      expect(low.change).toEqual({ text: '▼23% vs national', short: '▼23%', better: true });
+      expect(low).toEqual({ text: 'CI 4,600 g/bu', short: 'CI 4,600' });
       const high = program.rowSummary!([{ season, field, record: record(data({ syntheticN: 400 })) }], { id: 1, acres: 80 })!;
-      expect(high.change).toEqual({ text: '▲17% vs national', short: '▲17%', better: false });
+      expect(JSON.stringify(high)).not.toMatch(/national|%|▲|▼/);
     });
 
     it('should count acres not yet in a scored field at the national average', () => {
@@ -113,7 +111,7 @@ describe('45Z program (USDA FD-CIC on the API)', () => {
         { season: small, field, record: record(data({ expectedYield: 100, syntheticN: 100 })) },
         { season: unscored, field, record: record(program.blankData()) },
       ]);
-      expect(summaries).toEqual([{ text: 'CI 5,820 g/bu', short: 'CI 5,820', change: { text: '▼3% vs national', short: '▼3%', better: true } }]);
+      expect(summaries).toEqual([{ text: 'CI 5,820 g/bu', short: 'CI 5,820' }]);
     });
 
     it('should give one enrollment CI per crop, never averaging corn and soybeans together', () => {

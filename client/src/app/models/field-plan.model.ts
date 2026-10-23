@@ -66,8 +66,6 @@ export interface ProgramScore {
   unit: string;
   /** Short unit for chips, e.g. "g/bu". */
   unitShort: string;
-  /** Fractional change against the program's baseline (45Z: national average), when it has one. */
-  vsBaseline?: number;
 }
 
 /** Draft: inputs still missing. Ready: scored, can be finalized. Final: frozen and locked. */
