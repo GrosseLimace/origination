@@ -2,13 +2,13 @@ import { Component, computed, inject, input, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { FieldPlanStore } from '../store/field-plan.store';
-import { EnrollableRecord } from '@models';
+import { EnrollableRecord, OFFICIAL_STATUS_TEXT } from '@models';
 import { ProgramRegistry } from './program-registry';
 import { FieldResult } from './program-def';
 import { LadderRow, atOrBelowTarget, ciLadder } from './ci-ladder';
 
 /** One field in the card: what the enrollment lists, plus its score and bushels. */
-type CardField = EnrollableRecord & { result: FieldResult };
+type CardField = EnrollableRecord & { result: FieldResult; official: string };
 
 /**
  * A producer's enrollment in one sustainability program for one year, above the planting table. The
@@ -19,7 +19,9 @@ type CardField = EnrollableRecord & { result: FieldResult };
  *   and a target box ("at or below 3,000 g/bu → 69,000 bu"). Never one producer-wide average:
  *   downstream opportunities set different CI targets, so field-level CI and bushels are what matter;
  * - the fields not scored yet;
- * - "harvest complete", which finalizes every field that has its actual yield.
+ * - "harvest complete", which locks the harvest estimate of every field that has its actual yield.
+ *
+ * Every CI here is a planning estimate. An official result has its own, still empty, place on each record.
  *
  * Shows nothing until the producer has a field in the program. PROTOTYPE ONLY (in memory).
  */
@@ -59,6 +61,9 @@ type CardField = EnrollableRecord & { result: FieldResult };
               <button type="button" class="rounded-md bg-scoular-green-accessible px-3 py-1.5 text-white border-0" (click)="issueNew()">Issue a new enrollment ID</button>
             }
           } @else {
+            @if (p.official; as o) {
+              <p class="text-xs text-gray-500 dark:text-gray-400">Planning estimates from the {{ p.shortLabel }} calculator. {{ o.requirementsNote }}</p>
+            }
             <!-- Bushels by CI, one ladder per crop -->
             @for (g of groups(); track g.group) {
               <div>
@@ -75,14 +80,14 @@ type CardField = EnrollableRecord & { result: FieldResult };
                 </div>
                 <table class="mt-1 w-full text-left">
                   <thead class="text-xs uppercase text-gray-500 dark:text-gray-400">
-                    <tr><th class="py-1 text-right pr-4">CI {{ g.unitShort }}</th><th>Field</th><th>Split ID</th><th class="text-right">Acres</th><th class="text-right">Bushels</th><th class="text-right">At or below this CI</th></tr>
+                    <tr><th class="py-1 text-right pr-4">CI {{ g.unitShort }}</th><th>Field</th><th>Split ID</th><th class="text-right">Acres</th><th class="text-right">Bushels</th><th class="text-right">At or below this CI</th>@if (p.official) { <th class="text-right">Official</th> }</tr>
                   </thead>
                   <tbody>
                     @for (row of g.ladder; track row.item.recordId) {
                       <tr class="border-t border-gray-100 dark:border-gray-700" [class]="withinTarget(g.group, row.value) ? 'bg-gray-100 dark:bg-gray-700/50' : ''">
                         <td class="py-1 pr-4 text-right tabular-nums">
                           <span class="font-semibold text-gray-900 dark:text-white">{{ row.value | number:'1.0-0' }}</span>
-                          <span class="text-xs text-gray-500"> {{ row.item.status === 'Final' ? 'final' : 'projected' }}</span>
+                          <span class="text-xs text-gray-500"> estimate · {{ row.item.status === 'Locked' ? 'locked' : 'projected' }}</span>
                         </td>
                         <td class="text-gray-900 dark:text-white">{{ row.item.fieldName }}</td>
                         <td class="text-gray-600 dark:text-gray-300">{{ row.item.splitId }}</td>
@@ -93,6 +98,7 @@ type CardField = EnrollableRecord & { result: FieldResult };
                           } @else { <span class="text-gray-400">no yield</span> }
                         </td>
                         <td class="text-right tabular-nums text-gray-900 dark:text-white">{{ row.atOrBelow | number:'1.0-0' }}</td>
+                        @if (p.official) { <td class="text-right text-xs text-gray-500 dark:text-gray-400">{{ row.item.official }}</td> }
                       </tr>
                     }
                   </tbody>
@@ -113,7 +119,7 @@ type CardField = EnrollableRecord & { result: FieldResult };
             }
             <!-- Producer attestation: to be designed; the service still supports it (attest, statements). -->
 
-            <!-- Harvest complete finalizes every field that has its actual yield -->
+            <!-- Harvest complete locks the estimate of every field that has its actual yield -->
             <div class="space-y-2">
               @if (e.harvestCompleteAt) {
                 <div class="text-gray-700 dark:text-gray-300">Harvest marked complete {{ e.harvestCompleteAt | date:'MM/dd/yy' }}.</div>
@@ -122,7 +128,7 @@ type CardField = EnrollableRecord & { result: FieldResult };
                         (click)="completeHarvest()">Mark harvest complete</button>
               }
               @for (o of harvestLeftOpen(); track o.fieldName) {
-                <div class="text-amber-800 dark:text-amber-300">{{ o.fieldName }} couldn't be finalized: still needs {{ o.missing.join(', ') }}.</div>
+                <div class="text-amber-800 dark:text-amber-300">{{ o.fieldName }} couldn't be locked: still needs {{ o.missing.join(', ') }}.</div>
               }
             </div>
 
@@ -189,6 +195,7 @@ export class ProgramEnrollmentCardComponent {
       scoreNote: program.previewNote?.(r.data, season, field) ?? undefined,
       production: program.production ? program.production(r.data, season) : undefined,
       result: results.get(r.id) ?? { recordId: r.id, group: season.cropLabel, value: null, unitShort: '', bushels: null, projected: true },
+      official: OFFICIAL_STATUS_TEXT[r.official?.status ?? 'NotStarted'],
     }));
   });
 

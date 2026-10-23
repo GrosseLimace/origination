@@ -20,7 +20,7 @@ const enrollment = (overrides: Partial<ProgramEnrollment> = {}): ProgramEnrollme
 describe('program enrollment rules', () => {
   it('should let the producer attest before harvest, once every field is scored', () => {
     expect(enrollmentBlockers(enrollment(), [record()], [], statements)).toEqual([]);
-    expect(enrollmentBlockers(enrollment(), [record({ status: 'Final' })], [], statements)).toEqual([]);
+    expect(enrollmentBlockers(enrollment(), [record({ status: 'Locked' })], [], statements)).toEqual([]);
   });
 
   it('should list each unconfirmed statement from the program, unscored fields and the signature', () => {

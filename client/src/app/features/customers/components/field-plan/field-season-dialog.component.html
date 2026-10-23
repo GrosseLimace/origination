@@ -45,7 +45,7 @@
                       ? 'border-gray-200 border-b-white bg-white font-semibold text-gray-900 dark:border-gray-700 dark:border-b-gray-800 dark:bg-gray-800 dark:text-white'
                       : 'border-transparent bg-transparent text-gray-600 hover:text-gray-900 dark:text-gray-300'">
               🌱 {{ p.def.shortLabel }}
-              @if (p.record.status === 'Final') { 🔒 } @else if (p.record.status === 'Draft') { <span class="text-amber-600">•</span> }
+              @if (p.record.status === 'Locked') { 🔒 } @else if (p.record.status === 'Draft') { <span class="text-amber-600">•</span> }
             </button>
           }
           @for (d of addable(); track d.key) {
@@ -58,7 +58,7 @@
           <div class="pt-4 space-y-4">
             <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
               <span class="text-gray-600 dark:text-gray-300">{{ a.def.label }}</span>
-              @if (a.record.status !== 'Final') {
+              @if (a.record.status !== 'Locked') {
                 <div class="flex flex-wrap items-center gap-3">
                   @if (copySources().length) {
                     <label class="text-xs text-gray-600 dark:text-gray-300">Copy from
@@ -99,7 +99,7 @@
                         @case ('empty') { no inputs yet }
                         @case ('replace') { its inputs will be replaced }
                         @case ('partial') { different crop: only the inputs that carry across crops }
-                        @case ('locked') { finalized; reopen it first }
+                        @case ('locked') { harvest estimate locked; unlock it first }
                       }
                     </span>
                   </label>
@@ -115,7 +115,11 @@
               </div>
             }
 
-            @if (a.record.copiedFromField && a.record.status !== 'Final') {
+            @if (a.def.official; as o) {
+              <div class="text-xs text-gray-500 dark:text-gray-400">Official {{ o.resultName }}: {{ officialStatus(a.record) }}</div>
+            }
+
+            @if (a.record.copiedFromField && a.record.status !== 'Locked') {
               <div class="text-xs text-gray-500 dark:text-gray-400">Copied from {{ a.record.copiedFromField }}. Edit what's different.</div>
             }
 
@@ -134,11 +138,11 @@
 
             @if (a.record.frozen; as fz) {
               <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 px-4 py-3 text-sm text-blue-900 dark:text-blue-200">
-                <span>🔒 Finalized from {{ fz.finalizedBy }}@if (fz.score; as sc) {: {{ sc.value | number:'1.0-0' }} {{ sc.unit }}} ({{ fz.calculatorVersion }}). Locked for audit.</span>
-                @if (lockedBy(); as enrolled) {
-                  <span>Locked by enrollment {{ enrolled.enrollmentId }}.</span>
+                <span>🔒 Harvest estimate locked ({{ fz.calculatorVersion }}, at {{ fz.lockedBy }})@if (fz.score; as sc) {: {{ sc.value | number:'1.0-0' }} {{ sc.unit }}}.@if (a.def.official; as o) { Not an official {{ o.resultName }}.}</span>
+                @if (heldBy(); as enrolled) {
+                  <span>Held by attested enrollment {{ enrolled.enrollmentId }}.</span>
                 } @else {
-                  <button type="button" class="underline bg-transparent border-0 p-0" (click)="showReopen = true">Reopen to correct…</button>
+                  <button type="button" class="underline bg-transparent border-0 p-0" (click)="showReopen = true">Unlock to correct…</button>
                 }
               </div>
             }
@@ -169,15 +173,15 @@
 @if (showReopen) {
   <div class="fixed inset-0 z-[70] flex items-start justify-center bg-black/40 px-4 pt-[12vh]" (click)="showReopen = false">
     <div class="w-full max-w-md rounded-lg bg-white dark:bg-gray-800 shadow-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4" (click)="$event.stopPropagation()">
-      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Reopen a finalized field</h3>
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Unlock this field's harvest estimate</h3>
       <label class="block text-sm">
         <span class="text-gray-700 dark:text-gray-300">Why does it need correcting?</span>
         <textarea rows="3" class="ci-input" [(ngModel)]="reopenReason"></textarea>
       </label>
-      <p class="text-xs text-gray-500 dark:text-gray-400">Reopening also reopens the enrollment's harvest. The reason is kept in the field's history.</p>
+      <p class="text-xs text-gray-500 dark:text-gray-400">Unlocking also reopens the enrollment's harvest. The reason and the locked estimate are kept in the field's history.</p>
       <div class="flex justify-end gap-2">
         <app-button variant="outline" (onClick)="showReopen = false">Cancel</app-button>
-        <app-button variant="default" [disabled]="!reopenReason.trim()" (onClick)="confirmReopen()">Reopen</app-button>
+        <app-button variant="default" [disabled]="!reopenReason.trim()" (onClick)="confirmReopen()">Unlock</app-button>
       </div>
     </div>
   </div>

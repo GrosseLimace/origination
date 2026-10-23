@@ -15,7 +15,7 @@ const toProgramScore = (s: FdCicScore): ProgramScore =>
  * 45Z: the field's feedstock carbon intensity, scored on the API with the USDA FD-CIC calculator, for
  * 45Z biofuel programs (Pratt Energy, White Energy Plainview). Inputs follow the workbook's Crop Inputs
  * tab; state, county and acres come from the field. Each crop year is scored with the USDA version the
- * API has set for it, and finalizing freezes the inputs, outputs and that version: the record
+ * API has set for it, and locking freezes the inputs, outputs and that version: the record
  * 7 CFR 2100.031 asks producers to keep.
  */
 export function createFdCicProgram(api: FdCicApiService): SustainabilityProgramDef<FdCicData> {
@@ -83,7 +83,7 @@ export function createFdCicProgram(api: FdCicApiService): SustainabilityProgramD
     /** The field's production: acres × actual yield. */
     production: (data, season) => (data.actualYield && season.acres ? data.actualYield * season.acres : null),
 
-    finalizeMissing(data, season, field) {
+    lockMissing(data, season, field) {
       const missing = missingInputs(data, season);
       if (!data.actualYield || data.actualYield <= 0) missing.push('actual yield');
       if (missing.length > 0) return missing;
@@ -144,6 +144,11 @@ export function createFdCicProgram(api: FdCicApiService): SustainabilityProgramD
 
     // A getter, so the program and its form can import each other without a load-order trap.
     get intake() { return FdCicIntakeComponent; },
+
+    official: {
+      resultName: '45Z CI',
+      requirementsNote: 'Requirements for an official 45Z CI are being defined.',
+    },
 
     enrollment: {
       idPrefix: 'CI',

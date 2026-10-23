@@ -68,12 +68,12 @@ build.
 **Rules for scores the app keeps** (for the storage step):
 - Every saved score records the label, workbook hash and formula fingerprint returned with it, next to the
   inputs and outputs it froze.
-- A finalized score is never recalculated under a newer version. It stays on the version that produced it.
+- A locked harvest estimate is never recalculated under a newer version. It stays on the version that produced it.
 - Which version applies to a crop year is a setting, so switching versions is a configuration change, not
   a code release.
 
 **Decision needed (business):** when USDA releases a new version mid-season, should fields that are not yet
-finalized be rescored under it? Recommended: yes, with a visible "rescored under vX" note. Finalized fields
+locked be rescored under it? Recommended: yes, with a visible "rescored under vX" note. Locked fields
 keep their version either way.
 
 ## Where field-plan data is kept (database pending approval)
@@ -97,11 +97,30 @@ endpoint.
   - soft delete through a query filter;
   - the record's `Data` and frozen result stored as `nvarchar(max)` JSON, like `Note.Mentions`.
   - `FieldProgramRecord.CopiedFromField`: the field a record's inputs were copied from this year, if any.
+  - `FieldProgramRecord.Official` (JSON, nullable): the official result, kept apart from the estimate (see
+    [Estimate vs official CI](#estimate-vs-official-ci)). It may become its own table once its shape is known.
 - Access is the same as planting intentions: any signed-in user (accepted risks AR-01 to AR-03).
 - The server owns three rules:
   - the enrollment ID sequence;
   - refusing duplicate claims at attestation (a split ID in two enrollments of one program and year);
-  - finalizing, which rescores with `FdCicService` rather than trusting the client's number.
+  - locking the harvest estimate, which rescores with `FdCicService` rather than trusting the client's number.
+
+## Estimate vs official CI
+
+Every CI the app produces is a **planning estimate** from the USDA FD-CIC calculator. The meeting identified
+that an official, documented CI for the program may need more, and what it needs is still being gathered, so
+the app keeps the two apart and builds nothing that guesses at the official requirements.
+
+- **Estimates:** projected (expected yield) before harvest, then actual. Marking the enrollment's harvest
+  complete **locks** each field's estimate (`Locked`, formerly "Final"): inputs, outputs and USDA version
+  frozen for the audit trail, with `basis: Estimate`. A locked estimate can be unlocked with a reason, which
+  is kept. Screens say "estimate · projected" or "estimate · locked", and the locked banner says "Not an
+  official 45Z CI".
+- **Official result:** each program record has an empty `official` slot (status, score, method, requirements,
+  evidence, who documented it and when). Nothing writes it yet, and an estimate is never copied into it.
+  Screens show "Official 45Z CI: not started".
+- **Open questions:** which extra inputs or records an official CI needs; what evidence and who verifies it;
+  who signs off; which method or USDA version applies; whether it's per field or per delivery lot.
 
 ## Reporting: field-level CI and bushels
 
@@ -112,10 +131,10 @@ different CI target, so the question is **how many bushels sit at or below a giv
   bushels and a running total, and a target box ("at or below 3,000 g/bu → 69,000 bu from 2 fields").
   Crop rows show the range of CIs and the bushels, never an average.
 - Bushels are acres × actual yield once it's in, otherwise acres × expected yield, marked projected. A
-  finalized field uses its frozen acres and actual yield.
+  locked field uses its frozen acres and actual yield.
 - Reports and dashboards should work from the same field-level rows: producer, year, crop, field (split
   ID), CI, bushels, projected or actual, status and USDA version. The `FieldProgramRecord` rows (with
-  their frozen outputs once finalized) are that source. Don't store or show a producer-level average as
+  their frozen outputs once locked) are that source. Don't store or show a producer-level average as
   the planning figure.
 - The ladder rules live in `client/.../field-plan/programs/ci-ladder.ts` (pure, with tests), so a server
   report can follow the same cases.

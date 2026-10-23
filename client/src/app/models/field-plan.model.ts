@@ -68,18 +68,49 @@ export interface ProgramScore {
   unitShort: string;
 }
 
-/** Draft: inputs still missing. Ready: scored, can be finalized. Final: frozen and locked. */
-export type ProgramRecordStatus = 'Draft' | 'Ready' | 'Final';
+/**
+ * Draft: inputs still missing. Ready: scored. Locked: the harvest estimate frozen for the audit trail
+ * (harvest complete). Every status is a planning estimate; an official result is `official`, apart.
+ */
+export type ProgramRecordStatus = 'Draft' | 'Ready' | 'Locked';
 
-/** What a program record looked like when it was finalized: the audit copy of inputs and outputs. */
+/** What a program record looked like when it was locked: the audit copy of inputs and outputs. */
 export interface FrozenProgramResult {
   inputs: Record<string, unknown>;
   outputs: Record<string, unknown>;
   /** The headline result, for programs that score a field (45Z: CI). */
   score?: ProgramScore;
   calculatorVersion: string;
-  finalizedBy: string;
-  finalizedAt: string;
+  /** Always an estimate: the planning calculation, never the program's official result. */
+  basis: 'Estimate';
+  lockedBy: string;
+  lockedAt: string;
+}
+
+export type OfficialResultStatus = 'NotStarted' | 'InProgress' | 'Documented';
+
+/** How an official result's status reads on screen. */
+export const OFFICIAL_STATUS_TEXT: Record<OfficialResultStatus, string> = {
+  NotStarted: 'not started',
+  InProgress: 'in progress',
+  Documented: 'documented',
+};
+
+/**
+ * A field's official, documented result for a program (45Z: the CI of record), kept apart from the
+ * planning estimate. PLACEHOLDER: what an official result requires (more inputs, evidence, a verifier,
+ * sign-off, a method) is still being gathered, so nothing writes this yet. The planning estimate must
+ * never be copied into it automatically.
+ */
+export interface OfficialResult {
+  status: OfficialResultStatus;
+  score?: ProgramScore;
+  /** e.g. a USDA version or a verified pathway. */
+  method?: string;
+  requirements?: { key: string; label: string; met: boolean }[];
+  evidence?: { kind: string; reference: string; addedBy: string; addedAt: string }[];
+  documentedBy?: string;
+  documentedAt?: string;
 }
 
 /** One sustainability program on one field season. `data` is the program's own shape. */
@@ -94,7 +125,9 @@ export interface FieldProgramRecord<TData = unknown> {
   /** Set when the data was copied from another field this year (its name then), kept for the audit trail. */
   copiedFromField?: string;
   frozen?: FrozenProgramResult;
-  /** Each time a finalized record was reopened for correction, with the reason given. */
+  /** The official, documented result, once there is one; see OfficialResult. Absent means not started. */
+  official?: OfficialResult;
+  /** Each time a locked record was reopened for correction, with the reason given. */
   reopened?: { reason: string; at: string; frozen: FrozenProgramResult }[];
 }
 
@@ -147,7 +180,7 @@ export interface ProgramEnrollment {
   attestedAt?: string;
   /** The producer's records as they stood when attested (projected scores before harvest). */
   snapshot?: EnrollableRecord[];
-  /** Set when harvest is marked complete for the enrollment: every complete field is finalized. */
+  /** Set when harvest is marked complete for the enrollment: every complete field is locked. */
   harvestCompleteAt?: string;
   withdrawnReason?: string;
 }

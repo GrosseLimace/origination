@@ -17,7 +17,7 @@ import { FdCicScore, FdCicScoreState } from '@models';
   template: `
     <div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4 space-y-4">
       <div class="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        <span>This field's CI</span>
+        <span>This field's estimated CI</span>
         @if (updating()) { <span class="normal-case font-normal">Updating…</span> }
       </div>
 

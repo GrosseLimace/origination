@@ -22,7 +22,7 @@ export interface CopyTarget {
   cropLabel: string;
   /**
    * empty: the field has no inputs for the program yet. replace: its inputs will be replaced.
-   * partial: a different crop, so only the inputs the program carries between crops. locked: finalized.
+   * partial: a different crop, so only the inputs the program carries between crops. locked: locked.
    */
   effect: 'empty' | 'replace' | 'partial' | 'locked';
 }
@@ -42,14 +42,14 @@ type LoadState = 'loading' | 'loaded' | 'error';
  * Writes come in two kinds:
  * - edits while typing (`updateRecord`, `updateField`, `updateSeason`) apply at once, so scores and chips
  *   move, and are saved after a pause, latest value wins, one save in flight per item;
- * - structural changes (add, remove, finalize, reopen, harvest complete, withdraw, issue an ID) wait for
+ * - structural changes (add, remove, lock, reopen, harvest complete, withdraw, issue an ID) wait for
  *   the backend, after any pending edits are saved, and return a Promise.
  * A failed save shows an error and reloads the producer from the backend, so the screen never shows
  * something that wasn't kept.
  *
  * The program lifecycle: added (the producer's enrollment ID is issued with it) → Draft → Ready (scored) → actual yield entered → the enrollment's harvest marked complete →
- * Final (frozen), reopenable with a reason unless the producer's attested enrollment holds it.
- * Originators never finalize field by field.
+ * Locked (the harvest estimate frozen; never an official result), unlockable with a reason unless the producer's attested enrollment holds it.
+ * Originators never lock field by field.
  */
 @Injectable({ providedIn: 'root' })
 export class FieldPlanStore {
@@ -143,9 +143,9 @@ export class FieldPlanStore {
     return this.records().find(r => r.seasonId === seasonId && r.programKey === programKey);
   }
 
-  /** A season with a finalized record is locked: its acres are part of a frozen result. */
-  hasFinal(seasonId: string): boolean {
-    return this.forSeason(seasonId).some(r => r.status === 'Final');
+  /** A season with a locked record is locked: its acres are part of a frozen result. */
+  hasLocked(seasonId: string): boolean {
+    return this.forSeason(seasonId).some(r => r.status === 'Locked');
   }
 
   /** The producer's live enrollment this record belongs to (by program, producer and year). */
@@ -176,8 +176,8 @@ export class FieldPlanStore {
     return this.enrollments().filter(e => e.programKey === programKey && e.customerId === customerId && e.year === year && e.status === 'Withdrawn');
   }
 
-  /** The attested enrollment whose signed snapshot holds this record. A finalized record in it can't be reopened. */
-  lockedBy(recordId: string): ProgramEnrollment | undefined {
+  /** The attested enrollment whose signed snapshot holds this record. A locked record in it can't be reopened. */
+  heldBy(recordId: string): ProgramEnrollment | undefined {
     return this.enrollments().find(e => e.status === 'Attested' && (e.snapshot ?? []).some(r => r.recordId === recordId));
   }
 
@@ -197,21 +197,21 @@ export class FieldPlanStore {
     this.queue(`field:${next.fieldKey}`, next.customerId, () => this.backend.updateField(this.field(next.fieldKey) ?? next));
   }
 
-  /** Saves a season's acres. A season with a finalized record is locked. */
+  /** Saves a season's acres. A season with a locked record is locked. */
   updateSeason(season: FieldSeason): void {
     const customerId = this.customerOfSeason(season.id);
-    if (customerId === undefined || this.hasFinal(season.id)) return;
+    if (customerId === undefined || this.hasLocked(season.id)) return;
     const next = { ...season };
     this.seasons.update(ss => ss.map(s => (s.id === next.id ? next : s)));
     this.queue(`season:${next.id}`, customerId, () => this.backend.updateSeason(this.season(next.id) ?? next));
   }
 
-  /** Saves a record's data; its status follows from what the program still needs. A finalized record is locked until reopened. */
+  /** Saves a record's data; its status follows from what the program still needs. A locked record is locked until reopened. */
   updateRecord(id: string, data: unknown): void {
     const current = this.record(id);
     const season = current && this.season(current.seasonId);
     const customerId = current && this.customerOfSeason(current.seasonId);
-    if (!current || !season || customerId === undefined || current.status === 'Final') return;
+    if (!current || !season || customerId === undefined || current.status === 'Locked') return;
     const next: FieldProgramRecord = { ...current, data };
     next.status = this.statusOf(next, season);
     this.records.update(rs => rs.map(r => (r.id === id ? next : r)));
@@ -252,9 +252,9 @@ export class FieldPlanStore {
     });
   }
 
-  /** Takes a field off a crop row, with its unfinalized program records. Refused once anything on it is final. */
+  /** Takes a field off a crop row, with its unlocked program records. Refused once anything on it is locked. */
   async removeSeason(seasonId: string): Promise<boolean> {
-    if (this.hasFinal(seasonId)) return false;
+    if (this.hasLocked(seasonId)) return false;
     return (await this.write('remove the field', async () => {
       await this.backend.removeSeason(seasonId);
       this.records.update(rs => rs.filter(r => r.seasonId !== seasonId));
@@ -302,10 +302,10 @@ export class FieldPlanStore {
     return created;
   }
 
-  /** Takes a program off a field season. A finalized record stays. */
+  /** Takes a program off a field season. A locked record stays. */
   async removeRecord(id: string): Promise<void> {
     const current = this.record(id);
-    if (!current || current.status === 'Final') return;
+    if (!current || current.status === 'Locked') return;
     await this.write('remove the program', async () => {
       await this.backend.removeRecord(id);
       this.records.update(rs => rs.filter(r => r.id !== id));
@@ -337,7 +337,7 @@ export class FieldPlanStore {
   }
 
   /**
-   * Harvest is complete for the enrollment: finalizes every record in it that has nothing missing.
+   * Harvest is complete for the enrollment: locks every record in it that has nothing missing.
    * Returns the ones left open, with what they still need (45Z: usually the actual yield).
    */
   async completeHarvest(enrollment: ProgramEnrollment): Promise<{ recordId: string; missing: string[] }[]> {
@@ -348,29 +348,29 @@ export class FieldPlanStore {
       return true;
     });
     if (!marked) return leftOpen;
-    for (const r of this.forEnrollment(enrollment).filter(x => x.status !== 'Final')) {
+    for (const r of this.forEnrollment(enrollment).filter(x => x.status !== 'Locked')) {
       const def = this.registry.get(r.programKey)!;
       const season = this.season(r.seasonId)!;
       const field = this.field(season.fieldKey)!;
-      const missing = def.finalizeMissing(r.data, season, field);
+      const missing = def.lockMissing(r.data, season, field);
       if (missing.length) {
         leftOpen.push({ recordId: r.id, missing });
         continue;
       }
-      const finalized = await this.write('finalize a field', () => this.backend.finalize(r.id, 'harvest complete'));
-      if (finalized) this.putRecord(finalized);
+      const locked = await this.write('lock a field', () => this.backend.lock(r.id, 'harvest complete'));
+      if (locked) this.putRecord(locked);
       else leftOpen.push({ recordId: r.id, missing: ['to be saved (try again)'] });
     }
     return leftOpen;
   }
 
   /**
-   * Reopens a finalized record for correction, with the reason kept in its history, and its enrollment's
+   * Reopens a locked record for correction, with the reason kept in its history, and its enrollment's
    * harvest with it. Refused while the producer's attested enrollment holds it.
    */
   async reopen(id: string, reason: string): Promise<boolean> {
     const current = this.record(id);
-    if (!current || current.status !== 'Final' || !reason.trim() || this.lockedBy(id)) return false;
+    if (!current || current.status !== 'Locked' || !reason.trim() || this.heldBy(id)) return false;
     const result = await this.write('reopen the field', () => this.backend.reopen(id, reason));
     if (!result) return false;
     this.putRecord(result.record);
@@ -441,7 +441,7 @@ export class FieldPlanStore {
         const carried = def.copyForward(source.data, from.cropLabel, season.cropLabel);
         if (!carries(carried)) return [];
         const existing = this.find(season.id, source.programKey);
-        const effect: CopyTarget['effect'] = existing?.status === 'Final' ? 'locked'
+        const effect: CopyTarget['effect'] = existing?.status === 'Locked' ? 'locked'
           : Object.keys(carried!).length < full ? 'partial'
           : existing && JSON.stringify(existing.data) !== JSON.stringify(def.blankData()) ? 'replace'
           : 'empty';
@@ -453,7 +453,7 @@ export class FieldPlanStore {
   /**
    * Copies a record's inputs onto other field seasons this year, by the program's copy rule (45Z: every
    * input for the same crop, tillage and cover crop only across crops, never the actual yield). The
-   * program is added where a field doesn't have it; finalized ones are skipped. Each copied record
+   * program is added where a field doesn't have it; locked ones are skipped. Each copied record
    * keeps the source field's name.
    */
   async copyInputs(sourceRecordId: string, targetSeasonIds: readonly string[]): Promise<{ copied: number; skipped: number }> {
@@ -471,7 +471,7 @@ export class FieldPlanStore {
         continue;
       }
       const target = this.find(seasonId, source.programKey) ?? await this.addRecord(seasonId, source.programKey);
-      if (!target || target.status === 'Final') {
+      if (!target || target.status === 'Locked') {
         result.skipped++;
         continue;
       }
@@ -491,7 +491,7 @@ export class FieldPlanStore {
   // ── Internals ────────────────────────────────────────────────────────────
 
   private statusOf(record: FieldProgramRecord, season: FieldSeason): FieldProgramRecord['status'] {
-    if (record.status === 'Final') return 'Final';
+    if (record.status === 'Locked') return 'Locked';
     const def = this.registry.get(record.programKey);
     return def && def.missing(record.data, season).length === 0 ? 'Ready' : 'Draft';
   }

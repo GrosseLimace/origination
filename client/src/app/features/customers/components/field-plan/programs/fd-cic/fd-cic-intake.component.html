@@ -1,7 +1,7 @@
 @if (draft) {
 <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_17rem]">
   <fieldset [disabled]="disabled()" class="space-y-5 min-w-0">
-    @if (record().copiedFromYear && !isFinal()) {
+    @if (record().copiedFromYear && !isLocked()) {
       <div class="text-xs text-gray-500 dark:text-gray-400">Prefilled from {{ record().copiedFromYear }}. Check it still matches this year.</div>
     }
 

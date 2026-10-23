@@ -10,7 +10,7 @@ export interface FieldPlanSnapshot {
   enrollments: ProgramEnrollment[];
 }
 
-/** A finalized record reopened, and the enrollment whose harvest reopened with it. */
+/** A locked record reopened, and the enrollment whose harvest reopened with it. */
 export interface ReopenResult {
   record: FieldProgramRecord;
   enrollment?: ProgramEnrollment;
@@ -24,7 +24,7 @@ export interface ReopenResult {
  *
  * Rules that must hold across users belong to the backend, not the store: issuing enrollment IDs from
  * one sequence, refusing duplicate claims at attestation, refusing to reopen a field an attested
- * enrollment holds, and finalizing (the server rescores with its own FD-CIC calculator, so the
+ * enrollment holds, and locking (the server rescores with its own FD-CIC calculator, so the
  * client never supplies the score of record). Methods reject (throw) when a rule refuses the change.
  */
 export interface FieldPlanBackend {
@@ -40,20 +40,20 @@ export interface FieldPlanBackend {
   addSeason(season: Omit<FieldSeason, 'id'>): Promise<FieldSeason>;
   /** PUT api/field-plan/seasons/{id} */
   updateSeason(season: FieldSeason): Promise<FieldSeason>;
-  /** DELETE api/field-plan/seasons/{id}: takes its unfinalized program records with it. */
+  /** DELETE api/field-plan/seasons/{id}: takes its unlocked program records with it. */
   removeSeason(seasonId: string): Promise<void>;
 
   /** POST api/field-plan/records */
   addRecord(record: Omit<FieldProgramRecord, 'id'>): Promise<FieldProgramRecord>;
   /**
-   * PUT api/field-plan/records/{id}: refused once the record is Final. `copiedFromField` is sent when the
+   * PUT api/field-plan/records/{id}: refused once the record is Locked. `copiedFromField` is sent when the
    * data was copied from another field, and kept with the record.
    */
   updateRecord(id: string, data: unknown, status: ProgramRecordStatus, copiedFromField?: string): Promise<FieldProgramRecord>;
-  /** DELETE api/field-plan/records/{id}: a Final record is kept. */
+  /** DELETE api/field-plan/records/{id}: a Locked record is kept. */
   removeRecord(id: string): Promise<void>;
-  /** POST api/field-plan/records/{id}/finalize: freezes inputs, outputs and the calculator version. */
-  finalize(id: string, by: string): Promise<FieldProgramRecord>;
+  /** POST api/field-plan/records/{id}/lock: freezes the harvest estimate (inputs, outputs, calculator version). Never an official result. */
+  lock(id: string, by: string): Promise<FieldProgramRecord>;
   /** POST api/field-plan/records/{id}/reopen: refused while an attested enrollment holds the record. */
   reopen(id: string, reason: string): Promise<ReopenResult>;
 

@@ -11,7 +11,7 @@ const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
  * PROTOTYPE ONLY: plays the field-plan server in the browser until the database is approved. It holds
  * every producer's fields, seasons, program records and enrollments in memory (a reload starts over)
  * and enforces the rules the real server will own: one enrollment ID sequence per program, duplicate
- * claims refused at attestation, no reopening a field an attested enrollment holds, and finalizing.
+ * claims refused at attestation, no reopening a field an attested enrollment holds, and locking.
  * Everything handed out is a copy, as if it had come over the wire.
  */
 @Injectable({ providedIn: 'root' })
@@ -69,16 +69,16 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
 
   async updateSeason(season: FieldSeason): Promise<FieldSeason> {
     const i = this.indexOf(this.seasons, s => s.id === season.id, 'season');
-    if (this.records.some(r => r.seasonId === season.id && r.status === 'Final')) {
-      throw new Error('This field has a finalized program, so its acres are locked.');
+    if (this.records.some(r => r.seasonId === season.id && r.status === 'Locked')) {
+      throw new Error('This field has a locked harvest estimate, so its acres can\'t change.');
     }
     this.seasons[i] = copy(season);
     return copy(season);
   }
 
   async removeSeason(seasonId: string): Promise<void> {
-    if (this.records.some(r => r.seasonId === seasonId && r.status === 'Final')) {
-      throw new Error('This field has a finalized program and can\'t come off the crop row.');
+    if (this.records.some(r => r.seasonId === seasonId && r.status === 'Locked')) {
+      throw new Error('This field has a locked harvest estimate and can\'t come off the crop row.');
     }
     this.records = this.records.filter(r => r.seasonId !== seasonId);
     this.seasons = this.seasons.filter(s => s.id !== seasonId);
@@ -97,38 +97,39 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
 
   async updateRecord(id: string, data: unknown, status: ProgramRecordStatus, copiedFromField?: string): Promise<FieldProgramRecord> {
     const i = this.indexOf(this.records, r => r.id === id, 'program record');
-    if (this.records[i].status === 'Final') throw new Error('This record is finalized; reopen it to make changes.');
-    if (status === 'Final') throw new Error('Records are finalized by harvest complete, not by saving.');
+    if (this.records[i].status === 'Locked') throw new Error('This harvest estimate is locked; unlock it to make changes.');
+    if (status === 'Locked') throw new Error('Harvest estimates are locked by harvest complete, not by saving.');
     this.records[i] = { ...this.records[i], data: copy(data), status, ...(copiedFromField ? { copiedFromField } : {}) };
     return copy(this.records[i]);
   }
 
   async removeRecord(id: string): Promise<void> {
-    this.records = this.records.filter(r => r.id !== id || r.status === 'Final');
+    this.records = this.records.filter(r => r.id !== id || r.status === 'Locked');
   }
 
-  async finalize(id: string, by: string): Promise<FieldProgramRecord> {
+  async lock(id: string, by: string): Promise<FieldProgramRecord> {
     const i = this.indexOf(this.records, r => r.id === id, 'program record');
     const current = this.records[i];
-    if (current.status === 'Final') return copy(current);
+    if (current.status === 'Locked') return copy(current);
     const season = this.seasons.find(s => s.id === current.seasonId)!;
     const field = this.fields.find(f => f.fieldKey === season.fieldKey)!;
     const def = this.registry.get(current.programKey);
     if (!def) throw new Error(`Unknown program ${current.programKey}.`);
-    const missing = def.finalizeMissing(current.data, season, field);
-    if (missing.length > 0) throw new Error(`Still needed before finalizing: ${missing.join(', ')}.`);
+    const missing = def.lockMissing(current.data, season, field);
+    if (missing.length > 0) throw new Error(`Still needed before locking: ${missing.join(', ')}.`);
     // The real server rescores here with its own calculator rather than trusting the client.
-    const frozen = { ...def.freeze(current.data, season, field), finalizedBy: by, finalizedAt: new Date().toISOString() };
-    this.records[i] = { ...current, status: 'Final', frozen };
+    // Always a planning estimate: an official result is a separate thing (see FieldProgramRecord.official).
+    const frozen = { ...def.freeze(current.data, season, field), basis: 'Estimate' as const, lockedBy: by, lockedAt: new Date().toISOString() };
+    this.records[i] = { ...current, status: 'Locked', frozen };
     return copy(this.records[i]);
   }
 
   async reopen(id: string, reason: string): Promise<ReopenResult> {
     const i = this.indexOf(this.records, r => r.id === id, 'program record');
     const current = this.records[i];
-    if (current.status !== 'Final' || !current.frozen) throw new Error('Only a finalized record can be reopened.');
+    if (current.status !== 'Locked' || !current.frozen) throw new Error('Only a locked harvest estimate can be unlocked.');
     if (!reason.trim()) throw new Error('Give a reason for reopening.');
-    if (this.lockedBy(id)) throw new Error('The producer\'s attested enrollment holds this record, so it can\'t be reopened.');
+    if (this.heldBy(id)) throw new Error('The producer\'s attested enrollment holds this record, so it can\'t be reopened.');
 
     const season = this.seasons.find(s => s.id === current.seasonId)!;
     const def = this.registry.get(current.programKey);
@@ -200,7 +201,7 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
 
   // ── Helpers ─────────────────────────────────────────────────────────────
 
-  private lockedBy(recordId: string): ProgramEnrollment | undefined {
+  private heldBy(recordId: string): ProgramEnrollment | undefined {
     return this.enrollments.find(e => e.status === 'Attested' && (e.snapshot ?? []).some(r => r.recordId === recordId));
   }
 

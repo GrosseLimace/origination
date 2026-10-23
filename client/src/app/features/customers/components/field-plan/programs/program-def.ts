@@ -41,10 +41,10 @@ export interface SustainabilityProgramDef<TData = any> {
    * the enrollment card. Leave it out for a program that doesn't track production.
    */
   production?(data: TData, season: FieldSeason): number | null;
-  /** What still stands between the record and Final when the enrollment's harvest is marked complete. */
-  finalizeMissing(data: TData, season: FieldSeason, field: ProducerField): string[];
-  /** The audit copy of inputs and outputs stored at finalize. */
-  freeze(data: TData, season: FieldSeason, field: ProducerField): Omit<FrozenProgramResult, 'finalizedBy' | 'finalizedAt'>;
+  /** What still stands between the record and Locked when the enrollment's harvest is marked complete. */
+  lockMissing(data: TData, season: FieldSeason, field: ProducerField): string[];
+  /** The audit copy of inputs and outputs stored at lock. */
+  freeze(data: TData, season: FieldSeason, field: ProducerField): Omit<FrozenProgramResult, 'basis' | 'lockedBy' | 'lockedAt'>;
 
   /** A one-line roll-up for a crop row, or null to show none (45Z: "CI 2,629 g/bu"). */
   rowSummary?(items: { season: FieldSeason; record: FieldProgramRecord<TData>; field: ProducerField }[], intention: { id: number; acres: number }): RowSummary | null;
@@ -62,6 +62,18 @@ export interface SustainabilityProgramDef<TData = any> {
 
   /** The program's input form. Rendered with NgComponentOutlet; writes through FieldPlanStore.updateRecord. */
   intake: Type<ProgramIntake>;
+
+  /**
+   * The program has an official, documented result apart from its planning estimate (45Z: an official CI).
+   * Its requirements are still being defined, so this only names it and says so; each record's
+   * `official` holds the result once there is one.
+   */
+  official?: {
+    /** e.g. "45Z CI". */
+    resultName: string;
+    /** Shown with the estimates, e.g. "Requirements for an official 45Z CI are being defined." */
+    requirementsNote: string;
+  };
 
   /**
    * Producer-level enrollment, for programs that have one (45Z): an ID per producer per year, issued

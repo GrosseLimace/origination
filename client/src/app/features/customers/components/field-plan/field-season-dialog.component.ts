@@ -6,13 +6,13 @@ import { DialogComponent, DialogContentComponent, DialogDescriptionComponent, Di
 import { FieldPlanStore } from './store/field-plan.store';
 import { FdCicApiService } from '@core/services/fd-cic-api.service';
 import { ToastService } from '@core/services/toast.service';
-import { FieldSeason, ProducerField } from '@models';
+import { FieldProgramRecord, FieldSeason, OFFICIAL_STATUS_TEXT, ProducerField } from '@models';
 import { ProgramRegistry } from './programs/program-registry';
 
 /**
  * One field on one crop row: its CTRM split (ID, name, split %) and location, its acres this year, and the
  * sustainability programs it takes part in. Each program brings its own form (rendered from the
- * program registry) and shows the producer's enrollment ID for that program. Nobody finalizes here:
+ * program registry) and shows the producer's enrollment ID for that program. Nobody locks here:
  * marking the enrollment's harvest complete does. Edits save as they are made.
  */
 @Component({
@@ -59,17 +59,17 @@ export class FieldSeasonDialogComponent {
     const a = this.active();
     return a ? this.store.enrollmentFor(a.record) : undefined;
   });
-  readonly lockedBy = computed(() => {
+  readonly heldBy = computed(() => {
     const a = this.active();
-    return a ? this.store.lockedBy(a.record.id) : undefined;
+    return a ? this.store.heldBy(a.record.id) : undefined;
   });
-  /** A finalized program froze this season's acres and location, so they can't change under it. */
-  readonly seasonLocked = computed(() => this.store.hasFinal(this.seasonId()));
+  /** A locked program froze this season's acres and location, so they can't change under it. */
+  readonly seasonLocked = computed(() => this.store.hasLocked(this.seasonId()));
   readonly intakeInputs = computed(() => {
     const a = this.active();
     const s = this.season();
     const f = this.field();
-    return a && s && f ? { record: a.record, season: s, field: f, disabled: a.record.status === 'Final' } : null;
+    return a && s && f ? { record: a.record, season: s, field: f, disabled: a.record.status === 'Locked' } : null;
   });
 
   /** Editable copies of the generic parts; every change is written straight back. */
@@ -116,7 +116,7 @@ export class FieldSeasonDialogComponent {
 
   async removeProgram(): Promise<void> {
     const a = this.active();
-    if (!a || a.record.status === 'Final') return;
+    if (!a || a.record.status === 'Locked') return;
     await this.store.removeRecord(a.record.id);
     this.activeKey.set(null);
   }
@@ -125,12 +125,12 @@ export class FieldSeasonDialogComponent {
   /** Other fields whose inputs for the active program can be copied onto this one. */
   readonly copySources = computed(() => {
     const a = this.active();
-    return a && a.record.status !== 'Final' ? this.store.copySources(this.seasonId(), a.record.programKey) : [];
+    return a && a.record.status !== 'Locked' ? this.store.copySources(this.seasonId(), a.record.programKey) : [];
   });
   /** Other fields this field's inputs for the active program can be copied onto. */
   readonly copyTargets = computed(() => {
     const a = this.active();
-    return a && a.record.status !== 'Final' ? this.store.copyTargets(a.record.id) : [];
+    return a && a.record.status !== 'Locked' ? this.store.copyTargets(a.record.id) : [];
   });
   /** The source picked in "Copy from", waiting for the replace confirmation. Signals: the dialog sits under an OnPush table. */
   readonly pendingCopyFrom = signal<string | null>(null);
@@ -183,7 +183,12 @@ export class FieldSeasonDialogComponent {
     }
   }
 
-  // ── Reopen (the same for every program) ────────────────────────────────────
+  /** "not started" until a program's official result exists (requirements are being defined). */
+  officialStatus(record: FieldProgramRecord): string {
+    return OFFICIAL_STATUS_TEXT[record.official?.status ?? 'NotStarted'];
+  }
+
+  // ── Unlock a locked harvest estimate (the same for every program) ──────────
   showReopen = false;
   reopenReason = '';
 

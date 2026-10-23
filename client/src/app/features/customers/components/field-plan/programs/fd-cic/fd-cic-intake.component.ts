@@ -55,7 +55,7 @@ export class FdCicIntakeComponent implements ProgramIntake {
     const missing = missingInputs(this.stored(), this.season());
     return this.field().county ? missing : ['the field\'s county (above)', ...missing];
   });
-  readonly isFinal = computed(() => this.record().status === 'Final');
+  readonly isLocked = computed(() => this.record().status === 'Locked');
 
   /** The latest score's component breakdown, kept while the next one is calculated. */
   private readonly breakdown = linkedSignal<ReturnType<typeof this.scoreState>, FdCicComponentPart[]>({

@@ -29,7 +29,7 @@ const WATER_PROGRAM: SustainabilityProgramDef<WaterData> = {
   copyForward: prior => ({ irrigatedInches: prior.irrigatedInches }),
   missing: d => (d.irrigatedInches === null ? ['irrigation'] : []),
   preview: d => (d.irrigatedInches === null ? null : { value: d.irrigatedInches, unit: 'in', unitShort: 'in' }),
-  finalizeMissing: d => [...(d.irrigatedInches === null ? ['irrigation'] : []), ...(d.meterReading === null ? ['meter reading'] : [])],
+  lockMissing: d => [...(d.irrigatedInches === null ? ['irrigation'] : []), ...(d.meterReading === null ? ['meter reading'] : [])],
   freeze: d => ({ inputs: { ...d }, outputs: {}, score: { value: d.irrigatedInches!, unit: 'in', unitShort: 'in' }, calculatorVersion: 'water v0' }),
   intake: class {} as unknown as Type<ProgramIntake>,
   enrollment: { idPrefix: 'WS', statements: [{ key: 'metered', label: 'Water is metered.', short: 'metering confirmation' }], attestedNote: '' },
@@ -76,7 +76,7 @@ describe('FieldPlanStore', () => {
       expect(store.lastSeason(north.fieldKey, 2025)?.acres).toBe(70);
     });
 
-    it('should take a field off a crop row with its unfinalized programs', async () => {
+    it('should take a field off a crop row with its unlocked programs', async () => {
       await store.addRecord(corn.id, WATER_PROGRAM.key);
       expect(await store.removeSeason(corn.id)).toBe(true);
       expect(store.seasonsForIntention(1)).toHaveLength(0);
@@ -150,8 +150,8 @@ describe('FieldPlanStore', () => {
     });
   });
 
-  describe('harvest complete, finalize and reopen', () => {
-    it('should finalize every field with its actual yield, using the latest typed values, and leave the rest open', async () => {
+  describe('harvest complete, lock and reopen', () => {
+    it('should lock every field with its actual yield, using the latest typed values, and leave the rest open', async () => {
       const z1 = (await store.addRecord(corn.id, FD_CIC_PROGRAM.key))!;
       store.updateRecord(z1.id, scored(z1, 205)); // not saved yet: harvest complete saves it first
       const second = (await store.addSeason((await newField('PENKA #2', 'TATOB29')).fieldKey, 1, 2026, 'Corn', 120))!;
@@ -159,11 +159,12 @@ describe('FieldPlanStore', () => {
       store.updateRecord(z2.id, scored(z2)); // no actual yield yet
 
       const leftOpen = await store.completeHarvest(store.enrollmentFor(z1)!);
-      expect(store.record(z1.id)).toMatchObject({ status: 'Final', frozen: { finalizedBy: 'harvest complete', inputs: { actualYield: 205, splitId: 'TATOB28' } } });
+      expect(store.record(z1.id)).toMatchObject({ status: 'Locked', frozen: { basis: 'Estimate', lockedBy: 'harvest complete', inputs: { actualYield: 205, splitId: 'TATOB28' } } });
+      expect(store.record(z1.id)?.official).toBeUndefined(); // the estimate is never made the official result
       expect(leftOpen).toEqual([{ recordId: z2.id, missing: ['actual yield'] }]);
       expect(store.record(z2.id)?.status).toBe('Ready');
       expect(store.current(FD_CIC_PROGRAM.key, 9, 2026)?.harvestCompleteAt).toBeDefined();
-      expect((await backend.load(9)).records.find(r => r.id === z1.id)?.status).toBe('Final');
+      expect((await backend.load(9)).records.find(r => r.id === z1.id)?.status).toBe('Locked');
     });
 
     it('should not touch another program\'s records when one enrollment\'s harvest is complete', async () => {
@@ -174,7 +175,7 @@ describe('FieldPlanStore', () => {
       expect(store.record(w.id)?.status).toBe('Ready');
     });
 
-    it('should let the producer attest before harvest, and then block reopening a finalized field in it', async () => {
+    it('should let the producer attest before harvest, and then block reopening a locked field in it', async () => {
       const z = (await store.addRecord(corn.id, FD_CIC_PROGRAM.key))!;
       store.updateRecord(z.id, scored(z));
       const e = store.enrollmentFor(z)!;
@@ -185,11 +186,11 @@ describe('FieldPlanStore', () => {
 
       store.updateRecord(z.id, scored(z, 205));
       await store.completeHarvest(store.enrollmentFor(z)!);
-      expect(store.record(z.id)?.status).toBe('Final');
+      expect(store.record(z.id)?.status).toBe('Locked');
       expect(await store.reopen(z.id, 'Wrong yield')).toBe(false);
     });
 
-    it('should reopen a finalized field that isn\'t attested, keep the reason and the old result, and reopen the harvest', async () => {
+    it('should reopen a locked field that isn\'t attested, keep the reason and the old result, and reopen the harvest', async () => {
       const z = (await store.addRecord(corn.id, FD_CIC_PROGRAM.key))!;
       store.updateRecord(z.id, scored(z, 205));
       await store.completeHarvest(store.enrollmentFor(z)!);
@@ -252,14 +253,14 @@ describe('FieldPlanStore', () => {
       expect(await store.copyInputs(z1.id, [nextYear.id, neighbour.id, corn.id])).toEqual({ copied: 0, skipped: 3 });
     });
 
-    it('should list a finalized field as locked and never copy onto it', async () => {
+    it('should list a locked field as locked and never copy onto it', async () => {
       const z1 = (await store.addRecord(corn.id, FD_CIC_PROGRAM.key))!;
       store.updateRecord(z1.id, practices(z1));
       const second = (await store.addSeason((await newField('PENKA #2', 'TATOB29')).fieldKey, 1, 2026, 'Corn', 120))!;
       const z2 = (await store.addRecord(second.id, FD_CIC_PROGRAM.key))!;
       store.updateRecord(z2.id, scored(z2, 210));
       await store.completeHarvest(store.enrollmentFor(z2)!);
-      expect(store.record(z2.id)?.status).toBe('Final');
+      expect(store.record(z2.id)?.status).toBe('Locked');
 
       expect(store.copyTargets(z1.id)).toEqual([{ seasonId: second.id, fieldName: 'PENKA #2', cropLabel: 'Corn', effect: 'locked' }]);
       expect(await store.copyInputs(z1.id, [second.id])).toEqual({ copied: 0, skipped: 1 });
@@ -281,13 +282,13 @@ describe('FieldPlanStore', () => {
       expect(save).toHaveBeenCalledWith(w.id, { irrigatedInches: 123, meterReading: null }, 'Ready');
     });
 
-    it('should not save a finalized record\'s edits, and refuse them on the backend too', async () => {
+    it('should not save a locked record\'s edits, and refuse them on the backend too', async () => {
       const w = (await store.addRecord(corn.id, WATER_PROGRAM.key))!;
       store.updateRecord(w.id, { irrigatedInches: 6, meterReading: 1200 });
       await store.completeHarvest(store.enrollmentFor(w)!);
       store.updateRecord(w.id, { irrigatedInches: 99, meterReading: 1 });
       expect(store.record(w.id)?.data).toEqual({ irrigatedInches: 6, meterReading: 1200 });
-      await expect(backend.updateRecord(w.id, {}, 'Ready')).rejects.toThrow(/finalized/);
+      await expect(backend.updateRecord(w.id, {}, 'Ready')).rejects.toThrow(/locked/);
     });
 
     it('should say so and reload from the backend when a save fails', async () => {

@@ -23,7 +23,7 @@ export function formatEnrollmentId(prefix: string, year: number, seq: number): s
 
 /**
  * What still stands between an open enrollment and Attested. `listed` is every record the producer
- * has in the program that year; each must be scored (Ready or Final) — harvest isn't needed. `others`
+ * has in the program that year; each must be scored (Ready or Locked) — harvest isn't needed. `others`
  * is every other enrollment (any producer), whose attested snapshots are checked so a field (a CTRM
  * split) is never claimed twice in the same program and year. A landlord and a tenant are expected to
  * have separate split IDs for their shares (being confirmed with the business).

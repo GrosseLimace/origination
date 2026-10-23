@@ -28,7 +28,7 @@ export const GRAINCRAFT_PROGRAM: SustainabilityProgramDef<GrainCraftData> = {
   preview: () => null,
   chipText: data => data.variety.trim() || null,
 
-  finalizeMissing: data => (data.variety.trim() ? [] : ['wheat variety']),
+  lockMissing: data => (data.variety.trim() ? [] : ['wheat variety']),
   freeze: (data: GrainCraftData, season: FieldSeason, field: ProducerField) => ({
     inputs: {
       crop: season.cropLabel, cropYear: season.year, field: field.name, acres: season.acres,

@@ -104,9 +104,9 @@ export class CropFieldsPanelComponent {
     this.open(s, programKey);
   }
 
-  /** A field with a finalized program is locked: its acres are part of a frozen result. */
+  /** A field with a locked program is locked: its acres are part of a frozen result. */
   locked(s: FieldSeason): boolean {
-    return this.store.hasFinal(s.id);
+    return this.store.hasLocked(s.id);
   }
 
   setAcres(s: FieldSeason, value: number): void {
