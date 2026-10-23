@@ -45,6 +45,25 @@ describe('CiPreviewPanelComponent', () => {
     expect(text()).not.toContain(squash('Soybean N fixation'));
   });
 
+  it('should say which components each choice moves', () => {
+    setState(scoreFor('Corn'));
+    expect(text()).toContain(squash('No till −600 Soil carbon (credit) −500 · On-farm energy −100'));
+  });
+
+  it('should mark only the rows an edit moved, and never a USDA default', () => {
+    setState(scoreFor('Corn'));
+    expect(text()).not.toContain('Changefromyourlastedit');
+    // More N: the fake moves only urea & lime's adjustable part (N fertilizer etc. are fixed in the fake).
+    const moreN = fakeFdCicApi().score(2026, { ...request('Corn'), syntheticN: 220 });
+    setState(moreN);
+    const [adjustable, rest] = text().split(squash('USDA defaults'));
+    const defaults = rest.split(squash('What\'s moving the score'))[0];
+    expect(adjustable).toContain(squash('Urea & lime +200'));
+    expect(adjustable).not.toContain(squash('Soil carbon (credit) +'));
+    expect(adjustable).not.toContain(squash('Soil carbon (credit) −'));
+    expect(defaults).not.toMatch(/[+−]\d/);
+  });
+
   it('should list soybean N fixation as a USDA default for soybeans', () => {
     setState(scoreFor('Soybean'));
     expect(text().split(squash('USDA defaults'))[1]).toContain(squash('🔒 Soybean N fixation 300'));

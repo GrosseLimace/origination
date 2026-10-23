@@ -23,17 +23,19 @@
         <input type="number" min="0" class="ci-input" [class.ci-missing]="draft.syntheticN === null"
                [(ngModel)]="draft.syntheticN" (ngModelChange)="save()" />
         <span class="text-xs text-gray-500 dark:text-gray-400">All synthetic N from after last crop's harvest through this harvest. 0 if none.</span>
+        <span class="block text-xs text-gray-500 dark:text-gray-400">{{ affects('N rate') }}</span>
       </label>
       <label class="block text-sm">
         <span class="text-gray-700 dark:text-gray-300">With a nitrification inhibitor: <span class="font-semibold">{{ niPercent }}%</span></span>
         <input type="range" min="0" max="100" step="5" class="mt-3 w-full" [ngModel]="niPercent" (ngModelChange)="niPercent = $event" />
         <span class="text-xs text-gray-500 dark:text-gray-400">Share of the N treated, e.g. N-Serve, Instinct, Centuro.</span>
+        <span class="block text-xs text-gray-500 dark:text-gray-400">{{ affects('Nitrification inhibitor') }}</span>
       </label>
     </div>
 
     <!-- Cover crop and tillage: the workbook's options, its defaults preselected -->
     <div>
-      <div class="text-sm text-gray-700 dark:text-gray-300">Cover crop</div>
+      <div class="text-sm text-gray-700 dark:text-gray-300">Cover crop <span class="text-xs text-gray-500 dark:text-gray-400">{{ affects('Cover crop') }}</span></div>
       <div class="mt-1 grid gap-2 sm:grid-cols-3">
         @for (o of coverOptions; track o.value) {
           <button type="button" (click)="setCover(o.value)"
@@ -48,7 +50,7 @@
       </div>
     </div>
     <div>
-      <div class="text-sm text-gray-700 dark:text-gray-300">Tillage</div>
+      <div class="text-sm text-gray-700 dark:text-gray-300">Tillage <span class="text-xs text-gray-500 dark:text-gray-400">{{ affects('Tillage') }}</span></div>
       <div class="mt-1 grid gap-2 sm:grid-cols-3">
         @for (o of tillageOptions; track o.value) {
           <button type="button" (click)="setTillage(o.value)"
@@ -65,7 +67,7 @@
 
     <!-- Manure: up to 3, type and form in one list as the workbook has it -->
     <div>
-      <div class="text-sm text-gray-700 dark:text-gray-300">Manure</div>
+      <div class="text-sm text-gray-700 dark:text-gray-300">Manure <span class="text-xs text-gray-500 dark:text-gray-400">{{ affects('Manure') }}</span></div>
       @if (draft.manure.length === 0) {
         <div class="mt-1 flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
           No manure applied.

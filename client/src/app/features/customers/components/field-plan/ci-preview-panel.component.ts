@@ -41,7 +41,12 @@ import { FdCicScore, FdCicScoreState } from '@models';
               <div>
                 <div class="flex justify-between gap-2 text-xs text-gray-600 dark:text-gray-300">
                   <span>{{ c.label }}</span>
-                  <span class="tabular-nums">{{ c.value | number:'1.0-0' }}</span>
+                  <span class="tabular-nums">
+                    @if (moved().get(c.key); as d) {
+                      <span class="mr-1 rounded bg-gray-200 dark:bg-gray-700 px-1 font-medium text-gray-800 dark:text-gray-100" title="Change from your last edit">{{ d < 0 ? '−' : '+' }}{{ (d < 0 ? -d : d) | number:'1.0-0' }}</span>
+                    }
+                    {{ c.value | number:'1.0-0' }}
+                  </span>
                 </div>
                 <div class="h-2 rounded bg-gray-200 dark:bg-gray-700 overflow-hidden">
                   <div class="h-full rounded" [style.width.%]="barWidth(c.value)"
@@ -70,11 +75,20 @@ import { FdCicScore, FdCicScoreState } from '@models';
               <div class="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">What's moving the score</div>
               <ul class="space-y-1 text-sm">
                 @for (e of s.effects; track e.label) {
-                  <li class="flex justify-between gap-2">
-                    <span class="text-gray-700 dark:text-gray-300">{{ e.label }}</span>
-                    <span class="tabular-nums font-medium" [class]="e.delta < 0 ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'">
-                      {{ e.delta < 0 ? '−' : '+' }}{{ (e.delta < 0 ? -e.delta : e.delta) | number:'1.0-0' }}
-                    </span>
+                  <li>
+                    <div class="flex justify-between gap-2">
+                      <span class="text-gray-700 dark:text-gray-300">{{ e.label }}</span>
+                      <span class="tabular-nums font-medium" [class]="e.delta < 0 ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'">
+                        {{ e.delta < 0 ? '−' : '+' }}{{ (e.delta < 0 ? -e.delta : e.delta) | number:'1.0-0' }}
+                      </span>
+                    </div>
+                    @if (e.components.length) {
+                      <div class="text-[11px] text-gray-500 dark:text-gray-400">
+                        @for (c of e.components; track c.key; let last = $last) {
+                          {{ c.label }} {{ c.delta < 0 ? '−' : '+' }}{{ (c.delta < 0 ? -c.delta : c.delta) | number:'1.0-0' }}@if (!last) { · }
+                        }
+                      </div>
+                    }
                   </li>
                 }
               </ul>
@@ -118,6 +132,32 @@ export class CiPreviewPanelComponent {
     const s = this.state();
     return s?.status === 'error' ? s.message : '';
   });
+  /** The score shown and the one before it, so the rows an edit moved can be marked. */
+  private readonly history = linkedSignal<FdCicScore | null, { current: FdCicScore | null; prior: FdCicScore | null }>({
+    source: this.shown,
+    computation: (score, previous) => {
+      const p = previous?.value;
+      if (!score) return { current: null, prior: null };
+      return p?.current === score ? p : { current: score, prior: p?.current ?? null };
+    },
+  });
+
+  /**
+   * How much each adjustable part moved since the previous score (1 g/bu or more), until the next one.
+   * The fixed USDA parts never move, so they never get a mark.
+   */
+  readonly moved = computed(() => {
+    const { current, prior } = this.history();
+    const marks = new Map<string, number>();
+    if (!current || !prior) return marks;
+    const before = new Map(prior.breakdown.map(b => [b.key, b.total - b.fixed]));
+    for (const b of current.breakdown) {
+      const d = b.total - b.fixed - (before.get(b.key) ?? 0);
+      if (b.drivers.length && Math.abs(d) >= 1) marks.set(b.key, d);
+    }
+    return marks;
+  });
+
   /** Each component's part that the field's inputs change, with the inputs that change it. */
   readonly adjustable = computed(() => (this.shown()?.breakdown ?? [])
     .filter(b => b.drivers.length > 0)

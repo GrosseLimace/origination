@@ -145,18 +145,27 @@ public sealed class FdCicService : IFdCicService
 
     /// <summary>
     /// What each choice is worth: the score with the choice minus the score with the workbook's default
-    /// in its place, everything else equal. Not a USDA output; it explains the USDA score in plain terms.
+    /// in its place, everything else equal, and which components that difference lands in (from the
+    /// method's breakdown, so a fixed USDA figure can never appear). Not a USDA output; it explains the
+    /// USDA score in plain terms.
     /// </summary>
     internal static IReadOnlyList<FdCicEffectResponse> Effects(FdCicPack pack, IFdCicMethod method, FdCicInput input, FdCicResult result)
     {
         const string defaultTillage = "None of the above", defaultCover = "No cover crop";
         var effects = new List<FdCicEffectResponse>();
+        var parts = method.Breakdown(pack, input, result.Components!);
         void Compare(string label, FdCicInput without)
         {
             var other = method.Calculate(pack, without);
             if (!other.Scorable) return;
             double delta = result.Ci!.Value - other.Ci!.Value;
-            if (Math.Abs(delta) >= 1) effects.Add(new FdCicEffectResponse { Label = label, Delta = delta });
+            if (Math.Abs(delta) < 1) return;
+            var components = parts.Zip(method.Breakdown(pack, without, other.Components!))
+                .Select(p => new FdCicEffectComponentResponse { Key = p.First.Key, Label = p.First.Label, Delta = p.First.Total - p.Second.Total })
+                .Where(c => Math.Abs(c.Delta) >= 1)
+                .OrderBy(c => c.Delta)
+                .ToList();
+            effects.Add(new FdCicEffectResponse { Label = label, Delta = delta, Components = components });
         }
 
         if (input.Tillage != defaultTillage && pack.Options.Tillage.Contains(defaultTillage))
@@ -169,7 +178,7 @@ public sealed class FdCicService : IFdCicService
             Compare("Manure", input with { Manure = [] });
         // Against the national N use per bushel behind USDA's national average, at this field's yield.
         var crop = pack.Constants.Crop(input.Crop)!;
-        Compare("Nitrogen rate vs. national", input with { SyntheticN = crop.DefaultNui * result.YieldForCi, ActualYield = result.YieldForCi });
+        Compare("Nitrogen rate vs. USDA's typical rate", input with { SyntheticN = crop.DefaultNui * result.YieldForCi, ActualYield = result.YieldForCi });
         return effects.OrderBy(e => e.Delta).ToList();
     }
 

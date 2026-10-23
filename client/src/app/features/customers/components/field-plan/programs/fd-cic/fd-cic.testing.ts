@@ -38,7 +38,11 @@ export function fakeFdCicApi(mode: 'done' | 'loading' | 'unscorable' = 'done') {
         ] : [],
         ci: mode === 'done' ? ci : null, nationalAverage: national,
         changeFraction: mode === 'done' ? (ci - national) / national : null,
-        effects: [], unit: 'g CO2e/bu',
+        effects: request.tillage === 'None of the above' ? [] : [{
+          label: request.tillage, delta: -600,
+          components: [{ key: 'soilCarbon', label: 'Soil carbon (credit)', delta: -500 }, { key: 'onFarmEnergy', label: 'On-farm energy', delta: -100 }],
+        }],
+        unit: 'g CO2e/bu',
       };
       return { status: 'done', score };
     },

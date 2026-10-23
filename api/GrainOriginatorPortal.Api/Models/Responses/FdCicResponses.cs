@@ -77,6 +77,15 @@ public record FdCicEffectResponse
 {
     public required string Label { get; init; }
     public required double Delta { get; init; }
+    /// <summary>Where the change lands: each component it moves by 1 g CO2e/bu or more, most lowered first.</summary>
+    public required IReadOnlyList<FdCicEffectComponentResponse> Components { get; init; }
+}
+
+public record FdCicEffectComponentResponse
+{
+    public required string Key { get; init; }
+    public required string Label { get; init; }
+    public required double Delta { get; init; }
 }
 
 public record FdCicComponentPartResponse

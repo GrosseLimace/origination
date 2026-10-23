@@ -1,7 +1,7 @@
-import { Component, computed, effect, inject, input } from '@angular/core';
+import { Component, computed, effect, inject, input, linkedSignal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { CoverCrop, FdCicData, FieldProgramRecord, FieldSeason, ManureApplication, ManureForm, ManureType, ProducerField, Tillage } from '@models';
+import { CoverCrop, FdCicComponentPart, FdCicData, FieldProgramRecord, FieldSeason, ManureApplication, ManureForm, ManureType, ProducerField, Tillage } from '@models';
 import { FdCicApiService } from '@core/services/fd-cic-api.service';
 import { CiPreviewPanelComponent } from '../../ci-preview-panel.component';
 import { ProgramIntake } from '../program-def';
@@ -56,6 +56,24 @@ export class FdCicIntakeComponent implements ProgramIntake {
     return this.field().county ? missing : ['the field\'s county (above)', ...missing];
   });
   readonly isFinal = computed(() => this.record().status === 'Final');
+
+  /** The latest score's component breakdown, kept while the next one is calculated. */
+  private readonly breakdown = linkedSignal<ReturnType<typeof this.scoreState>, FdCicComponentPart[]>({
+    source: this.scoreState,
+    computation: (state, previous) => (state?.status === 'done' ? state.score.breakdown : previous?.value ?? []),
+  });
+
+  /**
+   * "Affects soil carbon, field N₂O, on-farm energy": the components an input feeds, from the calculator's
+   * own breakdown for this version, so the form and the score panel always agree. Empty before a score.
+   */
+  affects(driver: string): string {
+    const labels = this.breakdown()
+      .filter(b => b.drivers.includes(driver))
+      .map(b => b.label.replace(/, (direct|indirect)$/, ''));
+    const unique = [...new Set(labels)];
+    return unique.length ? `Affects ${unique.map(l => l.charAt(0).toLowerCase() + l.slice(1)).join(', ')}.` : '';
+  }
 
   constructor() {
     effect(() => {

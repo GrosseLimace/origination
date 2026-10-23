@@ -55,6 +55,27 @@ public class FdCicServiceTests
     }
 
     [Fact]
+    public void Score_SaysWhichComponentsEachChoiceMoves_NeverAFixedUsdaFigure()
+    {
+        var score = Service().Score(2026, StoryCorn(cover: "Cover crop") with { Manure = [new FdCicManure(4, 10)] });
+        var fixedOnly = new[] { "otherChemicals" };
+
+        foreach (var effect in score.Effects)
+        {
+            // Components under 1 g/bu are left out, so allow a little for those.
+            Assert.True(Math.Abs(effect.Components.Sum(c => c.Delta) - effect.Delta) < 7, $"{effect.Label} doesn't add up.");
+            Assert.DoesNotContain(effect.Components, c => fixedOnly.Contains(c.Key));
+        }
+
+        var noTill = score.Effects.Single(e => e.Label == "No till");
+        Assert.DoesNotContain(noTill.Components, c => c.Key is "nFertilizer" or "ureaLime");
+        Assert.Contains(noTill.Components, c => c.Key == "soilCarbon");
+        var inhibitor = score.Effects.Single(e => e.Label == "Nitrification inhibitor");
+        Assert.All(inhibitor.Components, c => Assert.Contains(c.Key, new[] { "directN2o", "indirectN2o" }));
+        Assert.Contains(score.Effects, e => e.Label == "Nitrogen rate vs. USDA's typical rate");
+    }
+
+    [Fact]
     public void Score_WithoutActualYield_IsProjectedFromExpectedYield()
     {
         var score = Service().Score(2026, StoryCorn(actualYield: null));

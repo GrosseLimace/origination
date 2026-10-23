@@ -67,8 +67,11 @@ export interface FdCicScore {
   nationalAverage: number;
   /** (CI − national) ÷ national. */
   changeFraction: number | null;
-  /** Not a USDA output: what each choice is worth against the workbook default, most helpful first. */
-  effects: { label: string; delta: number }[];
+  /**
+   * Not a USDA output: what each choice is worth against the workbook default, most helpful first, and
+   * which components it moves (never a fixed USDA figure).
+   */
+  effects: { label: string; delta: number; components: { key: string; label: string; delta: number }[] }[];
   unit: string;
 }
 
