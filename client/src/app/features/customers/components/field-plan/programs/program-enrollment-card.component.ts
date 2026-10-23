@@ -4,13 +4,21 @@ import { FormsModule } from '@angular/forms';
 import { FieldPlanStore } from '../store/field-plan.store';
 import { EnrollableRecord } from '@models';
 import { ProgramRegistry } from './program-registry';
+import { FieldResult } from './program-def';
+import { LadderRow, atOrBelowTarget, ciLadder } from './ci-ladder';
+
+/** One field in the card: what the enrollment lists, plus its score and bushels. */
+type CardField = EnrollableRecord & { result: FieldResult };
 
 /**
  * A producer's enrollment in one sustainability program for one year, above the planting table. The
  * ID is issued with the producer's first field in the program; every field they have in the program
  * that year is in it. The card holds:
  *
- * - the fields, each with its CTRM split ID, its projected or final result and its production;
+ * - "bushels by CI": per crop, the scored fields lowest CI first with their bushels and a running total,
+ *   and a target box ("at or below 3,000 g/bu → 69,000 bu"). Never one producer-wide average:
+ *   downstream opportunities set different CI targets, so field-level CI and bushels are what matter;
+ * - the fields not scored yet;
  * - "harvest complete", which finalizes every field that has its actual yield.
  *
  * Shows nothing until the producer has a field in the program. PROTOTYPE ONLY (in memory).
@@ -25,7 +33,7 @@ import { ProgramRegistry } from './program-registry';
     @if (program(); as p) {
     @if (records().length || e || withdrawn().length) {
     <div class="rounded-lg border border-scoular-green-accessible/40 dark:border-scoular-green/40 bg-white dark:bg-gray-800">
-      <!-- One short line: program, ID and each crop's CI; units, field counts and status are inside -->
+      <!-- One short line: program, ID, and each crop's CI range and bushels -->
       <button type="button" class="flex w-full flex-wrap items-center gap-x-3 gap-y-1 bg-transparent border-0 px-4 py-2.5 text-left text-sm" (click)="open = !open">
         <span class="w-3 text-gray-400">{{ open ? '▾' : '▸' }}</span>
         <span class="font-semibold text-gray-900 dark:text-white">🌱 {{ p.shortLabel }} · {{ year() }}</span>
@@ -35,57 +43,74 @@ import { ProgramRegistry } from './program-registry';
         } @else {
           <span class="text-amber-700 dark:text-amber-400">{{ records().length ? 'No live enrollment' : 'No enrollment ID yet' }}</span>
         }
-        @for (s of summaries(); track s.text) {
-          <span class="font-semibold text-gray-800 dark:text-gray-100" [title]="s.text + ' (bushel-weighted)'">{{ s.text }}</span>
+        @for (g of groups(); track g.group) {
+          <span class="text-gray-800 dark:text-gray-100">
+            <span class="font-semibold">{{ g.group }} {{ g.range }} {{ g.unitShort }}</span>
+            <span class="text-gray-600 dark:text-gray-300"> · {{ g.bushels | number:'1.0-0' }} bu</span>
+          </span>
         }
       </button>
 
       @if (open) {
-        <div class="space-y-4 border-t border-gray-100 dark:border-gray-700 px-4 py-4 text-sm">
-          @if (summaries().length) {
-            <p class="text-gray-600 dark:text-gray-300">
-              {{ scoredCount() }} of {{ records().length }} field{{ records().length === 1 ? '' : 's' }} scored. Bushel-weighted:
-              @for (s of summaries(); track s.text; let last = $last) {
-                <span class="font-medium text-gray-900 dark:text-white">{{ s.text }}</span>@if (!last) {; }
-              }
-            </p>
-          }
+        <div class="space-y-5 border-t border-gray-100 dark:border-gray-700 px-4 py-4 text-sm">
           @if (!e) {
             @if (records().length) {
               <p class="text-gray-600 dark:text-gray-300">The last enrollment was withdrawn. Issue a new ID for this producer's {{ records().length }} field(s) in {{ p.shortLabel }}.</p>
               <button type="button" class="rounded-md bg-scoular-green-accessible px-3 py-1.5 text-white border-0" (click)="issueNew()">Issue a new enrollment ID</button>
             }
           } @else {
-            <!-- Fields -->
-            <div>
-              <div class="font-medium text-gray-900 dark:text-white">Fields</div>
-              <table class="mt-1 w-full text-left">
-                <thead class="text-xs uppercase text-gray-500 dark:text-gray-400">
-                  <tr><th class="py-1">Field</th><th>Split ID</th><th>Crop</th><th class="text-right">Acres</th><th class="text-right">Production (bu)</th><th class="text-right">{{ p.shortLabel }} result</th></tr>
-                </thead>
-                <tbody>
-                  @for (r of records(); track r.recordId) {
-                    <tr class="border-t border-gray-100 dark:border-gray-700">
-                      <td class="py-1 text-gray-900 dark:text-white">{{ r.fieldName }}</td>
-                      <td class="text-gray-600 dark:text-gray-300">{{ r.splitId }}</td>
-                      <td class="text-gray-600 dark:text-gray-300">{{ r.cropLabel }}</td>
-                      <td class="text-right text-gray-600 dark:text-gray-300">{{ r.acres | number }}</td>
-                      <td class="text-right text-gray-600 dark:text-gray-300">
-                        @if (r.production) { {{ r.production | number:'1.0-0' }} } @else { <span class="text-gray-400">no actual yield</span> }
-                      </td>
-                      <td class="text-right">
-                        @if (r.score) {
-                          <span class="font-semibold text-gray-900 dark:text-white">{{ r.score.value | number:'1.0-0' }}</span>
-                          <span class="text-gray-500"> {{ r.score.unitShort }} · {{ r.status === 'Final' ? 'final' : 'projected' }}</span>
-                        } @else {
-                          <span class="text-amber-700 dark:text-amber-400">{{ r.scoreNote ?? 'needs inputs' }}</span>
-                        }
-                      </td>
-                    </tr>
+            <!-- Bushels by CI, one ladder per crop -->
+            @for (g of groups(); track g.group) {
+              <div>
+                <div class="flex flex-wrap items-end justify-between gap-2">
+                  <div class="font-medium text-gray-900 dark:text-white">{{ g.group }} · bushels by CI</div>
+                  <label class="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">At or below
+                    <input type="number" min="0" class="ci-input ci-compact !w-24 text-right" placeholder="target"
+                           [ngModel]="targets()[g.group] ?? null" (ngModelChange)="setTarget(g.group, $event)" [attr.aria-label]="g.group + ' CI target'" />
+                    {{ g.unitShort }}
+                    @if (targetResult(g); as t) {
+                      <span class="ml-1 font-medium text-gray-900 dark:text-white">→ {{ t.bushels | number:'1.0-0' }} bu from {{ t.fields }} field{{ t.fields === 1 ? '' : 's' }}</span>
+                    }
+                  </label>
+                </div>
+                <table class="mt-1 w-full text-left">
+                  <thead class="text-xs uppercase text-gray-500 dark:text-gray-400">
+                    <tr><th class="py-1 text-right pr-4">CI {{ g.unitShort }}</th><th>Field</th><th>Split ID</th><th class="text-right">Acres</th><th class="text-right">Bushels</th><th class="text-right">At or below this CI</th></tr>
+                  </thead>
+                  <tbody>
+                    @for (row of g.ladder; track row.item.recordId) {
+                      <tr class="border-t border-gray-100 dark:border-gray-700" [class]="withinTarget(g.group, row.value) ? 'bg-gray-100 dark:bg-gray-700/50' : ''">
+                        <td class="py-1 pr-4 text-right tabular-nums">
+                          <span class="font-semibold text-gray-900 dark:text-white">{{ row.value | number:'1.0-0' }}</span>
+                          <span class="text-xs text-gray-500"> {{ row.item.status === 'Final' ? 'final' : 'projected' }}</span>
+                        </td>
+                        <td class="text-gray-900 dark:text-white">{{ row.item.fieldName }}</td>
+                        <td class="text-gray-600 dark:text-gray-300">{{ row.item.splitId }}</td>
+                        <td class="text-right text-gray-600 dark:text-gray-300">{{ row.item.acres | number }}</td>
+                        <td class="text-right tabular-nums text-gray-600 dark:text-gray-300">
+                          @if (row.item.result.bushels !== null) {
+                            {{ row.bushels | number:'1.0-0' }}@if (row.item.result.projected) { <span class="text-xs text-gray-500"> projected</span> }
+                          } @else { <span class="text-gray-400">no yield</span> }
+                        </td>
+                        <td class="text-right tabular-nums text-gray-900 dark:text-white">{{ row.atOrBelow | number:'1.0-0' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+
+            @if (unscored().length) {
+              <div>
+                <div class="font-medium text-gray-900 dark:text-white">Not scored yet</div>
+                <ul class="mt-1 space-y-0.5 text-gray-600 dark:text-gray-300">
+                  @for (r of unscored(); track r.recordId) {
+                    <li>{{ r.fieldName }} ({{ r.splitId }}) · {{ r.cropLabel }} · {{ r.acres | number }} ac ·
+                      <span class="text-amber-700 dark:text-amber-400">{{ r.scoreNote ?? 'needs inputs' }}</span></li>
                   }
-                </tbody>
-              </table>
-            </div>
+                </ul>
+              </div>
+            }
             <!-- Producer attestation: to be designed; the service still supports it (attest, statements). -->
 
             <!-- Harvest complete finalizes every field that has its actual yield -->
@@ -153,21 +178,57 @@ export class ProgramEnrollmentCardComponent {
     });
   });
 
-  /** The enrollment's fields, as listed in the card. */
-  readonly records = computed<EnrollableRecord[]>(() => {
+  /** The enrollment's fields, with each one's score and bushels. */
+  readonly records = computed<CardField[]>(() => {
     const program = this.program()!;
+    const results = new Map((program.fieldResults?.(this.items()) ?? []).map(r => [r.recordId, r]));
     return this.items().map(({ record: r, season, field }) => ({
       recordId: r.id, seasonId: season.id, fieldKey: field.fieldKey, fieldName: field.name, splitId: field.splitId,
       cropLabel: season.cropLabel, year: season.year, acres: season.acres, status: r.status,
       score: r.frozen?.score ?? program.preview(r.data, season, field) ?? undefined,
       scoreNote: program.previewNote?.(r.data, season, field) ?? undefined,
       production: program.production ? program.production(r.data, season) : undefined,
+      result: results.get(r.id) ?? { recordId: r.id, group: season.cropLabel, value: null, unitShort: '', bushels: null, projected: true },
     }));
   });
 
-  /** The producer's figures across all their fields in the program (45Z: bushel-weighted CI per crop). */
-  readonly summaries = computed(() => this.program()?.enrollmentSummary?.(this.items()) ?? []);
-  readonly scoredCount = computed(() => this.records().filter(r => !!r.score).length);
+  /** Per group (45Z: crop), the scored fields as a ladder, lowest CI first, with the range and total bushels. */
+  readonly groups = computed(() => {
+    const byGroup = new Map<string, CardField[]>();
+    for (const r of this.records()) {
+      if (r.result.value === null) continue;
+      byGroup.set(r.result.group, [...(byGroup.get(r.result.group) ?? []), r]);
+    }
+    return [...byGroup].sort(([a], [b]) => a.localeCompare(b)).map(([group, fields]) => {
+      const ladder: LadderRow<CardField>[] = ciLadder(fields.map(item => ({ item, value: item.result.value!, bushels: item.result.bushels ?? 0 })));
+      const low = Math.round(ladder[0].value), high = Math.round(ladder[ladder.length - 1].value);
+      return {
+        group, ladder, unitShort: fields[0].result.unitShort,
+        range: low === high ? low.toLocaleString() : `${low.toLocaleString()}–${high.toLocaleString()}`,
+        bushels: ladder[ladder.length - 1].atOrBelow,
+      };
+    });
+  });
+
+  readonly unscored = computed(() => this.records().filter(r => r.result.value === null));
+
+  /** A CI target per group, typed in to see the bushels at or below it. Screen state only. */
+  readonly targets = signal<Record<string, number | null>>({});
+
+  setTarget(group: string, value: number | string | null): void {
+    const n = value === null || value === '' ? null : Number(value);
+    this.targets.update(t => ({ ...t, [group]: n !== null && Number.isFinite(n) && n > 0 ? n : null }));
+  }
+
+  targetResult(g: { group: string; ladder: LadderRow<CardField>[] }): { bushels: number; fields: number } | null {
+    const target = this.targets()[g.group];
+    return target ? atOrBelowTarget(g.ladder, target) : null;
+  }
+
+  withinTarget(group: string, value: number): boolean {
+    const target = this.targets()[group];
+    return !!target && value <= target;
+  }
 
   readonly enrollment = computed(() => this.store.current(this.programKey(), this.customerId(), this.year()));
   readonly withdrawn = computed(() => this.store.withdrawn(this.programKey(), this.customerId(), this.year()));

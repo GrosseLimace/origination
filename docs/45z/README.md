@@ -103,6 +103,23 @@ endpoint.
   - refusing duplicate claims at attestation (a split ID in two enrollments of one program and year);
   - finalizing, which rescores with `FdCicService` rather than trusting the client's number.
 
+## Reporting: field-level CI and bushels
+
+The business doesn't plan on one producer-wide average CI. Downstream opportunities may each need a
+different CI target, so the question is **how many bushels sit at or below a given CI**, by crop.
+
+- The enrollment card shows a "bushels by CI" ladder per crop: fields lowest CI first, each with its
+  bushels and a running total, and a target box ("at or below 3,000 g/bu → 69,000 bu from 2 fields").
+  Crop rows show the range of CIs and the bushels, never an average.
+- Bushels are acres × actual yield once it's in, otherwise acres × expected yield, marked projected. A
+  finalized field uses its frozen acres and actual yield.
+- Reports and dashboards should work from the same field-level rows: producer, year, crop, field (split
+  ID), CI, bushels, projected or actual, status and USDA version. The `FieldProgramRecord` rows (with
+  their frozen outputs once finalized) are that source. Don't store or show a producer-level average as
+  the planning figure.
+- The ladder rules live in `client/.../field-plan/programs/ci-ladder.ts` (pure, with tests), so a server
+  report can follow the same cases.
+
 ## CTRM splits: the fields
 
 A field-plan field is one of the producer's CTRM split IDs (combined customer IDs, e.g. `TATOB43` "T-A TOBIN

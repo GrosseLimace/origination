@@ -49,10 +49,11 @@ export interface SustainabilityProgramDef<TData = any> {
   /** A one-line roll-up for a crop row, or null to show none (45Z: "CI 2,629 g/bu"). */
   rowSummary?(items: { season: FieldSeason; record: FieldProgramRecord<TData>; field: ProducerField }[], intention: { id: number; acres: number }): RowSummary | null;
   /**
-   * The producer's figures for the year across all their fields in the program, for the enrollment
-   * card's header (45Z: bushel-weighted CI, one per crop). Empty or left out shows none.
+   * Each field's score and bushels, for the enrollment card's "bushels by CI" ladder (one per group, e.g.
+   * 45Z's crop). Field level on purpose: opportunities set different CI targets, so a producer is never
+   * collapsed into one average. Left out by a program that doesn't score fields.
    */
-  enrollmentSummary?(items: { season: FieldSeason; record: FieldProgramRecord<TData>; field: ProducerField }[]): RowSummary[];
+  fieldResults?(items: { season: FieldSeason; record: FieldProgramRecord<TData>; field: ProducerField }[]): FieldResult[];
   /**
    * The short text on the field's program chip when the program has no score to show, e.g.
    * GrainCraft's variety. Programs with a score (45Z) leave it out and the chip shows the score.
@@ -85,6 +86,19 @@ export interface RowSummary {
   text: string;
   /** The figure alone for tight spots, e.g. a collapsed enrollment card: "Corn 2,874". Falls back to `text`. */
   short?: string;
+}
+
+/** One field's score and bushels in a program (see `fieldResults`). */
+export interface FieldResult {
+  recordId: string;
+  /** Results are only compared within a group (45Z: the FD-CIC crop, since corn and soybeans differ). */
+  group: string;
+  /** The score, or null while the field has none. */
+  value: number | null;
+  unitShort: string;
+  /** What the field produces: actual once known, otherwise projected; null when it can't be worked out. */
+  bushels: number | null;
+  projected: boolean;
 }
 
 /** The inputs every program's intake component takes. */

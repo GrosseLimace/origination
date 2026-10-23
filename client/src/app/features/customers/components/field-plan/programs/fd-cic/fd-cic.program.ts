@@ -2,7 +2,7 @@ import { FdCicData, FdCicScore, FieldProgramRecord, FieldSeason, ProducerField, 
 import { FdCicApiService } from '@core/services/fd-cic-api.service';
 import { practicesToCopy } from '@shared/utils/ci-copy-forward';
 import { environment } from '@env/environment';
-import { RowSummary, SustainabilityProgramDef } from '../program-def';
+import { FieldResult, SustainabilityProgramDef } from '../program-def';
 import { FdCicIntakeComponent } from './fd-cic-intake.component';
 import { COVER_LABELS, TILLAGE_LABELS, fdCicCropFor, fdCicScoreState, missingInputs } from './fd-cic.data';
 
@@ -24,30 +24,25 @@ export function createFdCicProgram(api: FdCicApiService): SustainabilityProgramD
     return state?.status === 'done' && state.score.scorable ? state.score : null;
   };
 
-  /**
-   * Fields' CIs (one crop) weighted by bushels: acres × the yield each score used. Finalized fields use
-   * their frozen score. `fillToAcres` counts acres not yet in a scored field at the national average,
-   * so a crop row's partial coverage never flatters it; 0 averages the scored fields only.
-   */
-  const weightedCi = (items: { season: FieldSeason; record: FieldProgramRecord<FdCicData>; field: ProducerField }[], fillToAcres: number): RowSummary | null => {
-    const fields = items.flatMap(({ season, record, field }) => {
-      const frozen = record.frozen;
-      if (frozen?.score) {
-        const outputs = frozen.outputs as { yieldUsed: number; nationalAverage: number };
-        return [{ acres: season.acres ?? 0, yieldUsed: outputs.yieldUsed, ci: frozen.score.value, national: outputs.nationalAverage }];
-      }
-      const score = scored(record.data, season, field);
-      return score ? [{ acres: season.acres ?? 0, yieldUsed: score.yieldForCi, ci: score.ci!, national: score.nationalAverage }] : [];
-    });
-    if (fields.length === 0) return null;
+  type Item = { season: FieldSeason; record: FieldProgramRecord<FdCicData>; field: ProducerField };
 
-    const national = fields[0].national;
-    const scoredAcres = fields.reduce((sum, f) => sum + f.acres, 0);
-    const scoredBu = fields.reduce((sum, f) => sum + f.acres * f.yieldUsed, 0);
-    if (scoredBu <= 0) return null;
-    const unassignedBu = Math.max(fillToAcres - scoredAcres, 0) * (scoredBu / scoredAcres);
-    const ci = (fields.reduce((sum, f) => sum + f.ci * f.acres * f.yieldUsed, 0) + national * unassignedBu) / (scoredBu + unassignedBu);
-    return { text: `CI ${Math.round(ci).toLocaleString()} g/bu`, short: `CI ${Math.round(ci).toLocaleString()}` };
+  /**
+   * A field's CI and bushels. A locked field uses its frozen score, acres and actual yield. Otherwise the
+   * API's score, with acres × actual yield once it's in, or acres × expected yield (projected) before.
+   */
+  const fieldResult = ({ season, record, field }: Item): FieldResult => {
+    const group = fdCicCropFor(season.cropLabel) ?? season.cropLabel;
+    const frozen = record.frozen;
+    if (frozen?.score) {
+      const inputs = frozen.inputs as { acres?: number | null; actualYield?: number | null };
+      const bushels = inputs.acres && inputs.actualYield ? inputs.acres * inputs.actualYield : null;
+      return { recordId: record.id, group, value: frozen.score.value, unitShort: 'g/bu', bushels, projected: false };
+    }
+    const score = scored(record.data, season, field);
+    const acres = season.acres ?? 0;
+    const { actualYield, expectedYield } = record.data;
+    const bushels = acres && actualYield ? acres * actualYield : acres && expectedYield ? acres * expectedYield : null;
+    return { recordId: record.id, group, value: score?.ci ?? null, unitShort: 'g/bu', bushels, projected: !actualYield };
   };
 
   return {
@@ -123,33 +118,26 @@ export function createFdCicProgram(api: FdCicApiService): SustainabilityProgramD
     },
 
     /**
-     * The crop row's CI: bushel-weighted across the scored fields, with acres not yet in a scored field
-     * counted at the national average (so partial coverage never flatters the row). Finalized fields
-     * use their frozen score.
+     * The crop row: the range of its fields' CIs and their bushels, never an average, e.g. "CI 2,034–6,100
+     * g/bu · 85,000 bu (projected) · 320 of 520 ac scored". Field-level CI is what matters downstream.
      */
     rowSummary(items, intention) {
-      return weightedCi(items, intention.acres);
+      const results = items.map(item => ({ item, result: fieldResult(item) })).filter(r => r.result.value !== null);
+      if (!results.length) return null;
+      const values = results.map(r => Math.round(r.result.value!));
+      const low = Math.min(...values), high = Math.max(...values);
+      const range = low === high ? low.toLocaleString() : `${low.toLocaleString()}–${high.toLocaleString()}`;
+      const bushels = results.reduce((sum, r) => sum + (r.result.bushels ?? 0), 0);
+      const projected = results.some(r => r.result.projected);
+      const scoredAcres = results.reduce((sum, r) => sum + (r.item.season.acres ?? 0), 0);
+      const parts = [`CI ${range} g/bu`, `${Math.round(bushels).toLocaleString()} bu${projected ? ' (projected)' : ''}`];
+      if (scoredAcres < intention.acres) parts.push(`${scoredAcres.toLocaleString()} of ${intention.acres.toLocaleString()} ac scored`);
+      return { text: parts.join(' · '), short: `CI ${range}` };
     },
 
-    /**
-     * The producer's CI for the year across every field in 45Z, bushel-weighted over the scored fields.
-     * One figure per crop: corn and soybean CIs are different feedstocks with different national
-     * averages, so they are never averaged together. The crop is named only when there's more than one.
-     */
-    enrollmentSummary(items) {
-      const byCrop = new Map<string, typeof items>();
-      for (const item of items) {
-        const crop = fdCicCropFor(item.season.cropLabel);
-        if (crop) byCrop.set(crop, [...(byCrop.get(crop) ?? []), item]);
-      }
-      return [...byCrop].flatMap(([crop, group]) => {
-        const summary = weightedCi(group, 0);
-        if (!summary) return [];
-        // Several crops: name each ("Corn CI 2,874 g/bu", short "Corn 2,874"); one crop: just "CI".
-        return [byCrop.size > 1
-          ? { ...summary, text: `${crop} ${summary.text}`, short: summary.short?.replace(/^CI/, crop) }
-          : summary];
-      });
+    /** Each field's CI and bushels, grouped by crop: corn and soybean CIs are different feedstocks. */
+    fieldResults(items) {
+      return items.map(fieldResult);
     },
 
     // A getter, so the program and its form can import each other without a load-order trap.

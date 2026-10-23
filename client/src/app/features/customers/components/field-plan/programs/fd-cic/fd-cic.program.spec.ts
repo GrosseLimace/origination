@@ -85,51 +85,51 @@ describe('45Z program (USDA FD-CIC on the API)', () => {
     expect(program.copyForward(last, 'Corn', 'Corn')).not.toHaveProperty('actualYield');
   });
 
-  describe('crop row roll-up', () => {
-    const record = (d: FdCicData, frozen?: FieldProgramRecord['frozen']): FieldProgramRecord<FdCicData> =>
-      ({ id: 'r1', seasonId: 's1', programKey: program.key, data: d, status: frozen ? 'Final' : 'Ready', frozen });
+  describe('crop row and field results', () => {
+    const record = (d: FdCicData, frozen?: FieldProgramRecord['frozen'], id = 'r1'): FieldProgramRecord<FdCicData> =>
+      ({ id, seasonId: 's1', programKey: program.key, data: d, status: frozen ? 'Final' : 'Ready', frozen });
 
-    it('should show the raw CI, with no comparison to the national average', () => {
+    it('should show the raw CI and the bushels, with no comparison to the national average', () => {
       const low = program.rowSummary!([{ season, field, record: record(data({ tillage: 'NoTill', coverCrop: 'CoverCrop', niFraction: 1 })) }], { id: 1, acres: 80 })!;
-      expect(low).toEqual({ text: 'CI 4,600 g/bu', short: 'CI 4,600' });
+      expect(low).toEqual({ text: 'CI 4,600 g/bu · 16,000 bu (projected)', short: 'CI 4,600' });
       const high = program.rowSummary!([{ season, field, record: record(data({ syntheticN: 400 })) }], { id: 1, acres: 80 })!;
-      expect(JSON.stringify(high)).not.toMatch(/national|%|▲|▼/);
+      expect(JSON.stringify(high)).not.toMatch(/national|average|%|▲|▼/);
     });
 
-    it('should count acres not yet in a scored field at the national average', () => {
-      // 80 scored acres at 5,900 and 80 more at the national 6,000, at the same yield: 5,950.
-      const row = program.rowSummary!([{ season, field, record: record(data()) }], { id: 1, acres: 160 })!;
-      expect(row.text).toBe('CI 5,950 g/bu');
-    });
-
-    it('should give the producer\'s enrollment CI weighted by each scored field\'s bushels, leaving unscored fields out', () => {
-      // 80 ac × 200 bu at 5,900 and 40 ac × 100 bu at 5,500: (5,900×16,000 + 5,500×4,000) ÷ 20,000 = 5,820.
+    it('should give the crop row its range of field CIs and their bushels, never an average, and how much is scored', () => {
       const small: FieldSeason = { ...season, id: 's2', acres: 40 };
-      const unscored: FieldSeason = { ...season, id: 's3', acres: 500 };
-      const summaries = program.enrollmentSummary!([
-        { season, field, record: record(data()) },
-        { season: small, field, record: record(data({ expectedYield: 100, syntheticN: 100 })) },
-        { season: unscored, field, record: record(program.blankData()) },
-      ]);
-      expect(summaries).toEqual([{ text: 'CI 5,820 g/bu', short: 'CI 5,820' }]);
+      const unscored: FieldSeason = { ...season, id: 's3', acres: 100 };
+      const row = program.rowSummary!([
+        { season, field, record: record(data({ actualYield: 210 })) },
+        { season: small, field, record: record(data({ tillage: 'NoTill', coverCrop: 'CoverCrop', niFraction: 1 }), undefined, 'r2') },
+        { season: unscored, field, record: record(program.blankData(), undefined, 'r3') },
+      ], { id: 1, acres: 300 })!;
+      // 80 ac × 210 actual + 40 ac × 200 expected = 24,800 bu.
+      expect(row.text).toBe('CI 4,600–5,900 g/bu · 24,800 bu (projected) · 120 of 300 ac scored');
     });
 
-    it('should give one enrollment CI per crop, never averaging corn and soybeans together', () => {
+    it('should give each field its CI and bushels: projected from the expected yield, then actual', () => {
       const soy: FieldSeason = { ...season, id: 's2', cropLabel: 'Organic Soybeans' };
-      const summaries = program.enrollmentSummary!([
+      expect(program.fieldResults!([
         { season, field, record: record(data()) },
-        { season: soy, field, record: record(data({ syntheticN: 0 })) },
+        { season, field, record: record(data({ actualYield: 210 }), undefined, 'r2') },
+        { season: soy, field, record: record(data({ syntheticN: 0 }), undefined, 'r3') },
+        { season, field, record: record(program.blankData(), undefined, 'r4') },
+      ])).toEqual([
+        { recordId: 'r1', group: 'Corn', value: 5900, unitShort: 'g/bu', bushels: 16000, projected: true },
+        { recordId: 'r2', group: 'Corn', value: 5900, unitShort: 'g/bu', bushels: 16800, projected: false },
+        { recordId: 'r3', group: 'Soybean', value: 5000, unitShort: 'g/bu', bushels: 16000, projected: true },
+        { recordId: 'r4', group: 'Corn', value: null, unitShort: 'g/bu', bushels: null, projected: true },
       ]);
-      expect(summaries.map(s => s.text)).toEqual(['Corn CI 5,900 g/bu', 'Soybean CI 5,000 g/bu']);
-      expect(summaries.map(s => s.short)).toEqual(['Corn 5,900', 'Soybean 5,000']);
     });
 
-    it('should use a finalized field\'s frozen score, not a new calculation', () => {
-      const frozen = { inputs: {}, outputs: { yieldUsed: 200, nationalAverage: 6000 }, score: { value: 4800, unit: 'g CO₂e/bu', unitShort: 'g/bu' },
+    it('should use a finalized field\'s frozen score, acres and actual yield, not a new calculation', () => {
+      const frozen = { inputs: { acres: 80, actualYield: 205 }, outputs: { yieldUsed: 205, nationalAverage: 6000 }, score: { value: 4800, unit: 'g CO₂e/bu', unitShort: 'g/bu' },
         calculatorVersion: 'USDA FD-CIC v1.2', finalizedBy: 'harvest complete', finalizedAt: '2026-10-01' };
       const api = fakeFdCicApi();
-      const row = createFdCicProgram(api).rowSummary!([{ season, field, record: record(data(), frozen) }], { id: 1, acres: 80 })!;
-      expect(row.text).toBe('CI 4,800 g/bu');
+      const p = createFdCicProgram(api);
+      expect(p.rowSummary!([{ season, field, record: record(data(), frozen) }], { id: 1, acres: 80 })!.text).toBe('CI 4,800 g/bu · 16,400 bu');
+      expect(p.fieldResults!([{ season, field, record: record(data(), frozen) }])[0]).toMatchObject({ value: 4800, bushels: 16400, projected: false });
       expect(api.requests).toHaveLength(0);
     });
   });
