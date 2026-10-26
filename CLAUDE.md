@@ -70,6 +70,7 @@ rows with the security notes behind each pin. Update BOTH in the same commit as 
 | proxy-addr | ≥2.0.8 <3 | MIT | Trusted-proxy / X-Forwarded-For resolution |
 | source-map-js | ≥1.2.2 <2 | BSD-3-Clause | Source map parsing/generation |
 | @modelcontextprotocol/sdk | ≥1.31.0 <2 | MIT | Model Context Protocol SDK |
+| zod | ≥4.6.6 <5 | MIT | Schema validation (ng mcp) |
 | ip-address | ≥10.7.4 <11 | MIT | IP address parser |
 | @hono/node-server | ≥2.0.5 | MIT | Node adapter for hono |
 | dompurify | ≥3.4.17 <4 | (MIT OR Apache-2.0) | HTML sanitizer |
