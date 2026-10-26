@@ -86,11 +86,12 @@ type CardField = EnrollableRecord & { result: FieldResult; official: string };
                     @for (row of g.ladder; track row.item.recordId) {
                       <tr class="border-t border-gray-100 dark:border-gray-700" [class]="withinTarget(g.group, row.value) ? 'bg-gray-100 dark:bg-gray-700/50' : ''">
                         <td class="py-1 pr-4 text-right tabular-nums">
-                          <span class="font-semibold text-gray-900 dark:text-white">{{ row.value | number:'1.0-0' }}</span>
-                          <span class="text-xs text-gray-500"> estimate · {{ row.item.status === 'Locked' ? 'locked' : 'projected' }}</span>
+                          <div class="font-semibold text-gray-900 dark:text-white">{{ row.value | number:'1.0-0' }}</div>
+                          <!-- Locked once harvest is complete; otherwise actual or projected by the yield the score used. -->
+                          <div class="whitespace-nowrap text-xs text-gray-500">estimate · {{ row.item.status === 'Locked' ? 'locked' : row.item.result.projected ? 'projected' : 'actual' }}</div>
                         </td>
                         <td class="text-gray-900 dark:text-white">{{ row.item.fieldName }}</td>
-                        <td class="text-gray-600 dark:text-gray-300">{{ row.item.enrollmentId }}</td>
+                        <td class="whitespace-nowrap text-gray-600 dark:text-gray-300">{{ row.item.enrollmentId }}</td>
                         <td class="text-right text-gray-600 dark:text-gray-300">{{ row.item.acres | number }}</td>
                         <td class="text-right tabular-nums text-gray-600 dark:text-gray-300">
                           @if (row.item.result.bushels !== null) {

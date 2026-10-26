@@ -163,7 +163,7 @@ public sealed class FdCicService : IFdCicService
             var components = parts.Zip(method.Breakdown(pack, without, other.Components!))
                 .Select(p => new FdCicEffectComponentResponse { Key = p.First.Key, Label = p.First.Label, Delta = p.First.Total - p.Second.Total })
                 .Where(c => Math.Abs(c.Delta) >= 1)
-                .OrderBy(c => c.Delta)
+                .OrderByDescending(c => Math.Abs(c.Delta))
                 .ToList();
             effects.Add(new FdCicEffectResponse { Label = label, Delta = delta, Components = components });
         }

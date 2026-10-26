@@ -65,6 +65,7 @@ public class FdCicServiceTests
             // Components under 1 g/bu are left out, so allow a little for those.
             Assert.True(Math.Abs(effect.Components.Sum(c => c.Delta) - effect.Delta) < 7, $"{effect.Label} doesn't add up.");
             Assert.DoesNotContain(effect.Components, c => fixedOnly.Contains(c.Key));
+            Assert.Equal(effect.Components.Select(c => Math.Abs(c.Delta)).OrderDescending(), effect.Components.Select(c => Math.Abs(c.Delta)));
         }
 
         var noTill = score.Effects.Single(e => e.Label == "No till");

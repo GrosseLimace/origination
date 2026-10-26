@@ -9,6 +9,17 @@ import { ProgramRegistry } from './programs/program-registry';
 import { FieldSeasonDialogComponent } from './field-season-dialog.component';
 
 /**
+ * The split the add-field type-ahead text points at: its ID typed or picked ("TATOB43 · JARBOE WEST",
+ * any case), or its exact field name. Undefined when it's none of the given splits.
+ */
+export function splitFromText(text: string, splits: readonly CtrmSplit[]): CtrmSplit | undefined {
+  const t = text.trim().toUpperCase();
+  if (!t) return undefined;
+  const id = t.split(/[\s·]/)[0];
+  return splits.find(s => s.splitId === id || s.fieldName.toUpperCase() === t);
+}
+
+/**
  * The fields under one crop row. A field is one of the producer's CTRM split IDs, looked up rather than
  * typed, because tickets are delivered under the split; its location is asked for the first time it's
  * used. The row's acres stay the total (what the
@@ -156,10 +167,7 @@ export class CropFieldsPanelComponent {
 
   /** The split the type-ahead text points at: its ID typed or picked, or its exact field name. */
   get pickedSplit(): CtrmSplit | undefined {
-    const text = this.newSplit.trim().toUpperCase();
-    if (!text) return undefined;
-    const id = text.split(/[s·]/)[0];
-    return this.splitOptions().find(o => o.split.splitId === id || o.split.fieldName.toUpperCase() === text)?.split;
+    return splitFromText(this.newSplit, this.splitOptions().map(o => o.split));
   }
 
   /** A split this producer hasn't used as a field yet: its location is asked for once. */
