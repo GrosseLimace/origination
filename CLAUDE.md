@@ -64,7 +64,7 @@ rows with the security notes behind each pin. Update BOTH in the same commit as 
 | body-parser | ≥2.4.0 <3 | MIT | HTTP body parsing |
 | qs | ≥6.16.0 <7 | BSD-3-Clause | Query-string parser |
 | immutable | ≥5.1.8 | MIT | Immutable collections |
-| fast-uri | ≥3.1.8 <4 | BSD-3-Clause | URI parser |
+| fast-uri | ≥3.1.9 <4 | BSD-3-Clause | URI parser |
 | hono | ≥4.13.5 <5 | MIT | Web framework |
 | undici | ≥7.30.1 <8 | MIT | HTTP/1.1 client |
 | proxy-addr | ≥2.0.8 <3 | MIT | Trusted-proxy / X-Forwarded-For resolution |
