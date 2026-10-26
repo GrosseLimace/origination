@@ -195,19 +195,25 @@ describe('CustomerPrintReportComponent', () => {
     fixture.detectChanges();
   }
 
+  /** Stands in for the window.open() print window: keeps what is written and swallows print(). printReport
+   *  touches nothing else. (An iframe's contentWindow used to serve here, but happy-dom 21 no longer loads
+   *  iframes by default, so it is null.) */
+  function stubPrintWindow(): { printWindow: Window; written: () => string } {
+    let written = '';
+    const printWindow = {
+      print: vi.fn(),
+      onload: null,
+      document: { write: (...chunks: string[]) => { written += chunks.join(''); }, close: () => undefined },
+    } as unknown as Window;
+    return { printWindow, written: () => written };
+  }
+
   /** Clicks Print Report and returns the page handed to the (stubbed) print window, parsed. */
   function printed(): Document {
-    const frame = document.createElement('iframe');
-    document.body.appendChild(frame);
-    const printWindow = frame.contentWindow!;
-    printWindow.print = vi.fn();
-    let written = '';
-    vi.spyOn(printWindow.document, 'write').mockImplementation((...chunks: string[]) => { written += chunks.join(''); });
-    vi.spyOn(printWindow.document, 'close').mockImplementation(() => undefined);
+    const { printWindow, written } = stubPrintWindow();
     vi.spyOn(window, 'open').mockReturnValue(printWindow);
     click(Array.from(host().querySelectorAll('app-button button')).find(b => squash(b.textContent) === 'Print Report'));
-    frame.remove();
-    return new DOMParser().parseFromString(written, 'text/html');
+    return new DOMParser().parseFromString(written(), 'text/html');
   }
   /** A printed section by its title (the title's own text, ignoring any trailing sub-label). */
   function printedSection(doc: Document, title: string): HTMLElement | undefined {
@@ -740,13 +746,7 @@ describe('CustomerPrintReportComponent', () => {
   // ── Print / close ─────────────────────────────────────────────────────────
 
   it('hands the print window an escaped report with only the enabled sections', () => {
-    const frame = document.createElement('iframe');
-    document.body.appendChild(frame);
-    const printWindow = frame.contentWindow!;
-    printWindow.print = vi.fn();
-    let written = '';
-    vi.spyOn(printWindow.document, 'write').mockImplementation((...chunks: string[]) => { written += chunks.join(''); });
-    vi.spyOn(printWindow.document, 'close').mockImplementation(() => undefined);
+    const { printWindow, written } = stubPrintWindow();
     const openSpy = vi.spyOn(window, 'open').mockReturnValue(printWindow);
 
     open({
@@ -758,15 +758,14 @@ describe('CustomerPrintReportComponent', () => {
     click(Array.from(host().querySelectorAll('app-button button')).find(b => squash(b.textContent) === 'Print Report'));
 
     expect(openSpy).toHaveBeenCalledWith('', '_blank');
-    expect(written).toContain('<title>Producer Report - Smith &amp; &lt;b&gt;Sons&lt;/b&gt;</title>');
-    expect(written).not.toContain('<b>Sons</b>');
-    expect(written).toContain('Prepared by Caden Egr');
-    expect(written).toContain('>Contracts</div>');
-    expect(written).toContain('PCW100');
-    expect(written).toContain('Total Contracted');
-    expect(written).not.toContain('Grain in Storage');                // unchecked → left off the page
+    expect(written()).toContain('<title>Producer Report - Smith &amp; &lt;b&gt;Sons&lt;/b&gt;</title>');
+    expect(written()).not.toContain('<b>Sons</b>');
+    expect(written()).toContain('Prepared by Caden Egr');
+    expect(written()).toContain('>Contracts</div>');
+    expect(written()).toContain('PCW100');
+    expect(written()).toContain('Total Contracted');
+    expect(written()).not.toContain('Grain in Storage');                // unchecked → left off the page
     expect(toast.success).toHaveBeenCalledWith('Print dialog opened');
-    frame.remove();
   });
 
   it('warns when the pop-up is blocked, and Cancel emits close', () => {

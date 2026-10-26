@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { Subject, of } from 'rxjs';
@@ -996,6 +996,79 @@ describe('BidSheetComponent — catalog pin price label in Both mode', () => {
  * fallback -- so a sheet set to Both came back cash on every visit, and printed, exported and coloured
  * its pins as cash. Dev had a user in exactly that state.
  */
+describe('BidSheetComponent — catalog pin tooltip is text, not markup', () => {
+  let component: BidSheetComponent;
+  let tooltips: string[];
+  let internals: { _map: unknown; _L: unknown };
+
+  beforeEach(() => {
+    const api = {
+      getAllBidSheetLocations: () => of([]),
+      getCommodities: () => of([]),
+      getPlantingCommodities: () => of([]),
+      getBidSheetPreference: () => of(null),
+      setBidSheetPreference: () => of(null),
+      getBarchartCoverage: () => of(null),
+      searchBarchartLocations: () => of([]),
+      getBidSheets: () => of([]),
+      getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
+        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
+      ],
+    });
+    TestBed.overrideComponent(BidSheetComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+    TestBed.inject(AppStateService);
+    component = TestBed.createComponent(BidSheetComponent).componentInstance;
+
+    // Leaflet renders a string passed to bindTooltip as innerHTML, so capture exactly what it is handed.
+    tooltips = [];
+    const marker = {
+      bindTooltip: (content: string) => { tooltips.push(content); return marker; },
+      on: () => marker,
+      addTo: () => marker,
+    };
+    internals = component as unknown as { _map: unknown; _L: unknown };
+    internals._map = { removeLayer: () => {} };
+    internals._L = {
+      layerGroup: () => ({ addTo: () => ({}) }),
+      marker: () => marker,
+      divIcon: () => ({}),
+    };
+  });
+
+  // The stubs are not a real map; let the component's teardown skip it.
+  afterEach(() => { internals._map = null; internals._L = null; });
+
+  // M-048: elevator, location and city come straight from the BarChart feed.
+  it('escapes vendor text so a crafted elevator or city cannot inject markup', () => {
+    component.onBarchartResults([{
+      locationKey: 'CATKEY1', instrumentCount: 1, commodityCount: 1, placements: [],
+      latitude: 41, longitude: -96,
+      elevator: '<a href="https://evil.example">Click</a>',
+      city: '<img src=x onerror=alert(1)>',
+    } as BarchartCatalogLocation]);
+
+    expect(tooltips).toHaveLength(1);
+    expect(tooltips[0]).not.toContain('<');
+    expect(tooltips[0]).toBe(
+      '&lt;a href=&quot;https://evil.example&quot;&gt;Click&lt;/a&gt; — &lt;img src=x onerror=alert(1)&gt;');
+  });
+
+  it('still reads normally for an ordinary name', () => {
+    component.onBarchartResults([{
+      locationKey: 'CATKEY2', instrumentCount: 1, commodityCount: 1, placements: [],
+      latitude: 41, longitude: -96, elevator: 'Scoular - Tekamah', city: 'Tekamah',
+    } as BarchartCatalogLocation]);
+
+    expect(tooltips).toEqual(['Scoular - Tekamah — Tekamah']);
+  });
+});
+
 describe('BidSheetComponent — the saved price mode survives a reload', () => {
   let component: BidSheetComponent;
   let savedMode: string | null;
