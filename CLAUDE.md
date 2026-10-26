@@ -61,7 +61,7 @@ rows with the security notes behind each pin. Update BOTH in the same commit as 
 | ws | ≥8.21.0 | MIT | WebSocket |
 | brace-expansion | ≥5.0.12 | MIT | Brace pattern expansion |
 | postcss | 8.5.23 | MIT | CSS processor |
-| body-parser | ≥2.3.0 | MIT | HTTP body parsing |
+| body-parser | ≥2.4.0 <3 | MIT | HTTP body parsing |
 | qs | ≥6.16.0 <7 | BSD-3-Clause | Query-string parser |
 | immutable | ≥5.1.8 | MIT | Immutable collections |
 | fast-uri | ≥3.1.8 <4 | BSD-3-Clause | URI parser |
