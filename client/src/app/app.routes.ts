@@ -62,6 +62,14 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./features/whats-new/pages/whats-new/whats-new.component').then(m => m.WhatsNewComponent)
   },
+  // The Contract Workspace (CWS) at /cws. Each environment file turns it on or off.
+  environment.contractWorkspaceEnabled
+    ? {
+        path: 'cws',
+        canActivate: [authGuard],
+        loadChildren: () => import('./features/cws-spike/cws-spike.routes').then(m => m.CWS_SPIKE_ROUTES)
+      }
+    : { path: 'cws', redirectTo: '' },
   // Self-help: every question, by category or search. The Help panel itself isn't a route — it opens
   // over whatever page the user is on.
   {

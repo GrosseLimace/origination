@@ -56,6 +56,14 @@
 --   Updated 2026-09-23: 20260923124207_RenameGrainOnFarmGroupToCommodityCode renamed
 --   ProducerGrainOnFarm.CommodityGroup -> CommodityCode and its unique index
 --   UQ_ProducerGrainOnFarm_Customer_Group -> UQ_ProducerGrainOnFarm_Customer_Commodity.
+--   Updated 2026-09-23 (bid-sheet branch): 20260923132920_AddSelectedColumnsToBidSheet
+--   Preference adds dbo.BidSheetPreferences.SelectedColumns, nvarchar(max) NULL. The four
+--   superseded columns beside it (CropOrder, HiddenCrops, SelectedMonths, SelectedYears) are
+--   deliberately NOT dropped -- they are read once to migrate a user forward, and they are the
+--   rollback. Merging release_2026-09-29 conflicted here: that branch re-listed ProducerContact,
+--   ProducerDetails and ProducerGrainOnFarm wholesale because one of their rows was renamed.
+--   Taking both sides would have duplicated 23 rows and kept the pre-rename CommodityGroup, so
+--   only the renamed row was taken.
 --   Updated 2026-10-08 (BarChart feed, backend only): 20260811142608_AddBarchartFeed, carried over
 --   unchanged from the Bid Sheet branch so that branch finds it already applied. Adds the five
 --   dbo.Barchart* tables (67 columns) plus BidSheetLocations.BarchartLocationKey and
@@ -90,6 +98,19 @@
 --   Updated 2026-10-07: 20261007133856_AddCustomerPaymentMethod adds dbo.Customer.PaymentMethod
 --   nvarchar(10) NULL (the CTRM payment method code behind the ACH badge on the ctrm customer-sync
 --   source), so Columns grew to 372 and Migrations to 57.
+--   Updated 2026-10-13 (spike_CwsWorkspaceEmbed = featureflag_GraphQLBarChart + main): main brought
+--   ProducerBinSite and the bin-site columns, and dropped UsageDashboardViewAllUsers and
+--   ProducerDetails.BinCapacity; the branch keeps its remodel shapes (BidSheetLocations.TradeUnitCode
+--   NULL, UQ_BidSheetLocations_BarchartKey, the basis/coverage bid columns, BidSheetLocationOrders
+--   retired) and the organic tables. Cross-checked against the merged model snapshot: 51 tables,
+--   529 columns and 94 migrations, all matching.
+--   Updated 2026-10-20 (main 5ed04040 merged in): main now carries the Bid Sheet remodel and BarChart
+--   (#726) and 20261013163045_RestrictCustomerTradeUnitDeleteAndValidateCustomerFks; this branch adds
+--   only the organic certification tables on top. Totals re-checked against the merged snapshot.
+--   Updated 2026-10-22 (main 3f688806 merged in): main brought the CustomerIdSequence, Customer.PaymentMethod,
+--   ConvertYearlyBidsToFuturesMonth and ExcludeNotesWithoutTradeUnitFromRecap migrations; this branch still
+--   adds only the organic certification tables. Merged lists
+--   = main's rows + the 56 organic rows: 51 tables, 530 columns, 26 unique indexes, 99 migrations.
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -831,7 +852,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (101)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (102)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------

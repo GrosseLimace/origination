@@ -16,6 +16,9 @@ export const environment = {
   // the flag stays off rather than showing an empty, apparently-broken picker section.
   teamsChannelMentionsEnabled: true,
   calculatorEnabled: true,
+  // Contract Workspace (CWS) at /cws, signed in with our own session. On sample data by default
+  // (`cws.sampleData` below), so the Contracts API does not have to be running.
+  contractWorkspaceEnabled: true,
   // CTRM read-ahead: the 350ms hover prefetch on the producer list and the 4s post-click
   // convergence re-read. Both exist to hide CTRM GraphQL latency behind a warm trade-unit cache,
   // and both cost an extra read per hovered row and per click. Worth it when the backend is
@@ -48,5 +51,21 @@ export const environment = {
   apiConfig: {
     uri: 'http://localhost:5000/api/*',
     scopes: ['api://00078a10-3f3f-4d17-9350-fe90401125ae/Origination.Application.Dev']
+  },
+  // Contract Workspace (/cws): the Contracts API it calls, and the scope our own sign-in requests for
+  // it. Public identifiers, not secrets. Locally the API is run from the
+  // contract-management-system repo on its https launch profile: its http port (5215) answers with a
+  // redirect, which a browser will not follow on a CORS preflight. Its Development environment
+  // already allows http://localhost:4200. The scope is the Dev one: a local run validates against the
+  // Dev registration.
+  //
+  // sampleData: true serves the CWS team's stubs and sends nothing to any API, so apiUrl is unused.
+  // Sign-in stays real either way, so it still needs a Contracts role (User or Admin) on your account.
+  // Set false to run against the local Contracts API above.
+  cws: {
+    apiUrl: 'https://localhost:7041/api/v1',
+    scopes: ['api://5050fd5c-b7a8-4908-81fc-8d32e596eb1d/ContractManagementSystem.Application.Dev'],
+    environmentName: 'local',
+    sampleData: true
   }
 };

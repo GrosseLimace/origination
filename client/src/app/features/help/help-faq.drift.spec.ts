@@ -48,9 +48,10 @@ const declaredRoutes = new Set(
     .map(path => '/' + path)
 );
 
-/** Routes users don't need screen-specific suggestions for: admin, release notes and help itself.
+/** Routes users don't need screen-specific suggestions for: admin, release notes, help itself, and
+ *  the Contract Workspace (/cws), which is the Contracts team's app and not ours to document.
  *  They fall back to the "*" list. */
-const NO_SUGGESTIONS_NEEDED = ['/usage-dashboard', '/usage-dashboard/users/:userId', '/whats-new', '/help'];
+const NO_SUGGESTIONS_NEEDED = ['/usage-dashboard', '/usage-dashboard/users/:userId', '/whats-new', '/help', '/cws'];
 
 const allActions: { faqId: string; action: HelpAction }[] = content.faqs.flatMap(f =>
   [...(f.actions ?? []), ...(f.link ? [f.link] : [])].map(action => ({ faqId: f.id, action }))

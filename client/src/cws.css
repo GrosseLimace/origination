@@ -1,0 +1,28 @@
+/*
+ * SPIKE: the Contract Workspace's utilities, compiled with the `cws:` prefix so our Tailwind and
+ * theirs cannot collide by name. Listed AFTER src/styles.css in angular.json. Copied from the CWS
+ * onboarding guide (CONSUMER-ONBOARDING §3).
+ *
+ * - The @layer line stays first: layer order is fixed where a name is first seen.
+ * - source(none): scan only the CWS packages named below, never our own source.
+ * - 🔴 Do not drop the @source lines. Tailwind does not scan node_modules, so without them CWS
+ *   renders ~95% unstyled and the build still passes.
+ */
+@layer theme, base, components, utilities;
+
+@import 'tailwindcss/theme.css' layer(theme) prefix(cws);
+@import '@it/design-system/src/theme.css';
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
+
+/* CWS's date picker renders into a CDK overlay on <body>; without these rules it lands top-left. */
+@import '@angular/cdk/overlay-prebuilt.css';
+
+@source "../node_modules/@cws/workspace";
+@source "../node_modules/@cws/features-home";
+@source "../node_modules/@cws/features-approvals";
+@source "../node_modules/@cws/features-pricing";
+@source "../node_modules/@cws/features-admin";
+@source "../node_modules/@cws/features-contract-summary";
+@source "../node_modules/@cws/shared-ui";
+@source "../node_modules/@cws/shared-form-engine";
+@source "../node_modules/@cws/domain-contracts";

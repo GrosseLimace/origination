@@ -16,6 +16,10 @@ export const environment = {
   // the flag stays off rather than showing an empty, apparently-broken picker section.
   teamsChannelMentionsEnabled: true,
   calculatorEnabled: true,
+  // Contract Workspace (CWS) at /cws. On: cms-dev allows this origin (CORS preflight checked
+  // 2026-10-26) and its host is in appsettings.Dev.json SecurityHeaders:SpaConnectSrcHosts. Users need
+  // the "Contract Management System App Dev Users" group, or /cws shows CWS's access page.
+  contractWorkspaceEnabled: true,
   // CTRM read-ahead: the 350ms hover prefetch on the producer list and the 4s post-click
   // convergence re-read. Both exist to hide CTRM GraphQL latency behind a warm trade-unit cache,
   // and both cost an extra read per hovered row and per click. Worth it when the backend is
@@ -49,5 +53,16 @@ export const environment = {
   apiConfig: {
     scopes: ['api://00078a10-3f3f-4d17-9350-fe90401125ae/Origination.Application.Dev'],
     uri: '/api/*'
+  },
+  // Contract Workspace (/cws): the Contracts API it calls, and the scope our own sign-in requests for
+  // it. Public identifiers, not secrets. Consent is in place: this SPA registration is the
+  // local one, where it was tested 2026-10-21. CWS Dev serves simulated contract data, so Dev proves
+  // the sign-in and wiring, not real contracts.
+  cws: {
+    apiUrl: 'https://cms-dev.scoular.com/api/v1',
+    scopes: ['api://5050fd5c-b7a8-4908-81fc-8d32e596eb1d/ContractManagementSystem.Application.Dev'],
+    environmentName: 'dev',
+    // Local only: sample data instead of the API. Never true in a deployed environment.
+    sampleData: false
   }
 };
