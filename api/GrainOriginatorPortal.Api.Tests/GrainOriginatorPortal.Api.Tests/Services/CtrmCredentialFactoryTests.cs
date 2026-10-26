@@ -11,8 +11,9 @@ namespace GrainOriginatorPortal.Api.Tests.Services;
 
 /// <summary>
 /// Which credential the CTRM GraphQL client is built with. The managed identity replaces the shared
-/// client secret in Azure; these pin that the switch is per environment, that a laptop is never
-/// handed a managed identity, and that turning the switch off falls back to the secret unchanged.
+/// client secret in Azure and a laptop calls as the developer, so these pin that the switch is per
+/// environment, that a laptop never reads the secret, and that turning the switch off on App Service
+/// falls back to the secret unchanged.
 /// </summary>
 public class CtrmCredentialFactoryTests
 {
@@ -60,24 +61,25 @@ public class CtrmCredentialFactoryTests
     }
 
     [Fact]
-    public void OffAppService_TheSwitchIsIgnored_AndTheSecretIsUsed()
+    public void OnAppService_WithTheSwitchOffAndNoSecret_NothingIsConfigured()
     {
-        // A laptop has no managed identity; asking for one would fail every CTRM read locally.
-        var (credential, kind) = CtrmCredentialFactory.Create(Config(useManagedIdentity: true, withSecret: true), isAppService: false);
-
-        Assert.Equal(CtrmCredentialKind.ClientSecret, kind);
-        Assert.IsType<ClientSecretCredential>(credential);
-    }
-
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void WithoutTheManagedIdentityAndWithoutASecret_NothingIsConfigured(bool isAppService)
-    {
-        var (credential, kind) = CtrmCredentialFactory.Create(
-            Config(useManagedIdentity: isAppService ? false : true, withSecret: false), isAppService);
+        var (credential, kind) = CtrmCredentialFactory.Create(Config(useManagedIdentity: false, withSecret: false), isAppService: true);
 
         Assert.Equal(CtrmCredentialKind.None, kind);
         Assert.Null(credential);
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    [InlineData(null, false)]
+    public void OffAppService_AlwaysUsesTheDevelopersOwnSignIn_AndNeverTheSecret(bool? useManagedIdentity, bool withSecret)
+    {
+        // A laptop has no managed identity, and the secret it used to borrow from the Dev Key Vault is
+        // being retired — a secret in config must not pull a laptop back onto it.
+        var (credential, kind) = CtrmCredentialFactory.Create(Config(useManagedIdentity, withSecret), isAppService: false);
+
+        Assert.Equal(CtrmCredentialKind.DeveloperSignIn, kind);
+        Assert.IsType<AzureCliCredential>(credential);
     }
 }
