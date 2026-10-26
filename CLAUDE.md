@@ -66,7 +66,7 @@ rows with the security notes behind each pin. Update BOTH in the same commit as 
 | immutable | ≥5.1.8 | MIT | Immutable collections |
 | fast-uri | ≥3.1.8 <4 | BSD-3-Clause | URI parser |
 | hono | ≥4.13.5 <5 | MIT | Web framework |
-| undici | ≥7.29.1 <8 | MIT | HTTP/1.1 client |
+| undici | ≥7.30.1 <8 | MIT | HTTP/1.1 client |
 | proxy-addr | ≥2.0.8 <3 | MIT | Trusted-proxy / X-Forwarded-For resolution |
 | source-map-js | ≥1.2.2 <2 | BSD-3-Clause | Source map parsing/generation |
 | @modelcontextprotocol/sdk | ≥1.31.0 <2 | MIT | Model Context Protocol SDK |
