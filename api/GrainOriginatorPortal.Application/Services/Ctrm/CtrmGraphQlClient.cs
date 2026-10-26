@@ -75,9 +75,10 @@ public sealed class CtrmGraphQlClient : ICtrmGraphQlClient
             _logger.LogError("CTRM token acquisition failed [{ErrorCode}] [{ErrorCategory}]: {ExceptionType}",
                 "INFRASTRUCTURE_CTRM_TOKEN", "Infrastructure", ex.GetType().Name);
             return Fail<T>(CtrmReadStatus.TokenFailure, null, null,
-                $"Could not acquire a CTRM token ({ex.GetType().Name}) — with Ctrm:UseManagedIdentity on, check the " +
-                "App Service's system-assigned identity is enabled; otherwise check the Ctrm--ClientSecret Key Vault " +
-                "secret and that the app registration holds a role on the CTRM API. No request was sent.");
+                $"Could not acquire a CTRM token ({ex.GetType().Name}) — on a laptop, run 'az login' (customer reads " +
+                "also need the 'Scoular GraphQL API Users' group); on App Service with Ctrm:UseManagedIdentity on, check " +
+                "the system-assigned identity is enabled; otherwise check the Ctrm--ClientSecret Key Vault secret and " +
+                "that the app registration holds a role on the CTRM API. No request was sent.");
         }
 
         string body;
