@@ -377,9 +377,10 @@ builder.Services.AddSingleton<IAppAccessService, AppAccessService>();
 
 // CTRM GraphQL client (DB2Connector.GraphQL spike) — singleton so the cached token is shared.
 // With Ctrm:UseManagedIdentity on App Service, tokens come from the managed identity (app roles on
-// scoular-graphql-api), the same way Graph is done above. Otherwise it is client credentials with
-// the secret from Key Vault as 'Ctrm--ClientSecret' (Key Vault maps '--' to ':') — always the case
-// on a laptop. When nothing usable is configured the credential stays null and the client reports
+// scoular-graphql-api), the same way Graph is done above; otherwise on App Service it is client
+// credentials with the secret from Key Vault as 'Ctrm--ClientSecret' (Key Vault maps '--' to ':').
+// A laptop calls CTRM as the developer's own 'az login' (see CtrmCredentialFactory) and never reads
+// the secret. When nothing usable is configured the credential stays null and the client reports
 // NotConfigured. That is a FAILED read, not a fallback: with Ctrm:Source=ctrm the contract and ticket
 // screens show a load error. Rolling back to ODS is the setting Ctrm__Source=ods.
 builder.Services.AddSingleton<GrainOriginatorPortal.Infrastructure.Ctrm.ICtrmGraphQlClient>(sp =>
