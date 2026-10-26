@@ -3100,9 +3100,10 @@ export class BidSheetComponent {
       const marker = L.marker([loc.latitude, loc.longitude],
           { icon: this._barchartPinIcon(onThisSheet, loc.locationKey === this.barchartSelectedKey(), this.barchartTickedKeys().has(loc.locationKey), this._barchartScoularKeys.has(loc.locationKey)) })
         // Company first, matching the panel — the vendor's site name is sometimes another company's
-        // name, so leading with it on a pin would misattribute the bid.
+        // name, so leading with it on a pin would misattribute the bid. These are the vendor's strings and
+        // Leaflet renders a string tooltip as HTML, so escape them like every other label on this map.
         .bindTooltip(
-          `${loc.elevator || loc.locationName || loc.locationKey}${loc.city ? ' — ' + loc.city : ''}`,
+          this._esc(`${loc.elevator || loc.locationName || loc.locationKey}${loc.city ? ' — ' + loc.city : ''}`),
           { direction: 'top' });
       // Ticks the location rather than opening its detail, matching a click on its row. Routed
       // through the picker so clicking the same pin twice unticks it -- going via a signal would not,
