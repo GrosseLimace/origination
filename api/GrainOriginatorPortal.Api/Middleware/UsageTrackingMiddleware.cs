@@ -10,6 +10,13 @@ namespace GrainOriginatorPortal.Api.Middleware;
 /// </summary>
 public class UsageTrackingMiddleware
 {
+    /// <summary>The Entra optional claim IT added to the API's token (Dev 2026-10-27). Present only
+    /// when the directory has a title for the person; reflects the title at sign-in.</summary>
+    public const string JobTitleClaim = "jobTitle";
+
+    /// <summary>Matches the dbo.UserJobTitle column; a longer value would fail the whole batch insert.</summary>
+    private const int MaxJobTitleLength = 256;
+
     private readonly RequestDelegate _next;
     private readonly ChannelWriter<UserActivityRecord> _channelWriter;
 
@@ -68,6 +75,13 @@ public class UsageTrackingMiddleware
         // Normalize: strip @domain to match Entitlements view (e.g. "CEgr@scoular.com" → "CEgr")
         var userId = rawUserId.Contains('@') ? rawUserId.Split('@')[0] : rawUserId;
 
+        // A missing claim is "no title in the directory", which the dashboard shows as "No title" —
+        // never an error. The record carries it so the background writer can keep one latest-title
+        // row per user; it is not stored on the activity row itself.
+        var jobTitle = context.User.FindFirst(JobTitleClaim)?.Value?.Trim();
+        if (string.IsNullOrEmpty(jobTitle)) jobTitle = null;
+        else if (jobTitle.Length > MaxJobTitleLength) jobTitle = jobTitle[..MaxJobTitleLength];
+
         var record = new UserActivityRecord
         {
             UserId = userId,
@@ -75,7 +89,8 @@ public class UsageTrackingMiddleware
             Path = path.Length > 500 ? path[..500] : path,
             StatusCode = context.Response.StatusCode,
             DurationMs = (int)stopwatch.ElapsedMilliseconds,
-            Timestamp = DateTime.UtcNow
+            Timestamp = DateTime.UtcNow,
+            JobTitle = jobTitle
         };
 
         // Fire-and-forget: TryWrite is synchronous and non-blocking.
@@ -95,6 +110,10 @@ public class UserActivityRecord
     public int StatusCode { get; set; }
     public int DurationMs { get; set; }
     public DateTime Timestamp { get; set; }
+
+    /// <summary>The token's <c>jobTitle</c> claim, or null when absent. Consumed by
+    /// <c>JobTitleChangeTracker</c>, not persisted per activity row.</summary>
+    public string? JobTitle { get; set; }
 }
 
 /// <summary>

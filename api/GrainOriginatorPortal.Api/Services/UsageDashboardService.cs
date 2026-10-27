@@ -18,6 +18,12 @@ public class UsageDashboardService : IUsageDashboardService
     // (all-time): 0 → Active (used today), 1–7 → Light Usage, >7 → Dormant, none ever → Never.
     private const int LightUsageWithinDays = 7;
 
+    /// <summary>Caps on the job-title filter. Titles are free text from the query string that end up
+    /// in a cache key, so a bound keeps a hostile caller from minting unlimited cache entries; the
+    /// length matches the dbo.UserJobTitle column, beyond which nothing could match anyway.</summary>
+    private const int MaxJobTitleFilters = 50;
+    private const int MaxJobTitleLength = 256;
+
     private static class UsageStatus
     {
         public const string Active = "Active";
@@ -116,26 +122,27 @@ public class UsageDashboardService : IUsageDashboardService
     /// <summary>
     /// Resolves the dashboard's user universe: everyone who can actually sign in to the app (the
     /// Entra app-access set), narrowed to one manager's org subtree when <paramref name="managerId"/>
-    /// is given, minus the excluded accounts. When the access set is unavailable (Graph
-    /// blocked/misconfigured) this falls open to the full entitlements snapshot, so the dashboard
-    /// never breaks on a Graph outage.
+    /// is given and to the selected job titles when <paramref name="jobTitles"/> is given, minus the
+    /// excluded accounts. When the access set is unavailable (Graph blocked/misconfigured) this
+    /// falls open to the full entitlements snapshot, so the dashboard never breaks on a Graph outage.
     /// <para>
     /// Every read funnels through here, which is what keeps the universe consistent across the
-    /// nine panel endpoints and the per-user drill-down. The manager filter is the ONLY narrowing
-    /// the dashboard offers — it is organised by reporting line, not by trade unit, so the app-wide
-    /// trade-unit selection is deliberately not an input.
+    /// nine panel endpoints and the per-user drill-down. The manager and job-title filters are the
+    /// only narrowing the dashboard offers — it is organised by reporting line and role, not by
+    /// trade unit, so the app-wide trade-unit selection is deliberately not an input.
     /// </para><para>
     /// Cached for <see cref="UniverseCacheTtl"/> because one page load resolves this once per
     /// endpoint. See <see cref="UsageUniverseCacheState"/> for how exclusion edits invalidate it.
     /// </para>
     /// </summary>
-    private async Task<HashSet<string>> GetUserIdSetAsync(string? managerId, CancellationToken cancellationToken)
+    private async Task<HashSet<string>> GetUserIdSetAsync(string? managerId, IReadOnlyCollection<string>? jobTitles, CancellationToken cancellationToken)
     {
-        var cacheKey = $"usage-dash:universe:{_cacheState.Generation}:{NormalizeManagerKey(managerId)}";
+        var titles = NormalizeJobTitles(jobTitles);
+        var cacheKey = $"usage-dash:universe:{_cacheState.Generation}:{NormalizeManagerKey(managerId)}:{JobTitlesCacheKey(titles)}";
         if (_cache.TryGetValue(cacheKey, out HashSet<string>? cached) && cached is not null)
             return cached;
 
-        var set = await ResolveUserIdSetAsync(managerId, cancellationToken);
+        var set = await ResolveUserIdSetAsync(managerId, titles, cancellationToken);
 
         // The shared IMemoryCache is registered with a SizeLimit, so every entry must declare a size.
         _cache.Set(cacheKey, set, new MemoryCacheEntryOptions
@@ -146,7 +153,7 @@ public class UsageDashboardService : IUsageDashboardService
         return set;
     }
 
-    private async Task<HashSet<string>> ResolveUserIdSetAsync(string? managerId, CancellationToken cancellationToken)
+    private async Task<HashSet<string>> ResolveUserIdSetAsync(string? managerId, HashSet<string> jobTitles, CancellationToken cancellationToken)
     {
         var access = await _appAccess.GetAccessSetAsync(cancellationToken);
 
@@ -182,12 +189,70 @@ public class UsageDashboardService : IUsageDashboardService
         var excluded = await _repo.GetExcludedUserIdsAsync(cancellationToken);
         if (excluded.Count > 0)
             set.ExceptWith(excluded);
+
+        // Last, so the title read covers the smallest set. Order does not change the answer.
+        if (jobTitles.Count > 0)
+            await NarrowToJobTitlesAsync(set, jobTitles, cancellationToken);
         return set;
+    }
+
+    /// <summary>
+    /// Keeps only the users whose latest recorded job title is one of <paramref name="jobTitles"/>.
+    /// The synthetic <see cref="UsageJobTitleDto.NoTitleKey"/> selects people with no recorded title:
+    /// a token with no claim, or no row at all because they have not signed in since titles were
+    /// first captured. Titles compare case-insensitively, like every other user-keyed lookup here.
+    /// </summary>
+    private async Task NarrowToJobTitlesAsync(HashSet<string> set, HashSet<string> jobTitles, CancellationToken cancellationToken)
+    {
+        if (set.Count == 0) return;
+        var includeUntitled = jobTitles.Contains(UsageJobTitleDto.NoTitleKey);
+        var titleByUser = await GetJobTitleDictAsync(set, cancellationToken);
+        set.RemoveWhere(userId => titleByUser.TryGetValue(userId, out var title)
+            ? !jobTitles.Contains(title)
+            : !includeUntitled);
+    }
+
+    /// <summary>Latest non-blank job title per user, for the given users. A user with a NULL title
+    /// or no row is absent, so "has a title" is simply a dictionary hit.</summary>
+    private async Task<Dictionary<string, string>> GetJobTitleDictAsync(IReadOnlyCollection<string> userIds, CancellationToken cancellationToken)
+    {
+        var rows = await _repo.GetUserJobTitlesAsync(userIds, cancellationToken);
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows)
+        {
+            var title = row.JobTitle?.Trim();
+            if (!string.IsNullOrEmpty(title)) result[row.UserId] = title;
+        }
+        return result;
+    }
+
+    /// <summary>Trims, de-duplicates (case-insensitively) and caps the requested job titles. Null or
+    /// empty means "no job-title filter". Blank and over-length entries are dropped rather than
+    /// rejected: they could never match a stored title, and a filter is not worth a 400.</summary>
+    private static HashSet<string> NormalizeJobTitles(IReadOnlyCollection<string>? jobTitles)
+    {
+        var titles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (jobTitles is null) return titles;
+        foreach (var raw in jobTitles)
+        {
+            var title = raw?.Trim();
+            if (string.IsNullOrEmpty(title) || title.Length > MaxJobTitleLength) continue;
+            titles.Add(title);
+            if (titles.Count >= MaxJobTitleFilters) break;
+        }
+        return titles;
     }
 
     /// <summary>Canonicalizes the manager id for the cache key — "KCanning" and "kcanning" share an entry.</summary>
     private static string NormalizeManagerKey(string? managerId) =>
         string.IsNullOrWhiteSpace(managerId) ? "__all__" : managerId.Trim().ToUpperInvariant();
+
+    /// <summary>Canonicalizes the job-title set for the cache key — order and casing don't split
+    /// entries. Joined on a control character no directory title can contain.</summary>
+    private static string JobTitlesCacheKey(HashSet<string> jobTitles) =>
+        jobTitles.Count == 0
+            ? "__all__"
+            : string.Join('\u001f', jobTitles.Select(t => t.ToUpperInvariant()).OrderBy(t => t, StringComparer.Ordinal));
 
     private async Task<Dictionary<string, string>> GetDisplayNameDictAsync(HashSet<string> userIds, CancellationToken cancellationToken)
     {
@@ -277,10 +342,10 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<UsageDashboardSummaryDto> GetSummaryAsync(DateOnly from, DateOnly to, string? managerId, CancellationToken cancellationToken)
+    public async Task<UsageDashboardSummaryDto> GetSummaryAsync(DateOnly from, DateOnly to, string? managerId, IReadOnlyCollection<string>? jobTitles, CancellationToken cancellationToken)
     {
         var window = BuildWindow(from, to);
-        var userIds = await GetUserIdSetAsync(managerId, cancellationToken);
+        var userIds = await GetUserIdSetAsync(managerId, jobTitles, cancellationToken);
         var totalUsers = userIds.Count;
 
         // Same classifier the user list uses, so "Active Users" here == the count of Active rows there.
@@ -325,11 +390,12 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<UsageDashboardUserDto>> GetUsersAsync(DateOnly from, DateOnly to, string? managerId, string? status, CancellationToken cancellationToken)
+    public async Task<List<UsageDashboardUserDto>> GetUsersAsync(DateOnly from, DateOnly to, string? managerId, IReadOnlyCollection<string>? jobTitles, string? status, CancellationToken cancellationToken)
     {
         var window = BuildWindow(from, to);
-        var userIds = await GetUserIdSetAsync(managerId, cancellationToken);
+        var userIds = await GetUserIdSetAsync(managerId, jobTitles, cancellationToken);
         var displayNames = await GetDisplayNameDictAsync(userIds, cancellationToken);
+        var titleByUser = await GetJobTitleDictAsync(userIds, cancellationToken);
         // Entra display names fill in for access-group members with no entitlements snapshot row
         // (e.g. admin accounts) — cached, so this is a dictionary lookup, not a Graph call.
         var accessNames = (await _appAccess.GetAccessSetAsync(cancellationToken)).DisplayNames;
@@ -370,7 +436,8 @@ public class UsageDashboardService : IUsageDashboardService
                 AvgSessionMinutes = hasSession ? Math.Round(session!.AvgDuration, 1) : 0,
                 Status = cls.Status,
                 CustomersContacted = contactCount,
-                NotesCreated = noteCount
+                NotesCreated = noteCount,
+                JobTitle = titleByUser.GetValueOrDefault(userId)
             });
         }
 
@@ -382,10 +449,10 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<DailyActiveDto>> GetDailyActiveAsync(DateOnly from, DateOnly to, string? managerId, CancellationToken cancellationToken)
+    public async Task<List<DailyActiveDto>> GetDailyActiveAsync(DateOnly from, DateOnly to, string? managerId, IReadOnlyCollection<string>? jobTitles, CancellationToken cancellationToken)
     {
         var window = BuildWindow(from, to);
-        var userIds = await GetUserIdSetAsync(managerId, cancellationToken);
+        var userIds = await GetUserIdSetAsync(managerId, jobTitles, cancellationToken);
 
         var counts = new Dictionary<DateOnly, int>();
         if (window.HasRollup)
@@ -416,10 +483,10 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<FeatureSessionsDto>> GetFeatureSessionsAsync(DateOnly from, DateOnly to, string? managerId, string? screen, CancellationToken cancellationToken)
+    public async Task<List<FeatureSessionsDto>> GetFeatureSessionsAsync(DateOnly from, DateOnly to, string? managerId, IReadOnlyCollection<string>? jobTitles, string? screen, CancellationToken cancellationToken)
     {
         var window = BuildWindow(from, to);
-        var userIds = await GetUserIdSetAsync(managerId, cancellationToken);
+        var userIds = await GetUserIdSetAsync(managerId, jobTitles, cancellationToken);
 
         var screenMinutes = await GetScreenMinutesByFeatureAsync(window, userIds, cancellationToken);
         var interactionCounts = await GetInteractionCountsAsync(window, userIds, screen, cancellationToken);
@@ -534,10 +601,10 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<WeeklyTrendDto>> GetWeeklyTrendAsync(string? managerId, int weeks, CancellationToken cancellationToken)
+    public async Task<List<WeeklyTrendDto>> GetWeeklyTrendAsync(string? managerId, IReadOnlyCollection<string>? jobTitles, int weeks, CancellationToken cancellationToken)
     {
         weeks = Math.Clamp(weeks, 1, 52);
-        var userIds = await GetUserIdSetAsync(managerId, cancellationToken);
+        var userIds = await GetUserIdSetAsync(managerId, jobTitles, cancellationToken);
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var currentWeekStart = StartOfWeek(today);
@@ -589,12 +656,12 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<ActivityBreakdownDto>> GetActivityBreakdownAsync(DateOnly from, DateOnly to, string? managerId, CancellationToken cancellationToken)
+    public async Task<List<ActivityBreakdownDto>> GetActivityBreakdownAsync(DateOnly from, DateOnly to, string? managerId, IReadOnlyCollection<string>? jobTitles, CancellationToken cancellationToken)
     {
         // Reads the raw tables for the whole window: the profiles/contracts columns are
         // distinct-by-producer across the entire range, which per-day rollups cannot reconstruct.
         var window = BuildWindow(from, to);
-        var userIds = await GetUserIdSetAsync(managerId, cancellationToken);
+        var userIds = await GetUserIdSetAsync(managerId, jobTitles, cancellationToken);
         var displayNames = await GetDisplayNameDictAsync(userIds, cancellationToken);
 
         var activityMap = (await _repo.GetActivityBreakdownByUserAsync(window.FullFromUtc, window.FullToUtc, userIds, cancellationToken))
@@ -631,12 +698,12 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<UnderusedFeatureDto>> GetUnderusedFeaturesAsync(DateOnly from, DateOnly to, string? managerId, CancellationToken cancellationToken)
+    public async Task<List<UnderusedFeatureDto>> GetUnderusedFeaturesAsync(DateOnly from, DateOnly to, string? managerId, IReadOnlyCollection<string>? jobTitles, CancellationToken cancellationToken)
     {
         // Measured in distinct users, and now honors the manager filter and the excluded-users
         // list — the old per-feature-only rollup had no user dimension, so it could do neither.
         var window = BuildWindow(from, to);
-        var userIds = await GetUserIdSetAsync(managerId, cancellationToken);
+        var userIds = await GetUserIdSetAsync(managerId, jobTitles, cancellationToken);
 
         // Union the (feature, user) pairs from both sources rather than adding their counts, so a
         // user who was active both earlier in the window and today is still one user.
@@ -672,10 +739,10 @@ public class UsageDashboardService : IUsageDashboardService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<List<QueryLibraryUsageDto>> GetQueryLibraryUsageAsync(DateOnly from, DateOnly to, string? managerId, CancellationToken cancellationToken)
+    public async Task<List<QueryLibraryUsageDto>> GetQueryLibraryUsageAsync(DateOnly from, DateOnly to, string? managerId, IReadOnlyCollection<string>? jobTitles, CancellationToken cancellationToken)
     {
         var window = BuildWindow(from, to);
-        var userIds = await GetUserIdSetAsync(managerId, cancellationToken);
+        var userIds = await GetUserIdSetAsync(managerId, jobTitles, cancellationToken);
 
         var rawUsage = await _repo.GetLibraryQueryUsageAsync(window.FullFromUtc, window.FullToUtc, userIds, cancellationToken);
 
@@ -693,10 +760,10 @@ public class UsageDashboardService : IUsageDashboardService
     }
 
     /// <inheritdoc />
-    public async Task<List<QuerySearchGapDto>> GetQuerySearchGapsAsync(DateOnly from, DateOnly to, string? managerId, CancellationToken cancellationToken)
+    public async Task<List<QuerySearchGapDto>> GetQuerySearchGapsAsync(DateOnly from, DateOnly to, string? managerId, IReadOnlyCollection<string>? jobTitles, CancellationToken cancellationToken)
     {
         var window = BuildWindow(from, to);
-        var userIds = await GetUserIdSetAsync(managerId, cancellationToken);
+        var userIds = await GetUserIdSetAsync(managerId, jobTitles, cancellationToken);
 
         var gaps = await _repo.GetQuerySearchGapsAsync(window.FullFromUtc, window.FullToUtc, userIds, cancellationToken);
         return gaps.Select(g => new QuerySearchGapDto { SearchText = g.SearchText, TimesSearched = g.TimesSearched }).ToList();
@@ -709,11 +776,46 @@ public class UsageDashboardService : IUsageDashboardService
     /// <inheritdoc />
     public async Task<List<UsageManagerDto>> GetManagersAsync(CancellationToken cancellationToken)
     {
-        // Everyone who can open the dashboard gets the full roster — the manager dropdown is the
-        // dashboard's only filter, and the client needs the list up front to default it to the
-        // signed-in user. The roster is the company org chart (every manager's name and short
-        // name), so this is deliberately gated by the same policy as the data endpoints.
+        // Everyone who can open the dashboard gets the full roster — the client needs the list up
+        // front to default the manager filter to the signed-in user. The roster is the company org
+        // chart (every manager's name and short name), so this is deliberately gated by the same
+        // policy as the data endpoints.
         return await _managerDirectory.GetManagersAsync(cancellationToken);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Job-title filter
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <inheritdoc />
+    public async Task<List<UsageJobTitleDto>> GetJobTitlesAsync(string? managerId, CancellationToken cancellationToken)
+    {
+        // Counted within the selected manager's team so the picker's numbers agree with the panels,
+        // but never within a job-title selection — the roster is what the user picks FROM.
+        var userIds = await GetUserIdSetAsync(managerId, null, cancellationToken);
+        var titleByUser = await GetJobTitleDictAsync(userIds, cancellationToken);
+
+        var titles = titleByUser.Values
+            .GroupBy(t => t, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new UsageJobTitleDto { Key = g.Key, Label = g.Key, UserCount = g.Count() })
+            .OrderBy(t => t.Label, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // "No title" goes last, and only when it would match someone: it covers people with no
+        // directory title AND people who have not signed in since titles were first captured, so
+        // early on it is most of the org, and later it is the honest answer for the "Never" tier.
+        var untitled = userIds.Count - titleByUser.Count;
+        if (untitled > 0)
+        {
+            titles.Add(new UsageJobTitleDto
+            {
+                Key = UsageJobTitleDto.NoTitleKey,
+                Label = UsageJobTitleDto.NoTitleLabel,
+                UserCount = untitled
+            });
+        }
+
+        return titles;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -725,14 +827,16 @@ public class UsageDashboardService : IUsageDashboardService
     {
         var window = BuildWindow(from, to);
 
-        // The manager filter narrows who is listed, not one user's numbers, so it is not threaded here.
-        var allowedIds = await GetUserIdSetAsync(null, cancellationToken);
+        // The manager and job-title filters narrow who is listed, not one user's numbers, so neither
+        // is threaded here.
+        var allowedIds = await GetUserIdSetAsync(null, null, cancellationToken);
         if (!allowedIds.Contains(userId))
             return null;
 
-        var displayNames = await GetDisplayNameDictAsync(
-            new HashSet<string>([userId], StringComparer.OrdinalIgnoreCase), cancellationToken);
+        var self = new HashSet<string>([userId], StringComparer.OrdinalIgnoreCase);
+        var displayNames = await GetDisplayNameDictAsync(self, cancellationToken);
         var displayName = displayNames.GetValueOrDefault(userId, userId);
+        var jobTitle = (await GetJobTitleDictAsync(self, cancellationToken)).GetValueOrDefault(userId);
 
         var sessionDurations = await _repo.GetSessionDurationsForUserAsync(userId, window.FullFromUtc, window.FullToUtc, cancellationToken);
         var loginCount = sessionDurations.Count;
@@ -926,6 +1030,7 @@ public class UsageDashboardService : IUsageDashboardService
         {
             UserId = userId,
             DisplayName = displayName,
+            JobTitle = jobTitle,
             Status = status,
             LastActive = lastActive,
             LoginCount = loginCount,

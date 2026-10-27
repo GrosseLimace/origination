@@ -8,11 +8,15 @@
       </div>
     </div>
     <div class="flex flex-wrap items-center gap-3">
-      <!-- The dashboard's only filter: by manager, defaulting to the signed-in user. It is organised
-           by reporting line, so the app-wide trade-unit selector is deliberately absent here. -->
+      <!-- Two filters that intersect: by manager (defaulting to the signed-in user) and by job
+           title. The dashboard is organised by reporting line and role, so the app-wide trade-unit
+           selector is deliberately absent here. -->
       <app-manager-filter [(managerId)]="managerFilter"
         [managers]="managers()" [loading]="managersLoading()" [loadFailed]="managersLoadFailed()"
         (retry)="loadManagers()" />
+      <app-job-title-filter [(selected)]="jobTitleFilter"
+        [titles]="jobTitles()" [loading]="jobTitlesLoading()" [loadFailed]="jobTitlesLoadFailed()"
+        (retry)="retryJobTitles()" />
       @if (canManageExclusions()) {
         <app-excluded-users-panel (changed)="onExclusionsChanged()" />
       }
@@ -163,6 +167,15 @@
         The dashboard counts the selected manager and everyone reporting to them who can sign in to
         the application. Reporting lines come from Active Directory — contact IT if one looks wrong,
         or clear the manager filter to see everyone.
+      </p>
+    </div>
+  } @else if (jobTitlesMatchNobody()) {
+    <div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 text-center">
+      <p class="text-sm font-medium text-gray-900 dark:text-white">Nobody matches the selected job titles</p>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+        Job titles are read from each person's directory record when they sign in, so someone who
+        has not signed in since that started shows under "No title". Pick other titles, or clear the
+        job title filter to see everyone.
       </p>
     </div>
   }
@@ -338,6 +351,12 @@
                       <app-sort-icon column="name" [activeColumn]="sort.column()" [direction]="sort.direction()" />
                     </span>
                   </app-table-head>
+                  <app-table-head [sortable]="true" (click)="sort.handle('jobTitle')">
+                    <span class="flex items-center gap-1">
+                      Job Title
+                      <app-sort-icon column="jobTitle" [activeColumn]="sort.column()" [direction]="sort.direction()" />
+                    </span>
+                  </app-table-head>
                   <app-table-head thClass="text-center" [sortable]="true" (click)="sort.handle('status')">
                     <span class="flex items-center justify-center gap-1">
                       Recent Status
@@ -389,6 +408,13 @@
                           <div class="text-xs text-gray-500 dark:text-gray-400">{{ user.userId }}&#64;scoular.com</div>
                         </div>
                       </div>
+                    </app-table-cell>
+                    <app-table-cell>
+                      @if (user.jobTitle) {
+                        <span class="text-gray-900 dark:text-white">{{ user.jobTitle }}</span>
+                      } @else {
+                        <span class="text-gray-400 dark:text-gray-500">No title</span>
+                      }
                     </app-table-cell>
                     <app-table-cell tdClass="text-center">
                       <span class="px-2 py-1 text-xs font-medium rounded-full" [class]="getStatusClasses(user.status)">
