@@ -86,7 +86,7 @@
           <span class="px-2 py-1 text-xs font-medium rounded-full" [class]="getStatusClasses(d.status)">{{ d.status }}</span>
         </div>
         <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          {{ d.userId }}&#64;scoular.com · Last active: {{ formatLastActive(d.lastActive) }} · Window: {{ formatDayLabel(dateFrom()) }} – {{ formatDayLabel(dateTo()) }}
+          @if (d.jobTitle) {<span>{{ d.jobTitle }} · </span>}{{ d.userId }}&#64;scoular.com · Last active: {{ formatLastActive(d.lastActive) }} · Window: {{ formatDayLabel(dateFrom()) }} – {{ formatDayLabel(dateTo()) }}
         </div>
       </div>
     </div>

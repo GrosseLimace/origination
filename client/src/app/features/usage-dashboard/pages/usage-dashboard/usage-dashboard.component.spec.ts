@@ -7,7 +7,7 @@ import { signal } from '@angular/core';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { UserRolesService } from '@core/services/user-roles.service';
-import { UsageDashboardUser, UsageManager } from '@models';
+import { UsageDashboardUser, UsageJobTitle, UsageManager } from '@models';
 
 import { UsageDashboardComponent } from './usage-dashboard.component';
 
@@ -21,35 +21,42 @@ function manager(over: Partial<UsageManager> = {}): UsageManager {
   return { userId: 'KCanning', displayName: 'Kyle Canning', directReports: 13, totalReports: 45, ...over };
 }
 
-/** Records how many times each ApiService method was called, and the managerId each data call sent. */
+/** Records how many times each ApiService method was called, and the managerId / jobTitles each
+ *  data call sent. */
 function makeApiStub(roster: UsageManager[] = []) {
   const calls: Record<string, number> = {};
   const managerIds: Record<string, (string | undefined)[]> = {};
-  const count = (name: string, managerId?: string) => {
+  const jobTitleParams: Record<string, (string[] | undefined)[]> = {};
+  const count = (name: string, managerId?: string, jobTitles?: string[]) => {
     calls[name] = (calls[name] ?? 0) + 1;
     (managerIds[name] ??= []).push(managerId);
+    (jobTitleParams[name] ??= []).push(jobTitles);
   };
 
   return {
     calls,
     managerIds,
+    jobTitleParams,
     // Held open so `loading` can be asserted mid-flight.
     underusedSubject: new Subject<never[]>(),
     /** Swap to make the roster fail or change between calls. */
     managers$: of(roster) as Observable<UsageManager[]>,
+    /** Swap to make the job-title roster fail or change between calls. */
+    jobTitles$: of([] as UsageJobTitle[]) as Observable<UsageJobTitle[]>,
 
     getUsageManagers: function (this: { managers$: Observable<UsageManager[]> }) { count('managers'); return this.managers$; },
+    getUsageJobTitles: function (this: { jobTitles$: Observable<UsageJobTitle[]> }, managerId?: string) { count('jobTitles', managerId); return this.jobTitles$; },
     getUsageExclusionsCanManage: function () { count('canManage'); return of({ canManage: false }); },
-    getUsageDashboardSummary: function (_f: string, _t: string, managerId?: string) { count('summary', managerId); return of(null as never); },
-    getUsageDashboardUsers: function (_f: string, _t: string, managerId?: string) { count('users', managerId); return of([] as UsageDashboardUser[]); },
-    getUsageDailyActive: function (_f: string, _t: string, managerId?: string) { count('dailyActive', managerId); return of([]); },
-    getUsageFeatureSessions: function (_f: string, _t: string, managerId?: string) { count('featureSessions', managerId); return of([]); },
-    getUsageWeeklyTrend: function (managerId?: string) { count('weeklyTrend', managerId); return of([]); },
-    getUsageActivityBreakdown: function (_f: string, _t: string, managerId?: string) { count('activityBreakdown', managerId); return of([]); },
-    getUsageQueryLibraryUsage: function (_f: string, _t: string, managerId?: string) { count('queryLibrary', managerId); return of([]); },
-    getUsageQuerySearchGaps: function (_f: string, _t: string, managerId?: string) { count('querySearchGaps', managerId); return of([]); },
-    getUsageUnderusedFeatures: function (this: { underusedSubject: Subject<never[]> }, _f: string, _t: string, managerId?: string) {
-      count('underusedFeatures', managerId);
+    getUsageDashboardSummary: function (_f: string, _t: string, managerId?: string, jobTitles?: string[]) { count('summary', managerId, jobTitles); return of(null as never); },
+    getUsageDashboardUsers: function (_f: string, _t: string, managerId?: string, jobTitles?: string[]) { count('users', managerId, jobTitles); return of([] as UsageDashboardUser[]); },
+    getUsageDailyActive: function (_f: string, _t: string, managerId?: string, jobTitles?: string[]) { count('dailyActive', managerId, jobTitles); return of([]); },
+    getUsageFeatureSessions: function (_f: string, _t: string, managerId?: string, jobTitles?: string[]) { count('featureSessions', managerId, jobTitles); return of([]); },
+    getUsageWeeklyTrend: function (managerId?: string, jobTitles?: string[]) { count('weeklyTrend', managerId, jobTitles); return of([]); },
+    getUsageActivityBreakdown: function (_f: string, _t: string, managerId?: string, jobTitles?: string[]) { count('activityBreakdown', managerId, jobTitles); return of([]); },
+    getUsageQueryLibraryUsage: function (_f: string, _t: string, managerId?: string, jobTitles?: string[]) { count('queryLibrary', managerId, jobTitles); return of([]); },
+    getUsageQuerySearchGaps: function (_f: string, _t: string, managerId?: string, jobTitles?: string[]) { count('querySearchGaps', managerId, jobTitles); return of([]); },
+    getUsageUnderusedFeatures: function (this: { underusedSubject: Subject<never[]> }, _f: string, _t: string, managerId?: string, jobTitles?: string[]) {
+      count('underusedFeatures', managerId, jobTitles);
       return this.underusedSubject.asObservable();
     },
   };
@@ -208,6 +215,116 @@ describe('UsageDashboardComponent — fetch orchestration', () => {
     expect(api.calls['users']).toBe(3); // mount, filtered, cleared
     expect(api.managerIds['users']).toEqual([undefined, 'KCanning', undefined]);
   });
+
+  it('loads the job-title roster once on mount, scoped to the current manager', () => {
+    component = build();
+
+    expect(api.calls['jobTitles']).toBe(1);
+    expect(api.managerIds['jobTitles']).toEqual([undefined]);
+  });
+
+  it('refetches every always-visible panel exactly once when the job-title filter changes, sending the titles', () => {
+    component = build();
+
+    component.jobTitleFilter.set(['Merchant', 'Trader']);
+    TestBed.tick();
+
+    expect(api.calls['summary']).toBe(2);
+    expect(api.calls['users']).toBe(2);
+    expect(api.calls['dailyActive']).toBe(2);
+    expect(api.calls['featureSessions']).toBe(2);
+    expect(api.calls['weeklyTrend']).toBe(2);
+    expect(api.jobTitleParams['users']).toEqual([undefined, ['Merchant', 'Trader']]);
+    expect(api.jobTitleParams['weeklyTrend']).toEqual([undefined, ['Merchant', 'Trader']]);
+    // The roster is what the user picks FROM — it does not reload when the selection changes.
+    expect(api.calls['jobTitles']).toBe(1);
+  });
+
+  it('reloads the job-title roster when the manager changes, because its counts are per team', () => {
+    component = build();
+
+    component.managerFilter.set('KCanning');
+    TestBed.tick();
+
+    expect(api.calls['jobTitles']).toBe(2);
+    expect(api.managerIds['jobTitles']).toEqual([undefined, 'KCanning']);
+  });
+
+  it('includes the job titles in the tab dedupe key', () => {
+    component = build();
+    component.onTabChange('whats-doing');
+    TestBed.tick();
+    expect(api.calls['activityBreakdown']).toBe(1);
+
+    // A title change invalidates the loaded tab...
+    component.jobTitleFilter.set(['Merchant']);
+    TestBed.tick();
+    expect(api.calls['activityBreakdown']).toBe(2);
+    expect(api.jobTitleParams['activityBreakdown']).toEqual([undefined, ['Merchant']]);
+
+    // ...but revisiting with the same titles does not refetch.
+    component.onTabChange('whos-using-it');
+    TestBed.tick();
+    component.onTabChange('whats-doing');
+    TestBed.tick();
+    expect(api.calls['activityBreakdown']).toBe(2);
+  });
+});
+
+describe('UsageDashboardComponent — job-title filter', () => {
+  it('a failed roster neither blocks the page nor toasts; the picker shows its own retry', () => {
+    const toasts: string[] = [];
+    const api = makeApiStub([]);
+    api.jobTitles$ = throwError(() => ({ status: 503 }));
+    configure(api, rolesStub(), toasts);
+
+    const component = build();
+
+    expect(component.jobTitlesLoadFailed()).toBe(true);
+    expect(component.loading()).toBe(false);
+    expect(api.calls['users']).toBe(1);
+    expect(toasts).toEqual([]);
+  });
+
+  it('retry reloads the roster for whichever manager is selected now', () => {
+    const api = makeApiStub([]);
+    api.jobTitles$ = throwError(() => ({ status: 503 }));
+    configure(api);
+    const component = build();
+    component.managerFilter.set('KCanning');
+    TestBed.tick();
+
+    api.jobTitles$ = of([{ key: 'Merchant', label: 'Merchant', userCount: 3 }]);
+    component.retryJobTitles();
+
+    expect(component.jobTitlesLoadFailed()).toBe(false);
+    expect(component.jobTitles().length).toBe(1);
+    expect(api.managerIds['jobTitles']).toEqual([undefined, 'KCanning', 'KCanning']);
+  });
+
+  it('explains an empty result when the selected titles match nobody, rather than blaming the team', () => {
+    const api = makeApiStub([]);
+    configure(api);
+    const component = build();
+    component.managerFilter.set('KCanning');
+    component.jobTitleFilter.set(['Astronaut']);
+    TestBed.tick();
+    component.summary.set({ totalUsers: 0 } as never);
+
+    expect(component.jobTitlesMatchNobody()).toBe(true);
+    expect(component.teamIsEmpty()).toBe(false);
+  });
+
+  it('does not claim the titles match nobody when the summary simply failed to load', () => {
+    const api = makeApiStub([]);
+    configure(api);
+    const component = build();
+    component.jobTitleFilter.set(['Merchant']);
+    TestBed.tick();
+    component.summary.set(null);
+
+    expect(component.jobTitlesMatchNobody()).toBe(false);
+  });
 });
 
 describe('UsageDashboardComponent — loading state', () => {
@@ -240,7 +357,7 @@ describe('UsageDashboardComponent — derived values', () => {
     return {
       userId: 'u', displayName: 'U', loginCount: 0, lastActive: null,
       avgSessionMinutes: 0, status: 'Active',
-      customersContacted: 0, notesCreated: 0, ...over,
+      customersContacted: 0, notesCreated: 0, jobTitle: null, ...over,
     };
   }
 

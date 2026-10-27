@@ -62,6 +62,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<DailyRecapGroupCcEmail> DailyRecapGroupCcEmails => Set<DailyRecapGroupCcEmail>();
     public DbSet<TeamsChannel> TeamsChannels => Set<TeamsChannel>();
     public DbSet<UsageDashboardExcludedUser> UsageDashboardExcludedUsers => Set<UsageDashboardExcludedUser>();
+    public DbSet<UserJobTitle> UserJobTitles => Set<UserJobTitle>();
     public DbSet<MbpLocationSynonym> MbpLocationSynonyms => Set<MbpLocationSynonym>();
 
     // BarChart bid feed — vendor-loaded landing tables. Written by the ingest API
@@ -1351,6 +1352,19 @@ public class ApplicationDbContext : DbContext
             // Unique so the same account can't be excluded twice; SQL Server's default CI collation
             // makes it case-insensitive, matching how the dashboard keys users.
             entity.HasIndex(e => e.UserId).IsUnique().HasDatabaseName("IX_UsageDashboardExcludedUsers_UserId");
+        });
+
+        modelBuilder.Entity<UserJobTitle>(entity =>
+        {
+            entity.ToTable("UserJobTitle", schema: "dbo");
+            // One row per user, keyed the way every other usage table keys people (short name). The
+            // default CI collation makes the key case-insensitive, matching the dashboard's lookups.
+            entity.HasKey(e => e.UserId);
+            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
+            // Nullable on purpose: no claim means no title in the directory, which is a real state the
+            // dashboard filters on ("No title"), not a missing value to reject.
+            entity.Property(e => e.JobTitle).HasMaxLength(256);
+            entity.Property(e => e.RecordedAt).IsRequired();
         });
 
         modelBuilder.Entity<MbpLocationSynonym>(entity =>
