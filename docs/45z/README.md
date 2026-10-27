@@ -85,6 +85,9 @@ endpoint.
 
 **Today:** `InMemoryFieldPlanBackend` stands in for the server, so nothing survives a reload.
 
+The proposed tables, rules and endpoints are written up for approval in
+[Field Plan — Database Plan](../application-context/Field%20Plan%20-%20Database%20Plan.md).
+
 **Once the database is approved:**
 - An API-backed implementation replaces it as the single provider.
 - The API adds four tables in `ApplicationDbContext`: `ProducerField`, `ProducerFieldSeason`,
