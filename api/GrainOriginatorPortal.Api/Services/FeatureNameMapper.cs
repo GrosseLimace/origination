@@ -57,6 +57,9 @@ public static class FeatureNameMapper
         // The 45Z carbon-intensity calculator, used from a producer's field plan.
         if (p.StartsWith("/api/fd-cic"))
             return ("customers", "fd-cic-45z");
+        // A producer's field plan: fields (CTRM splits), seasons, program records and enrollments.
+        if (p.StartsWith("/api/field-plan"))
+            return ("customers", "field-plan");
 
         // ---- Planting Intentions dashboard ----
         if (p.StartsWith("/api/dashboardplantingestimates"))

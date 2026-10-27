@@ -1,6 +1,6 @@
 # Field Plan & Sustainability Programs — Database Plan
 
-**Status:** PROPOSED. Awaiting approval. Nothing has been applied to any shared database.
+**Status:** PROPOSED. Awaiting approval. The tables, API and migration are built on the branch, but nothing has been applied to any shared database.
 **Date:** 2026-10-27 · **Owner:** H. Collins · **Branch:** `feature_FieldSustainabilityPrograms`
 
 > **Approval gate.** The tables below ship as one EF Core migration. Every deploy workflow runs
@@ -88,7 +88,7 @@ dbo.Customer (existing)
 |---|---|---|
 | `Id` (PK) | `int` identity | |
 | `ProducerFieldSeasonId` | `int` → ② | |
-| `ProgramKey` | `nvarchar(30)` | `fd-cic` (45Z) or `graincraft` |
+| `ProgramKey` | `nvarchar(30)` | `45z-fdcic` (45Z) or `graincraft` |
 | `Status` | `nvarchar(10)` | `Draft`, `Ready` or `Locked` |
 | `Data` | `nvarchar(max)` JSON | The program's inputs (for 45Z: yields, N rate, tillage, cover crop, manure…) |
 | `CopiedFromYear` | `int` NULL | Inputs were prefilled from this field's previous year |
@@ -165,11 +165,19 @@ The planned `GET api/field-plan/enrollment?programKey&splitId&cropYear` lets tic
 
 ## Rollback
 
-The migration only creates four new tables and their indexes, so its `Down()` drops them. No existing table or row is touched. The idempotent SQL for review is generated with:
+The migration (`20261027115725_AddFieldPlanTables`) only creates four new tables and their indexes, so its `Down()` drops them. No existing table or row is touched.
+
+The exact SQL it runs is in [scripts/field-plan-AddFieldPlanTables.sql](../../scripts/field-plan-AddFieldPlanTables.sql), for DBA review:
+- 4 `CREATE TABLE` statements and their indexes;
+- no `ALTER`, `DROP`, `UPDATE` or `DELETE`.
+
+It was generated with:
 
 ```
-dotnet ef migrations script <previous> AddFieldPlanTables --idempotent --project api/GrainOriginatorPortal.Infrastructure --startup-project api/GrainOriginatorPortal.Api
+dotnet ef migrations script 20261022142931_ExcludeNotesWithoutTradeUnitFromRecap AddFieldPlanTables --idempotent --project api/GrainOriginatorPortal.Infrastructure --startup-project api/GrainOriginatorPortal.Api --context ApplicationDbContext
 ```
+
+Regenerate it if `main` gains another migration first.
 
 ## Open questions that could change the schema
 

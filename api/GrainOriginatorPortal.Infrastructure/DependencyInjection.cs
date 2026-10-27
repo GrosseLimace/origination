@@ -150,6 +150,7 @@ public static class DependencyInjection
         services.AddScoped<IDisplayNameLookupRepository, DisplayNameLookupRepository>();
         services.AddScoped<IProducerDetailsRepository, ProducerDetailsRepository>();
         services.AddScoped<IPlantingIntentionRepository, PlantingIntentionRepository>();
+        services.AddScoped<IFieldPlanRepository, FieldPlanRepository>();
         services.AddScoped<INoteRepository, NoteRepository>();
         services.AddScoped<IReminderRepository, ReminderRepository>();
         services.AddScoped<IDashboardRepository, DashboardRepository>();
