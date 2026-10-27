@@ -34,6 +34,11 @@ public interface IUsageRepository
     /// joined in SQL. SqlExceptions propagate for the service layer to map.</summary>
     Task<List<UserManagerRow>> GetUserManagerLookupAsync(CancellationToken cancellationToken);
 
+    /// <summary>Latest job title per user from dbo.UserJobTitle, for the given users only. Users with
+    /// no row are simply absent — the caller treats absent and NULL alike ("No title"). Platform's
+    /// usage tracking writes the table; this module only reads it.</summary>
+    Task<List<UserJobTitleRow>> GetUserJobTitlesAsync(IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
+
     // ── Excluded-users administration ──
     Task<List<ExcludedUserRow>> GetExcludedUsersAsync(CancellationToken cancellationToken);
 

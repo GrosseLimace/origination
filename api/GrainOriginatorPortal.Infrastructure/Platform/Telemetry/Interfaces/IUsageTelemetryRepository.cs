@@ -19,6 +19,11 @@ public interface IUsageTelemetryRepository
     /// <paramref name="sessionGap"/>) or starts a new one. DB is the source of truth.</summary>
     Task ApplyActivitySessionsAsync(IReadOnlyList<UserActivity> activities, TimeSpan sessionGap, CancellationToken cancellationToken);
 
+    /// <summary>Records each user's latest job title in dbo.UserJobTitle: inserts a missing row,
+    /// updates a row whose title differs, leaves an identical row untouched (so RecordedAt keeps
+    /// the date the current title was first seen). Returns the number of rows written.</summary>
+    Task<int> UpsertUserJobTitlesAsync(IReadOnlyList<UserJobTitleObservation> observations, CancellationToken cancellationToken);
+
     // ── Aggregation jobs (usage-aggregation background service) ──
 
     /// <summary>Upserts the per-user daily activity rollup (UserActivityDaily) for the given date.</summary>

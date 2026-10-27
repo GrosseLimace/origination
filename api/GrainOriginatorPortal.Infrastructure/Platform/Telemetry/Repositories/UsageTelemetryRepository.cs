@@ -81,6 +81,46 @@ public class UsageTelemetryRepository : IUsageTelemetryRepository
         await _appDb.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<int> UpsertUserJobTitlesAsync(IReadOnlyList<UserJobTitleObservation> observations, CancellationToken cancellationToken)
+    {
+        if (observations.Count == 0) return 0;
+
+        var userIds = observations.Select(o => o.UserId).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var existing = (await _appDb.UserJobTitles
+                .Where(t => userIds.Contains(t.UserId))
+                .ToListAsync(cancellationToken))
+            .ToDictionary(t => t.UserId, StringComparer.OrdinalIgnoreCase);
+
+        var written = 0;
+        foreach (var observation in observations)
+        {
+            if (existing.TryGetValue(observation.UserId, out var row))
+            {
+                // Ordinal: a directory edit that only changes casing is still a change worth
+                // recording. The dashboard groups titles case-insensitively when it reads them.
+                if (string.Equals(row.JobTitle, observation.JobTitle, StringComparison.Ordinal))
+                    continue;
+                row.JobTitle = observation.JobTitle;
+                row.RecordedAt = observation.ObservedAt;
+            }
+            else
+            {
+                row = new UserJobTitle
+                {
+                    UserId = observation.UserId,
+                    JobTitle = observation.JobTitle,
+                    RecordedAt = observation.ObservedAt
+                };
+                _appDb.UserJobTitles.Add(row);
+                existing[observation.UserId] = row;
+            }
+            written++;
+        }
+
+        if (written > 0) await _appDb.SaveChangesAsync(cancellationToken);
+        return written;
+    }
+
     // ── Aggregation jobs (usage-aggregation background service) ──
 
     public async Task AggregateUserActivityDailyAsync(DateOnly date, CancellationToken cancellationToken)

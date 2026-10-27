@@ -13,7 +13,7 @@ import {
   TableRowComponent, TableHeadComponent, TableCellComponent
 } from '@shared/components/table/table.component';
 import {
-  UsageDashboardSummary, UsageDashboardUser, UsageManager, DailyActive,
+  UsageDashboardSummary, UsageDashboardUser, UsageManager, UsageJobTitle, DailyActive,
   FeatureSessions, WeeklyTrend, ActivityBreakdown, UnderusedFeature,
   QueryLibraryUsage, QuerySearchGap
 } from '@models';
@@ -21,6 +21,7 @@ import {
 import { SortIconComponent } from '../../components/sort-icon/sort-icon.component';
 import { ExcludedUsersPanelComponent } from '../../components/excluded-users-panel/excluded-users-panel.component';
 import { ManagerFilterComponent } from '../../components/manager-filter/manager-filter.component';
+import { JobTitleFilterComponent } from '../../components/job-title-filter/job-title-filter.component';
 import { createTableSort } from '../../utils/table-sort';
 import {
   formatDayLabel, formatLastActive, formatSessionDuration, formatTimeSpent,
@@ -35,7 +36,7 @@ type DashboardTabId = 'whos-using-it' | 'whats-doing' | 'whos-not';
   standalone: true,
   imports: [
     CommonModule, FormsModule,
-    SortIconComponent, ExcludedUsersPanelComponent, ManagerFilterComponent,
+    SortIconComponent, ExcludedUsersPanelComponent, ManagerFilterComponent, JobTitleFilterComponent,
     TableComponent, TableHeaderComponent, TableBodyComponent,
     TableRowComponent, TableHeadComponent, TableCellComponent
   ],
@@ -62,8 +63,8 @@ export class UsageDashboardComponent {
   readonly statusFilter = signal<string>('all');
 
   // ── Manager filter ──
-  // The dashboard's only filter. It is organised by reporting line, not by trade unit, so the
-  // app-wide trade-unit selection is deliberately not an input here.
+  // The dashboard narrows by reporting line (manager) and by role (job title), never by trade unit,
+  // so the app-wide trade-unit selection is deliberately not an input here.
 
   /** Selected manager's short name, or null for the whole organisation. Narrows every panel to that
    *  manager's entire org subtree (server-side, via the managerId query param). */
@@ -72,6 +73,20 @@ export class UsageDashboardComponent {
   readonly managers = signal<UsageManager[]>([]);
   readonly managersLoading = signal(false);
   readonly managersLoadFailed = signal(false);
+
+  // ── Job-title filter ──
+
+  /** Selected job-title keys; empty for no filter. Narrows every panel to people whose latest
+   *  recorded title is one of them (server-side, via the repeated jobTitles query param), on top of
+   *  the manager filter. */
+  readonly jobTitleFilter = signal<string[]>([]);
+
+  /** The picker's options, counted within the selected manager's team — reloaded when the manager
+   *  changes. Not needed before the first data fetch (the filter starts empty), so unlike the
+   *  manager roster a slow or failed load never holds the page. */
+  readonly jobTitles = signal<UsageJobTitle[]>([]);
+  readonly jobTitlesLoading = signal(false);
+  readonly jobTitlesLoadFailed = signal(false);
 
   /** The data effects wait on this, so the first fetch already carries the defaulted manager instead
    *  of loading the whole organisation and then reloading once the default is known. Set once the
@@ -119,7 +134,13 @@ export class UsageDashboardComponent {
    *  Real state, not an error. Never shown for the whole-org view — zero users there would mean
    *  something else entirely — and never when the summary simply failed to load (null, not zero). */
   readonly teamIsEmpty = computed(() =>
-    !!this.managerFilter() && !this.loading() && this.summary()?.totalUsers === 0);
+    !!this.managerFilter() && this.jobTitleFilter().length === 0 && !this.loading() && this.summary()?.totalUsers === 0);
+
+  /** The job-title selection (alone or on top of a manager) matches nobody. Also a real state, not
+   *  an error: titles are only known for people who have signed in since the claim was switched on,
+   *  so early on most of the organisation sits under "No title". */
+  readonly jobTitlesMatchNobody = computed(() =>
+    this.jobTitleFilter().length > 0 && !this.loading() && this.summary()?.totalUsers === 0);
 
   // ── Formatters (shared with the per-user drill-down) ──
   readonly formatTimeSpent = formatTimeSpent;
@@ -147,12 +168,15 @@ export class UsageDashboardComponent {
         u.displayName.toLowerCase().includes(search) ||
         u.userId.toLowerCase().includes(search) ||
         (u.userId.toLowerCase() + '@scoular.com').includes(search) ||
-        u.status.toLowerCase().includes(search)
+        u.status.toLowerCase().includes(search) ||
+        (u.jobTitle ?? '').toLowerCase().includes(search)
       );
     }
 
     return this.sort.apply(result, {
       name: (a, b) => a.displayName.localeCompare(b.displayName),
+      // Untitled rows sort after every real title in ascending order.
+      jobTitle: (a, b) => (a.jobTitle ?? '￿').localeCompare(b.jobTitle ?? '￿'),
       status: (a, b) => a.status.localeCompare(b.status),
       lastLogin: (a, b) => (a.lastActive ?? '').localeCompare(b.lastActive ?? ''),
       logins: (a, b) => a.loginCount - b.loginCount,
@@ -350,8 +374,8 @@ export class UsageDashboardComponent {
     // The roster decides the default manager, so it has to be known before anything else loads.
     this.loadManagers();
 
-    // Four effects with disjoint dependencies. Previously the last three loaders were *also* called
-    // from loadData, so every date or manager change fetched them twice. Each waits on
+    // Five effects with disjoint dependencies. Previously the panel loaders were *also* called from
+    // loadData, so every date or manager change fetched them twice. Each waits on
     // managerFilterReady for the same reason: one fetch with the right manager, not two.
 
     // Always-visible data: the KPI row, the donut, and the default tab's chart.
@@ -360,8 +384,9 @@ export class UsageDashboardComponent {
       const from = this.dateFrom();
       const to = this.dateTo();
       const managerId = this.managerFilter() ?? undefined;
+      const jobTitles = this.jobTitleParam();
       this.refreshTick();
-      if (from && to) this.loadCoreData(from, to, managerId);
+      if (from && to) this.loadCoreData(from, to, managerId, jobTitles);
     });
 
     // Feature sessions also depend on the selected screen.
@@ -371,16 +396,18 @@ export class UsageDashboardComponent {
       const from = this.dateFrom();
       const to = this.dateTo();
       const managerId = this.managerFilter() ?? undefined;
+      const jobTitles = this.jobTitleParam();
       this.refreshTick();
-      if (from && to) this.loadFeatureSessions(from, to, managerId, screen);
+      if (from && to) this.loadFeatureSessions(from, to, managerId, jobTitles, screen);
     });
 
     // The weekly trend covers whole calendar weeks, so the date filter is not a dependency.
     effect(() => {
       if (!this.managerFilterReady()) return;
       const managerId = this.managerFilter() ?? undefined;
+      const jobTitles = this.jobTitleParam();
       this.refreshTick();
-      this.loadWeeklyTrend(managerId);
+      this.loadWeeklyTrend(managerId, jobTitles);
     });
 
     // Per-tab data loads when its tab is first shown for the current filters.
@@ -390,9 +417,29 @@ export class UsageDashboardComponent {
       const from = this.dateFrom();
       const to = this.dateTo();
       const managerId = this.managerFilter() ?? undefined;
+      const jobTitles = this.jobTitleParam();
       const tick = this.refreshTick();
-      if (from && to) this.loadTabData(tab, from, to, managerId, `${from}|${to}|${managerId ?? ''}|${tick}`);
+      if (from && to) {
+        const key = `${from}|${to}|${managerId ?? ''}|${(jobTitles ?? []).join('\u001f')}|${tick}`;
+        this.loadTabData(tab, from, to, managerId, jobTitles, key);
+      }
     });
+
+    // The job-title roster is counted within the selected manager's team, so it follows the manager
+    // (and the exclusion list) — but not the date range, and not the job-title selection itself,
+    // which is what the roster is picked FROM.
+    effect(() => {
+      if (!this.managerFilterReady()) return;
+      const managerId = this.managerFilter() ?? undefined;
+      this.refreshTick();
+      this.loadJobTitles(managerId);
+    });
+  }
+
+  /** The selection as the API methods take it: the keys, or undefined for "no filter". */
+  private jobTitleParam(): string[] | undefined {
+    const titles = this.jobTitleFilter();
+    return titles.length > 0 ? titles : undefined;
   }
 
   /** Wraps a request so `loading` reflects everything in flight, not just the last responder. */
@@ -464,22 +511,41 @@ export class UsageDashboardComponent {
     if (self) this.managerFilter.set(self.userId);
   }
 
-  private loadCoreData(from: string, to: string, managerId?: string): void {
-    this.track(this.usageApi.getUsageDashboardSummary(from, to, managerId))
+  /** Loads the job-title roster for the picker, counted within the selected manager's team. Not run
+   *  through track(): the filter starts empty so no panel waits on it, and a Retry from inside the
+   *  dropdown must not blank every panel. A failure shows in the picker, not as a toast. */
+  loadJobTitles(managerId?: string): void {
+    this.jobTitlesLoading.set(true);
+    this.jobTitlesLoadFailed.set(false);
+    this.usageApi.getUsageJobTitles(managerId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: rows => { this.jobTitles.set(rows); this.jobTitlesLoading.set(false); },
+        error: () => { this.jobTitlesLoadFailed.set(true); this.jobTitlesLoading.set(false); }
+      });
+  }
+
+  /** The picker's Retry handler — reloads for whichever manager is selected now. */
+  retryJobTitles(): void {
+    this.loadJobTitles(this.managerFilter() ?? undefined);
+  }
+
+  private loadCoreData(from: string, to: string, managerId?: string, jobTitles?: string[]): void {
+    this.track(this.usageApi.getUsageDashboardSummary(from, to, managerId, jobTitles))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: data => this.summary.set(data),
         error: err => { if (!alreadyShown(err)) this.toastService.show('Failed to load summary', 'error'); }
       });
 
-    this.track(this.usageApi.getUsageDashboardUsers(from, to, managerId))
+    this.track(this.usageApi.getUsageDashboardUsers(from, to, managerId, jobTitles))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: data => this.users.set(data),
         error: err => { if (!alreadyShown(err)) this.toastService.show('Failed to load users', 'error'); }
       });
 
-    this.track(this.usageApi.getUsageDailyActive(from, to, managerId))
+    this.track(this.usageApi.getUsageDailyActive(from, to, managerId, jobTitles))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ next: data => this.dailyActive.set(data), error: err => this.reportPanelFailure(err) });
   }
@@ -488,34 +554,34 @@ export class UsageDashboardComponent {
    *  forth doesn't refetch. */
   private readonly loadedTabKeys = new Map<DashboardTabId, string>();
 
-  private loadTabData(tab: DashboardTabId, from: string, to: string, managerId: string | undefined, key: string): void {
+  private loadTabData(tab: DashboardTabId, from: string, to: string, managerId: string | undefined, jobTitles: string[] | undefined, key: string): void {
     if (this.loadedTabKeys.get(tab) === key) return;
     this.loadedTabKeys.set(tab, key);
 
     if (tab === 'whats-doing') {
-      this.track(this.usageApi.getUsageActivityBreakdown(from, to, managerId))
+      this.track(this.usageApi.getUsageActivityBreakdown(from, to, managerId, jobTitles))
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ next: data => this.activityBreakdown.set(data), error: err => this.reportPanelFailure(err) });
 
-      this.track(this.usageApi.getUsageQueryLibraryUsage(from, to, managerId))
+      this.track(this.usageApi.getUsageQueryLibraryUsage(from, to, managerId, jobTitles))
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ next: data => this.queryLibraryUsage.set(data), error: err => this.reportPanelFailure(err) });
 
-      this.track(this.usageApi.getUsageQuerySearchGaps(from, to, managerId))
+      this.track(this.usageApi.getUsageQuerySearchGaps(from, to, managerId, jobTitles))
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ next: data => this.querySearchGaps.set(data), error: err => this.reportPanelFailure(err) });
     }
 
     if (tab === 'whos-not') {
-      this.track(this.usageApi.getUsageUnderusedFeatures(from, to, managerId))
+      this.track(this.usageApi.getUsageUnderusedFeatures(from, to, managerId, jobTitles))
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ next: data => this.underusedFeatures.set(data), error: err => this.reportPanelFailure(err) });
     }
   }
 
-  loadFeatureSessions(from: string, to: string, managerId?: string, screen?: string): void {
+  loadFeatureSessions(from: string, to: string, managerId?: string, jobTitles?: string[], screen?: string): void {
     this.featureSessionsLoading.set(true);
-    this.track(this.usageApi.getUsageFeatureSessions(from, to, managerId, screen))
+    this.track(this.usageApi.getUsageFeatureSessions(from, to, managerId, jobTitles, screen))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: data => { this.featureSessions.set(data); this.featureSessionsLoading.set(false); },
@@ -523,8 +589,8 @@ export class UsageDashboardComponent {
       });
   }
 
-  loadWeeklyTrend(managerId?: string): void {
-    this.track(this.usageApi.getUsageWeeklyTrend(managerId))
+  loadWeeklyTrend(managerId?: string, jobTitles?: string[]): void {
+    this.track(this.usageApi.getUsageWeeklyTrend(managerId, jobTitles))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ next: data => this.weeklyTrend.set(data), error: err => this.reportPanelFailure(err) });
   }
@@ -554,8 +620,8 @@ export class UsageDashboardComponent {
   }
 
   /** Navigate to the per-user drill-down page, propagating the active date range as query params
-   *  so the detail view opens with the same window the admin was viewing. The manager filter is
-   *  not propagated — it narrows who is listed, not one person's numbers. */
+   *  so the detail view opens with the same window the admin was viewing. The manager and job-title
+   *  filters are not propagated — they narrow who is listed, not one person's numbers. */
   selectUser(userId: string): void {
     this.router.navigate(['/usage-dashboard/users', userId], {
       queryParams: {

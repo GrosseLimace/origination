@@ -243,4 +243,43 @@ public class UsageTelemetryRepositoryTests
         Assert.Equal(2, await app.UserActivities.CountAsync());
         Assert.Equal(1, await app.UserClickEvents.CountAsync());
     }
+
+    // =========================================================================
+    // Job titles
+    // =========================================================================
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task UpsertUserJobTitles_InsertsNew_SkipsUnchanged_AndUpdatesChanged()
+    {
+        var (sut, app) = Build();
+
+        // First sightings: a title and a missing claim are both real rows ("No title" is a state).
+        var inserted = await sut.UpsertUserJobTitlesAsync(
+            [new("a", "Merchant", Day), new("b", null, Day)], CancellationToken.None);
+
+        // Same title again: nothing to write, and RecordedAt keeps the first sighting.
+        var unchanged = await sut.UpsertUserJobTitlesAsync(
+            [new("a", "Merchant", Day.AddHours(1))], CancellationToken.None);
+
+        // A changed title (casing counts) and a cleared one are both written, with the new time.
+        var changed = await sut.UpsertUserJobTitlesAsync(
+            [new("a", "Senior Merchant", Day.AddHours(2)), new("b", "Trader", Day.AddHours(2))], CancellationToken.None);
+
+        Assert.Equal((2, 0, 2), (inserted, unchanged, changed));
+        var rows = await app.UserJobTitles.OrderBy(t => t.UserId).ToListAsync();
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(("a", "Senior Merchant", Day.AddHours(2)), (rows[0].UserId, rows[0].JobTitle, rows[0].RecordedAt));
+        Assert.Equal(("b", "Trader", Day.AddHours(2)), (rows[1].UserId, rows[1].JobTitle, rows[1].RecordedAt));
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task UpsertUserJobTitles_EmptyBatch_IsANoOp()
+    {
+        var (sut, app) = Build();
+
+        Assert.Equal(0, await sut.UpsertUserJobTitlesAsync([], CancellationToken.None));
+        Assert.Equal(0, await app.UserJobTitles.CountAsync());
+    }
 }

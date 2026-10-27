@@ -12,8 +12,8 @@ namespace GrainOriginatorPortal.Api.Modules.UsageAnalytics.Controllers;
 [Route("api/usage-dashboard")]
 // Reading the dashboard requires usage-reports:read. Exclusion administration also requires usage-exclusions:manage.
 // Everyone who may read sees the whole organisation and may narrow it to any manager's team with
-// `managerId` — there is no per-caller scoping beyond the permission. The UI's click events are recorded by
-// ClickEventsController, on the same route prefix, which needs only a sign-in.
+// `managerId` and/or to job titles with `jobTitles` — there is no per-caller scoping beyond the permission.
+// The UI's click events are recorded by ClickEventsController, on the same route prefix, which needs only a sign-in.
 [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
 [Produces("application/json")]
 public class UsageDashboardController : ControllerBase
@@ -32,81 +32,105 @@ public class UsageDashboardController : ControllerBase
     // DateTime keeps the boundary from shifting with the server's local timezone.
     //
     // `managerId` (a short name from /managers) narrows every panel to that manager's entire org
-    // subtree, manager included; omitted means the whole organisation. It is the dashboard's only
-    // filter — the app-wide trade-unit selection is deliberately not an input here. Unknown ids
-    // yield empty results rather than errors.
+    // subtree, manager included; omitted means the whole organisation. Unknown ids yield empty
+    // results rather than errors.
+    //
+    // `jobTitles` (repeated: ?jobTitles=A&jobTitles=B, keys from /job-titles) narrows every panel to
+    // people whose latest recorded job title is one of them; the key "__no_title__" selects people
+    // with no recorded title. Repeated rather than comma-joined because directory titles can
+    // contain commas. Omitted or empty means no job-title filter. The two filters intersect. The
+    // app-wide trade-unit selection is deliberately not an input here.
 
     [HttpGet("summary")]
     public async Task<ActionResult<UsageDashboardSummaryDto>> GetSummary(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
+        [FromQuery] string[]? jobTitles = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetSummaryAsync(from, to, managerId, cancellationToken));
+        => Ok(await _service.GetSummaryAsync(from, to, managerId, jobTitles, cancellationToken));
 
     [HttpGet("users")]
     public async Task<ActionResult<List<UsageDashboardUserDto>>> GetUsers(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
+        [FromQuery] string[]? jobTitles = null,
         [FromQuery] string? status = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetUsersAsync(from, to, managerId, status, cancellationToken));
+        => Ok(await _service.GetUsersAsync(from, to, managerId, jobTitles, status, cancellationToken));
 
     [HttpGet("daily-active")]
     public async Task<ActionResult<List<DailyActiveDto>>> GetDailyActive(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
+        [FromQuery] string[]? jobTitles = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetDailyActiveAsync(from, to, managerId, cancellationToken));
+        => Ok(await _service.GetDailyActiveAsync(from, to, managerId, jobTitles, cancellationToken));
 
     [HttpGet("feature-sessions")]
     public async Task<ActionResult<List<FeatureSessionsDto>>> GetFeatureSessions(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
+        [FromQuery] string[]? jobTitles = null,
         [FromQuery] string? screen = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetFeatureSessionsAsync(from, to, managerId, screen, cancellationToken));
+        => Ok(await _service.GetFeatureSessionsAsync(from, to, managerId, jobTitles, screen, cancellationToken));
 
     // Trend view over whole calendar weeks — deliberately not bound to the dashboard's date filter.
     [HttpGet("weekly-trend")]
     public async Task<ActionResult<List<WeeklyTrendDto>>> GetWeeklyTrend(
         [FromQuery] string? managerId = null,
+        [FromQuery] string[]? jobTitles = null,
         [FromQuery] int weeks = 8,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetWeeklyTrendAsync(managerId, weeks, cancellationToken));
+        => Ok(await _service.GetWeeklyTrendAsync(managerId, jobTitles, weeks, cancellationToken));
 
     [HttpGet("activity-breakdown")]
     public async Task<ActionResult<List<ActivityBreakdownDto>>> GetActivityBreakdown(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
+        [FromQuery] string[]? jobTitles = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetActivityBreakdownAsync(from, to, managerId, cancellationToken));
+        => Ok(await _service.GetActivityBreakdownAsync(from, to, managerId, jobTitles, cancellationToken));
 
     [HttpGet("underused-features")]
     public async Task<ActionResult<List<UnderusedFeatureDto>>> GetUnderusedFeatures(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
+        [FromQuery] string[]? jobTitles = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetUnderusedFeaturesAsync(from, to, managerId, cancellationToken));
+        => Ok(await _service.GetUnderusedFeaturesAsync(from, to, managerId, jobTitles, cancellationToken));
 
     [HttpGet("query-library-usage")]
     public async Task<ActionResult<List<QueryLibraryUsageDto>>> GetQueryLibraryUsage(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
+        [FromQuery] string[]? jobTitles = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetQueryLibraryUsageAsync(from, to, managerId, cancellationToken));
+        => Ok(await _service.GetQueryLibraryUsageAsync(from, to, managerId, jobTitles, cancellationToken));
 
     [HttpGet("query-search-gaps")]
     public async Task<ActionResult<List<QuerySearchGapDto>>> GetQuerySearchGaps(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
+        [FromQuery] string[]? jobTitles = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetQuerySearchGapsAsync(from, to, managerId, cancellationToken));
+        => Ok(await _service.GetQuerySearchGapsAsync(from, to, managerId, jobTitles, cancellationToken));
 
     /// <summary>Active managers for the manager filter. 503 when the TradeUnitPreferences DB is
     /// unreachable — fail closed, so the client shows "unavailable" instead of a stale roster.</summary>
     [HttpGet("managers")]
     public async Task<ActionResult<List<UsageManagerDto>>> GetManagers(CancellationToken cancellationToken = default)
         => Ok(await _service.GetManagersAsync(cancellationToken));
+
+    /// <summary>Options for the job-title filter, with user counts inside the selected manager's team
+    /// (or the whole organisation). Titles come from the token claim the usage middleware records,
+    /// so someone who has not signed in since that shipped appears under "No title". Covered by the
+    /// class-level usage-reports:read permission, like the manager roster.</summary>
+    [HttpGet("job-titles")]
+    public async Task<ActionResult<List<UsageJobTitleDto>>> GetJobTitles(
+        [FromQuery] string? managerId = null,
+        CancellationToken cancellationToken = default)
+        => Ok(await _service.GetJobTitlesAsync(managerId, cancellationToken));
 
     // Per-user drill-down. Aggregates one originator's full activity profile in the window.
     [HttpGet("users/{userId}/detail")]

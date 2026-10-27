@@ -53,6 +53,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<UserActivity> UserActivities => Set<UserActivity>();
     public DbSet<UserClickEvent> UserClickEvents => Set<UserClickEvent>();
     public DbSet<UserSession> UserSessions => Set<UserSession>();
+    public DbSet<UserJobTitle> UserJobTitles => Set<UserJobTitle>();
     public DbSet<UserActivityDaily> UserActivityDailies => Set<UserActivityDaily>();
     public DbSet<FeatureUsageDaily> FeatureUsageDailies => Set<FeatureUsageDaily>();
     public DbSet<UserFeatureUsageDaily> UserFeatureUsageDailies => Set<UserFeatureUsageDaily>();
@@ -244,6 +245,21 @@ public class ApplicationDbContext : DbContext
                 .HasComputedColumnSql("DATEDIFF(MINUTE, LoginTime, LastActivityTime)", stored: true);
             entity.HasIndex(e => new { e.UserId, e.LoginTime }).HasDatabaseName("IX_UserSession_UserId_LoginTime");
             entity.HasIndex(e => e.LoginTime).HasDatabaseName("IX_UserSession_LoginTime");
+        });
+
+        // Platform telemetry, like the tables above: the usage-tracking writer records it, and the
+        // Usage Analytics module only reads it.
+        modelBuilder.Entity<UserJobTitle>(entity =>
+        {
+            entity.ToTable("UserJobTitle", schema: "dbo");
+            // One row per user, keyed the way every other usage table keys people (short name). The
+            // default CI collation makes the key case-insensitive, matching the dashboard's lookups.
+            entity.HasKey(e => e.UserId);
+            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
+            // Nullable on purpose: no claim means no title in the directory, which is a real state the
+            // dashboard filters on ("No title"), not a missing value to reject.
+            entity.Property(e => e.JobTitle).HasMaxLength(256);
+            entity.Property(e => e.RecordedAt).IsRequired();
         });
 
         modelBuilder.Entity<UserActivityDaily>(entity =>

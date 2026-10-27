@@ -22,17 +22,28 @@ see [Who sees what](#who-sees-what).
 | --- | --- | --- |
 | May you open the dashboard at all? | `usage-reports:read`. Today only the `Admin` role holds it, granted by the **"Origination App {Env} Super Users"** Entra group | Entra group membership; the role's grants |
 
-Everyone who can open the dashboard sees the **whole organisation** and gets the **manager
-dropdown**, which is the dashboard's only filter. It defaults to the signed-in user (when they manage
-someone — a non-manager is not in the roster and starts at "All Managers") and can be set to any
-manager in the company. Picking a manager narrows every panel to that manager's entire team, reports
-of reports included, manager included; clearing it shows everyone. The team is resolved from
-TradeUnitPreferences `vw_UserManagerLookup` by materialized-path prefix, then intersected with the
-Entra app-access set so only people who can actually sign in are counted.
+Everyone who can open the dashboard sees the **whole organisation** and gets two filters that
+intersect:
 
-There is **no trade-unit filter**. The dashboard is organised by reporting line, so the app-wide
-trade-unit selector is deliberately absent from both the dashboard and the per-user drill-down, and the
-usage endpoints do not accept a `tradeUnitKey`.
+- The **manager dropdown**. It defaults to the signed-in user (when they manage someone — a
+  non-manager is not in the roster and starts at "All Managers") and can be set to any manager in
+  the company. Picking a manager narrows every panel to that manager's entire team, reports of
+  reports included, manager included; clearing it shows everyone. The team is resolved from
+  TradeUnitPreferences `vw_UserManagerLookup` by materialized-path prefix, then intersected with
+  the Entra app-access set so only people who can actually sign in are counted.
+- The **job-title multiselect** (added 2026-10-27). Ticking one or more titles narrows every panel
+  to people whose latest recorded title is one of them. Titles come from the `jobTitle` claim IT
+  added to the API's access token — recorded by the usage middleware into `dbo.UserJobTitle`, one
+  latest row per user — so they reflect the directory at the person's last sign-in. "No title" is a
+  real option: it covers people with no directory title *and* people who have not signed in since
+  the claim was switched on (Dev 2026-10-27; QA next; PROD under a change request). The app's
+  managed identity cannot read job titles from Graph, so the token is the only source and there is
+  no backfill. The picker's counts are per selected manager's team; it reloads when the manager
+  changes but not when the selection changes.
+
+There is **no trade-unit filter**. The dashboard is organised by reporting line and role, so the
+app-wide trade-unit selector is deliberately absent from both the dashboard and the per-user
+drill-down, and the usage endpoints do not accept a `tradeUnitKey`.
 
 ### History
 
@@ -50,7 +61,10 @@ sent, for every caller who passes the read policy.
 | Access rules | `api/GrainOriginatorPortal.Api/Authorization/UsageDashboardAccess.cs` |
 | Manager roster + subtree | `api/GrainOriginatorPortal.Api/Modules/UsageAnalytics/Services/ManagerDirectoryService.cs` |
 | Manager filter (presentational) | `client/src/app/features/usage-analytics/components/manager-filter/` |
-| Default-to-self + roster load | `usage-dashboard.component.ts` (`loadManagers`, `applyDefaultManager`) |
+| Job-title filter (presentational) | `client/src/app/features/usage-analytics/components/job-title-filter/` |
+| Job-title capture (Platform) | `Platform/Middleware/UsageTrackingMiddleware` (reads the claim) → `Platform/Telemetry/JobTitleChangeTracker` (only changes reach the DB) → `IUsageTelemetryRepository.UpsertUserJobTitlesAsync` |
+| Job-title read (Usage Analytics) | `IUsageRepository.GetUserJobTitlesAsync`, narrowed in `UsageDashboardService.ResolveUserIdSetAsync` |
+| Default-to-self + roster loads | `usage-dashboard.component.ts` (`loadManagers`, `applyDefaultManager`, `loadJobTitles`) |
 
 ## How users reach it
 
@@ -192,8 +206,11 @@ reconstruct), `query-library-usage`, `query-search-gaps`, and `users/{id}/detail
 
 ### Controller endpoints
 
-The controller requires `[RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]`, so every endpoint on it does. Every panel endpoint also accepts `?managerId=` to narrow the view to
-that manager's whole org subtree; omitted means the whole organisation. It is honoured for every
+The controller requires `[RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]`, so every endpoint on it does, `job-titles` included. Every panel endpoint also accepts `?managerId=` to narrow the view to
+that manager's whole org subtree, and a repeated `?jobTitles=A&jobTitles=B` (keys from `/job-titles`;
+`__no_title__` selects people with no recorded title) to narrow it to those job titles; the two
+intersect, and omitting either means no narrowing on that axis. `jobTitles` is repeated rather than
+comma-joined because directory titles can contain commas. Both are honoured for every
 caller — there is no per-caller scoping beyond the read permission. The exclusion endpoints
 (`access-users`, `excluded-users` CRUD) require `usage-exclusions:manage` instead; anyone without it gets
 403 and never sees the gear. Until IT moves to the `Support` role, every `Admin` holder has it.
@@ -210,6 +227,7 @@ caller — there is no per-caller scoping beyond the read permission. The exclus
 | `GET /query-library-usage` | most-clicked library prompts, names resolved |
 | `GET /query-search-gaps` | top 20 library searches that matched nothing |
 | `GET /managers` | roster for the manager dropdown, from TradeUnitPreferences `vw_UserManagerLookup`; empty for a scoped caller, 503 if that DB is unreachable |
+| `GET /job-titles?managerId=` | options for the job-title filter: each distinct recorded title with a user count inside the manager's team (or the whole org), name-sorted, plus a trailing `__no_title__` / "No title" entry when anyone has none |
 | `GET /users/{userId}/detail` | full per-user profile — drives the drill-down page |
 | `GET /excluded-users/can-manage` | whether the caller holds `usage-exclusions:manage` — the client hides the exclusion gear when false |
 | `GET /access-users` | app-access roster (Entra group) for the exclusion picker; `available=false` ⇒ client falls back to free text |
@@ -231,6 +249,7 @@ caller — there is no per-caller scoping beyond the read permission. The exclus
 | `WeeklyLoginAggregate` | Per-user weekly rollup — `LoginCount` is distinct active days, `SessionCount` is sessions. Read by `/weekly-trend`. |
 | `UserTradeUnitSnapshot` | Cached user → trade-unit mapping from the TradeUnitPreferences DB (`vw_UserTradeUnitPreferences`; was the Entitlements DB until 2026-08-18). Rebuilt every 6 hours inside one transaction. The dashboard only reads its user ids (as the fallback universe) and display names; the trade-unit codes serve the rest of the app. |
 | `UsageDashboardExcludedUsers` | Accounts hidden from every dashboard view. Managed from the UI (gear icon) or by SQL. |
+| `UserJobTitle` | One row per user: `UserId` (PK, short name), `JobTitle` (nullable — NULL means the token carried no claim), `RecordedAt` (when the current value was first seen). The LATEST title, not a history. Written only on first sighting since start-up or on change (`JobTitleChangeTracker`), so it costs one read per user per restart, not a write per request. No retention pruning — it is ~one row per app user. |
 | `QueryLibrary` | Library prompt names, for resolving `TargetId`s. |
 
 **Retention:** raw tables 90 days, rollups 400 days. Both are pruned with batched
@@ -247,12 +266,18 @@ caller — there is no per-caller scoping beyond the read permission. The exclus
 3. If a `managerId` was sent → intersected with that manager's org subtree (manager included). An
    unknown manager yields an **empty** universe, never the whole org; a TradeUnitPreferences outage
    while a manager is selected surfaces as a 503 rather than silently widening the view.
-4. Finally, `UsageDashboardExcludedUsers` is subtracted (case-insensitive).
+4. `UsageDashboardExcludedUsers` is subtracted (case-insensitive).
+5. If `jobTitles` were sent → narrowed to users whose latest `UserJobTitle` row (trimmed,
+   case-insensitive) is one of them. `__no_title__` keeps users with a NULL title **or no row at
+   all** — the two are the same thing to the dashboard. Blank or over-length (>256) entries are
+   dropped rather than rejected, and at most 50 titles are honoured, because the titles end up in
+   the cache key below.
 
-Resolving this costs an access-set read plus an exclusion read, and a page load hits ~a dozen
-endpoints — so it is cached for 60 seconds per normalized manager id. Adding or removing an
-exclusion bumps `UsageUniverseCacheState.Generation`, which makes every cached entry unreachable so
-the change lands on the next request.
+Resolving this costs an access-set read plus an exclusion read (plus a title read when the title
+filter is on), and a page load hits ~a dozen endpoints — so it is cached for 60 seconds per
+normalized manager id + sorted, upper-cased title set. Adding or removing an exclusion bumps
+`UsageUniverseCacheState.Generation`, which makes every cached entry unreachable so the change lands
+on the next request.
 
 ## How usage gets recorded
 
@@ -262,7 +287,11 @@ bounded channels that drop writes rather than block a request):
 1. **Middleware** logs every authenticated `/api/*` request. `FeatureNameMapper` turns the method +
    path into `(featureCode, subFeatureCode)`. **Anything the user does that hits an endpoint is
    captured here without client-side code** — including note create/edit/delete/pin, recap-group
-   CRUD, and trade-unit selection changes (a `PUT /api/userpreferences`).
+   CRUD, and trade-unit selection changes (a `PUT /api/userpreferences`). The same middleware reads
+   the token's `jobTitle` claim onto the in-memory record (trimmed, clamped to 256, null when
+   absent); the background writer's `JobTitleChangeTracker` turns that into one `UserJobTitle`
+   upsert per user per change, never per request. A failed title write is logged and retried on
+   the user's next request; it never costs the activity rows, which are saved first.
 2. **Explicit click events** from `UsageTrackingService`, for things that leave no request behind:
    route changes (`screen_enter`), producer/contract/ticket interactions, call/email clicks, and:
 

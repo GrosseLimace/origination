@@ -26,6 +26,9 @@ public record UsageDashboardUserDto
     public string Status { get; set; } = string.Empty;
     public int CustomersContacted { get; set; }
     public int NotesCreated { get; set; }
+    /// <summary>Latest job title seen on the user's token; null when none has been recorded (no
+    /// directory title, or no sign-in since titles were first captured).</summary>
+    public string? JobTitle { get; set; }
 }
 
 public record DailyActiveDto
@@ -125,6 +128,25 @@ public record UsageManagerDto
     public int TotalReports { get; set; }
 }
 
+/// <summary>One option in the dashboard's job-title filter. <see cref="Key"/> is what the client
+/// sends back in <c>jobTitles</c>; it is the title text itself except for the synthetic
+/// <see cref="NoTitleKey"/> entry, which selects people with no recorded title.</summary>
+public record UsageJobTitleDto
+{
+    /// <summary>Filter key for "no recorded title": the token carried no <c>jobTitle</c> claim, or the
+    /// person has not signed in since titles were first captured. Chosen so it cannot collide with a
+    /// real directory title.</summary>
+    public const string NoTitleKey = "__no_title__";
+    public const string NoTitleLabel = "No title";
+
+    public string Key { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+
+    /// <summary>People in the current universe (manager filter applied, exclusions removed) who
+    /// carry this title.</summary>
+    public int UserCount { get; set; }
+}
+
 /// <summary>Whether the caller is on the exclusion-manager allowlist — the client uses this to show
 /// or hide the exclusion gear. The endpoints enforce the same check server-side regardless.</summary>
 public record ExclusionPermissionsDto
@@ -152,6 +174,8 @@ public record UserUsageDetailDto
 {
     public string UserId { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
+    /// <summary>Latest job title seen on the user's token; null when none has been recorded.</summary>
+    public string? JobTitle { get; set; }
     public string Status { get; set; } = string.Empty;
     public DateTime? LastActive { get; set; }
     public int LoginCount { get; set; }

@@ -53,6 +53,17 @@ public class UsageRepository : IUsageRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<List<UserJobTitleRow>> GetUserJobTitlesAsync(IReadOnlyCollection<string> userIds, CancellationToken cancellationToken)
+    {
+        if (userIds.Count == 0) return [];
+        var rows = await _appDb.UserJobTitles
+            .AsNoTracking()
+            .Where(t => userIds.Contains(t.UserId))
+            .Select(t => new { t.UserId, t.JobTitle })
+            .ToListAsync(cancellationToken);
+        return rows.Select(r => new UserJobTitleRow(r.UserId, r.JobTitle)).ToList();
+    }
+
     // ── Excluded-users administration ──
 
     public async Task<List<ExcludedUserRow>> GetExcludedUsersAsync(CancellationToken cancellationToken)
