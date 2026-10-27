@@ -85,7 +85,7 @@ endpoint.
 
 **Today:** `InMemoryFieldPlanBackend` stands in for the server, so nothing survives a reload.
 
-The API side is built and waiting for approval:
+The API side is built and approved (2026-10-27), and held off `main` until the feature is ready for QA and PROD:
 - the four tables, migration `AddFieldPlanTables`;
 - `api/field-plan`;
 - the client's `HttpFieldPlanBackend`.

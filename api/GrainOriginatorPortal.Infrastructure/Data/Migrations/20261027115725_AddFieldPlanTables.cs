@@ -15,8 +15,8 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
        Rollback:    Down() drops the four tables (their data goes with them).
     */
     /// <summary>
-    /// See docs/application-context/Field Plan - Database Plan.md. APPROVAL GATE: every deploy runs
-    /// "dotnet ef database update", so this must not reach main or a release branch before that plan is approved.
+    /// See docs/application-context/Field Plan - Database Plan.md. Approved 2026-10-27. RELEASE HOLD: every deploy runs
+    /// "dotnet ef database update", so merging to main creates these tables in QA and PROD on their next deploys; hold it until the feature is ready there.
     /// </summary>
     public partial class AddFieldPlanTables : Migration
     {

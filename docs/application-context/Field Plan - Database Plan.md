@@ -1,12 +1,16 @@
 # Field Plan & Sustainability Programs — Database Plan
 
-**Status:** PROPOSED. Awaiting approval. The tables, API and migration are built on the branch, but nothing has been applied to any shared database.
+**Status:** APPROVED 2026-10-27 (H. Collins). The tables, API and migration are built on the branch, and nothing has been applied to any shared database yet.
 **Date:** 2026-10-27 · **Owner:** H. Collins · **Branch:** `feature_FieldSustainabilityPrograms`
 
-> **Approval gate.** The tables below ship as one EF Core migration. Every deploy workflow runs
-> `dotnet ef database update` before releasing new code, so the migration reaches DEV on the first DEV
-> deploy after the branch merges. The branch therefore stays off `main` and out of every `release_*`
-> branch until this plan is approved.
+> **Release hold.** The tables ship as one EF Core migration, and every deploy workflow runs
+> `dotnet ef database update` before releasing new code. Merging to `main` would therefore create the tables,
+> and expose `api/field-plan`, in QA and PROD on their next deploys, even though the screens stay hidden there.
+> So the branch stays off `main` until the feature is ready for QA and PROD.
+>
+> Two ways to get the tables onto DEV before then:
+> - a `release_DEV_<date>` branch (`main` plus this branch) deployed to DEV;
+> - a DBA running [scripts/field-plan-AddFieldPlanTables.sql](../../scripts/field-plan-AddFieldPlanTables.sql). It records the migration, so a later deploy skips it.
 
 ## What this is
 
@@ -194,5 +198,5 @@ Regenerate it if `main` gains another migration first.
 
 | Role | Name | Date |
 |---|---|---|
-| Product owner | | |
-| IT lead / DBA review | | |
+| Product owner | H. Collins | 2026-10-27 |
+| IT lead / DBA review | H. Collins | 2026-10-27 |
