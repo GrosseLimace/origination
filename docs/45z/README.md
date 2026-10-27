@@ -85,6 +85,13 @@ endpoint.
 
 **Today:** `InMemoryFieldPlanBackend` stands in for the server, so nothing survives a reload.
 
+The API side is built and waiting for approval:
+- the four tables, migration `AddFieldPlanTables`;
+- `api/field-plan`;
+- the client's `HttpFieldPlanBackend`.
+
+`environment.fieldPlanBackend` picks the backend, and it's `'memory'` everywhere until the tables are approved and applied and CTRM's splits query is live. Locally the API reaches the shared DEV database, so switch to `'api'` only against a database that has the tables.
+
 The proposed tables, rules and endpoints are written up for approval in
 [Field Plan — Database Plan](../application-context/Field%20Plan%20-%20Database%20Plan.md).
 

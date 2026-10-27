@@ -1,6 +1,8 @@
 import { InjectionToken, inject } from '@angular/core';
 import { EnrollableRecord, FieldProgramRecord, FieldSeason, ProducerField, ProgramEnrollment, ProgramRecordStatus } from '@models';
+import { environment } from '@env/environment';
 import { InMemoryFieldPlanBackend } from './in-memory-field-plan-backend';
+import { HttpFieldPlanBackend } from './http-field-plan-backend';
 
 /** Everything one producer has in the field plan, every year: what the store holds per producer. */
 export interface FieldPlanSnapshot {
@@ -18,9 +20,9 @@ export interface ReopenResult {
 
 /**
  * Where the field plan is kept: the shape of the field-plan API. Each method is one request, and the
- * comment names the endpoint it maps to. Today `InMemoryFieldPlanBackend` plays the server; once the
- * database is approved an API-backed implementation replaces it as the one provider of
- * FIELD_PLAN_BACKEND, and nothing else changes.
+ * comment names the endpoint it maps to. `HttpFieldPlanBackend` calls it; `InMemoryFieldPlanBackend` plays the
+ * server in the browser until the database is approved (`environment.fieldPlanBackend` picks one for
+ * FIELD_PLAN_BACKEND; nothing else changes).
  *
  * Rules that must hold across users belong to the backend, not the store: refusing duplicate claims at
  * attestation, refusing to reopen a field an attested
@@ -77,7 +79,8 @@ export interface FieldPlanBackend {
   withdraw(key: string, reason: string): Promise<ProgramEnrollment>;
 }
 
+/** In memory or the API, per environment (`fieldPlanBackend`); see the environment files for why. */
 export const FIELD_PLAN_BACKEND = new InjectionToken<FieldPlanBackend>('FIELD_PLAN_BACKEND', {
   providedIn: 'root',
-  factory: () => inject(InMemoryFieldPlanBackend),
+  factory: () => environment.fieldPlanBackend === 'api' ? inject(HttpFieldPlanBackend) : inject(InMemoryFieldPlanBackend),
 });

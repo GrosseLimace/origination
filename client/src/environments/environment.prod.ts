@@ -58,6 +58,10 @@ export const environment = {
   carbonIntensityEnabled: false,
   // Plan by field: prototype only, not released here.
   fieldPlanningEnabled: false,
+  // Where the field plan is kept: 'memory' (in the browser; a reload starts over) or 'api' (api/field-plan,
+  // the database). 'memory' until the field-plan tables are approved and applied, and CTRM's splits query is
+  // live, so no sample split IDs reach a shared database. See docs/application-context/Field Plan - Database Plan.md.
+  fieldPlanBackend: 'memory' as 'memory' | 'api',
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.
   tradeUnitPreferencesUrl: 'https://tradeunitprefs.scoular.com/my-preferences',
