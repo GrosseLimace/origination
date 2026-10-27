@@ -22,6 +22,9 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.HasSequence("CustomerIdSequence", "dbo")
+                .StartsAt(5000000000000000L);
+
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BarchartApiCallAudit", b =>
                 {
                     b.Property<long>("ApiCallId")
@@ -1000,6 +1003,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("NopIdNumber");
+
+                    b.Property<string>("PaymentMethod")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("PaymentMethod");
 
                     b.Property<string>("Phone")
                         .HasMaxLength(100)

@@ -31,6 +31,7 @@ This folder is the canonical reference for **what each screen of the Origination
 | [App Access Graph Check](./App%20Access%20Graph%20Check.md) | _(backend + diagnostic)_ | Entra access group read via managed identity; usage-dashboard/digest filtering; IT grants + outcome table |
 | [Producer Reminders](./Producer%20Reminders.md) | `/` _(env-gated)_ | Personal follow-up reminders on the producer pane and list badge, mirrored to the user's own Outlook calendar |
 | [What's New](./Whats%20New.md) | `/whats-new` | In-app release notes and the build stamp — how to write the entry before a PROD deploy |
+| [Self Help](./Self%20Help.md) | `/help` (+ the Help panel on every page) | In-app FAQ and troubleshooting — editing `help-faq.json`, the drift tests that keep it current, spotlight anchors, unanswered-question review |
 | [Teams Channel Mentions](./Teams%20Channel%20Mentions.md) | _(notes composer + `/daily-digest`)_ | @-mention a Teams channel to post a note there; delegated Graph channel lookup, the registry, and the consent still outstanding |
 
 ## Conventions used in these docs

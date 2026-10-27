@@ -19,8 +19,8 @@ public interface IEntitlementsRepository
     /// <summary>Distinct trade-unit codes a user is entitled to (the allowed set for access checks).</summary>
     Task<List<string>> GetTradeUnitCodesForUserAsync(string userId, CancellationToken cancellationToken);
 
-    /// <summary>Distinct trade-unit codes a customer belongs to, from the ODS vw_CustomerTradeUnits
-    /// view — used to validate per-customer access against a user's entitlements.</summary>
+    /// <summary>Distinct trade-unit codes a customer belongs to, from dbo.CustomerTradeUnit
+    /// (active rows, manual included) — no longer the live ODS view. Used to validate per-customer access against a user's entitlements.</summary>
     Task<List<string>> GetCustomerTradeUnitCodesAsync(long customerId, CancellationToken cancellationToken);
 
     /// <summary>Which of the given short names are ACTIVE users in dbo.Users. Used to prove a note's

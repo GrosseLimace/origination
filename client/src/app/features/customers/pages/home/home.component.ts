@@ -3,6 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { forkJoin, of, timer } from 'rxjs';
 import { mergeProducerRows } from './merge-producer-rows';
+import { applyAdoptedCustomerId } from './adopt-assigned-customer';
 import { applyProducerDetails } from '@shared/utils/apply-producer-details';
 import { catchError, takeUntil } from 'rxjs/operators';
 import { ApiService } from '@core/services/api.service';
@@ -1280,22 +1281,34 @@ export class HomeComponent {
    *  onboarding candidate that PUT inserts them into dbo.Customer, which the ProducerDetails
    *  save then depends on (FK). Existing customers with no TU change skip straight to the
    *  details save, unchanged. */
-  handleSaveCustomer(data: { customerId: number; acres: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { siteKey: string; name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { binSiteKey?: string; commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[]; intentionMoves?: { from: string; to: string }[] }): void {
+  handleSaveCustomer(data: { customerId: number; scoularId?: string; acres: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { siteKey: string; name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { binSiteKey?: string; commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[]; intentionMoves?: { from: string; to: string }[] }): void {
     // Only call the trade-unit reconcile when the dialog flagged it safe + meaningful
     // (onboarding a candidate, or the manual TU set actually changed). A pure details edit
     // skips it entirely, and a failed TU-load never reconciles (so manual TUs can't be wiped).
     if (data.reconcileTradeUnits) {
-      this.apiService.assignTradeUnits(data.customerId, data.tradeUnitCodes ?? []).subscribe({
-        next: () => {
-          // A brand-new onboarding: they're now in dbo.Customer — clear the candidate flag on
-          // the selected record so we stay on this producer and notes / details unlock.
+      this.apiService.assignTradeUnits(data.customerId, data.tradeUnitCodes ?? [], data.scoularId).subscribe({
+        next: (customer) => {
+          // The server may have adopted an existing row for the same producer (matched by ScoularId);
+          // everything below must use the id it actually wrote the trade units to.
+          const effective = applyAdoptedCustomerId(data, customer);
+          // A candidate from the CTRM search carries a negative placeholder id; the server mints the
+          // real one, so a changed id there is a brand-new row, not an adoption.
+          const minted = data.customerId < 0;
+          const adopted = !minted && effective.customerId !== data.customerId;
           const sel = this.selectedCustomer();
-          if (sel?.id === data.customerId && sel.isOnboardCandidate) {
+          if (adopted) {
+            // Select the returned record first so _saveProducerDetailsAndLinks can find it (the list may not hold it).
+            this.toastService.success('That producer was already in the Workbench — trade units were added to the existing record.');
+            this.selectedCustomer.set({ ...customer, isManual: true, isOnboardCandidate: false });
+          } else if (sel?.id === data.customerId && sel.isOnboardCandidate) {
+            // A brand-new onboarding: they're now in dbo.Customer — clear the candidate flag on
+            // the selected record so we stay on this producer and notes / details unlock. The
+            // returned record carries the real id (minted for a CTRM candidate).
             this.toastService.success('Producer added and trade units assigned. Select that trade unit or group to see them.');
-            this.selectedCustomer.set({ ...sel, isManual: true, isOnboardCandidate: false });
+            this.selectedCustomer.set({ ...sel, ...customer, isManual: true, isOnboardCandidate: false });
           }
-          this._saveProducerDetailsAndLinks(data);
-          this.planting.movePlantingIntentions(data.customerId, data.intentionMoves ?? []);
+          this._saveProducerDetailsAndLinks(effective);
+          this.planting.movePlantingIntentions(effective.customerId, effective.intentionMoves ?? []);
         },
         error: () => this.toastService.error('Failed to update trade units')
       });

@@ -1,5 +1,6 @@
 // Microsoft namespaces
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 // Third-party namespaces
@@ -38,7 +39,7 @@ public class CustomerRepositoryOpenActivityTests
         var tickets = new Mock<ITicketRepository>(MockBehavior.Strict);
 
         var sut = new CustomerRepository(ods, app, tickets.Object, contracts.Object,
-            new Mock<ILogger<CustomerRepository>>().Object);
+            new Mock<ILogger<CustomerRepository>>().Object, new ConfigurationBuilder().Build());
 
         return (sut, contracts, tickets);
     }
@@ -140,7 +141,7 @@ public class CustomerRepositoryOpenActivityTests
         var contracts = new Mock<IContractRepository>(MockBehavior.Strict);
         var tickets = new Mock<ITicketRepository>(MockBehavior.Strict);
         var sut = new CustomerRepository(ods, app, tickets.Object, contracts.Object,
-            new Mock<ILogger<CustomerRepository>>().Object);
+            new Mock<ILogger<CustomerRepository>>().Object, new ConfigurationBuilder().Build());
         return (sut, contracts, tickets);
     }
 

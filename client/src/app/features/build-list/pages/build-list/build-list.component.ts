@@ -2,7 +2,7 @@ import { Component, ChangeDetectionStrategy, DestroyRef, inject, effect, untrack
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin, from, of, catchError, mergeMap, toArray, timeout, tap, Subject, takeUntil } from 'rxjs';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
@@ -95,6 +95,7 @@ export class BuildListComponent {
   private readonly nlqFilterService = inject(NlqFilterService);
   private readonly msalService = inject(MsalService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
   private readonly usageTracking = inject(UsageTrackingService);
   private readonly userRoles = inject(UserRolesService);
@@ -911,6 +912,8 @@ export class BuildListComponent {
   queryLibrary = signal<QueryLibraryItem[]>([]);
   queryLibraryLoaded = signal(false);
   librarySearchText = signal('');
+  /** A Help panel example query waiting for the library to load. See the constructor. */
+  private readonly _pendingExample = signal<string | null>(null);
   selectedCategory = signal<string | null>(null);
   selectedLibraryQuery = signal<QueryLibraryItem | null>(null);
   private _searchLogTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -1130,6 +1133,27 @@ export class BuildListComponent {
         error: () => { this.queryLibraryLoaded.set(true); this.toastService.error('Failed to load query library'); }
       });
     }
+
+    // The Help panel's "Try an example" opens this page as /build-list?query=<Query Library name> —
+    // including when the user is already on it, where the router reuses this component, so the param
+    // is watched rather than read once. Once the library has loaded, run that query exactly as if its
+    // card had been clicked; if no entry has that name (it was renamed), pre-fill the library search
+    // with it instead. The param is then dropped so a reload or Back doesn't re-run it.
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
+      const name = params.get('query');
+      if (name) this._pendingExample.set(name);
+    });
+    effect(() => {
+      const name = this._pendingExample();
+      if (!name || !this.queryLibraryLoaded()) return;
+      untracked(() => {
+        this._pendingExample.set(null);
+        const item = this.queryLibrary().find(q => q.name.trim().toLowerCase() === name.trim().toLowerCase());
+        if (item && !this.appState.allProducersMode()) this.selectLibraryQuery(item);
+        else this.librarySearchText.set(name);
+        void this.router.navigate([], { relativeTo: this.route, queryParams: { query: null }, queryParamsHandling: 'merge', replaceUrl: true });
+      });
+    });
 
     // Curated crop list — the source for the Crops refine chips. Scoped to the selected trade
     // units in availableCrops(); failure just leaves the chips falling back to the codes present
