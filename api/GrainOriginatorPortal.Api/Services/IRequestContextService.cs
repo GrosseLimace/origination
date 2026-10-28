@@ -30,6 +30,14 @@ public interface IRequestContextService
     /// </summary>
     bool IsAdmin();
 
+    /// <summary>
+    /// The current user's Entra object id (the <c>oid</c> claim), or null when the token carries
+    /// none. This is the identity Azure Communication Services binds a calling token to; it is
+    /// deliberately separate from <see cref="GetCurrentUser"/>, which prefers the UPN and must stay
+    /// stable for ownership columns.
+    /// </summary>
+    string? GetCurrentUserObjectId();
+
     /// <summary>The correlation id for the current request, falling back to the trace identifier.</summary>
     string GetTraceId();
 }

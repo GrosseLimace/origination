@@ -2,6 +2,16 @@
   "version": 1,
   "dependencies": {
     "net10.0": {
+      "Azure.Communication.Identity": {
+        "type": "Direct",
+        "requested": "[1.3.1, )",
+        "resolved": "1.3.1",
+        "contentHash": "FuNfpuHD3y+vPBhv84ceJufnMlnU+PlIETtXmo7DIIY1UioSRdWJRU8VSskgffdhFJgfJCN1TocjS5v9iP362g==",
+        "dependencies": {
+          "Azure.Communication.Common": "1.3.0",
+          "Azure.Core": "1.38.0"
+        }
+      },
       "Azure.Extensions.AspNetCore.Configuration.Secrets": {
         "type": "Direct",
         "requested": "[1.5.0, )",
@@ -119,6 +129,14 @@
         "requested": "[2.7.5, )",
         "resolved": "2.7.5",
         "contentHash": "0FA67RSnRM4tcBKqiqVu/HPdZ9+QOKbmeRjxRUGTCjPU4C0bmUhd97Dso7Yild5P7nOV6GxJ2xrK0Kv/O9xp0w=="
+      },
+      "Azure.Communication.Common": {
+        "type": "Transitive",
+        "resolved": "1.3.0",
+        "contentHash": "HM0TkQ9stgD/Nm4op37K8qWy9A4Lpk1cXWllkyH66p16FlHrVEPqS4y2YRaa7ElcKmh2SpL1rUblnD/UbKmx0g==",
+        "dependencies": {
+          "Azure.Core": "1.37.0"
+        }
       },
       "Azure.Core": {
         "type": "Transitive",

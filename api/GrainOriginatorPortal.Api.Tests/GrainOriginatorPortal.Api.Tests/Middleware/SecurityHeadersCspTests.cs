@@ -103,4 +103,53 @@ public class SecurityHeadersCspTests
         Assert.Contains("'unsafe-inline'", styleSrc);
         Assert.DoesNotContain("'unsafe-inline'", scriptSrc);
     }
+
+    // ── Incoming-call popup (ACS Calling SDK) ─────────────────────────────────
+
+    private static readonly string[] CallingHosts =
+        ["https://*.communication.azure.com", "wss://*.skype.com", "wss://*.skype.com:3443"];
+
+    [Fact]
+    public void Csp_CallingHosts_LandInConnectSrc_WhenSupplied()
+    {
+        var csp = SecurityHeadersMiddleware.BuildSpaContentSecurityPolicy(
+            isDevelopment: false, ["https://app-origination-dev-eus.azurewebsites.net"], CallingHosts);
+
+        var connectSrc = csp.Split(';').Single(d => d.TrimStart().StartsWith("connect-src"));
+        foreach (var host in CallingHosts)
+            Assert.Contains(host, connectSrc);
+        Assert.Contains("https://app-origination-dev-eus.azurewebsites.net", connectSrc);
+    }
+
+    [Fact]
+    public void Csp_WithoutCallingConfig_IsUnchanged()
+    {
+        // An environment without the feature must get exactly the policy it had before it existed.
+        var before = SecurityHeadersMiddleware.BuildSpaContentSecurityPolicy(isDevelopment: false, ["https://h"]);
+        var after = SecurityHeadersMiddleware.BuildSpaContentSecurityPolicy(isDevelopment: false, ["https://h"], null, null, null);
+
+        Assert.Equal(before, after);
+        Assert.DoesNotContain("skype", after);
+        Assert.DoesNotContain("media-src", after);
+        Assert.DoesNotContain("worker-src", after);
+    }
+
+    [Fact]
+    public void Csp_MediaAndWorkerSrc_AppearOnlyWhenSupplied()
+    {
+        var csp = SecurityHeadersMiddleware.BuildSpaContentSecurityPolicy(
+            isDevelopment: false, null, CallingHosts, callingMediaSrc: "blob:", callingWorkerSrc: "blob:");
+
+        var directives = csp.Split(';').Select(d => d.Trim()).ToList();
+        Assert.Contains("media-src 'self' blob:", directives);
+        Assert.Contains("worker-src 'self' blob:", directives);
+    }
+
+    [Fact]
+    public void Csp_CallingHosts_NeverReintroduceTheAzureWebsitesWildcard()
+    {
+        var csp = SecurityHeadersMiddleware.BuildSpaContentSecurityPolicy(isDevelopment: false, null, CallingHosts);
+
+        Assert.DoesNotContain("*.azurewebsites.net", csp);
+    }
 }

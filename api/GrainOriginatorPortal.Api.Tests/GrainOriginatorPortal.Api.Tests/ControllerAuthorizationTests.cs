@@ -21,6 +21,7 @@ public class ControllerAuthorizationTests
     public static IEnumerable<object[]> AllControllerTypes()
     {
         yield return new object[] { typeof(BidSheetController) };
+        yield return new object[] { typeof(CallingController) };
         yield return new object[] { typeof(CommoditiesController) };
         yield return new object[] { typeof(ContractsController) };
         yield return new object[] { typeof(CustomersController) };

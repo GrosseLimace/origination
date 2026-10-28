@@ -26,6 +26,7 @@ import { UserRolesService } from '@core/services/user-roles.service';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
+import { IncomingCallService } from '@core/services/incoming-call.service';
 
 // Shared components
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -54,6 +55,10 @@ export class HeaderComponent {
   /** Public: the template reads hasUnseen() and version() straight off it. */
   readonly whatsNew = inject(WhatsNewService);
   private readonly usageTracking = inject(UsageTrackingService);
+  private readonly incomingCall = inject(IncomingCallService);
+
+  /** "Simulate incoming call" in the profile menu: outside production, with the popup enabled. */
+  readonly canSimulateCall = this.incomingCall.canSimulate;
 
   readonly envName = environment.envName;
   readonly bidSheetEnabled = environment.bidSheetEnabled;
@@ -178,6 +183,13 @@ export class HeaderComponent {
    *  the user's groups when that window closes. */
   openTradeUnitPreferences(): void {
     this.userTradeUnits.openPreferences();
+  }
+
+  /** Runs the incoming-call popup for a typed-in number, without a real call. Use a number that is
+   *  on file for a producer to see the match card, a made-up one for "unknown caller". */
+  simulateIncomingCall(): void {
+    const number = window.prompt('Simulate an incoming call from which phone number?', '');
+    if (number) this.incomingCall.simulate(number);
   }
 
   signOut(): void {

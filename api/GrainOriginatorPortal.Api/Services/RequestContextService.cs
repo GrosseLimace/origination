@@ -40,6 +40,17 @@ public class RequestContextService : IRequestContextService
         _httpContextAccessor.HttpContext?.User?.IsInRole("Admin") ?? false;
 
     /// <inheritdoc />
+    public string? GetCurrentUserObjectId()
+    {
+        var user = _httpContextAccessor.HttpContext?.User;
+        // Microsoft.Identity.Web surfaces the short name; with inbound claim mapping on it arrives
+        // under the long schema URI instead. Accept both so the answer does not depend on config.
+        var oid = user?.FindFirst("oid")?.Value
+            ?? user?.FindFirst("http://schemas.microsoft.com/identity/claims/objectidentifier")?.Value;
+        return string.IsNullOrWhiteSpace(oid) ? null : oid;
+    }
+
+    /// <inheritdoc />
     public string GetTraceId() =>
         _httpContextAccessor.HttpContext?.Items[CorrelationIdMiddleware.ItemsKey]?.ToString()
         ?? _httpContextAccessor.HttpContext?.TraceIdentifier

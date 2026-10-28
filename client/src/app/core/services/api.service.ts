@@ -4,6 +4,8 @@ import { Observable, of, throwError, shareReplay } from 'rxjs';
 import { catchError, finalize, map } from 'rxjs/operators';
 import {
   Customer,
+  CallingToken,
+  IncomingCallMatch,
   Contract,
   Ticket,
   PlantingIntention,
@@ -1168,5 +1170,26 @@ export class ApiService {
   removeUsageExcludedUser(id: number): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/usage-dashboard/excluded-users/${id}`)
       .pipe(catchError(e => this.handleError(e)));
+  }
+
+  // --- Incoming-call popup ------------------------------------------------------------------
+
+  /** ACS calling token for the signed-in user's own Teams identity, or null when calling is off
+   *  in this environment (the API answers 204: no ACS resource, no consent, or the exchange
+   *  failed). Errors also become null: a dormant popup must never surface as an error toast. */
+  getCallingToken(): Observable<CallingToken | null> {
+    return this.http.get<CallingToken>(`${this.baseUrl}/calling/token`, { observe: 'response' })
+      .pipe(
+        map(r => (r.status === 204 ? null : r.body)),
+        catchError(() => of(null))
+      );
+  }
+
+  /** Producers whose phone on file matches a caller id. The number travels as a query
+   *  parameter, never in the path. Errors become an empty list ("unknown caller"). */
+  getIncomingCallMatches(number: string): Observable<IncomingCallMatch[]> {
+    const params = new HttpParams().set('number', number);
+    return this.http.get<IncomingCallMatch[]>(`${this.baseUrl}/calling/match`, { params })
+      .pipe(catchError(() => of<IncomingCallMatch[]>([])));
   }
 }

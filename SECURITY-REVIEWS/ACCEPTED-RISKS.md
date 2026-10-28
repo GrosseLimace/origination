@@ -16,6 +16,7 @@ these patterns; triage against the AR-IDs below before re-opening.
 | AR-07 | Mentioning a group addresses that group's members, not the mentioner's entitlements — and, since 2026-09-14, may post the note to its Teams channel instead | Medium | CWE-284 | Accepted — engineering only (see *Countersignature* below) | 2026-08-11 (amended 2026-09-14) | 2027-08-11 |
 | AR-08 | Person mentions require a real active user, but are not scoped to the mentioner's colleagues | High | CWE-284 | Accepted — engineering only (see *Countersignature* below) | 2026-09-01 | 2027-09-01 |
 | AR-09 | The caller's UPN (an email-shaped identifier) is written into the structured log scope of every request | Low | CWE-532 | Accepted | 2026-09-21 | 2027-09-21 |
+| AR-10 | The incoming-call popup widens the SPA `connect-src` to Microsoft's ACS / Teams / Skype wildcard hosts (Dev only, config-gated) | Low | CWE-942 | Accepted — Dev spike | 2026-10-07 | Before any QA/PROD enablement |
 
 ---
 
@@ -1410,6 +1411,44 @@ email-shaped value can be suppressed independently.
 Dashboard pilot audit (PR #613). Not routed for IT Security countersignature: unlike AR-01/02/08
 this is a data-classification choice about our own employees' identifiers rather than an
 object-level authorization gap — raise it with AR-01/02/08 if Security would rather rule on it.
+
+---
+
+## AR-10 — The incoming-call popup widens the SPA connect-src (Dev only)
+
+**What changed:** the incoming-call popup runs the Azure Communication Services Calling SDK in the
+browser ("Communication as a Microsoft 365 user"), which talks straight to Microsoft's signalling and
+media services. Its origins come from Microsoft's ACS network-requirements page and are wildcards:
+`*.communication.azure.com`, `*.skype.com` (incl. `wss:` and port 3443), `*.teams.microsoft.com`,
+`*.microsoft.com`, `*.azure.net`, `*.azure.com`, `*.office.com`. They are listed in
+`SecurityHeaders:SpaCallingConnectSrcHosts` and added to `connect-src` by `SecurityHeadersMiddleware`.
+
+**Why it is a finding:** `connect-src` is the CSP control that limits where injected script could
+send data. `*.azure.com` in particular is broad — it is the same class of problem M-025 removed when
+it dropped `*.azurewebsites.net` (that wildcard stays banned; a test pins it).
+
+**Accepted for the Dev spike, because:**
+
+- **It is gated twice.** The hosts are only added when `Acs:Endpoint` is configured, and only
+  `appsettings.Dev.json` lists them. QA and Production policies are byte-for-byte unchanged (pinned by
+  `Csp_WithoutCallingConfig_IsUnchanged`).
+- `script-src` stays `'self'`, so the widening does not make script injection easier — it only
+  widens where already-injected script could reach, and every listed host is Microsoft-operated.
+- The Calling SDK cannot work without these origins; there is no narrower published list.
+
+**Token boundary (not a risk, recorded so it is not re-raised):** `GET /api/calling/token` mints an
+ACS token for the CALLER'S OWN Entra object id via on-behalf-of. There is no parameter that selects
+another user, the token is cached per object id, and it is never logged. The boundary is the same as
+the Graph OBO features (Teams channel lookup, Outlook reminders). `GET /api/calling/match` reads the
+same producer rows the caller can already search; cross-trade-unit producer reads are covered by
+AR-02, which already names the incoming-call popup.
+
+**Must be re-reviewed before the feature is enabled in QA or Production:** narrow the list to what
+the Dev console actually needed (drop any host that never appeared), and route the result to IT
+Security with the ACS consent request.
+
+**Accepted by:** Origination engineering — recorded 2026-10-07 with the Dev spike
+(`spike_IncomingCallAcs`).
 
 ---
 

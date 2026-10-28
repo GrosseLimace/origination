@@ -19,6 +19,12 @@ export const environment = {
   // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite
   // admin consent on this env SPA app registration; keep false until that consent is granted.
   remindersEnabled: true,
+  // Incoming-call popup: a producer calling your Teams number pops their name + code here, with
+  // Answer / Decline / Hold. Also needs Acs:Endpoint on the API (token endpoint answers 204 until
+  // IT provisions the ACS resource + Teams.ManageCalls consent), so ON here is harmless: with no
+  // token the calling SDK is never even downloaded. Outside production the profile menu offers
+  // "Simulate incoming call" to exercise the popup without a real call.
+  incomingCallEnabled: true,
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.
   tradeUnitPreferencesUrl: 'https://tradeunitprefs-dev.scoular.com/my-preferences',

@@ -16,6 +16,11 @@
         (close)="onWhatsNewClose()"
       />
     }
+    <!-- Incoming Teams call popup. Deferred like the dialog above: it is only downloaded the first
+         time a call (or a simulated one) appears, and then stays mounted for later calls. -->
+    @defer (when incomingCall.isVisible()) {
+      <app-incoming-call-popup />
+    }
   </div>
 } @else {
   <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">

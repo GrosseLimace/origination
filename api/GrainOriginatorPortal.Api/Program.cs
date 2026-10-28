@@ -334,6 +334,15 @@ builder.Services.AddScoped<IDailyRecapGroupService, DailyRecapGroupService>();
 builder.Services.AddScoped<ITeamsChannelService, TeamsChannelService>();
 builder.Services.AddScoped<ITeamsDirectoryService, TeamsDirectoryService>();
 
+// Incoming-call popup (ACS "Communication as a Microsoft 365 user"). The identity client is built
+// with the same credential split as the Graph directory client below: the App Service managed
+// identity (Contributor on the ACS resource) when deployed, the developer's credential locally.
+// Nothing here connects until Acs:Endpoint is configured — locally it never is, so the token
+// endpoint answers 204 and the client leaves the calling SDK unloaded.
+builder.Services.AddSingleton<ICommunicationIdentityClientFactory, CommunicationIdentityClientFactory>();
+builder.Services.AddScoped<ICallingTokenService, CallingTokenService>();
+builder.Services.AddScoped<ICallingMatchService, CallingMatchService>();
+
 // Graph directory client (app-access spike) — singleton so the cached Graph token is shared.
 // Credential split mirrors the Key Vault bootstrap at the top of this file: managed identity
 // on App Service, the developer's own credential locally (skip the IMDS probe).

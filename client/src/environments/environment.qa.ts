@@ -21,6 +21,9 @@ export const environment = {
   // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite
   // admin consent on this env SPA app registration. Granted 2026-09-21 — enabled.
   remindersEnabled: true,
+  // Incoming-call popup (ACS Teams-user calling). OFF: Dev-only spike until Microsoft confirms
+  // the scenario stays supported past the 2028 ACS retirement and a pilot originator signs off.
+  incomingCallEnabled: false,
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.
   tradeUnitPreferencesUrl: 'https://tradeunitprefs-qa.scoular.com/my-preferences',

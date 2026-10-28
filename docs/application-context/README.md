@@ -30,6 +30,7 @@ This folder is the canonical reference for **what each screen of the Origination
 | [Producer Reminders](./Producer%20Reminders.md) | `/` _(env-gated)_ | Personal follow-up reminders on the producer pane and list badge, mirrored to the user's own Outlook calendar |
 | [What's New](./Whats%20New.md) | `/whats-new` | In-app release notes and the build stamp — how to write the entry before a PROD deploy |
 | [Teams Channel Mentions](./Teams%20Channel%20Mentions.md) | _(notes composer + `/daily-digest`)_ | @-mention a Teams channel to post a note there; delegated Graph channel lookup, the registry, and the consent still outstanding |
+| [Incoming Calls](./Incoming%20Calls.md) | _(global popup, env-gated, Dev spike)_ | A producer calling your Teams number pops their name + code with Answer / Decline / Hold; ACS Teams-user calling, the IT ask, and the 2028 ACS retirement caveat |
 
 ## Conventions used in these docs
 

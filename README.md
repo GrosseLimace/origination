@@ -171,6 +171,12 @@ All routes require Azure AD bearer token authentication. Base path: `/api/v1`
 | GET | `/whats-new` | Curated release notes, newest first — see [What's New](docs/application-context/Whats%20New.md) |
 | GET | `/version` | Running release number plus the CI-stamped commit and workflow run |
 
+### Incoming calls (Dev spike — see [Incoming Calls](docs/application-context/Incoming%20Calls.md))
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/calling/token` | ACS calling token for the caller's own Teams identity; **204** when calling is off in the environment |
+| GET | `/calling/match?number={callerId}` | Producers whose phone on file matches a caller id (empty list = unknown caller) |
+
 ## Data Sources
 
 | DbContext | Database | Access |
@@ -212,12 +218,13 @@ Azure AD bearer tokens via `Microsoft.Identity.Web`. All API endpoints require a
 
 ## Software Bill of Materials (SBOM)
 
-Last Updated: 2026-10-06
+Last Updated: 2026-10-07
 
 ### Backend Dependencies (C# / .NET 10)
 
 | Package | Version | License | Purpose |
 |---------|---------|---------|---------|
+| Azure.Communication.Identity | 1.3.1 | MIT | Mints ACS calling tokens for the incoming-call popup (Teams-user token exchange). Pinned to 1.3.x: 2.0.0 pulls Azure.Core 1.63, which collides with Azure.Identity 1.18 on `DefaultAzureCredential`. Verified 2026-10-07 |
 | Azure.Extensions.AspNetCore.Configuration.Secrets | 1.5.0 | MIT | Azure Key Vault config provider |
 | Azure.Identity | 1.18.0 | MIT | Managed Identity / Key Vault authentication |
 | Microsoft.AspNetCore.OpenApi | 10.0.1 | MIT | Swagger / OpenAPI support |
@@ -240,6 +247,8 @@ Last Updated: 2026-10-06
 | @angular/animations | 21.2.25 | MIT | Animation support |
 | @azure/msal-angular | 5.1.1 | MIT | Azure AD authentication (Angular) |
 | @azure/msal-browser | 5.4.0 | MIT | MSAL browser runtime |
+| @azure/communication-calling | 2.0.0 | Microsoft Software License Terms for the ACS SDK (proprietary, not MIT) | Incoming-call popup: registers the tab as the user's Teams Phone endpoint. Lazy-loaded only when a calling token exists. ⚠ ACS standalone retires 2028-09-30; the Calling SDK continues only with Teams-aligned scenarios — support for this one is being confirmed. Verified 2026-10-07 |
+| @azure/communication-common | 2.5.0 | MIT | ACS token credential used by the calling SDK. Verified 2026-10-07 |
 | @it/design-system | 0.1.1 | Internal | Scoular IT design system components |
 | leaflet | 1.9.4 | BSD-2-Clause | Interactive map rendering |
 | leaflet.markercluster | ~1.5.3 | MIT | Leaflet marker clustering |

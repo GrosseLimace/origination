@@ -25,3 +25,15 @@ export function formatPhoneDisplay(value: string | null | undefined): string {
   if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
   return value;
 }
+
+/**
+ * Display formatting for a caller id. Same as {@link formatPhoneDisplay}, plus the E.164 form the
+ * Teams calling SDK delivers ("+14025551234" → "(402) 555-1234"). Kept separate so stored numbers
+ * on the producer profile render exactly as before.
+ */
+export function formatCallerId(value: string | null | undefined): string {
+  if (!value) return '';
+  const d = value.replace(/\D/g, '');
+  if (d.length === 11 && d.startsWith('1')) return formatPhoneDisplay(d.slice(1));
+  return formatPhoneDisplay(value);
+}

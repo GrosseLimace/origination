@@ -15,6 +15,13 @@ public interface ICustomerRepository
     Task<List<Customer>> GetAsync(List<string>? tradeUnits, CancellationToken cancellationToken);
     Task<List<Customer>> SearchAsync(string searchTerm, List<string>? tradeUnits, CancellationToken cancellationToken);
     Task<List<Customer>> SearchOdsAsync(string searchTerm, CancellationToken cancellationToken);
+
+    /// <summary>Active producers whose phone on file (ODS merchandising phone, ODS extended phone,
+    /// user-entered primary phone, or any added producer contact) contains <paramref name="digits"/>,
+    /// a digits-only caller id. Used by the incoming-call popup. Each match carries the names of the
+    /// added contacts that own the number (so the popup can say WHO is calling, not just which
+    /// producer) and is enriched with ActiveTradeUnits.</summary>
+    Task<List<CustomerPhoneMatch>> FindByPhoneAsync(string digits, CancellationToken cancellationToken);
     Task<Customer?> GetByIdAsync(long id, CancellationToken cancellationToken);
     Task<Customer?> GetByScoularIdAsync(string scoularId, CancellationToken cancellationToken);
     Task<List<Customer>> GetLinkedToAsync(string scoularId, CancellationToken cancellationToken);
