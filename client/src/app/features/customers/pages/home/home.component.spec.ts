@@ -1491,3 +1491,73 @@ describe('HomeComponent', () => {
     });
   });
 });
+
+// A slow trade-unit save used to look like a dead one: the dialog closes at once and nothing on screen
+// changed, so the rep saved again - four saves of one onboarding in PROD on 2026-10-28.
+describe('HomeComponent — a trade-unit save still in flight', () => {
+  afterEach(() => vi.useRealTimers());
+
+  const save = (customerId: number) => ({
+    customerId, acres: 0, commodities: [], primaryContact: '', primaryPhone: '', contacts: [], binSites: [],
+    linkedProducerIds: [], removedIncomingIds: [], eSignEnabled: false, tradeUnitCodes: ['1340'],
+    reconcileTradeUnits: true, grainOnFarm: [],
+  });
+
+  it('marks the producer as saving until the save ends, and says it is still working when it runs long', () => {
+    vi.useFakeTimers();
+    const h = setup();
+    const pending = new Subject<Customer>();
+    Object.assign(h.api, { assignTradeUnits: vi.fn((_id: number, _codes: string[], _code?: string): Observable<Customer> => pending) });
+    h.c.handleSelectCustomer(A);
+    expect(h.c.isSavingTradeUnits()).toBe(false);
+
+    h.c.handleSaveCustomer(save(1));
+    expect(h.c.isSavingTradeUnits()).toBe(true);
+    vi.advanceTimersByTime(HomeComponent.SLOW_TRADE_UNIT_SAVE_MS - 1);
+    expect(h.toast.info).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(h.toast.info).toHaveBeenCalledWith(expect.stringContaining('Still saving trade units'), 8000);
+
+    pending.next(customer(1));
+    pending.complete();
+    expect(h.c.isSavingTradeUnits()).toBe(false);
+  });
+
+  it('clears the flag on failure, and a quick answer never shows the slow notice', () => {
+    vi.useFakeTimers();
+    const h = setup();
+    Object.assign(h.api, { assignTradeUnits: vi.fn((): Observable<Customer> => throwError(() => new Error('500'))) });
+    h.c.handleSelectCustomer(A);
+
+    h.c.handleSaveCustomer(save(1));
+
+    expect(h.c.isSavingTradeUnits()).toBe(false);
+    expect(h.toast.error).toHaveBeenCalledWith('Failed to update trade units');
+    vi.advanceTimersByTime(HomeComponent.SLOW_TRADE_UNIT_SAVE_MS * 2);
+    expect(h.toast.info).not.toHaveBeenCalled();
+  });
+
+  it('only the producer being saved shows as saving', () => {
+    const h = setup();
+    Object.assign(h.api, { assignTradeUnits: vi.fn((): Observable<Customer> => NEVER) });
+    h.c.handleSelectCustomer(A);
+    h.c.handleSaveCustomer(save(1));
+
+    h.c.handleSelectCustomer(B);
+    expect(h.c.isSavingTradeUnits()).toBe(false);
+    h.c.handleSelectCustomer(A);
+    expect(h.c.isSavingTradeUnits()).toBe(true);
+  });
+
+  it('a details-only save is not a trade-unit save', () => {
+    const h = setup();
+    const assign = vi.fn((): Observable<Customer> => NEVER);
+    Object.assign(h.api, { assignTradeUnits: assign });
+    h.c.handleSelectCustomer(A);
+
+    h.c.handleSaveCustomer({ ...save(1), reconcileTradeUnits: false });
+
+    expect(assign).not.toHaveBeenCalled();
+    expect(h.c.isSavingTradeUnits()).toBe(false);
+  });
+});
