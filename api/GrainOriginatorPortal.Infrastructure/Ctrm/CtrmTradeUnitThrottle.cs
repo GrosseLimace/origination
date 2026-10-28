@@ -54,12 +54,17 @@ public static class CtrmTradeUnitThrottle
     /// <summary>
     /// Runs background trade-unit work: defers to interactive reads, then takes one of the bounded slots.
     /// </summary>
-    public static async Task<T> RunAsync<T>(IConfiguration configuration, Func<Task<T>> work)
+    /// <param name="cancellationToken">Stops the deferral and the wait for a slot. Default: wait it out, as
+    /// every shared read does (one caller leaving must not cancel a fetch others are waiting on). A caller
+    /// that owns its read passes its own token, so a request that has been abandoned leaves the queue
+    /// instead of holding its place in it. Cancelled before a slot is taken, nothing is held, so nothing
+    /// leaks.</param>
+    public static async Task<T> RunAsync<T>(IConfiguration configuration, Func<Task<T>> work, CancellationToken cancellationToken = default)
     {
-        await DeferToInteractiveAsync(configuration);
+        await DeferToInteractiveAsync(configuration, cancellationToken);
 
         var slots = Slots(configuration);
-        await slots.WaitAsync(CancellationToken.None);
+        await slots.WaitAsync(cancellationToken);
         try
         {
             return await work();
@@ -92,7 +97,7 @@ public static class CtrmTradeUnitThrottle
     /// </remarks>
     public static async Task<T> RunContractBatchAsync<T>(IConfiguration configuration, Func<Task<T>> work)
     {
-        await DeferToInteractiveAsync(configuration);
+        await DeferToInteractiveAsync(configuration, CancellationToken.None);
 
         var slots = BatchSlots(configuration);
         await slots.WaitAsync(CancellationToken.None);
@@ -117,7 +122,7 @@ public static class CtrmTradeUnitThrottle
         }
     }
 
-    private static async Task DeferToInteractiveAsync(IConfiguration configuration)
+    private static async Task DeferToInteractiveAsync(IConfiguration configuration, CancellationToken cancellationToken)
     {
         var maxDefer = TimeSpan.FromSeconds(Math.Clamp(CtrmConfig.ReadInt(configuration, "Ctrm:BackgroundMaxDeferSeconds", 20), 0, 300));
         if (maxDefer <= TimeSpan.Zero) return;
@@ -125,7 +130,7 @@ public static class CtrmTradeUnitThrottle
         var waited = TimeSpan.Zero;
         while (InteractiveInFlight && waited < maxDefer)
         {
-            await Task.Delay(PollInterval);
+            await Task.Delay(PollInterval, cancellationToken);
             waited += PollInterval;
         }
     }

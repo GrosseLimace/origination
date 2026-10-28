@@ -79,6 +79,10 @@ export class EditCustomerDialogComponent {
   public allCustomers = input<Customer[]>([]);
   public linkedCustomers = input<Customer[]>([]);
   public selectedTradeUnits = input<string[]>([]);
+  /** True while the page's trade-unit save for this producer is still running. Save stays off until it
+   *  ends, so a slow save can't be sent again on top of itself - in PROD on 2026-10-28 one onboarding was
+   *  saved four times that way, because the dialog closes at once and nothing on screen said it was busy. */
+  public saving = input(false);
 
   public close = output<void>();
   public save = output<{
@@ -1285,6 +1289,7 @@ export class EditCustomerDialogComponent {
   }
 
   onSave(): void {
+    if (this.saving()) return;
     const customer = this.customer();
     if (customer) {
       // Commit any staged dormant locked-TU removals (separate from the manual reconcile the
