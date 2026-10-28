@@ -19,7 +19,8 @@ namespace GrainOriginatorPortal.Api.Controllers;
 // needs to accept click events from every signed-in user for user-activity tracking.
 // Exclusion administration stays AdminOnly (+ the ExclusionManagers allowlist).
 // Everyone who passes the read policy sees the whole organisation and may narrow it to any
-// manager's team with `managerId` — there is no per-caller scoping beyond that policy.
+// manager's team with `managerId` and/or to job titles with `jobTitles` — there is no per-caller
+// scoping beyond that policy.
 [Authorize]
 [Produces("application/json")]
 public class UsageDashboardController : ControllerBase
@@ -49,84 +50,98 @@ public class UsageDashboardController : ControllerBase
     // DateTime keeps the boundary from shifting with the server's local timezone.
     //
     // `managerId` (a short name from /managers) narrows every panel to that manager's entire org
-    // subtree, manager included; omitted means the whole organisation. It is the dashboard's only
-    // filter — the app-wide trade-unit selection is deliberately not an input here. Unknown ids
-    // yield empty results rather than errors.
+    // subtree, manager included; omitted means the whole organisation. Unknown ids yield empty
+    // results rather than errors.
+    //
+    // `jobTitles` (repeated: ?jobTitles=A&jobTitles=B, keys from /job-titles) narrows every panel to
+    // people whose latest recorded job title is one of them; the key "__no_title__" selects people
+    // with no recorded title. Repeated rather than comma-joined because directory titles can
+    // contain commas. Omitted or empty means no job-title filter. The two filters intersect. The
+    // app-wide trade-unit selection is deliberately not an input here.
 
     [HttpGet("summary")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
     public async Task<ActionResult<UsageDashboardSummaryDto>> GetSummary(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
+        [FromQuery] string[]? jobTitles = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetSummaryAsync(from, to, managerId, cancellationToken));
+        => Ok(await _service.GetSummaryAsync(from, to, managerId, jobTitles, cancellationToken));
 
     [HttpGet("users")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
     public async Task<ActionResult<List<UsageDashboardUserDto>>> GetUsers(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
+        [FromQuery] string[]? jobTitles = null,
         [FromQuery] string? status = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetUsersAsync(from, to, managerId, status, cancellationToken));
+        => Ok(await _service.GetUsersAsync(from, to, managerId, jobTitles, status, cancellationToken));
 
     [HttpGet("daily-active")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
     public async Task<ActionResult<List<DailyActiveDto>>> GetDailyActive(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
+        [FromQuery] string[]? jobTitles = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetDailyActiveAsync(from, to, managerId, cancellationToken));
+        => Ok(await _service.GetDailyActiveAsync(from, to, managerId, jobTitles, cancellationToken));
 
     [HttpGet("feature-sessions")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
     public async Task<ActionResult<List<FeatureSessionsDto>>> GetFeatureSessions(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
+        [FromQuery] string[]? jobTitles = null,
         [FromQuery] string? screen = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetFeatureSessionsAsync(from, to, managerId, screen, cancellationToken));
+        => Ok(await _service.GetFeatureSessionsAsync(from, to, managerId, jobTitles, screen, cancellationToken));
 
     // Trend view over whole calendar weeks — deliberately not bound to the dashboard's date filter.
     [HttpGet("weekly-trend")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
     public async Task<ActionResult<List<WeeklyTrendDto>>> GetWeeklyTrend(
         [FromQuery] string? managerId = null,
+        [FromQuery] string[]? jobTitles = null,
         [FromQuery] int weeks = 8,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetWeeklyTrendAsync(managerId, weeks, cancellationToken));
+        => Ok(await _service.GetWeeklyTrendAsync(managerId, jobTitles, weeks, cancellationToken));
 
     [HttpGet("activity-breakdown")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
     public async Task<ActionResult<List<ActivityBreakdownDto>>> GetActivityBreakdown(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
+        [FromQuery] string[]? jobTitles = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetActivityBreakdownAsync(from, to, managerId, cancellationToken));
+        => Ok(await _service.GetActivityBreakdownAsync(from, to, managerId, jobTitles, cancellationToken));
 
     [HttpGet("underused-features")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
     public async Task<ActionResult<List<UnderusedFeatureDto>>> GetUnderusedFeatures(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
+        [FromQuery] string[]? jobTitles = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetUnderusedFeaturesAsync(from, to, managerId, cancellationToken));
+        => Ok(await _service.GetUnderusedFeaturesAsync(from, to, managerId, jobTitles, cancellationToken));
 
     [HttpGet("query-library-usage")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
     public async Task<ActionResult<List<QueryLibraryUsageDto>>> GetQueryLibraryUsage(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
+        [FromQuery] string[]? jobTitles = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetQueryLibraryUsageAsync(from, to, managerId, cancellationToken));
+        => Ok(await _service.GetQueryLibraryUsageAsync(from, to, managerId, jobTitles, cancellationToken));
 
     [HttpGet("query-search-gaps")]
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
     public async Task<ActionResult<List<QuerySearchGapDto>>> GetQuerySearchGaps(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
+        [FromQuery] string[]? jobTitles = null,
         CancellationToken cancellationToken = default)
-        => Ok(await _service.GetQuerySearchGapsAsync(from, to, managerId, cancellationToken));
+        => Ok(await _service.GetQuerySearchGapsAsync(from, to, managerId, jobTitles, cancellationToken));
 
     /// <summary>Active managers for the manager filter. 503 when the TradeUnitPreferences DB is
     /// unreachable — fail closed, so the client shows "unavailable" instead of a stale roster.</summary>
@@ -134,6 +149,16 @@ public class UsageDashboardController : ControllerBase
     [Authorize(Policy = UsageDashboardAccess.PolicyName)]
     public async Task<ActionResult<List<UsageManagerDto>>> GetManagers(CancellationToken cancellationToken = default)
         => Ok(await _service.GetManagersAsync(cancellationToken));
+
+    /// <summary>Options for the job-title filter, with user counts inside the selected manager's team
+    /// (or the whole organisation). Titles come from the token claim the usage middleware records,
+    /// so someone who has not signed in since that shipped appears under "No title".</summary>
+    [HttpGet("job-titles")]
+    [Authorize(Policy = UsageDashboardAccess.PolicyName)]
+    public async Task<ActionResult<List<UsageJobTitleDto>>> GetJobTitles(
+        [FromQuery] string? managerId = null,
+        CancellationToken cancellationToken = default)
+        => Ok(await _service.GetJobTitlesAsync(managerId, cancellationToken));
 
     // Per-user drill-down. Aggregates one originator's full activity profile in the window.
     [HttpGet("users/{userId}/detail")]

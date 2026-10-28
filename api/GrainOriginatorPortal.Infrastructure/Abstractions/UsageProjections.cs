@@ -46,6 +46,14 @@ public record FeatureUser(string FeatureCode, string UserId);
 /// <summary>A row of dbo.UsageDashboardExcludedUsers, for the admin management panel.</summary>
 public record ExcludedUserRow(int Id, string UserId, string? Reason, string CreatedBy, DateTime CreatedAt);
 
+/// <summary>A user's latest job title from dbo.UserJobTitle. <see cref="JobTitle"/> is null when the
+/// token carried no claim — "No title" to the dashboard.</summary>
+public record UserJobTitleRow(string UserId, string? JobTitle);
+
+/// <summary>One job-title sighting from an access token, as handed to the upsert. A null
+/// <see cref="JobTitle"/> is a real observation (the claim was absent), not a missing one.</summary>
+public record UserJobTitleObservation(string UserId, string? JobTitle, DateTime ObservedAt);
+
 /// <summary>A row of TradeUnitPreferences dbo.vw_UserManagerLookup. HierId is a materialized org
 /// path ("01.11.02"); a manager's subtree is every row whose HierId starts with theirs + ".".</summary>
 public record UserManagerRow(

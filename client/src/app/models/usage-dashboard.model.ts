@@ -22,6 +22,22 @@ export interface UsageDashboardUser {
   status: UsageStatus;
   customersContacted: number;
   notesCreated: number;
+  /** Latest job title seen on the user's sign-in token; null when none has been recorded (no
+   *  directory title, or no sign-in since titles were first captured). */
+  jobTitle: string | null;
+}
+
+/** The filter key the API uses for "no recorded title". A real option, not an error state: it covers
+ *  people with no directory title and people who have not signed in since titles were captured. */
+export const NO_JOB_TITLE_KEY = '__no_title__';
+
+/** One option in the dashboard's job-title filter. `key` is what goes back to the API; it is the
+ *  title text itself except for the synthetic "No title" entry (see NO_JOB_TITLE_KEY). */
+export interface UsageJobTitle {
+  key: string;
+  label: string;
+  /** People in the current universe (manager filter applied, exclusions removed) with this title. */
+  userCount: number;
 }
 
 export interface DailyActive {
@@ -130,6 +146,8 @@ export interface ClickEventRequest {
 export interface UserUsageDetail {
   userId: string;
   displayName: string;
+  /** Latest job title seen on the user's sign-in token; null when none has been recorded. */
+  jobTitle: string | null;
   /** Same recency tier the dashboard list shows — both come from the shared backend classifier. */
   status: UsageStatus;
   lastActive: string | null;

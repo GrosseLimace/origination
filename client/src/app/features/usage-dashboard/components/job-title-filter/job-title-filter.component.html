@@ -1,0 +1,85 @@
+<div class="relative">
+  <button type="button" (click)="toggle()"
+    [attr.aria-expanded]="open()"
+    aria-label="Filter by job title"
+    [class]="selectedCount() > 0 || open()
+      ? 'px-3 py-1.5 text-sm font-medium rounded-lg bg-scoular-green-accessible text-white flex items-center gap-1.5'
+      : 'px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-1.5'">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect width="20" height="14" x="2" y="7" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+    </svg>
+    <span class="max-w-40 truncate">{{ buttonLabel() }}</span>
+    @if (selectedCount() > 0) {
+      <!-- Clear without reopening the dropdown; span not button — buttons don't nest. -->
+      <span role="button" tabindex="0" (click)="clear(); $event.stopPropagation()"
+        (keydown.enter)="clear(); $event.stopPropagation()" aria-label="Clear job title filter"
+        class="hover:opacity-70">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </span>
+    } @else {
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+    }
+  </button>
+
+  @if (open()) {
+    <div class="absolute right-0 mt-2 w-80 p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50">
+      <div class="flex items-start justify-between gap-2 mb-2">
+        <div>
+          <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Filter by Job Title</h3>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            Pick one or more. Titles come from each person's directory record at sign-in, so someone
+            who has not signed in recently shows under "No title".
+          </p>
+        </div>
+        <button type="button" (click)="close()" aria-label="Close"
+          class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 flex-shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+
+      @if (loading()) {
+        <p class="text-sm text-gray-500 dark:text-gray-400 py-3">Loading job titles…</p>
+      } @else if (loadFailed()) {
+        <div class="py-3 space-y-2">
+          <p class="text-sm text-gray-500 dark:text-gray-400">Job titles are temporarily unavailable.</p>
+          <button type="button" (click)="retry.emit()"
+            class="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
+            Retry
+          </button>
+        </div>
+      } @else {
+        <input type="text" [ngModel]="search()" (ngModelChange)="search.set($event)"
+          name="jobTitleSearch" placeholder="Search job titles…" autocomplete="off"
+          class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-scoular-green focus:border-transparent" />
+        <ul class="mt-2 max-h-64 overflow-auto border border-gray-200 dark:border-gray-700 rounded-lg divide-y divide-gray-100 dark:divide-gray-700">
+          @for (t of candidates(); track t.key) {
+            <li>
+              <label class="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+                <input type="checkbox" [checked]="isSelected(t.key)" (change)="toggleTitle(t.key)"
+                  class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
+                <span class="flex-1 text-gray-900 dark:text-white truncate">{{ t.label }}</span>
+                <span class="text-gray-500 dark:text-gray-400">{{ t.userCount }}</span>
+              </label>
+            </li>
+          } @empty {
+            <li class="px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400">
+              {{ titles().length === 0 ? 'No job titles recorded yet' : 'No matching job titles' }}
+            </li>
+          }
+        </ul>
+        @if (selectedCount() > 0) {
+          <div class="flex items-center justify-between mt-2">
+            <button type="button" (click)="clear()"
+              class="text-sm text-gray-600 dark:text-gray-300 hover:underline">
+              Clear
+            </button>
+            <button type="button" (click)="close()"
+              class="px-3 py-1.5 text-sm font-medium rounded-lg bg-scoular-green-accessible text-white hover:bg-scoular-green">
+              Done
+            </button>
+          </div>
+        }
+      }
+    </div>
+  }
+</div>

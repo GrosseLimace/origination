@@ -18,6 +18,10 @@ public class UsageTrackingBackgroundService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<UsageTrackingBackgroundService> _logger;
 
+    /// <summary>Per-user memory of the last job title seen, so only changes reach the DB. Owned by
+    /// this loop alone, which is what lets it be a plain dictionary.</summary>
+    private readonly JobTitleChangeTracker _jobTitles = new();
+
     private static readonly TimeSpan SessionGap = TimeSpan.FromMinutes(30);
     private const int BatchSize = 50;
     private static readonly TimeSpan FlushInterval = TimeSpan.FromSeconds(5);
@@ -145,5 +149,23 @@ public class UsageTrackingBackgroundService : BackgroundService
         // Update sessions from the activity rows.
         if (activityEntities.Count > 0)
             await repo.ApplyActivitySessionsAsync(activityEntities, SessionGap, cancellationToken);
+
+        // Latest job title per user, from the token claim the middleware captured. Only first
+        // sightings (since start-up) and changes reach the DB; the rest is a dictionary check.
+        var titleObservations = _jobTitles.Observe(activities);
+        if (titleObservations.Count == 0) return;
+        try
+        {
+            await repo.UpsertUserJobTitlesAsync(titleObservations, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The activity rows above are already saved; a title write must never cost them. Forget
+            // these users so the next batch retries instead of waiting for their title to change.
+            _jobTitles.Forget(titleObservations.Select(o => o.UserId));
+            _logger.LogWarning(ex,
+                "Failed to record job titles for {UserCount} user(s); will retry on their next request",
+                titleObservations.Count);
+        }
     }
 }
