@@ -181,6 +181,8 @@ export class CustomerProfileComponent {
   /** Last Bid as typed: no "$", no padded decimals. */
   readonly formatLastBid = formatLastBid;
   public selectedTradeUnits = input<string[]>([]);
+  /** The page's trade-unit save for this producer is still running; the edit dialog keeps Save off meanwhile. */
+  public isSavingTradeUnits = input(false);
   public contracts = input<Contract[]>([]);
   public tickets = input<Ticket[]>([]);
   public pricingLines = input<ContractPricingLine[]>([]);
