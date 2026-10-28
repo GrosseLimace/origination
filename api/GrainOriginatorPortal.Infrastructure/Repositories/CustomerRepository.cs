@@ -1234,7 +1234,9 @@ public class CustomerRepository : ICustomerRepository
                 return null;
             }
 
-            var lookup = await _ctrmCustomers.GetBySourceCodesAsync([scoularId], cancellationToken);
+            // Interactive: a rep is waiting on this save. In the background lane it queued behind keep-warm and
+            // the nightly sync (PROD 2026-10-28: three saves held ten minutes; the browser gave up on each).
+            var lookup = await _ctrmCustomers.GetBySourceCodesAsync([scoularId], cancellationToken, interactive: true);
             if (!lookup.Ok || lookup.Value is null)
             {
                 _logger.LogWarning("AssignTradeUnits: CTRM customer lookup unavailable [{ErrorCode}] [{ErrorCategory}]: {Status} - {Detail}",
