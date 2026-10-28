@@ -30,6 +30,18 @@ public enum DeactivateTradeUnitResult
 }
 
 /// <summary>
+/// A producer whose phone on file matched an incoming caller id, plus WHO at that producer the number
+/// belongs to when it is one of the user-entered contacts (Dad, Son, the farm manager). Empty
+/// <see cref="ContactNames"/> means the number matched the producer's own phone.
+/// </summary>
+public record CustomerPhoneMatch
+{
+    public required Data.Entities.Customer Customer { get; init; }
+    /// <summary>Names of the producer's added contacts carrying this number, primary first.</summary>
+    public List<string> ContactNames { get; init; } = [];
+}
+
+/// <summary>
 /// Layer-neutral projection of a producer's trade-unit membership. The Api layer maps this onto its
 /// CustomerTradeUnitInfo response DTO. <see cref="HasOpenActivity"/> defaults true so a membership whose
 /// activity can't be determined is treated as locked (never wrongly offered for removal).

@@ -25,6 +25,8 @@
     "@angular/platform-browser-dynamic": "^21.2.25",
     "@angular/router": "^21.2.25",
     "@angular/service-worker": "^21.2.25",
+    "@azure/communication-calling": "2.0.0",
+    "@azure/communication-common": "2.5.0",
     "@azure/msal-angular": "5.1.1",
     "@azure/msal-browser": "5.23.0",
     "@cws/core-auth": "file:vendor/cws/cws-core-auth-0.3.0.tgz",

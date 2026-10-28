@@ -26,6 +26,7 @@ import { UserRolesService } from '@core/services/user-roles.service';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
+import { IncomingCallService } from '@core/services/incoming-call.service';
 import { HelpPanelService } from '@core/services/help-panel.service';
 
 // Shared components
@@ -55,6 +56,10 @@ export class HeaderComponent {
   /** Public: the template reads hasUnseen() and version() straight off it. */
   readonly whatsNew = inject(WhatsNewService);
   private readonly usageTracking = inject(UsageTrackingService);
+  private readonly incomingCall = inject(IncomingCallService);
+
+  /** "Simulate incoming call" in the profile menu: outside production, with the popup enabled. */
+  readonly canSimulateCall = this.incomingCall.canSimulate;
   /** Public: the template reads open() for the Help button's pressed state. */
   readonly helpPanel = inject(HelpPanelService);
 
@@ -219,8 +224,17 @@ export class HeaderComponent {
     this.userTradeUnits.openPreferences();
   }
 
+  /** Runs the incoming-call popup for a typed-in number, without a real call. Use a number that is
+   *  on file for a producer to see the match card, a made-up one for "unknown caller". */
+  simulateIncomingCall(): void {
+    const number = window.prompt('Simulate an incoming call from which phone number?', '');
+    if (number) this.incomingCall.simulate(number);
+  }
+
   signOut(): void {
     this.profileMenuOpen.set(false);
+    // Unregister this tab as a Teams calling endpoint before the session goes away.
+    void this.incomingCall.stop();
     this.appState.clearAll();
     this.msalService.logoutRedirect();
   }

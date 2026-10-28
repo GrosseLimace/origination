@@ -17,6 +17,7 @@ these patterns; triage against the AR-IDs below before re-opening.
 | AR-08 | Person mentions require a real active user, but are not scoped to the mentioner's colleagues | High | CWE-284 | Accepted — engineering only (see *Countersignature* below) | 2026-09-01 | 2027-09-01 |
 | AR-09 | The caller's UPN (an email-shaped identifier) is written into the structured log scope of every request | Low | CWE-532 | Accepted | 2026-09-21 | 2027-09-21 |
 | AR-10 | Every Super Users member sees whole-organisation usage data and the full manager roster on the Usage Dashboard (the per-caller ViewAll scoping was retired) | Medium | CWE-284 | Accepted — engineering only (see *Countersignature* below) | 2026-10-09 | 2027-10-09 |
+| AR-11 | The incoming-call popup widens the SPA `connect-src` to Microsoft's ACS / Teams / Skype wildcard hosts (Dev only, config-gated) | Low | CWE-942 | Accepted — Dev POC | 2026-10-28 | Before any QA/PROD enablement |
 
 ---
 
@@ -1598,6 +1599,48 @@ decision recorded at the top of this file: IT Security countersignature for AR-0
 closed as declined, and AR-07's remains open. AR-10 is an authorization-scope widening rather than a
 classification choice, so whether it (and AR-07) should go to asksecurity@scoular.com is the project
 owner's call; as of 2026-10-13 that has not been done and this entry should not be read as saying it has.
+
+---
+
+## AR-11 — The incoming-call popup widens the SPA connect-src (Dev only)
+
+**What changed:** the incoming-call popup runs the Azure Communication Services Calling SDK in the
+browser ("Communication as a Microsoft 365 user"), which talks straight to Microsoft's signalling and
+media services. Its origins come from Microsoft's ACS network-requirements page and are wildcards:
+`*.communication.azure.com`, `*.skype.com` (incl. `wss:` and port 3443), `*.teams.microsoft.com`,
+`*.microsoft.com`, `*.azure.net`, `*.azure.com`, `*.office.com`. They are listed in
+`SecurityHeaders:SpaCallingConnectSrcHosts` and added to `connect-src` by `SecurityHeadersMiddleware`.
+
+**Why it is a finding:** `connect-src` is the CSP control that limits where injected script could
+send data. `*.azure.com` in particular is broad — it is the same class of problem M-025 removed when
+it dropped `*.azurewebsites.net` (that wildcard stays banned; a test pins it).
+
+**Accepted for the Dev spike, because:**
+
+- **It is gated twice.** The hosts are only added when `Acs:Endpoint` is configured, and only
+  `appsettings.Dev.json` and the local `appsettings.Development.json` list them. QA and Production
+  policies are byte-for-byte unchanged (pinned by `Csp_WithoutCallingConfig_IsUnchanged`).
+- `script-src` stays `'self'`, so the widening does not make script injection easier — it only
+  widens where already-injected script could reach, and every listed host is Microsoft-operated.
+- The Calling SDK cannot work without these origins; there is no narrower published list.
+
+**Token boundary (not a risk, recorded so it is not re-raised):** the browser acquires an Entra
+token for the ACS `Teams.ManageCalls` / `Teams.ManageChats` scopes with its own MSAL session (admin
+consent on the SPA registration), and `POST /api/calling/token` exchanges it for an ACS calling token
+with the Identity SDK. The user's object id is taken from the VALIDATED API token, never from the
+request body, and ACS rejects the exchange unless the Entra token was issued to that same user and to
+the configured SPA client id — so a caller can only ever mint a calling token for themselves. Tokens
+are not cached server-side and are never logged. `GET /api/calling/match` reads the same producer
+rows the caller can already search; cross-trade-unit producer reads are covered by AR-02, which
+already names the incoming-call popup.
+
+**Must be re-reviewed before the feature is enabled in QA or Production:** narrow the list to what
+the Dev console actually needed (drop any host that never appeared), and route the result to IT
+Security with the ACS consent request.
+
+**Accepted by:** Origination engineering — recorded 2026-10-07 with the Dev spike
+(`spike_IncomingCallAcs`); renumbered AR-11 and token paragraph rewritten 2026-10-28 for the
+Infrastructure-provisioned design (see docs/application-context/TEAMS-CALLING-GUIDE.md).
 
 ---
 

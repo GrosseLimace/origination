@@ -10,6 +10,8 @@ import { DataPreloadService } from '@core/services/data-preload.service';
 import { UserPreferencesService } from '@core/services/user-preferences.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
+import { IncomingCallService } from '@core/services/incoming-call.service';
+import { IncomingCallPopupComponent } from '@shared/components/incoming-call-popup/incoming-call-popup.component';
 import { AppInsightsService } from '@core/services/app-insights.service';
 import { HelpPanelStateService } from '@core/services/help-panel-state.service';
 import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
@@ -19,7 +21,7 @@ import { filter } from 'rxjs';
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, HeaderComponent, ToastContainerComponent, WhatsNewDialogComponent, HelpPanelComponent],
+  imports: [RouterOutlet, HeaderComponent, ToastContainerComponent, WhatsNewDialogComponent, HelpPanelComponent, IncomingCallPopupComponent],
   templateUrl: './app.component.html',
   // The template reads signals only (isAuthenticated, showWhatsNew, whatsNew.unseenReleases), and
   // the MSAL subscription and the release-notes promise write signals. Every routed page is OnPush
@@ -34,6 +36,10 @@ export class AppComponent {
   readonly showWhatsNew = signal(false);
   /** Public: the template pads the page while the Help panel is open, and defers the panel until then. */
   readonly helpPanel = inject(HelpPanelStateService);
+
+  /** Public: the template defers the popup until the first call. Injecting it here also starts it
+   *  (it waits for sign-in, then registers with Teams if this environment has calling). */
+  readonly incomingCall = inject(IncomingCallService);
 
   private readonly msalService = inject(MsalService);
   private readonly broadcastService = inject(MsalBroadcastService);
