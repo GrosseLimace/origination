@@ -1,23 +1,18 @@
 <div class="p-6 max-w-7xl mx-auto">
-  <!-- Header Row: Title + Trade Unit Selector + Date Range -->
+  <!-- Header Row: Title + Manager Filter + Date Range -->
   <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
     <div class="flex items-center gap-4">
       <div>
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Usage Dashboard</h1>
-        <!-- Subtitle only for view-all users. A scoped user gets no strapline rather than one
-             announcing the narrowing. -->
-        @if (canViewAllUsage()) {
-          <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Monitor team adoption and activity</p>
-        }
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Monitor team adoption and activity</p>
       </div>
     </div>
     <div class="flex flex-wrap items-center gap-3">
-      <app-trade-unit-selector />
-      <!-- Only the UsageDashboard:ViewAll list picks a manager. Everyone else is scoped to their own
-           org subtree server-side, so the dropdown would be a control that cannot change anything. -->
-      @if (canViewAllUsage()) {
-        <app-manager-filter [(managerId)]="managerFilter" />
-      }
+      <!-- The dashboard's only filter: by manager, defaulting to the signed-in user. It is organised
+           by reporting line, so the app-wide trade-unit selector is deliberately absent here. -->
+      <app-manager-filter [(managerId)]="managerFilter"
+        [managers]="managers()" [loading]="managersLoading()" [loadFailed]="managersLoadFailed()"
+        (retry)="loadManagers()" />
       @if (canManageExclusions()) {
         <app-excluded-users-panel (changed)="onExclusionsChanged()" />
       }
@@ -159,14 +154,15 @@
 
   <!-- Tab Content -->
 
-  <!-- A scoped user with no direct reports resolves to an empty universe server-side. Say so, rather
-       than rendering every panel as a zero and inviting a bug report. -->
-  @if (scopedToNobody()) {
+  <!-- A selected manager whose team has nobody who can sign in resolves to an empty universe
+       server-side. Say so, rather than rendering every panel as a zero and inviting a bug report. -->
+  @if (teamIsEmpty()) {
     <div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 text-center">
-      <p class="text-sm font-medium text-gray-900 dark:text-white">Nothing to show yet</p>
+      <p class="text-sm font-medium text-gray-900 dark:text-white">Nothing to show for this team</p>
       <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-        This dashboard shows you and the people who report to you. If you think that's wrong, the
-        reporting structure comes from Active Directory — contact IT to have it corrected.
+        The dashboard counts the selected manager and everyone reporting to them who can sign in to
+        the application. Reporting lines come from Active Directory — contact IT if one looks wrong,
+        or clear the manager filter to see everyone.
       </p>
     </div>
   }

@@ -27,6 +27,7 @@ import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { IncomingCallService } from '@core/services/incoming-call.service';
+import { HelpPanelService } from '@core/services/help-panel.service';
 
 // Shared components
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -59,6 +60,8 @@ export class HeaderComponent {
 
   /** "Simulate incoming call" in the profile menu: outside production, with the popup enabled. */
   readonly canSimulateCall = this.incomingCall.canSimulate;
+  /** Public: the template reads open() for the Help button's pressed state. */
+  readonly helpPanel = inject(HelpPanelService);
 
   readonly envName = environment.envName;
   readonly bidSheetEnabled = environment.bidSheetEnabled;
@@ -70,8 +73,8 @@ export class HeaderComponent {
   // group (Origination App Dev / QA / Prod Super Users), where managers and IT/admin are both
   // added, that's assigned the Admin role on that env's API Enterprise Application, and membership
   // flows into the access token's roles claim. Route re-enforces via `usageDashboardGuard`, and
-  // every dashboard endpoint re-enforces the same policy server-side. Note this only decides
-  // whether the page opens; what the caller then SEES is scoped separately (UsageDashboard:ViewAll).
+  // every dashboard endpoint re-enforces the same policy server-side. Everyone who gets in sees the
+  // whole organisation and may filter it by any manager.
   get usageDashboardEnabled(): boolean {
     return environment.usageDashboardEnabled && this.userRoles.canViewUsageDashboard();
   }
@@ -167,6 +170,40 @@ export class HeaderComponent {
   openWhatsNew(): void {
     this.usageTracking.trackWhatsNewOpened();
     this.router.navigate(['/whats-new']);
+  }
+
+  /** The header "?" button: opens the Help panel, or closes it if it's open. */
+  toggleHelp(): void {
+    this.profileMenuOpen.set(false);
+    this.helpPanel.toggle('header');
+  }
+
+  /**
+   * The header "?" button. `compact` is the phone header, where space is tight. Measured with the
+   * 186px logo at 16px text: the phone bar needs 358px in production with a 36px button, which fits
+   * every common phone (360px+). Dev and QA also show the environment pill, which pushes it to ~404px,
+   * so there the button hides below 410px — Help stays reachable from the menu drawer.
+   */
+  helpButtonClass(compact: boolean): string {
+    const size = compact ? 'w-9 h-9' : 'w-10 h-10';
+    const narrowNonProd = compact && this.envName ? 'max-[409px]:hidden' : '';
+    const state = this.helpPanel.open()
+      ? 'border-scoular-blue bg-scoular-blue/10 dark:bg-scoular-blue/20 text-scoular-blue-medium dark:text-[#7CC4EC]'
+      : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-scoular-blue/5 hover:text-scoular-blue-medium dark:hover:bg-scoular-blue/20 dark:hover:text-[#7CC4EC]';
+    return `flex items-center justify-center ${size} ${narrowNonProd} rounded-full border ${state} focus:outline-none focus-visible:ring-2 focus-visible:ring-scoular-blue focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 transition-colors`;
+  }
+
+  /** Profile menu → Help: the full Help library page. The "?" button is the way into the chat. */
+  openHelpLibrary(): void {
+    this.router.navigate(['/help']);
+  }
+
+  /**
+   * Mobile drawer → Help: opens the chat. Kept on the chat (not the library) because on narrow Dev/QA
+   * phones the "?" button is hidden to make room for the environment pill, so this is the only way in.
+   */
+  openHelp(source: 'drawer'): void {
+    this.helpPanel.openPanel(source);
   }
 
   /** The build line at the foot of the profile menu, or null before the version call lands. */

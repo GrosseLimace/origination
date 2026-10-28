@@ -97,6 +97,15 @@ describe('NlqFilterService — grain on farm + target', () => {
     expect(ids('target under $6')).toEqual([1]);
   });
 
+  it('a negative (basis) target counts as a target set', () => {
+    const echo = customer(5, 'Echo Farms', [{ commodityCode: 'Corn', bushelsOnHand: 10000, targetBushels: -0.25 }]);
+    const withEcho = (q: string) =>
+      svc.parseAndFilter(q, ctx([...all, echo])).customers.map(c => c.id).sort((a, b) => a - b);
+    expect(withEcho('producers with a target')).toEqual([1, 3, 5]);
+    expect(withEcho('grain on farm with no target set')).toEqual([2]);
+    expect(withEcho('target under $6')).toEqual([1, 5]);
+  });
+
   it('"top producers by grain on farm" → ranked by total bushels on hand (desc), no-grain dropped', () => {
     const ordered = svc.parseAndFilter('top 25 producers by grain on farm', ctx(all)).customers.map(c => c.id);
     expect(ordered).toEqual([1, 2, 3]); // alpha 80k > bravo 20k > charlie 5k; delta (0) excluded
@@ -182,6 +191,26 @@ describe('NlqFilterService — grain-on-farm refinement filters', () => {
       { _promptCategory: 'Grain on Farm', crops: ['Wheat'] } as never, [], [], { commodities })
       .map(c => c.id).sort((a, b) => a - b);
     expect(result).toContain(5);
+  });
+
+  it('scopes a crop chip to grain rows under the renamed "Grain on Farm & Bin Sites" category too', () => {
+    const echo = customer(5, 'Echo Farms', [{ commodityCode: 'SRWW', bushelsOnHand: 15000 }]);
+    const commodities = [{ id: 1, code: 'SRWW', name: 'Soft Red Winter Wheat', category: 'Wheat', isActive: true }];
+    const result = svc.applyRefinementFilters([...all, echo],
+      { _promptCategory: 'Grain on Farm & Bin Sites', crops: ['Wheat'] } as never, [], [], { commodities })
+      .map(c => c.id);
+    expect(result).toContain(5);
+  });
+
+  it('a crop chip matches the crops entered on grain rows — even with no bushels on hand — not the producer commodities', () => {
+    // Foxtrot entered wheat at a site (sold out, nothing on hand); Golf trades wheat but has none on farm.
+    const foxtrot = customer(6, 'Foxtrot Farms', [{ commodityCode: 'SRWW', bushelsOnHand: 0 }]);
+    const golf = { ...customer(7, 'Golf Farms', [{ commodityCode: 'YC', bushelsOnHand: 9000 }]), commodities: ['SRWW'] } as Customer;
+    const commodities = [{ id: 1, code: 'SRWW', name: 'Soft Red Winter Wheat', category: 'Wheat', isActive: true }];
+    const result = svc.applyRefinementFilters([foxtrot, golf],
+      { _promptCategory: 'Grain on Farm & Bin Sites', crops: ['SRWW'] } as never, [], [], { commodities })
+      .map(c => c.id);
+    expect(result).toEqual([6]);
   });
 });
 

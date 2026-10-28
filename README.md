@@ -28,7 +28,6 @@ GrainOriginatorPortal/
         │   ├── build-list/
         │   ├── bid-sheet/
         │   ├── calculators/
-        │   ├── unshipped-bushels/
         │   ├── daily-digest/
         │   └── usage-dashboard/
         ├── shared/
@@ -158,9 +157,34 @@ All routes require Azure AD bearer token authentication. Base path: `/api/v1`
 |--------|----------|-------------|
 | GET | `/commodities` | All active commodities |
 | GET | `/storedgrain/customer/{customerId}` | Stored grain (stub, no ODS table yet) |
-| GET | `/farms/customer/{customerId}` | Farms (stub, no ODS table yet) |
 
 > Trade unit and trade-unit-group catalog lookups are sourced from the **TradeUnitPreferences** database (`dbo.vw_UserTradeUnitPreferences`, see `/usertradeunits`). Managers assign users to trade units in a separate preferences application, which owns the writes; this app only reads. Replaced the Entitlements DB 2026-08-18. The app DB no longer maintains a local TU catalog.
+
+### BarChart Bid Feed Ingestion (application DB — machine-to-machine)
+Routed at `/api/barchart-ingest` (no `/v1` segment). Requires the `BarchartIngest` policy — the data
+pipeline's managed identity holding the `Origination.Application` app role, or an Admin. See
+[Barchart Ingestion API Contract](docs/application-context/Barchart%20Ingestion%20API%20Contract.md).
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/barchart-ingest/quote-batches?batchSize=` | Active symbols, pre-grouped into request batches |
+| POST | `/barchart-ingest/instruments` | Load a vendor instrument (catalog) payload |
+| POST | `/barchart-ingest/quotes?snapshotDate=` | Load a vendor quote payload + the day's history |
+| POST | `/barchart-ingest/apply-bids?locationId=&instrumentType=` | Publish feed prices onto the Bid Sheet |
+| POST | `/barchart-ingest/deactivate-instruments?lastSeenBefore=&maxSharePercent=` | Retire catalog entries after a complete 7-day catalog cycle; refused if it would retire more than the allowed share |
+| GET | `/barchart-ingest/budget?monthlyCap=` | Month-to-date ingest usage vs the vendor cap |
+| POST | `/barchart-ingest/purge-history?auditRetentionDays=&snapshotRetentionDays=` | Trim the audit and price-history tables to their retention windows |
+
+### BarChart Catalog (application DB — read-only, user-facing)
+Routed at `/api/barchart` (no `/v1` segment). Standard signed-in user auth. Backs the "Add from
+BarChart" picker; catalog reads are not trade-unit scoped because the catalog is global vendor data.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/barchart/locations?search=&state=&commodityCode=&latitude=&longitude=&radiusMiles=&take=` | Search the vendor catalog; supplying a map centre returns nearest-first with distances |
+| GET | `/barchart/locations/{locationKey}?instrumentType=` | One listing plus the bids it publishes (the picker's preview) |
+| GET | `/barchart/coverage` | Catalog totals and per-state counts, so an empty search is explainable |
+| POST | `/barchart/locations/{locationId}/refresh-bids` | Re-publish feed prices onto one linked Bid Sheet location |
 
 ### Utilities
 | Method | Endpoint | Description |
@@ -170,6 +194,7 @@ All routes require Azure AD bearer token authentication. Base path: `/api/v1`
 | GET | `/diagnostics/ping` | Ping |
 | GET | `/whats-new` | Curated release notes, newest first — see [What's New](docs/application-context/Whats%20New.md) |
 | GET | `/version` | Running release number plus the CI-stamped commit and workflow run |
+| GET | `/help` | Self-help content: questions, categories and per-screen suggestions — see [Self Help](docs/application-context/Self%20Help.md) |
 
 ### Incoming calls (Dev spike — see [Incoming Calls](docs/application-context/Incoming%20Calls.md))
 | Method | Endpoint | Description |
@@ -218,7 +243,7 @@ Azure AD bearer tokens via `Microsoft.Identity.Web`. All API endpoints require a
 
 ## Software Bill of Materials (SBOM)
 
-Last Updated: 2026-10-07
+Last Updated: 2026-10-28
 
 ### Backend Dependencies (C# / .NET 10)
 
@@ -234,7 +259,8 @@ Last Updated: 2026-10-07
 | Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore | 10.0.3 | MIT | EF Core health check endpoint |
 | Microsoft.Extensions.Http.Resilience | 10.3.0 | MIT | HTTP retry / resilience policies |
 | Microsoft.Identity.Web | 3.8.4 | MIT | Azure AD / JWT Bearer authentication |
-| System.Security.Cryptography.Xml | 10.0.10 | MIT | XML crypto — transitive (via Microsoft.Identity.Web), pinned to clear EncryptedXml advisories (GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf, CVE-2026-47302, CVE-2026-50525 & CVE-2026-50648 DoS, CVE-2026-47304 feature-bypass) |
+| System.Security.Cryptography.Xml | 10.0.13 | MIT | XML crypto — transitive (via Microsoft.Identity.Web), pinned to clear EncryptedXml advisories (GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf, CVE-2026-47302, CVE-2026-50525 & CVE-2026-50648 DoS, CVE-2026-47304 feature-bypass); raised 2026-10-13 to 10.0.13 for CVE-2026-96958/-96959/-96960 (SignedXml/C14N/EncryptedXml DoS, <= 10.0.12) — the old 10.0.10 pin had fallen inside that range. Pulls System.Security.Cryptography.Pkcs to the matching 10.0.13. Pin covers Infrastructure + tests only: .NET 10 package pruning drops it from the web app, which loads it from the App Service ASP.NET Core runtime |
+| System.Security.Cryptography.Pkcs | 10.0.13 | MIT | PKCS / CMS crypto — transitive (Microsoft.Data.SqlClient 6.1.4 pulls 9.0.11), pinned in the Api project 2026-10-20 for CVE-2026-84008 (GHSA-846f-f764-76mx, High) and CVE-2026-70162 (GHSA-2fmv-rv2c-59x7, Moderate) — .NET DoS, affected 9.0.0–9.0.20 and 10.0.0–10.0.12. The Xml pin lifts it in Infrastructure + tests but not in the web app, where package pruning drops Xml. Like the Xml pin, it does not reach the deployed app: Pkcs is not in the publish output, so the running app is fixed only once the App Service .NET 10 runtime is on the October 2026 servicing release |
 
 ### Frontend Dependencies (Angular 21 / TypeScript)
 
@@ -245,23 +271,28 @@ Last Updated: 2026-10-07
 | @angular/router | 21.2.25 | MIT | Client-side routing (security fix: SSR denial of service via numeric URL matrix parameters, CVE-2026-101896 — the 21.x fix is "avoid dense elements allocation for numeric URL keys" in 21.2.24, so the ≥22.2.0 the scanner quotes is not required; not exploitable here in any case, the app has no server-side rendering, so the allocation could only run in the requesting user's own browser) |
 | @angular/forms | 21.2.25 | MIT | Reactive forms |
 | @angular/animations | 21.2.25 | MIT | Animation support |
+| @angular/cdk | 21.2.14 | MIT | Component primitives — drag-and-drop (bid sheet column/row reorder), scrolling, and Overlay (the Add-column picker, which must escape a clipping scroll container) |
 | @azure/msal-angular | 5.1.1 | MIT | Azure AD authentication (Angular) |
 | @azure/msal-browser | 5.4.0 | MIT | MSAL browser runtime |
 | @azure/communication-calling | 2.0.0 | Microsoft Software License Terms for the ACS SDK (proprietary, not MIT) | Incoming-call popup: registers the tab as the user's Teams Phone endpoint. Lazy-loaded only when a calling token exists. ⚠ ACS standalone retires 2028-09-30; the Calling SDK continues only with Teams-aligned scenarios — support for this one is being confirmed. Verified 2026-10-07 |
 | @azure/communication-common | 2.5.0 | MIT | ACS token credential used by the calling SDK. Verified 2026-10-07 |
+| @microsoft/applicationinsights-web | 3.4.5 | MIT | Browser error telemetry to Application Insights (pinned exact; loaded lazily, only when the server returns a connection string). Brings 10 transitive packages, all MIT, none with install scripts: the @microsoft/applicationinsights-* family at 3.4.5, applicationinsights-shims 3.0.1, dynamicproto-js 2.0.5, @nevware21/ts-async 0.5.5, @nevware21/ts-utils 0.16.0 |
 | @it/design-system | 0.1.1 | Internal | Scoular IT design system components |
 | leaflet | 1.9.4 | BSD-2-Clause | Interactive map rendering |
 | leaflet.markercluster | ~1.5.3 | MIT | Leaflet marker clustering |
 | rxjs | 7.8.2 | Apache-2.0 | Reactive programming (Observables) |
 | jspdf | 4.2.1 | MIT | Client-side PDF generation (Profitability calculator report) |
 | jspdf-autotable | 5.0.8 | MIT | Tabular layout for jsPDF (calculator report tables) |
+| exceljs | ^4.4.0 | MIT | Bid sheet "Export to Excel" (.xlsx workbook: grid, one-row-per-bid, locations). Lazy-loaded on first use, not in the initial bundle |
+| uuid | ≥11.1.1 <12 | MIT | UUID generation — transitive (via exceljs, which pins ^8), forced in `overrides` (security fix: missing buffer bounds check in v3/v5/v6 when `buf` is provided, GHSA-w5hq-g745-h8pq, ≥11.1.1; exceljs only calls v4). Held below 12: uuid 13+ is ESM-only and exceljs `require()`s it |
 | tslib | 2.8.1 | 0BSD | TypeScript runtime helpers |
 | zone.js | 0.15.1 | MIT | Angular change detection zone |
 | tailwindcss | 4.2.1 | MIT | Utility-first CSS framework |
-| vitest | 4.1.11 | MIT | Unit testing framework (CVE fix: ≥4.1.0; security fix ≥4.1.11: `@vitest/mocker` registered a redirect-mock target without checking Vite’s file-serving allowlist, so a client reaching the dev server’s unauthenticated HMR socket could read files outside the project root — `@vitest/ui` and `@vitest/coverage-v8` pinned to the same version to keep the family in lockstep) |
+| vitest | 4.1.12 | MIT | Unit testing framework (CVE fix: ≥4.1.0; security fix ≥4.1.12: `@vitest/mocker` pasted the module URL and export names from an unauthenticated manual-mock registration straight into generated JavaScript, allowing code injection, and on Windows a backslash `..` path slipped past the 4.1.11 redirect allowlist — GHSA-qxg6-89mg-rqv8 / GHSA-xp26-3454-mjgp; earlier fix ≥4.1.11: `@vitest/mocker` registered a redirect-mock target without checking Vite’s file-serving allowlist, so a client reaching the dev server’s unauthenticated HMR socket could read files outside the project root — `@vitest/ui` and `@vitest/coverage-v8` pinned to the same version to keep the family in lockstep) |
+| happy-dom | 21.0.4 | MIT | Browser-like DOM for the Vitest unit tests (dev only; never shipped). Security fix ≥21.0.4: the ES-module compiler pasted an `import { a as <alias> }` alias into generated code unchecked, so untrusted module source could run code on the host — GHSA-834v-8h66-3h79, Dependabot #160; only reachable with `enableJavaScriptEvaluation: true`, which we never set. 21.x also stops loading CSS files and iframes by default |
 | typescript | 5.9.3 | Apache-2.0 | TypeScript compiler |
 | esbuild | ≥0.28.1 | MIT | Bundler — transitive (via @angular/build, vitest), pinned in `overrides` (security fix: RCE via NPM_CONFIG_REGISTRY + Windows path traversal, ≥0.28.1) |
-| vite | ≥7.3.5 | MIT | Dev server/bundler — transitive (via @angular/build), pinned in `overrides` (security fix: `server.fs.deny` bypass + launch-editor NTLM disclosure on Windows, ≥7.3.5) |
+| vite | ≥7.3.7 <8 | MIT | Dev server/bundler + Vitest engine — transitive (via @angular/build, vitest), pinned in `overrides` (security fixes: `server.fs.deny` bypass + launch-editor NTLM disclosure on Windows ≥7.3.5; launch-editor passed `%` unescaped to cmd.exe on Windows via the dev server's /__open-in-editor, letting %VAR% expand into a command ≥7.3.7 (GHSA-698v-4r3x-3vcv) — the old ≥7.3.5 floor sat inside that range. Row previously omitted the `<8` bound the override has always carried) |
 | @babel/core | ≥7.29.6 | MIT | JS compiler — transitive (via @angular/build, @angular/compiler-cli), pinned in `overrides` (security fix: arbitrary file read via sourceMappingURL, ≥7.29.6) |
 | browserslist | ≥4.28.7 | MIT | Browser-target resolution — transitive (via @angular/build, @angular/compiler-cli), pinned in `overrides` (security fixes: uncaught crash / prototype write in normalizeStats via an untrusted browserslist-stats.json, unbounded result-cache growth OOM, ≥4.28.7) |
 | tar | ≥7.5.21 | ISC | Tar parser — transitive (via @angular/cli), pinned in `overrides` (security fixes: decompression/parse DoS ≥7.5.19, mapHas/filesFilter stack-overflow DoS ≥7.5.21) |
@@ -269,18 +300,19 @@ Last Updated: 2026-10-07
 | ws | ≥8.21.0 | MIT | WebSocket — transitive (via happy-dom test env), pinned in `overrides` (security fix: memory-exhaustion DoS, ≥8.21.0) |
 | brace-expansion | ≥5.0.12 | MIT | Brace pattern expansion — transitive (via @angular/cli, @analogjs/vite-plugin-angular → minimatch/glob), pinned in `overrides` (security fixes: exponential-time expansion DoS ≥5.0.7, unbounded-length OOM crash ≥5.0.8, unbounded intermediate-array DoS ≥5.0.9, parseCommaParts recursion + push.apply spread stack exhaustion ≥5.0.10, nested-brace recursion stack exhaustion + quadratic-time {a},b} rewrite CPU DoS ≥5.0.12 — the ≥5.0.9 floor itself sat inside that advisory range; dev-tooling-only) |
 | postcss | 8.5.23 | MIT | CSS processor — direct dev dep (Tailwind/Angular build), pinned to 8.5.23 and forced across transitives via `overrides` `$postcss` (security fixes: sourceMappingURL path-traversal .map disclosure, incomplete-fix follow-up ≥8.5.23) |
-| body-parser | ≥2.3.0 | MIT | HTTP body parsing — transitive (via @angular/cli dev server), pinned in `overrides` (security fix: size-limit enforcement silently disabled on invalid `limit`, ≥2.3.0) |
+| body-parser | ≥2.4.0 <3 | MIT | HTTP body parsing — transitive (via @angular/cli dev server), pinned in `overrides` (security fix ≥2.4.0: after reading a compressed body it left the decoder piped with no error listener, so trailing bytes could crash the process — GHSA-27r3-jxmh-p828, Dependabot #154; earlier security fix: size-limit enforcement silently disabled on invalid `limit`, ≥2.3.0) |
 | qs | ≥6.16.0 <7 | BSD-3-Clause | Query-string parser — transitive (via @angular/cli → @modelcontextprotocol/sdk → express / body-parser), pinned in `overrides` (security fixes ≥6.16.0: bracket-key comma input bypassing arrayLimit/throwOnLimitExceeded → memory-exhaustion DoS; non-callable `constructor.isBuffer` TypeError in stringify → uncaught-throw DoS; dev-tooling-only, `ng mcp` path, not in the app bundle) |
 | immutable | ≥5.1.8 | MIT | Immutable collections — transitive (via @angular/build → sass), pinned in `overrides` (security fix: hash-collision algorithmic-complexity DoS in Map/Set, CVE-2026-59880, ≥5.1.8) |
-| fast-uri | ≥3.1.8 <4 | BSD-3-Clause | URI parser — transitive (via @angular/build, @angular/cli → ajv), pinned in `overrides` (security fixes: host confusion via failed IDN canonicalization + literal-backslash authority delimiter ≥3.1.5; skipped IDN canonicalization on scheme-relative `resolve()`, double hostname percent-decode SSRF, percent-encoded scheme host confusion / CRLF injection, malformed IPv6 literal silently truncated to a valid address ≥3.1.6; unvalidated port authority injection in `serialize()`, unbalanced IP-literal bracket host confusion ≥3.1.7; inconsistent host case normalization via percent-encoded octets on scheme-relative refs ≥3.1.8 — the ≥3.1.7 floor itself sat inside that advisory range; kept on 3.x to avoid the ajv-breaking 4.x major) |
-| hono | ≥4.13.5 <5 | MIT | Web framework — transitive (via @angular/cli dev tooling), pinned in `overrides` (security fixes incl. hono/jsx cross-request context disclosure during SSR, CORS-middleware ReDoS via Access-Control-Request-Headers ≥4.12.34; query helpers parsing parameters after the URL fragment causing cache-key/proxy interpretation differentials, `toSSG()` still writing outside the output directory on consecutive `..` runs, unbounded `parseBody()` dot-notation nesting OOM ≥4.13.5; not used for SSR in this app) |
-| undici | ≥7.29.1 <8 | MIT | HTTP/1.1 client — transitive (via @angular/build, @angular/cli dev tooling), pinned in `overrides` (security fixes ≥7.29.1: cross-user cache disclosure + parse-time crash, retry-interceptor response desync, Cache-Control whitespace disclosure, CRLF injection via blob body type, cookie attribute injection, WebSocket permessage-deflate unhandled inflate error process crash; dev-tooling-only, not used at runtime) |
+| fast-uri | ≥3.1.9 <4 | BSD-3-Clause | URI parser — transitive (via @angular/build, @angular/cli → ajv), pinned in `overrides` (security fixes ≥3.1.9: a percent-encoded scheme such as `%6Aavascript:` was decoded into a live `javascript:` URL, an unescaped first path segment could inject a scheme, host confusion via unchecked WHATWG host canonicalisation, and improper path equivalence in relative references — GHSA-w74x-v6f9-j3xg / GHSA-333x-w4r6-6crp / GHSA-wjr9-j795-jxcr / GHSA-xhq7-xmqj-769h, Dependabot #155-#158; 3.1.9 `resolve()` now throws on a malformed scheme; earlier security fixes: host confusion via failed IDN canonicalization + literal-backslash authority delimiter ≥3.1.5; skipped IDN canonicalization on scheme-relative `resolve()`, double hostname percent-decode SSRF, percent-encoded scheme host confusion / CRLF injection, malformed IPv6 literal silently truncated to a valid address ≥3.1.6; unvalidated port authority injection in `serialize()`, unbalanced IP-literal bracket host confusion ≥3.1.7; inconsistent host case normalization via percent-encoded octets on scheme-relative refs ≥3.1.8 — the ≥3.1.7 floor itself sat inside that advisory range; kept on 3.x to avoid the ajv-breaking 4.x major) |
+| hono | ≥4.13.11 <5 | MIT | Web framework — transitive (via @angular/cli dev tooling), pinned in `overrides` (security fixes incl. hono/jsx cross-request context disclosure during SSR, CORS-middleware ReDoS via Access-Control-Request-Headers ≥4.12.34; query helpers parsing parameters after the URL fragment causing cache-key/proxy interpretation differentials, `toSSG()` still writing outside the output directory on consecutive `..` runs, unbounded `parseBody()` dot-notation nesting OOM ≥4.13.5; not used for SSR in this app; serveStatic second percent-decode letting a crafted path skip middleware on a static prefix ≥4.13.11 (GHSA-5r4p-p66f-jhc7) — the old ≥4.13.5 floor sat inside that range) |
+| undici | ≥7.30.1 <8 | MIT | HTTP/1.1 client — transitive (via @angular/build, @angular/cli dev tooling), pinned in `overrides` (security fixes ≥7.30.1: a response with more than five content codings crashed the process even when the fetch rejection was caught, unbounded memory in EventSource, and an SRI bypass via a non-lowercase hash algorithm — GHSA-xjj6-f33q-929c / GHSA-4qv8-2p9j-2685 / GHSA-f72v-6w45-q472, Dependabot #161-#163; @angular/build only loads undici for its SSR-over-HTTPS dev plugin, which we do not use; earlier fixes ≥7.29.1: cross-user cache disclosure + parse-time crash, retry-interceptor response desync, Cache-Control whitespace disclosure, CRLF injection via blob body type, cookie attribute injection, WebSocket permessage-deflate unhandled inflate error process crash; dev-tooling-only, not used at runtime) |
 | proxy-addr | ≥2.0.8 <3 | MIT | Trusted-proxy / X-Forwarded-For resolution — transitive (via @angular/cli → express dev server), pinned in `overrides` (security fix ≥2.0.8: an IPv6 trust subnet with zero leading bits, e.g. `::ffff:10.0.0.0/8` or `::/1`, matched EVERY IPv4 client and let it spoof `req.ip` via X-Forwarded-For; dev-tooling-only — our API is .NET, no Express server ships) |
 | source-map-js | ≥1.2.2 <2 | BSD-3-Clause | Source map parsing/generation — transitive (via postcss, @tailwindcss/node, sass, @angular/build, vitest), pinned in `overrides` (security fix ≥1.2.2: unbounded indexed-map `offset.line` let a ~134-byte map expand to tens of MB and block the event loop; now capped at 10,000,000; build-time only) |
 | @modelcontextprotocol/sdk | ≥1.31.0 <2 | MIT | Model Context Protocol SDK — transitive (via @angular/cli, which pins it EXACTLY, for the `ng mcp` stdio server), pinned in `overrides` (security fix ≥1.31.0: the OAuth CLIENT sent stored refresh tokens / client secrets to whichever authorization server an MCP server named; the CLI uses only the SDK's server + stdio transport and never loads the OAuth client, so not reachable here. Override forces a newer version than the CLI pins — `ng mcp` handshake verified on 1.32.1; drop the override once on an @angular/cli that pins ≥1.31.0) |
-| ip-address | ≥10.5.1 | MIT | IP address parser — transitive (via @angular/cli dev tooling → dns/proxy libs), pinned in `overrides` (security fixes ≥10.5.1: leading-zero octet octal/decimal SSRF, CIDR-suffix special-use suppression, IPv4-mapped/NAT64 well-known misclassification, NAT64 local-use 64:ff9b:1::/48 unclassified, and isLinkLocal() matching fe80::/64 instead of fe80::/10 — all trust-boundary bypasses; dev-tooling-only) |
+| zod | ≥4.6.6 <5 | MIT | Schema validation — transitive (via @angular/cli, which pins it EXACTLY, and @modelcontextprotocol/sdk, both for the `ng mcp` stdio server; dev only), pinned in `overrides` (security fix ≥4.6.6: an array/set/map over its `.max()` limit was still checked element by element, keeping one error per bad element, so a huge input could exhaust memory — GHSA-mrhx-c7xc-m3w5, Dependabot #153; 4.6.6 rejects it on size first. Drop the override once @angular/cli pins ≥4.6.6 — 21.2.28 does) |
+| ip-address | ≥10.7.4 <11 | MIT | IP address parser — transitive (via @angular/cli dev tooling → dns/proxy libs), pinned in `overrides` (security fix ≥10.7.4: an IPv6 zone-id pattern took quadratic time on many `%` characters followed by a newline, so one long string could stall the process — GHSA-rxp7-6hxx-x8q5, Dependabot #152; earlier fixes ≥10.5.1: leading-zero octet octal/decimal SSRF, CIDR-suffix special-use suppression, IPv4-mapped/NAT64 well-known misclassification, NAT64 local-use 64:ff9b:1::/48 unclassified, and isLinkLocal() matching fe80::/64 instead of fe80::/10 — all trust-boundary bypasses; dev-tooling-only) |
 | @hono/node-server | ≥2.0.5 | MIT | Node adapter for hono — transitive (via @angular/cli dev tooling), pinned in `overrides` (security fix: Windows serve-static path traversal via encoded backslash; dev-server-only, not used to serve this app) |
-| dompurify | ≥3.4.16 <4 | (MIT OR Apache-2.0) | HTML sanitizer — transitive (via jspdf, PDF export), pinned in `overrides` (security fixes: CUSTOM_ELEMENT_HANDLING bypasses afterSanitizeElements → second-order XSS gadget ≥3.4.12; IN_PLACE node-removing afterSanitize hook leaves detached-subtree event handlers armed → DOM XSS, GHSA-p98j-92pf-mc4p, ≥3.4.16 — the ≥3.4.12 floor itself sat inside that advisory range; neither hook is used here, jspdf only sanitises the HTML it renders to PDF) |
+| dompurify | ≥3.4.17 <4 | (MIT OR Apache-2.0) | HTML sanitizer — transitive (via jspdf, PDF export), pinned in `overrides` (security fixes ≥3.4.17: SAFE_FOR_TEMPLATES missed split template expressions inside attached shadow roots, the SMIL attributeName=href guard was skipped in XHTML mode, and an IN_PLACE hook that removed a parent or sibling left that subtree's event handlers armed — GHSA-cg2g-xh64-v4q7 / GHSA-c6gr-qvv4-5v3f / GHSA-mrv2-3pqr-j5jr, Dependabot #149/#150/#151, all non-default configs; earlier fixes: CUSTOM_ELEMENT_HANDLING bypasses afterSanitizeElements → second-order XSS gadget ≥3.4.12; IN_PLACE node-removing afterSanitize hook leaves detached-subtree event handlers armed → DOM XSS, GHSA-p98j-92pf-mc4p, ≥3.4.16 — the ≥3.4.12 floor itself sat inside that advisory range; neither hook is used here, jspdf only sanitises the HTML it renders to PDF) |
 | piscina | ≥5.3.2 <6 | MIT | Worker-thread pool — transitive (via @angular/build), pinned in `overrides` (security fix ≥5.3.2: prototype-pollution gadget in ThreadPool.options → code execution via execArgv / loadBalancer / env, Dependabot #133 — the ≥5.2.0 floor itself sat inside that advisory range; build-tooling only, not in the app bundle) |
 
 ## CI/CD

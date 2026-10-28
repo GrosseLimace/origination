@@ -27,30 +27,14 @@ public class UsageRepository : IUsageRepository
 
     // ── Identity / snapshot ──
 
-    public async Task<List<string>> GetSnapshotUserIdsAsync(IReadOnlyCollection<string>? tradeUnitCodes, CancellationToken cancellationToken)
+    public async Task<List<string>> GetSnapshotUserIdsAsync(CancellationToken cancellationToken)
     {
-        if (tradeUnitCodes is null || tradeUnitCodes.Count == 0)
-        {
-            return await _appDb.UserTradeUnitSnapshots.Select(s => s.UserId).Distinct().ToListAsync(cancellationToken);
-        }
-        return await _appDb.UserTradeUnitSnapshots
-            .Where(s => tradeUnitCodes.Contains(s.TradeUnitCode))
-            .Select(s => s.UserId)
-            .Distinct()
-            .ToListAsync(cancellationToken);
+        return await _appDb.UserTradeUnitSnapshots.Select(s => s.UserId).Distinct().ToListAsync(cancellationToken);
     }
 
     public async Task<List<string>> GetExcludedUserIdsAsync(CancellationToken cancellationToken)
     {
         return await _appDb.UsageDashboardExcludedUsers
-            .AsNoTracking()
-            .Select(e => e.UserId)
-            .ToListAsync(cancellationToken);
-    }
-
-    public async Task<List<string>> GetViewAllUserIdsAsync(CancellationToken cancellationToken)
-    {
-        return await _appDb.UsageDashboardViewAllUsers
             .AsNoTracking()
             .Select(e => e.UserId)
             .ToListAsync(cancellationToken);

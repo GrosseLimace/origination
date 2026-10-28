@@ -2,8 +2,8 @@ import { Component, ChangeDetectionStrategy, DestroyRef, inject, effect, untrack
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
-import { forkJoin, of, catchError, timeout, tap, Subject, takeUntil } from 'rxjs';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { forkJoin, from, of, catchError, mergeMap, toArray, timeout, tap, Subject, takeUntil } from 'rxjs';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService, BuildListState } from '@core/services/app-state.service';
@@ -13,11 +13,9 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserRolesService } from '@core/services/user-roles.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, DpContract, SavedList, TeamMember, ProducerDetails, RefinementFilters, QueryLibraryItem, GrainOnFarmItem, DashboardPlantingEstimate, Commodity } from '@models';
-import { dpTotalBushels, dpTotalCharges, dpBreakdownByCrop } from '@shared/utils/dp-aggregate';
+import { dpTotalBushels } from '@shared/utils/dp-aggregate';
 import { commodityChipClass } from '@shared/utils/commodity-color';
-import { buildLbsPerBushelMap, findYieldEstimate, sumInBushels } from '@shared/utils/production-coverage';
-import { plantingChips, plantingQueryScope, PlantingChip, isIrrigated, isDryland, isDoubleCrop } from '@shared/utils/planting-chips';
-import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
+import { plantingChips, plantingQueryScope, PlantingChip } from '@shared/utils/planting-chips';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '@shared/components/card/card.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
@@ -27,11 +25,25 @@ import { CustomerMapComponent } from '@features/customers/components/map/custome
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
-import { buildCropGroupLookup, buildCropSelection, matchesCropSelection, CropSelection, MatchCropOptions } from '@shared/utils/crop-group-match';
-import { grainOnFarmColorKey } from '@shared/utils/grain-on-farm';
+import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
+import { isGrainAndBinSitesCategory, binSiteGrainBreakdown, BinSiteGrainGroup, formatLastBid } from '@shared/utils/grain-on-farm';
+import { binSiteNames, notesMentioningBinSites, splitByBinSiteNames, BIN_SITE_NAME_CLASS } from '@shared/utils/bin-site-mentions';
+import { countActiveRefinements, hasAnyRefinement, hiddenRefineFilters } from '../../utils/refine-panel';
+import { filterByRefinements, applyMemberOverrides, collapseLinkedComponents, RefinementFilterSources } from '../../utils/refinement-filters';
+import { aggregateMatchingNotes, buildNoteFilterPredicate, indexMatchingNotesByCode, isNoteFilterActive, lastContactBadges, lastContactTimeByCustomer, MatchedNote, noteScope, NoteScope, parseNoteTime } from '../../utils/note-filters';
+import { customerPacingDirection } from '../../utils/contract-pacing';
+import { evaluatePlantingCoverage } from '../../utils/planting-coverage';
+import {
+  binSiteGrainHiddenLabel, binSiteGrainSummary, commodityCategoryByKey, contractsByCustomerCode, CropBushels, cropsByCustomer, dpBreakdown,
+  formattedLocation, grainOnFarmBreakdown, groupByCustomerId, hasBinSiteGrain, initials, linkedProducerInfo, storageBreakdown, storageTotalBushels,
+} from '../../utils/result-rows';
+import {
+  filterLibrary, groupLibrary, libraryCategories, libraryCategoryForQuery, matchedPatternLabels, searchSavedLists, searchTeamLists,
+} from '../../utils/query-library';
+import { detectFocusTab } from '../../utils/focus-tab';
+import { buildSavedListPayload, SavedListPayload } from '../../utils/saved-list-payload';
+import { binNoteContentAny, planBinSiteNoteChunks } from '../../utils/bin-site-notes';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
-import { isContractUnconfirmed, isContractOverdueWithUnshippedBu } from '@shared/utils/contract-status';
-import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
 import { environment } from '@env/environment';
@@ -83,6 +95,7 @@ export class BuildListComponent {
   private readonly nlqFilterService = inject(NlqFilterService);
   private readonly msalService = inject(MsalService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
   private readonly usageTracking = inject(UsageTrackingService);
   private readonly userRoles = inject(UserRolesService);
@@ -108,6 +121,15 @@ export class BuildListComponent {
   // forever. Loaded-flag, not length, so a real empty result still resolves.
   private _storageReady = signal(false);
   private _loadRequestId = 0;
+  /** Fires at the start of every _loadFresh so the previous load's subscriptions (core forkJoin +
+   *  background tickets) are dropped instead of lingering until they resolve. The requestId guard
+   *  already discarded their results; this stops the component from waiting on them at all, which
+   *  matters when the non-deferred selector fires one full reload per checkbox click. */
+  private readonly _cancelLoad$ = new Subject<void>();
+  /** Set when processQuery was called before core data was loaded (a prompt picked while a
+   *  trade-unit reload is in flight). Holds the trade-unit override so the re-run is identical to
+   *  the original call. Cleared by clearQuery, by a real processQuery run, and by the re-run. */
+  private _parkedQuery: { override?: string[] } | null = null;
   private _queryGenId = 0;
   // Key of the server-narrowed note slice currently in this.notes() for DISPLAY (encodes the
   // query generation + scope, e.g. `${gen}:content:beans|corn`, `${gen}:w:3`, `${gen}:pinned`).
@@ -275,6 +297,11 @@ export class BuildListComponent {
         // No trade unit selected — return to the gated state (as on a fresh visit with no
         // selection) so the prompt library is disabled. Otherwise coreDataLoaded stays true from
         // the prior selection and a user could run a prompt with no trade unit scoped.
+        // Drop any reload still in flight for the PREVIOUS selection too: left alone it would land
+        // later, flip coreDataLoaded back on and fill customers() with the old trade unit's roster.
+        this._cancelLoad$.next();
+        this._loadRequestId++;
+        this.loading.set(false);
         this.coreDataLoaded.set(false);
       }
     });
@@ -338,6 +365,31 @@ export class BuildListComponent {
   readonly ticketsUnavailableForQuery = computed(() =>
     this.ticketsLoadFailed() && this.nlqFilterService.queryInvolvesTickets(this.queryText()));
 
+  /**
+   * The other data a prompt can lean on whose last load FAILED, named for the panel that says so.
+   * Each failed read resolves to an empty array, so without this a DP, planting or contact prompt
+   * answers "no producers" (or, for "not contacted in N days", every producer) during an outage.
+   * Contracts and tickets keep their own panels above, with Retry.
+   */
+  readonly unavailableDataForQuery = computed(() => {
+    const q = this.queryText();
+    const missing: string[] = [];
+    if (this.appState.dpContractsLoadFailed() && this.nlqFilterService.queryInvolvesDpContracts(q)) missing.push('DP contracts');
+    if (this.appState.plantingIntentionsLoadFailed() && this.nlqFilterService.queryInvolvesPlanting(q)) missing.push('planting intentions');
+    if (this.nlqFilterService.queryInvolvesContact(q)) {
+      if (this.appState.noteLastContactsLoadFailed()) missing.push('last-contacted dates');
+      if (this.appState.myRemindersLoadFailed()) missing.push('follow-ups');
+    }
+    return missing;
+  });
+
+  /** The trade-unit producer read failed, so an empty trade unit is an outage, not an answer. */
+  readonly customersLoadFailed = this.appState.customersLoadFailed;
+
+  /** The saved-list read failed and nothing replaced it, so an empty library is not "none yet". */
+  readonly savedListsLoadFailed = computed(() =>
+    this.appState.savedListsLoadFailed() && this.savedLists().length === 0);
+
   /** The "Start with no producers" blank-start card — the deliberate opposite of "All
    *  producers". It always resolves to zero (see filterCustomers' early return), so the
    *  results area shows a friendly "build this list manually" prompt instead of the generic
@@ -352,56 +404,28 @@ export class BuildListComponent {
   readonly visibleSavedLists = computed(() =>
     filterSavedListsByTradeUnitOverlap(this.savedLists(), this.appState.selectedTradeUnits()));
 
-  readonly activeRefinementCount = computed(() => {
-    const r = this.appliedRefinements();
-    return [
-      r.noActiveContracts, r.hasUnsignedContracts, r.downHarvestPace,
-      r.hasUnpricedContracts, r.hasOverdueContracts, r.noContractsAtAll,
-      r.contractQuantityOver != null && r.contractQuantityOver > 0,
-      r.contractsExpiringThisMonth, r.multipleCommoditiesContracted,
-      r.neverContacted, r.notContactedDays != null && r.notContactedDays > 0,
-      r.notesInLastDays != null && r.notesInLastDays > 0,
-      r.contactedOnlyOnce, r.contactedMoreThan5,
-      r.contactedByMeOnly, r.contactedBySomeoneElse,
-      r.hasPinnedNotes, r.noteKeyword?.trim(),
-      r.acresOver != null && r.acresOver > 0, r.hasBinCapacity, r.noBinCapacity,
-      r.hasPrimaryContact, r.noPrimaryContact, r.hasEmail, r.hasPhone, r.hasLinkedProducers, r.notEsignEnrolled,
-      r.hasActiveContracts, r.hasDeliveriesThisYear, r.hasPlantingIntentions, r.hasGrainInStorage,
-      r.ticketQuantityOver != null && r.ticketQuantityOver > 0,
-      r.ticketsInLastDays != null && r.ticketsInLastDays > 0,
-      r.avgMoistureOver != null, r.avgMoistureUnder != null,
-      r.avgTestWeightOver != null, r.avgTestWeightUnder != null,
-      r.avgProteinOver != null, r.avgProteinUnder != null,
-      r.storageDaysOver != null && r.storageDaysOver > 0,
-      r.storageQuantityOver != null && r.storageQuantityOver > 0,
-      r.storageReceivableOver != null && r.storageReceivableOver > 0,
-      r.hasDpContracts,
-      r.dpBushelsOver != null && r.dpBushelsOver > 0,
-      r.dpDaysOver != null && r.dpDaysOver > 0,
-      r.dpChargesOver != null && r.dpChargesOver > 0,
-      r.plantingYear != null, r.irrigatedOnly, r.drylandOnly, r.doubleCropOnly,
-      r.plantingAcresOver != null && r.plantingAcresOver > 0,
-      r.grainOnFarmBushelsOver != null && r.grainOnFarmBushelsOver > 0,
-      r.hasGrainTarget, r.noGrainTarget, r.hasGrade,
-      r.grainTargetOver != null && r.grainTargetOver > 0,
-      r.grainTargetUnder != null && r.grainTargetUnder > 0,
-      r.gradeOver != null, r.gradeUnder != null,
-      r.crops && r.crops.length > 0, r.states && r.states.length > 0,
-      r.deliveryLocations && r.deliveryLocations.length > 0
-    ].filter(Boolean).length;
-  });
+  readonly activeRefinementCount = computed(() => countActiveRefinements(this.appliedRefinements()));
 
-  /** Matches a commodity string against selected crop filters. Delegates to the shared matcher
-   *  (crop-group-match.ts); `opts` is only passed by the grain-on-farm call sites, whose values are
-   *  crop GROUPS rather than codes. */
-  private _matchesCropFilter(value: string, selectedCrops: CropSelection, opts?: MatchCropOptions): boolean {
-    return matchesCropSelection(value, selectedCrops, this._cropGroupLookup(), opts);
-  }
-
-  /** Grain-on-farm rows hold a commodity CODE, but rows saved before 2026-09-23 hold a crop GROUP
-   *  ("Corn") with no code to be precise about. groupOnlyValue lets a code chip still match those
-   *  legacy rows via its group; it never fires for a code value, so code rows stay exact. */
-  private static readonly GROUP_ONLY: MatchCropOptions = { groupOnlyValue: true };
+  /** What the refinement filter (filterByRefinements) reads. Accessors, not values: it calls them
+   *  inside displayedCustomers, so each signal is tracked only by the refinements that consult it. */
+  private readonly _refineSources: RefinementFilterSources = {
+    customers: () => this.customers(),
+    notes: () => this.notes(),
+    tickets: () => this.tickets(),
+    plantingIntentions: () => this.plantingIntentions(),
+    storedGrain: () => this.storedGrain(),
+    dpContracts: () => this.dpContracts(),
+    openContractsByCustomer: () => this._openContractsByCustomer(),
+    cropGroupLookup: () => this._cropGroupLookup(),
+    lastContactByCustomer: () => this.lastContactByCustomer(),
+    linkedProducerComponents: () => this.linkedProducerComponents(),
+    commodityConversions: () => this.appState.commodityConversions(),
+    currentAccount: () => this.msalService.instance.getActiveAccount()
+      ?? this.msalService.instance.getAllAccounts()[0],
+    pacingDirection: (c: Customer) => this._getCustomerPacingDirection(c),
+    isAppliedTicketsContext: () => this.isAppliedTicketsContext(),
+    refineDimension: (r: RefinementFilters) => this.nlqFilterService.refineDimension(r, this.effectiveLibraryCategory()),
+  };
 
 
   // Progressive rendering: paint the result list in batches so a huge match (e.g. "producers with
@@ -409,6 +433,9 @@ export class BuildListComponent {
   // readable — each batch appears as the user scrolls to it (no new fetch). Reset to the first
   // batch whenever the result set changes (effect in the constructor).
   private static readonly _RENDER_BATCH = 40;
+  /** Query-string budget for one bin-mention notes request (ids + site names, URL-encoded) — well
+   *  under the 2,048 characters IIS allows by default. See _loadBinSiteNotes. */
+  private static readonly BIN_NOTES_QUERY_BUDGET = 1500;
   readonly renderLimit = signal(BuildListComponent._RENDER_BATCH);
   /** The slice of displayedCustomers currently rendered to the DOM. */
   readonly renderedCustomers = computed(() => this.displayedCustomers().slice(0, this.renderLimit()));
@@ -427,591 +454,14 @@ export class BuildListComponent {
   private _renderObserver?: IntersectionObserver;
 
   readonly displayedCustomers = computed(() => {
-    let list = this.filteredCustomers();
-    const r = this.appliedRefinements();
-    const contractMap = this._openContractsByCustomer(); // Open contracts only for refinements
-
-    // Crop selection for contextual filtering (used by ticket/contract/storage filters) —
-    // resolves each chip to its Commodities.category group, with the CROP_CODE_MAP token map as
-    // a fallback tier. See crop-group-match.ts for why this replaced the old alias-only matcher.
-    const selectedCrops = buildCropSelection(r.crops, this._cropGroupLookup());
-    const contactMap = this.lastContactByCustomer();
-
-    // Helper: get contracts for a customer, optionally scoped to selected crops
-    const getContracts = (c: Customer): Contract[] => {
-      let contracts = contractMap.get(c.scoularId!) || [];
-      if (!selectedCrops.isEmpty) {
-        contracts = contracts.filter(ct =>
-          this._matchesCropFilter(ct.commodityCode || '', selectedCrops) ||
-          this._matchesCropFilter(ct.commodityDescription || '', selectedCrops) ||
-          this._matchesCropFilter(ct.commodityGroup || '', selectedCrops)
-        );
-      }
-      return contracts;
-    };
-
-    // Contract status filters
-    if (r.noActiveContracts) {
-      list = list.filter(c => !getContracts(c).some(ct => ct.status === 'Active' || ct.status === 'Pending' || ct.status === 'Overdue'));
-    }
-    if (r.hasUnsignedContracts) {
-      // "Has unconfirmed contracts" — matches Insights UnconfirmedContracts rule:
-      // customerConfirmStatus !== 'confirmed' AND status not Fulfilled/Cancelled.
-      list = list.filter(c => getContracts(c).some(ct => isContractUnconfirmed(ct)));
-    }
-    if (r.downHarvestPace) {
-      list = list.filter(c => this._getCustomerPacingDirection(c) === 'down');
-    }
-    if (r.hasUnpricedContracts) {
-      list = list.filter(c => getContracts(c).some(ct => ct.priceTypeCode === 'U' || ct.priceTypeCode === 'D'));
-    }
-    if (r.hasOverdueContracts) {
-      // "Has overdue bu contracts" — matches Insights UnshippedBushels rule. Reads
-      // contract.openBalanceQuantity via the shared delivery util; no ticket dependency.
-      const today = new Date();
-      list = list.filter(c => getContracts(c).some(ct => isContractOverdueWithUnshippedBu(ct, today)));
-    }
-    if (r.noContractsAtAll) {
-      list = list.filter(c => getContracts(c).length === 0);
-    }
-    // Contract detail filters
-    if (r.contractQuantityOver != null && r.contractQuantityOver > 0) {
-      // The refine is expressed in bushels, so compare in bushels — a raw sum counted tonnage at
-      // face value and excluded producers who actually cleared the threshold.
-      const lbsPerBushelByCode = buildLbsPerBushelMap(this.appState.commodityConversions());
-      list = list.filter(c => {
-        const totalQty = sumInBushels(getContracts(c), lbsPerBushelByCode).contracted;
-        return totalQty > r.contractQuantityOver!;
-      });
-    }
-    if (r.contractsExpiringThisMonth) {
-      const now = new Date();
-      const thisMonth = now.getMonth();
-      const thisYear = now.getFullYear();
-      list = list.filter(c => getContracts(c).some(ct => {
-        if (!ct.deliveryEnd) return false;
-        const end = new Date(ct.deliveryEnd);
-        return end.getMonth() === thisMonth && end.getFullYear() === thisYear;
-      }));
-    }
-    if (r.multipleCommoditiesContracted) {
-      list = list.filter(c => {
-        const commodities = new Set(getContracts(c).map(ct => ct.commodityCode || ct.commodityDescription || '').filter(Boolean));
-        return commodities.size >= 2;
-      });
-    }
-    if (r.neverContacted) {
-      list = list.filter(c => !contactMap.has(c.id));
-    } else if (r.notContactedDays != null && r.notContactedDays > 0) {
-      list = list.filter(c => {
-        const info = contactMap.get(c.id);
-        if (!info) return true; // never contacted → include
-        return info.daysAgo >= r.notContactedDays!;
-      });
-    }
-    if (r.notesInLastDays != null && r.notesInLastDays > 0) {
-      list = list.filter(c => {
-        const info = contactMap.get(c.id);
-        if (!info) return false; // no notes → exclude (positive filter)
-        return info.daysAgo <= r.notesInLastDays!;
-      });
-    }
-
-    // Note-aggregating filters share a per-customer "code network" (own + outgoing-linked + incoming-linked).
-    // Linked-producer notes count toward the customer's totals so contact frequency, author, pinned, and
-    // keyword filters all respect the same linked-as-one-entity model used elsewhere on the page.
-    const wantsAggregatedNotes = r.contactedOnlyOnce || r.contactedMoreThan5
-      || r.contactedByMeOnly || r.contactedBySomeoneElse
-      || r.hasPinnedNotes || !!r.noteKeyword?.trim();
-    let codesByCustomerId: Map<number, Set<string>> | null = null;
-    if (wantsAggregatedNotes) {
-      const components = this.linkedProducerComponents();
-      codesByCustomerId = new Map<number, Set<string>>();
-      for (const c of this.customers()) {
-        if (c.scoularId) {
-          const comp = components.get(c.scoularId);
-          codesByCustomerId.set(c.id, comp ? new Set(comp) : new Set([c.scoularId]));
-        } else {
-          codesByCustomerId.set(c.id, new Set());
-        }
-      }
-    }
-
-    // Contact frequency — note count across the customer's network (own + linked).
-    if (r.contactedOnlyOnce || r.contactedMoreThan5) {
-      const countByCode = new Map<string, number>();
-      for (const n of this.notes()) {
-        if (!n.customerCode) continue;
-        countByCode.set(n.customerCode, (countByCode.get(n.customerCode) || 0) + 1);
-      }
-      const totalFor = (c: Customer): number => {
-        let total = 0;
-        const codes = codesByCustomerId!.get(c.id);
-        if (codes) for (const code of codes) total += countByCode.get(code) || 0;
-        return total;
-      };
-      if (r.contactedOnlyOnce) list = list.filter(c => totalFor(c) === 1);
-      if (r.contactedMoreThan5) list = list.filter(c => totalFor(c) > 5);
-    }
-
-    // Contact author — aggregated across the customer's network.
-    if (r.contactedByMeOnly || r.contactedBySomeoneElse) {
-      const account = this.msalService.instance.getActiveAccount()
-        ?? this.msalService.instance.getAllAccounts()[0];
-      const myName = (account?.name ?? '').trim().toLowerCase();
-      const myUsername = (account?.username ?? '').trim().toLowerCase();
-      // Empty identity claims → can't reliably attribute notes; treat as "no notes are mine".
-      // This avoids the substring bug where ''.includes('') === true would mark every note as mine.
-      const haveIdentity = !!myName || !!myUsername;
-      const isAuthorMe = (rawAuthor: string): boolean => {
-        if (!rawAuthor || !haveIdentity) return false;
-        if (myUsername && rawAuthor === myUsername) return true;
-        if (myName && rawAuthor === myName) return true;
-        // Token-bounded match prevents "John" matching "Johnson"; works for "John Doe (jdoe@…)" too.
-        const escape = (s: string) => s.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
-        const tokenMatch = (haystack: string, needle: string): boolean => {
-          if (!needle) return false;
-          return new RegExp(`(?:^|[^\\w])${escape(needle)}(?:[^\\w]|$)`).test(haystack);
-        };
-        return tokenMatch(rawAuthor, myUsername) || tokenMatch(rawAuthor, myName);
-      };
-
-      const authorshipByCode = new Map<string, { byMe: boolean; byOthers: boolean }>();
-      for (const n of this.notes()) {
-        if (!n.customerCode) continue;
-        const author = (n.createdBy || '').trim().toLowerCase();
-        if (!author) continue;
-        const entry = authorshipByCode.get(n.customerCode) || { byMe: false, byOthers: false };
-        if (isAuthorMe(author)) entry.byMe = true; else entry.byOthers = true;
-        authorshipByCode.set(n.customerCode, entry);
-      }
-      const aggregateFor = (c: Customer): { byMe: boolean; byOthers: boolean } => {
-        let byMe = false, byOthers = false;
-        const codes = codesByCustomerId!.get(c.id);
-        if (codes) for (const code of codes) {
-          const e = authorshipByCode.get(code);
-          if (!e) continue;
-          if (e.byMe) byMe = true;
-          if (e.byOthers) byOthers = true;
-        }
-        return { byMe, byOthers };
-      };
-      if (r.contactedByMeOnly) {
-        list = list.filter(c => { const a = aggregateFor(c); return a.byMe && !a.byOthers; });
-      }
-      if (r.contactedBySomeoneElse) {
-        list = list.filter(c => aggregateFor(c).byOthers);
-      }
-    }
-
-    // Notes content — pinned + keyword both check the customer's full code network.
-    if (r.hasPinnedNotes) {
-      const pinnedCodes = new Set<string>();
-      for (const n of this.notes()) {
-        if (n.isPinned && n.customerCode) pinnedCodes.add(n.customerCode);
-      }
-      list = list.filter(c => {
-        const codes = codesByCustomerId!.get(c.id);
-        if (!codes) return false;
-        for (const code of codes) if (pinnedCodes.has(code)) return true;
-        return false;
-      });
-    }
-    if (r.noteKeyword?.trim()) {
-      const kw = r.noteKeyword.trim().toLowerCase();
-      const matchingCodes = new Set<string>();
-      for (const n of this.notes()) {
-        if ((n.content || '').toLowerCase().includes(kw) && n.customerCode) {
-          matchingCodes.add(n.customerCode);
-        }
-      }
-      list = list.filter(c => {
-        const codes = codesByCustomerId!.get(c.id);
-        if (!codes) return false;
-        for (const code of codes) if (matchingCodes.has(code)) return true;
-        return false;
-      });
-    }
-    // Customer size
-    if (r.acresOver != null && r.acresOver > 0) {
-      list = list.filter(c => (c.totalAcres ?? 0) > r.acresOver!);
-    }
-    if (r.hasBinCapacity) {
-      list = list.filter(c => (c.binCapacity ?? 0) > 0);
-    }
-    if (r.noBinCapacity) {
-      list = list.filter(c => !c.binCapacity || c.binCapacity === 0);
-    }
-
-    // Grain on farm (bushels on hand + $/bu target). Crop-scoped when crops are selected, so
-    // "corn on farm over 10,000" / "corn target over $5" act on the producer's corn rows only.
-    if (r.grainOnFarmBushelsOver != null || r.hasGrainTarget || r.noGrainTarget
-        || r.grainTargetOver != null || r.grainTargetUnder != null || r.hasGrade
-        || r.gradeOver != null || r.gradeUnder != null) {
-      const grainRowsFor = (c: Customer) => {
-        const rows = c.grainOnFarm ?? [];
-        return !selectedCrops.isEmpty
-          ? rows.filter(g => !!g.commodityCode && this._matchesCropFilter(g.commodityCode, selectedCrops, BuildListComponent.GROUP_ONLY))
-          : rows;
-      };
-      // Grade is free text — pull the first number out ("4.4%" -> 4.4, "TW 58" -> 58) for over/under.
-      const gradeNum = (grade?: string): number | null => {
-        const m = (grade ?? '').match(/-?\d+(?:\.\d+)?/);
-        return m ? parseFloat(m[0]) : null;
-      };
-      if (r.hasGrade) {
-        list = list.filter(c => grainRowsFor(c).some(g => !!(g.grade ?? '').trim()));
-      }
-      if (r.gradeOver != null) {
-        list = list.filter(c => grainRowsFor(c).some(g => { const n = gradeNum(g.grade); return n != null && n >= r.gradeOver!; }));
-      }
-      if (r.gradeUnder != null) {
-        list = list.filter(c => grainRowsFor(c).some(g => { const n = gradeNum(g.grade); return n != null && n <= r.gradeUnder!; }));
-      }
-      if (r.grainOnFarmBushelsOver != null && r.grainOnFarmBushelsOver > 0) {
-        list = list.filter(c => grainRowsFor(c).reduce((s, g) => s + (g.bushelsOnHand ?? 0), 0) > r.grainOnFarmBushelsOver!);
-      }
-      if (r.hasGrainTarget) {
-        list = list.filter(c => grainRowsFor(c).some(g => (g.targetBushels ?? 0) > 0));
-      }
-      if (r.noGrainTarget) {
-        // Has grain on farm but no target price set — the actionable "needs a target" list.
-        list = list.filter(c => grainRowsFor(c).some(g => (g.bushelsOnHand ?? 0) > 0)
-          && !grainRowsFor(c).some(g => (g.targetBushels ?? 0) > 0));
-      }
-      if (r.grainTargetOver != null && r.grainTargetOver > 0) {
-        list = list.filter(c => grainRowsFor(c).some(g => (g.targetBushels ?? 0) >= r.grainTargetOver!));
-      }
-      if (r.grainTargetUnder != null && r.grainTargetUnder > 0) {
-        list = list.filter(c => grainRowsFor(c).some(g => (g.targetBushels ?? 0) > 0 && (g.targetBushels ?? 0) <= r.grainTargetUnder!));
-      }
-    }
-
-    // Customer info
-    if (r.hasPrimaryContact) {
-      list = list.filter(c => !!c.primaryContact?.trim());
-    }
-    if (r.noPrimaryContact) {
-      list = list.filter(c => !c.primaryContact?.trim());
-    }
-    // User-entered contact rows count too — otherwise a producer whose only email/phone was typed
-    // into Edit Producer Details (e.g. an insurance contact) reads as having none.
-    if (r.hasEmail) {
-      list = list.filter(c => !!c.email?.trim() || !!c.supplementalEmail?.trim()
-        || !!c.contacts?.some(ct => ct.email?.trim()));
-    }
-    if (r.hasPhone) {
-      list = list.filter(c => !!c.phone?.trim() || !!c.extendedPrimaryPhone?.trim()
-        || !!c.contacts?.some(ct => ct.phone?.trim()));
-    }
-    if (r.hasLinkedProducers) {
-      list = list.filter(c => (c.linkedProducerIds?.length ?? 0) > 0);
-    }
-    if (r.notEsignEnrolled) {
-      list = list.filter(c => !c.eSignEnabled);
-    }
-
-    // Customer activity
-    if (r.hasActiveContracts) {
-      list = list.filter(c => {
-        const contracts = contractMap.get(c.scoularId!) || [];
-        return contracts.some(ct => ct.status === 'Active' || ct.status === 'Pending');
-      });
-    }
-    if (r.hasDeliveriesThisYear) {
-      const thisYear = new Date().getFullYear();
-      const ticketCustomers = new Set<string>(
-        this.tickets().filter(t => {
-          if (!t.date) return false;
-          // Read the year in UTC. Ticket.date is a bare yyyy-MM-dd, which the Date constructor
-          // parses as UTC midnight, so the local-time getFullYear() rolled a 1 January ticket
-          // back to 31 December of the prior year for every US timezone — wrongly excluding that
-          // delivery from "has deliveries this year".
-          const d = new Date(t.date);
-          return d.getUTCFullYear() === thisYear;
-        }).map(t => t.customerCode!).filter(Boolean)
-      );
-      list = list.filter(c => ticketCustomers.has(c.scoularId!));
-    }
-    if (r.hasPlantingIntentions) {
-      const plantingCustomers = new Set<number>(this.plantingIntentions().map(p => p.customerId));
-      list = list.filter(c => plantingCustomers.has(c.id));
-    }
-    if (r.hasGrainInStorage) {
-      const storageCustomers = new Set<number>(this.storedGrain().map(s => s.customerId));
-      list = list.filter(c => storageCustomers.has(c.id));
-    }
-
-    // Storage filters — scoped to selected crops when active
-    const scopedStorage = !selectedCrops.isEmpty
-      ? this.storedGrain().filter(s => s.crop && this._matchesCropFilter(s.crop, selectedCrops))
-      : this.storedGrain();
-    if (r.storageDaysOver != null && r.storageDaysOver > 0) {
-      const minDays = r.storageDaysOver;
-      const ids = new Set<number>(
-        scopedStorage.filter(s => {
-          if (s.storageDays != null && s.storageDays > 0) return s.storageDays >= minDays;
-          if (!s.storageStartDate) return false;
-          const d = new Date(s.storageStartDate);
-          return d.getTime() < (Date.now() - minDays * 86400000);
-        }).map(s => s.customerId)
-      );
-      list = list.filter(c => ids.has(c.id));
-    }
-    if (r.storageQuantityOver != null && r.storageQuantityOver > 0) {
-      const customerTotals = new Map<number, number>();
-      for (const s of scopedStorage) {
-        customerTotals.set(s.customerId, (customerTotals.get(s.customerId) || 0) + s.quantity);
-      }
-      list = list.filter(c => (customerTotals.get(c.id) || 0) > r.storageQuantityOver!);
-    }
-    if (r.storageReceivableOver != null && r.storageReceivableOver > 0) {
-      const customerTotals = new Map<number, number>();
-      for (const s of scopedStorage) {
-        customerTotals.set(s.customerId, (customerTotals.get(s.customerId) || 0) + (s.receivableAmount || 0));
-      }
-      list = list.filter(c => (customerTotals.get(c.id) || 0) > r.storageReceivableOver!);
-    }
-
-    // DP filters — scoped to selected crops when active. Bushel and charge totals go through the
-    // dp-aggregate helpers: the DP view emits one row per charge type per delivery, each repeating
-    // the same quantity, so summing rows would double-count the grain (charges ARE additive).
-    if (r.hasDpContracts) {
-      const dpCustomers = new Set<number>(this.dpContracts().map(d => d.customerId));
-      list = list.filter(c => dpCustomers.has(c.id));
-    }
-    const hasDpFilter = r.dpBushelsOver != null || r.dpDaysOver != null || r.dpChargesOver != null;
-    if (hasDpFilter) {
-      const scopedDp = !selectedCrops.isEmpty
-        ? this.dpContracts().filter(d => d.crop && this._matchesCropFilter(d.crop, selectedCrops))
-        : this.dpContracts();
-      const dpByCustomer = new Map<number, DpContract[]>();
-      for (const d of scopedDp) {
-        const rows = dpByCustomer.get(d.customerId);
-        if (rows) rows.push(d); else dpByCustomer.set(d.customerId, [d]);
-      }
-      if (r.dpBushelsOver != null && r.dpBushelsOver > 0) {
-        list = list.filter(c => dpTotalBushels(dpByCustomer.get(c.id) ?? []) > r.dpBushelsOver!);
-      }
-      if (r.dpDaysOver != null && r.dpDaysOver > 0) {
-        list = list.filter(c => (dpByCustomer.get(c.id) ?? []).some(d => (d.storageDays ?? 0) >= r.dpDaysOver!));
-      }
-      if (r.dpChargesOver != null && r.dpChargesOver > 0) {
-        list = list.filter(c => dpTotalCharges(dpByCustomer.get(c.id) ?? []) > r.dpChargesOver!);
-      }
-    }
-
-    // Ticket filters — pre-build lookup and scope tickets to selected crops
-    const hasTicketFilter = r.ticketQuantityOver != null || r.ticketsInLastDays != null ||
-      r.avgMoistureOver != null || r.avgMoistureUnder != null ||
-      r.avgTestWeightOver != null || r.avgTestWeightUnder != null ||
-      r.avgProteinOver != null || r.avgProteinUnder != null;
-    if (hasTicketFilter) {
-      const codeToId = new Map<string, number>();
-      for (const c of this.customers()) {
-        if (c.scoularId) codeToId.set(c.scoularId, c.id);
-      }
-      // Scope tickets to selected crops when a crop filter is active
-      const scopedTickets = !selectedCrops.isEmpty
-        ? this.tickets().filter(t => t.productCode && this._matchesCropFilter(t.productCode, selectedCrops))
-        : this.tickets();
-
-      if (r.ticketsInLastDays != null && r.ticketsInLastDays > 0) {
-        const cutoff = Date.now() - r.ticketsInLastDays * 86400000;
-        const recentCustomers = new Set<string>();
-        for (const t of scopedTickets) {
-          if (!t.customerCode || !t.date) continue;
-          if (new Date(t.date).getTime() >= cutoff) recentCustomers.add(t.customerCode);
-        }
-        list = list.filter(c => recentCustomers.has(c.scoularId!));
-      }
-
-      // Net bu + quality avg filters operate in one of two view modes:
-      //  'grouped' (default) — match using UNAPPLIED ticket groups (productCode|elevatorCode),
-      //                        same grouping the customer Unapplied Tickets tab uses. Any group
-      //                        meeting the threshold qualifies the customer.
-      //  'single'           — match using individual tickets (applied + unapplied). Any single
-      //                        ticket meeting the threshold qualifies the customer.
-      // Quality avg filters compute group-level averages in 'grouped' mode; in 'single' mode they
-      // become per-ticket value checks (so "Avg moisture over 14" reads as "any ticket > 14").
-      const viewMode: 'grouped' | 'single' = this.isAppliedTicketsContext()
-        ? 'single'
-        : (r.ticketViewMode ?? 'single');
-      const hasNetBu = r.ticketQuantityOver != null && r.ticketQuantityOver > 0;
-      const hasQualityFilter = r.avgMoistureOver != null || r.avgMoistureUnder != null ||
-        r.avgTestWeightOver != null || r.avgTestWeightUnder != null ||
-        r.avgProteinOver != null || r.avgProteinUnder != null;
-
-      if (hasNetBu || hasQualityFilter) {
-        const conversionMap = buildLbsPerBushelMap(this.appState.commodityConversions());
-        const matchingCustomerIds = matchTicketViewModeFilters(
-          scopedTickets, codeToId, conversionMap, viewMode, r
-        );
-        if (matchingCustomerIds) list = list.filter(c => matchingCustomerIds.has(c.id));
-      }
-    }
-
-    // Planting filters
-    if (r.plantingYear) {
-      const year = r.plantingYear;
-      const ids = new Set<number>(this.plantingIntentions().filter(p => p.plantingYear === year).map(p => p.customerId));
-      list = list.filter(c => ids.has(c.id));
-    }
-    // Type predicates are shared with the result-row chips (planting-chips.ts) so a producer that
-    // matched on "irrigated" can't then show dryland chips.
-    if (r.irrigatedOnly) {
-      const ids = new Set<number>(
-        this.plantingIntentions().filter(p => isIrrigated(p.type)).map(p => p.customerId)
-      );
-      list = list.filter(c => ids.has(c.id));
-    }
-    if (r.drylandOnly) {
-      const ids = new Set<number>(
-        this.plantingIntentions().filter(p => isDryland(p.type)).map(p => p.customerId)
-      );
-      list = list.filter(c => ids.has(c.id));
-    }
-    if (r.doubleCropOnly) {
-      const ids = new Set<number>(
-        this.plantingIntentions().filter(p => isDoubleCrop(p.type)).map(p => p.customerId)
-      );
-      list = list.filter(c => ids.has(c.id));
-    }
-    if (r.plantingAcresOver != null && r.plantingAcresOver > 0) {
-      const customerAcres = new Map<number, number>();
-      for (const p of this.plantingIntentions()) {
-        customerAcres.set(p.customerId, (customerAcres.get(p.customerId) || 0) + p.acres);
-      }
-      list = list.filter(c => (customerAcres.get(c.id) || 0) > r.plantingAcresOver!);
-    }
-
-    if (!selectedCrops.isEmpty) {
-      // Dimension-aware crop filter: when the prompt is about a specific dimension
-      // (storage / tickets / planting / contracts), require the producer to have a
-      // crop match in THAT dimension's data — not in their generic c.commodities list.
-      // Falls back to c.commodities only when no dimension is in play.
-      // Single source of dimension inference — see NlqFilterService.refineDimension(). Keeps
-      // this block and applyRefinementFilters() (the saved-list / home-page copy) in sync by
-      // construction rather than by copy-pasted flag lists.
-      const dim = this.nlqFilterService.refineDimension(r, this.effectiveLibraryCategory());
-
-      if (dim === 'DP Contracts') {
-        // Crop-scope a DP prompt against DP positions, not generic customer.commodities.
-        const dpByCustomer = new Map<number, DpContract[]>();
-        for (const d of this.dpContracts()) {
-          if (!dpByCustomer.has(d.customerId)) dpByCustomer.set(d.customerId, []);
-          dpByCustomer.get(d.customerId)!.push(d);
-        }
-        list = list.filter(c => (dpByCustomer.get(c.id) ?? []).some(d =>
-          !!d.crop && this._matchesCropFilter(d.crop, selectedCrops)
-        ));
-      } else if (dim === 'Storage') {
-        const storageByCustomer = new Map<number, StoredGrain[]>();
-        for (const s of this.storedGrain()) {
-          if (!storageByCustomer.has(s.customerId)) storageByCustomer.set(s.customerId, []);
-          storageByCustomer.get(s.customerId)!.push(s);
-        }
-        list = list.filter(c => (storageByCustomer.get(c.id) ?? []).some(s =>
-          !!s.crop && this._matchesCropFilter(s.crop, selectedCrops)
-        ));
-      } else if (dim === 'Tickets') {
-        const codeToId = new Map<string, number>();
-        for (const c of this.customers()) {
-          if (c.scoularId) codeToId.set(c.scoularId, c.id);
-        }
-        const matchingIds = new Set<number>();
-        for (const t of this.tickets()) {
-          if (!t.customerCode || !t.productCode) continue;
-          if (this._matchesCropFilter(t.productCode, selectedCrops)) {
-            const cid = codeToId.get(t.customerCode);
-            if (cid != null) matchingIds.add(cid);
-          }
-        }
-        list = list.filter(c => matchingIds.has(c.id));
-      } else if (dim === 'Planting') {
-        const plantingByCustomer = new Map<number, PlantingIntention[]>();
-        for (const p of this.plantingIntentions()) {
-          if (!plantingByCustomer.has(p.customerId)) plantingByCustomer.set(p.customerId, []);
-          plantingByCustomer.get(p.customerId)!.push(p);
-        }
-        list = list.filter(c => (plantingByCustomer.get(c.id) ?? []).some(p =>
-          !!p.crop && this._matchesCropFilter(p.crop, selectedCrops)
-        ));
-      } else if (dim === 'Contracts') {
-        list = list.filter(c => {
-          const cContracts = contractMap.get(c.scoularId!) || [];
-          return cContracts.some(ct =>
-            this._matchesCropFilter(ct.commodityCode || '', selectedCrops) ||
-            this._matchesCropFilter(ct.commodityDescription || '', selectedCrops) ||
-            this._matchesCropFilter(ct.commodityGroup || '', selectedCrops)
-          );
-        });
-      } else if (dim === 'Grain on Farm') {
-        // Scope crop matching to the producer's grain-on-farm rows (with bushels on hand).
-        list = list.filter(c => (c.grainOnFarm ?? []).some(g =>
-          !!g.commodityCode && this._matchesCropFilter(g.commodityCode, selectedCrops, BuildListComponent.GROUP_ONLY) && (g.bushelsOnHand ?? 0) > 0
-        ));
-      } else {
-        list = list.filter(c => (c.commodities ?? []).some(crop => this._matchesCropFilter(crop, selectedCrops)));
-      }
-    }
-    if (r.states && r.states.length > 0) {
-      list = list.filter(c => {
-        const state = c.extendedStateProvince || c.stateProvince;
-        return !!state && r.states!.includes(state);
-      });
-    }
-    if (r.deliveryLocations && r.deliveryLocations.length > 0) {
-      // Independent of crops/states — a producer matches if ANY ticket has a matching
-      // elevatorCity, regardless of the active prompt's dimension.
-      const locationsByCode = new Map<string, Set<string>>();
-      for (const t of this.tickets()) {
-        if (!t.customerCode || !t.elevatorCity) continue;
-        if (!locationsByCode.has(t.customerCode)) locationsByCode.set(t.customerCode, new Set());
-        locationsByCode.get(t.customerCode)!.add(t.elevatorCity);
-      }
-      list = list.filter(c => {
-        if (!c.scoularId) return false;
-        const locations = locationsByCode.get(c.scoularId);
-        return !!locations && r.deliveryLocations!.some(l => locations.has(l));
-      });
-    }
+    let list = filterByRefinements(this.filteredCustomers(), this.appliedRefinements(), this._refineSources);
     // Apply manual member overrides: exclude removed, add included
-    const excludedIds = this.manuallyExcludedCustomerIds();
-    if (excludedIds.size > 0) {
-      list = list.filter(c => !excludedIds.has(c.id));
-    }
-    const includedCustomers = this.manuallyIncludedCustomers();
-    if (includedCustomers.length > 0) {
-      const existingIds = new Set(list.map(c => c.id));
-      const toAdd = includedCustomers.filter(c => !existingIds.has(c.id) && !excludedIds.has(c.id));
-      if (toAdd.length > 0) list = [...list, ...toAdd];
-    }
+    list = applyMemberOverrides(list, this.manuallyExcludedCustomerIds(), this.manuallyIncludedCustomers());
 
-    // Collapse linked-customer groups: when the linked-as-one-entity feature is active,
-    // keep ONE peer row per connected component (the lowest-id customer in `list` that
-    // belongs to it). All other component members get folded into that representative
-    // and surface inside its inline linked-producer panel. Uses the transitive component
-    // closure so a chain A→B→C produces a single row with both B and C linked, not two
-    // separate rows for "A linked to B" and "B linked to C".
+    // Collapse linked-customer groups (one row per linked-producer component) when the
+    // linked-as-one-entity feature is active — see collapseLinkedComponents.
     if (this.linkedFeatureActive()) {
-      const components = this.linkedProducerComponents();
-      const repIdByComponent = new Map<Set<string>, number>(); // component identity → rep id
-      for (const c of list) {
-        if (!c.scoularId) continue;
-        const comp = components.get(c.scoularId);
-        if (!comp || comp.size <= 1) continue;
-        const existing = repIdByComponent.get(comp);
-        if (existing == null || c.id < existing) repIdByComponent.set(comp, c.id);
-      }
-      if (repIdByComponent.size > 0) {
-        list = list.filter(c => {
-          if (!c.scoularId) return true;
-          const comp = components.get(c.scoularId);
-          if (!comp || comp.size <= 1) return true; // standalone customer — keep
-          return repIdByComponent.get(comp) === c.id;
-        });
-      }
+      list = collapseLinkedComponents(list, this.linkedProducerComponents());
     }
 
     // Order: when inline notes are showing (Notes / Contacts prompts), sort by the most
@@ -1043,7 +493,7 @@ export class BuildListComponent {
         if (!notes || notes.length === 0) return 0;
         let max = 0;
         for (const n of notes) {
-          const t = BuildListComponent.parseNoteTime(n.createdAt);
+          const t = parseNoteTime(n.createdAt);
           if (t > max) max = t;
         }
         return max;
@@ -1058,6 +508,24 @@ export class BuildListComponent {
     // NLQ engine already sorted by the ranked metric — preserve that order instead of alphabetizing.
     if (this.nlqFilterService.isRankingQuery(this.queryText())) {
       return list;
+    }
+    // Grain on Farm & Bin Sites prompts (user 2026-10-09): producers with the most recent note naming one
+    // of their bin sites first, then the most recent change to their bin sites or grain on farm, then
+    // by name. The mention notes for the whole result are loaded up front (see _loadBinSiteNotes), so
+    // this order doesn't shuffle as you scroll.
+    if (this.showGrainOnFarmFilters()) {
+      const notesByCustomer = this.binSiteNotesByCustomer();
+      const lastMention = new Map<number, number>();
+      for (const [id, found] of notesByCustomer) {
+        let max = 0;
+        for (const n of found.notes) max = Math.max(max, parseNoteTime(n.createdAt));
+        lastMention.set(id, max);
+      }
+      const changed = (c: Customer) => (c.binSitesModifiedAt ? Date.parse(c.binSitesModifiedAt) || 0 : 0);
+      return [...list].sort((a, b) =>
+        (lastMention.get(b.id) ?? 0) - (lastMention.get(a.id) ?? 0)
+        || changed(b) - changed(a)
+        || (a.name || '').localeCompare(b.name || ''));
     }
     // Storage prompts: surface the producers with the most grain in storage first (sort by total
     // storage bushels desc), matching the inline per-commodity breakdown shown on each result.
@@ -1104,6 +572,9 @@ export class BuildListComponent {
    * so the filter degrades to something usable rather than disappearing.
    */
   readonly availableCrops = computed(() => {
+    // Grain on Farm & Bin Sites prompts: the crops entered on the producers' grain-on-farm rows, not
+    // the trade-unit catalog — the chip filters those rows (user 2026-10-09).
+    if (this.showGrainOnFarmFilters()) return this._grainCropsInResults();
     const scoped = scopeCommodities(this.plantingCommodities(), {
       groupNames: this.appState.inScopeGroupNames(),
       tradeUnitCodes: this.appState.inScopeTradeUnitCodes(),
@@ -1130,17 +601,23 @@ export class BuildListComponent {
     for (const c of this.filteredCustomers()) {
       for (const crop of (c.commodities ?? [])) add(crop);
     }
-    if (this.showGrainOnFarmFilters()) {
-      for (const c of this.filteredCustomers()) {
-        for (const g of (c.grainOnFarm ?? [])) {
-          if ((g.bushelsOnHand ?? 0) > 0) add(g.commodityCode);
-        }
-      }
-    }
     if (this.showDpFilters()) {
       const dpByCustomer = this._dpByCustomerId();
       for (const c of this.filteredCustomers()) {
         for (const d of (dpByCustomer.get(c.id) ?? [])) add(d.crop);
+      }
+    }
+    return [...codes].sort();
+  }
+
+  /** The distinct commodity codes on the current results' grain-on-farm rows (any row the user
+   *  entered, with or without bushels on hand). */
+  private _grainCropsInResults(): string[] {
+    const codes = new Set<string>();
+    for (const c of this.filteredCustomers()) {
+      for (const g of (c.grainOnFarm ?? [])) {
+        const code = (g.commodityCode || '').trim();
+        if (code) codes.add(code.toUpperCase());
       }
     }
     return [...codes].sort();
@@ -1196,7 +673,7 @@ export class BuildListComponent {
   assignTargetIds = signal<Set<string>>(new Set());
   assigning = signal(false);
   /** The list payload (without targets) being assigned: the current built list or an existing one. */
-  private _assignBase: { query: string; tradeUnits?: string; filters?: RefinementFilters; includedCustomerIds?: number[]; excludedCustomerIds?: number[] } | null = null;
+  private _assignBase: SavedListPayload | null = null;
   isProcessing = signal(false);
   waitingForTickets = signal(false);
   /** True while a note-dependent query is parked waiting for the lazily-loaded full note set.
@@ -1314,137 +791,30 @@ export class BuildListComponent {
     return ids.map(id => customerMap.get(id)).filter((c): c is Customer => !!c);
   });
 
-  // ── Pattern display name map for user-facing feedback ────────────────────
-  private readonly _patternDisplayNames: { [key: string]: string } = {
-    state_filter: 'State', acres_more: 'Acres (min)', acres_less: 'Acres (max)', acres_between: 'Acres (range)',
-    large_farm: 'Large operations', small_farm: 'Small operations', not_contacted: 'Not contacted',
-    recently_contacted: 'Recently contacted', storage: 'Has storage', no_storage: 'No storage',
-    storage_duration: 'Storage duration', planting: 'Planting', no_planting: 'No planting',
-    planting_year: 'Crop year', planting_type: 'Planting type',
-    active_contract: 'Active contracts', no_contract: 'No contracts',
-    unsigned_contract: 'Unconfirmed contracts', negative_pacing: 'Behind on pacing',
-    positive_pacing: 'Ahead on pacing', contract_unconfirmed: 'Unconfirmed contracts',
-    contract_confirmed: 'Confirmed contracts', contract_priced: 'Pricing status',
-    contract_quantity: 'Contract quantity', contract_value: 'Contract value',
-    contract_open_balance: 'Open balance', fulfillment_ratio: 'Fulfillment %',
-    commodity_contract: 'Commodity contracts', has_deliveries: 'Has deliveries',
-    no_deliveries: 'No deliveries', delivery_commodity: 'Delivery commodity',
-    delivery_quantity: 'Delivery quantity', ticket_unapplied: 'Unapplied tickets',
-    ticket_unsettled: 'Unsettled tickets', has_phone: 'Has phone', no_phone: 'No phone',
-    has_email: 'Has email', no_email: 'No email', commodities_match: 'Commodity match', crop_count: 'Crop count',
-    top_n: 'Top N ranking', customer_search: 'Name search', region_filter: 'Region',
-    multi_commodity: 'Multiple crops (AND)', multi_commodity_or: 'Multiple crops (OR)',
-    cross_contract_no_delivery: 'Contracted, not delivered',
-    cross_planting_no_contract: 'Planting, no contracts',
-    cross_delivery_no_contract: 'Delivered, no contracts',
-    note_contains: 'Notes containing',
-    grain_on_farm: 'Grain on farm', grain_target: 'Target price', grain_grade: 'Grade',
-  };
-
-  readonly matchedPatternLabels = computed(() =>
-    this.matchedPatterns()
-      .map(p => this._patternDisplayNames[p] || null)
-      .filter((label): label is string => label !== null)
-      // Deduplicate labels
-      .filter((v, i, a) => a.indexOf(v) === i)
-  );
+  readonly matchedPatternLabels = computed(() => matchedPatternLabels(this.matchedPatterns()));
 
   // ── Pre-indexed computed signals for O(1) lookups ────────────────────────
 
   /** ALL contracts grouped by ctrmCustomerId — includes prior-year closed contracts for pacing. */
-  private readonly _contractsByCustomer = computed(() => {
-    const map = new Map<string, Contract[]>();
-    for (const c of this.contracts()) {
-      if (!c.ctrmCustomerId) continue;
-      const arr = map.get(c.ctrmCustomerId);
-      if (arr) arr.push(c); else map.set(c.ctrmCustomerId, [c]);
-    }
-    return map;
-  });
+  private readonly _contractsByCustomer = computed(() => contractsByCustomerCode(this.contracts()));
 
   /** Open contracts only — used by refinement filters (no active, unconfirmed, overdue bu, etc.). */
-  private readonly _openContractsByCustomer = computed(() => {
-    const map = new Map<string, Contract[]>();
-    for (const c of this.contracts()) {
-      if (!c.ctrmCustomerId || c.closedDate) continue;
-      const arr = map.get(c.ctrmCustomerId);
-      if (arr) arr.push(c); else map.set(c.ctrmCustomerId, [c]);
-    }
-    return map;
-  });
+  private readonly _openContractsByCustomer = computed(() => contractsByCustomerCode(this.contracts(), true));
 
   /** Raw latest-contact time (ms since epoch) per customerId, from the lightweight last-contact
    *  AGGREGATE (always loaded on TU change — not the full note set) with the linked-producer
    *  connected-component rollup applied. Because the aggregate is present up front, this is a
    *  STABLE sort key that doesn't shift as note bodies stream in for batched prompts. Absent from
    *  the map = the producer and its entire linked chain have never been contacted. */
-  private readonly _lastContactTimeByCustomer = computed(() => {
-    // Index latest-contact time by customerCode from the aggregate — correct on every prompt and
-    // never dependent on a full-notes download.
-    const notesByCode = new Map<string, number>();
-    for (const lc of this.appState.noteLastContacts()) {
-      if (!lc.customerCode) continue;
-      const time = BuildListComponent.parseNoteTime(lc.lastNoteAt as unknown as string);
-      const existing = notesByCode.get(lc.customerCode);
-      if (existing == null || time > existing) notesByCode.set(lc.customerCode, time);
-    }
-
-    // Walk the full linked-producer connected component for each customer so the "last contacted"
-    // time reflects the entire chain (A→B→C). Same closure used everywhere else linked behavior
-    // matters, so this key, the badge, and the inline note panel all agree.
-    const components = this.linkedProducerComponents();
-    const latest = new Map<number, number>();
-    for (const customer of this.customers()) {
-      if (!customer.scoularId) continue;
-      const codes = components.get(customer.scoularId) ?? new Set([customer.scoularId]);
-      let latestTime = 0;
-      for (const code of codes) {
-        const t = notesByCode.get(code);
-        if (t != null && t > latestTime) latestTime = t;
-      }
-      if (latestTime > 0) latest.set(customer.id, latestTime);
-    }
-    return latest;
-  });
+  private readonly _lastContactTimeByCustomer = computed(() =>
+    lastContactTimeByCustomer(this.appState.noteLastContacts(), this.linkedProducerComponents(), this.customers()));
 
   /** Most recent note per customer — pre-indexed for O(1) template lookup. Derived from the
    *  aggregate-backed {@link _lastContactTimeByCustomer} (with linked rollup), so the badge agrees
    *  with the sort order and the inline note panel. */
-  readonly lastContactByCustomer = computed(() => {
-    const map = new Map<number, { text: string; colorClass: string; daysAgo: number }>();
-    const latestNotes = this._lastContactTimeByCustomer();
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    for (const [customerId, time] of latestNotes) {
-      const noteDate = new Date(time);
-      noteDate.setHours(0, 0, 0, 0);
-      // Math.round (not floor): both endpoints are zeroed to local midnight, so the diff is an
-      // integer number of days — except across DST transitions where the day is 23 or 25 hours.
-      // round handles those edges; floor would mis-bucket a note from yesterday as "today" on
-      // spring-forward day.
-      const daysAgo = Math.max(0, Math.round((today.getTime() - noteDate.getTime()) / 86400000));
-      let result: { text: string; colorClass: string; daysAgo: number };
-      if (daysAgo === 0) result = { text: 'Contacted today', colorClass: 'text-scoular-green', daysAgo };
-      else if (daysAgo === 1) result = { text: 'Contacted yesterday', colorClass: 'text-scoular-green', daysAgo };
-      else if (daysAgo < 7) result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-scoular-green', daysAgo };
-      else if (daysAgo < 30) result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-yellow-500', daysAgo };
-      else result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-scoular-red', daysAgo };
-      map.set(customerId, result);
-    }
-    return map;
-  });
+  readonly lastContactByCustomer = computed(() => lastContactBadges(this._lastContactTimeByCustomer()));
 
   // ── Note filters: derive whether a note-focused query/filter is active and surface the matching notes per customer for inline display in the result list. ───────────────
-  private static readonly _NLQ_NOTE_VERB = /notes?\s+(?:added|made|entered|written|created|left)/;
-
-  /** Parses a note's createdAt as UTC. The API stores DateTime.UtcNow without a 'Z' suffix,
-   *  so a bare ISO string would be interpreted by the browser as local time — for a CST user
-   *  that drifts cutoff comparisons by 6 hours and would mis-bucket "today"/"yesterday". */
-  private static parseNoteTime(ts: string | Date): number {
-    const raw = typeof ts === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
-    return new Date(raw).getTime();
-  }
 
   /** True when the linked-as-one-entity behavior should apply: dedup, badge,
    *  and the linked-producer expand panel. Notes prompts trigger this (linked
@@ -1466,26 +836,6 @@ export class BuildListComponent {
     return buildLinkedProducerComponents(this.customers());
   });
 
-  /** Pure predicate behind noteFilterActive() — split out so the readiness machinery
-   *  (_criteriaReadiness / _commitRefinements) can evaluate it against a STAGED refinement
-   *  set that hasn't been committed to appliedRefinements yet. */
-  private _isNoteFilterActive(r: RefinementFilters, queryText: string): boolean {
-    if (r.notesInLastDays != null && r.notesInLastDays > 0) return true;
-    if (r.noteKeyword?.trim()) return true;
-    if (r.hasPinnedNotes) return true;
-    if (r.contactedByMeOnly || r.contactedBySomeoneElse) return true;
-    if (r.contactedOnlyOnce || r.contactedMoreThan5) return true;
-    if (r.neverContacted) return true;
-    if (r.notContactedDays != null && r.notContactedDays > 0) return true;
-
-    const q = queryText.toLowerCase();
-    if (/\b(?:contacted|called|reached\s+out)\b/.test(q)) return true;
-    return BuildListComponent._NLQ_NOTE_VERB.test(q)
-        || /pinned\s+note/.test(q)
-        || /(?:with|has|have)\s+notes?\b/.test(q)
-        || /notes?\s+(?:about|mentioning|containing|saying)/.test(q);
-  }
-
   /** True when the result list should render an inline note section per customer.
    *  Every Contacts-category prompt surfaces inline notes — including absence prompts
    *  ("never contacted", "haven't contacted in N days"). The user still wants context
@@ -1493,148 +843,39 @@ export class BuildListComponent {
    *  prior merchandiser may have, and seeing the most-recent note tells them what was
    *  last discussed. The predicate skips date cutoffs for absence prompts so old notes
    *  aren't accidentally hidden. */
-  readonly noteFilterActive = computed(() => this._isNoteFilterActive(this.appliedRefinements(), this.queryText()));
+  readonly noteFilterActive = computed(() => isNoteFilterActive(this.appliedRefinements(), this.queryText()));
 
   /** Predicate that matches a note against whichever note criteria are active. */
-  readonly noteFilterPredicate = computed<(n: Note) => boolean>(() => {
-    const r = this.appliedRefinements();
-    const q = this.queryText().toLowerCase();
-    const hasContactVerb = /\b(?:contacted|called|reached\s+out)\b/.test(q);
-    // Absence prompts (never / haven't contacted): show ALL notes for the producer so the
-    // user can see prior context regardless of recency. The "N days" in "haven't contacted
-    // in 30 days" is a property of the producer match, not a date filter on notes shown.
-    const isAbsenceQuery = r.neverContacted
-      || (r.notContactedDays != null && r.notContactedDays > 0)
-      || /never\s+contacted|haven'?t\s+contacted|not\s+(?:been\s+)?contacted|haven'?t\s+called/.test(q);
+  readonly noteFilterPredicate = computed<(n: Note) => boolean>(() =>
+    buildNoteFilterPredicate(this.appliedRefinements(), this.queryText(), {
+      // Author candidates for "by me" / "by someone else" filters. Same matcher the
+      // service uses so saved-list "I contacted" filters work even when notes' CreatedBy
+      // arrives as the raw UPN (e.g. "CEgr@scoular.com") instead of a display name.
+      authorCandidates: () => this._authorCandidates(),
+      matchesAuthor: (createdBy, candidates) => this.nlqFilterService.matchesAuthor(createdBy, candidates),
+    }));
 
-    let cutoffMs: number | null = null;
-    if (!isAbsenceQuery) {
-      if (r.notesInLastDays != null && r.notesInLastDays > 0) {
-        cutoffMs = Date.now() - r.notesInLastDays * 86400000;
-      } else if (BuildListComponent._NLQ_NOTE_VERB.test(q) || hasContactVerb) {
-        // Numeric "in last N days" parsing works for both note-verb and contact-verb queries.
-        const numeric = q.match(/(?:notes?\s+(?:added|made|entered|written|created|left)|contacted|called|reach(?:ed)?\s+out)\s*(?:in|within)?\s*(?:the\s+)?(?:last|past)?\s*(\d+)\s*days?/);
-        if (numeric) cutoffMs = Date.now() - parseInt(numeric[1], 10) * 86400000;
-        else if (q.includes('today')) cutoffMs = Date.now() - 1 * 86400000;
-        else if (q.includes('yesterday')) cutoffMs = Date.now() - 2 * 86400000;
-        else if (q.includes('this week') || q.includes('last week')) cutoffMs = Date.now() - 7 * 86400000;
-        else if (q.includes('this month') || q.includes('last month')) cutoffMs = Date.now() - 30 * 86400000;
-      }
-    }
-
-    // Keyword extraction: prefer the structured refinement; otherwise pull a quoted or "mentioning X"
-    // fragment out of the NLQ query so the inline display matches what the user actually asked for.
-    let keyword = r.noteKeyword?.trim().toLowerCase() || null;
-    if (!keyword) {
-      const quoted = q.match(/notes?\s+(?:about|mentioning|containing|saying|with)\s+["']([^"']+)["']/);
-      if (quoted) keyword = quoted[1].trim().toLowerCase();
-      else {
-        const bare = q.match(/notes?\s+(?:about|mentioning|containing|saying)\s+([\w-]+(?:\s+[\w-]+){0,2})/);
-        if (bare) keyword = bare[1].trim().toLowerCase();
-      }
-    }
-    const requirePinned = !!r.hasPinnedNotes || /pinned\s+note/.test(q);
-
-    // Author candidates for "by me" / "by someone else" filters. Same matcher the
-    // service uses so saved-list "I contacted" filters work even when notes' CreatedBy
-    // arrives as the raw UPN (e.g. "CEgr@scoular.com") instead of a display name.
+  /** The signed-in user's author candidates (MSAL display name + UPN), as the NLQ matcher builds them. */
+  private _authorCandidates(): string[] {
     const account = this.msalService.instance.getActiveAccount() ?? this.msalService.instance.getAllAccounts()[0];
-    const authorCandidates = this.nlqFilterService.buildAuthorCandidates(
-      null,
-      account?.name ?? '',
-      account?.username ?? ''
-    );
-    // Implicit "by me" when query starts with "I contacted / called / reached out"
-    const queryImpliesByMe = /^[^a-z]*(?:producers?\s+)?i\s+(?:contacted|called|reached\s+out)\b/.test(q);
-    const requireByMe = r.contactedByMeOnly || queryImpliesByMe;
-    const requireByOthers = r.contactedBySomeoneElse;
-
-    return (n: Note) => {
-      if (cutoffMs != null) {
-        const t = BuildListComponent.parseNoteTime(n.createdAt);
-        if (!t || t < cutoffMs) return false;
-      }
-      if (keyword && !(n.content || '').toLowerCase().includes(keyword)) return false;
-      if (requirePinned && !n.isPinned) return false;
-      if (requireByMe && !this.nlqFilterService.matchesAuthor(n.createdBy, authorCandidates)) return false;
-      if (requireByOthers && this.nlqFilterService.matchesAuthor(n.createdBy, authorCandidates)) return false;
-      return true;
-    };
-  });
+    return this.nlqFilterService.buildAuthorCandidates(null, account?.name ?? '', account?.username ?? '');
+  }
 
   /** Notes matching the active note filter, indexed by source customerCode.
    *  Each note is tagged with `viaName = "{Name} ({Code})"` of the customer it was
    *  placed on — applied uniformly to every note so the origin is always visible. */
   private readonly _matchedNotesByCode = computed(() => {
-    const map = new Map<string, Array<Note & { viaName: string }>>();
-    if (!this.noteFilterActive()) return map;
-
-    const predicate = this.noteFilterPredicate();
-    const customerByCode = new Map<string, Customer>();
-    for (const c of this.customers()) {
-      if (c.scoularId) customerByCode.set(c.scoularId, c);
-    }
-
-    for (const n of this.notes()) {
-      if (!n.customerCode || !predicate(n)) continue;
-      const owner = customerByCode.get(n.customerCode);
-      // Consistent shape: always include the code in trailing parens. Name prepended when known,
-      // omitted otherwise. Avoids the previous "Name (Code)" vs bare "Code" visual mismatch.
-      const viaName = owner ? `${owner.name} (${owner.scoularId})` : `(${n.customerCode})`;
-      const arr = map.get(n.customerCode);
-      const tagged = { ...n, viaName };
-      if (arr) arr.push(tagged);
-      else map.set(n.customerCode, [tagged]);
-    }
-
-    for (const arr of map.values()) {
-      arr.sort((a, b) => {
-        if (!!a.isPinned !== !!b.isPinned) return a.isPinned ? -1 : 1;
-        const dt = BuildListComponent.parseNoteTime(b.createdAt) - BuildListComponent.parseNoteTime(a.createdAt);
-        return dt !== 0 ? dt : (b.id ?? 0) - (a.id ?? 0);
-      });
-    }
-    return map;
+    if (!this.noteFilterActive()) return new Map<string, MatchedNote[]>();
+    return indexMatchingNotesByCode(this.noteFilterPredicate(), this.customers(), this.notes());
   });
 
   /** Per-customer aggregated matching notes (own + linked + incoming), pinned-first then newest-first.
    *  Every note is tagged with viaName so its origin is always identifiable. */
   readonly matchingNotesByCustomer = computed(() => {
-    const map = new Map<number, Array<Note & { viaName: string }>>();
-    if (!this.noteFilterActive()) return map;
-
+    if (!this.noteFilterActive()) return new Map<number, MatchedNote[]>();
     const matchesByCode = this._matchedNotesByCode();
-    if (matchesByCode.size === 0) return map;
-    const customers = this.customers();
-    const components = this.linkedProducerComponents();
-
-    for (const customer of customers) {
-      const ownCode = customer.scoularId;
-      if (!ownCode) continue;
-      // Walk the full connected component so chained links (A→B→C) aggregate every member's
-      // notes onto the representative row.
-      const codes = components.get(ownCode) ?? new Set([ownCode]);
-
-      const out: Array<Note & { viaName: string }> = [];
-      const seen = new Set<number>();
-      for (const code of codes) {
-        const matches = matchesByCode.get(code);
-        if (!matches) continue;
-        for (const n of matches) {
-          if (seen.has(n.id)) continue;
-          seen.add(n.id);
-          out.push(n);
-        }
-      }
-      if (out.length === 0) continue;
-      out.sort((a, b) => {
-        if (!!a.isPinned !== !!b.isPinned) return a.isPinned ? -1 : 1;
-        const dt = BuildListComponent.parseNoteTime(b.createdAt) - BuildListComponent.parseNoteTime(a.createdAt);
-        return dt !== 0 ? dt : (b.id ?? 0) - (a.id ?? 0);
-      });
-      map.set(customer.id, out);
-    }
-    return map;
+    if (matchesByCode.size === 0) return new Map<number, MatchedNote[]>();
+    return aggregateMatchingNotes(matchesByCode, this.customers(), this.linkedProducerComponents());
   });
 
   /** Matching notes for one customer — own notes only (not aggregated). Used in the linked-producer expand panel. */
@@ -1642,38 +883,12 @@ export class BuildListComponent {
     return customer.scoularId ? (this._matchedNotesByCode().get(customer.scoularId) ?? []) : [];
   }
 
-  /** Distinct linked-producer info per customer (bidirectional, excluding self).
-   *  Only includes producers whose Customer record is loaded — codes without a match are dropped.
-   *  Manually-excluded customers are filtered out so the exclude action affects the linked panel too.
+  /** Linked producers per customer for the inline linked panel (see linkedProducerInfo in utils).
    *  Returns an empty map unless the linked-as-one-entity feature is active (notes prompts or
-   *  the "Producers with linked records" prompt) — for other queries each producer is its own row.
-   *  `producers` is the actual Customer[] for inline detail rendering. */
+   *  the "Producers with linked records" prompt) — for other queries each producer is its own row. */
   readonly linkedProducerInfoByCustomer = computed(() => {
-    const map = new Map<number, { count: number; producers: Customer[] }>();
-    if (!this.linkedFeatureActive()) return map;
-    const customers = this.customers();
-    const excludedIds = this.manuallyExcludedCustomerIds();
-    const components = this.linkedProducerComponents();
-
-    const customerByCode = new Map<string, Customer>();
-    for (const c of customers) {
-      if (c.scoularId) customerByCode.set(c.scoularId, c);
-    }
-
-    for (const customer of customers) {
-      if (!customer.scoularId) continue;
-      const component = components.get(customer.scoularId);
-      if (!component || component.size <= 1) continue;
-      const producers: Customer[] = [];
-      for (const code of component) {
-        if (code === customer.scoularId) continue;
-        const linked = customerByCode.get(code);
-        if (linked && !excludedIds.has(linked.id)) producers.push(linked);
-      }
-      if (producers.length === 0) continue;
-      map.set(customer.id, { count: producers.length, producers });
-    }
-    return map;
+    if (!this.linkedFeatureActive()) return new Map<number, { count: number; producers: Customer[] }>();
+    return linkedProducerInfo(this.customers(), this.manuallyExcludedCustomerIds(), this.linkedProducerComponents());
   });
 
   /** Customer ids that are reachable in the result list — either as their own
@@ -1690,67 +905,15 @@ export class BuildListComponent {
   });
 
   /** Crops per customer — merged from ProducerDetails, contracts, intentions. */
-  readonly cropsByCustomer = computed(() => {
-    const map = new Map<number, string[]>();
-    const contractMap = this._contractsByCustomer();
-
-    // Pre-index intention crops by customerId — O(intentions) instead of O(customers × intentions)
-    const intentionCropsByCustomer = new Map<number, Set<string>>();
-    for (const p of this.plantingIntentions()) {
-      if (!intentionCropsByCustomer.has(p.customerId)) {
-        intentionCropsByCustomer.set(p.customerId, new Set());
-      }
-      intentionCropsByCustomer.get(p.customerId)!.add(p.crop);
-    }
-
-    // Pre-index ticket product codes by customerId
-    const ticketCropsByCustomer = new Map<number, Set<string>>();
-    for (const t of this.tickets()) {
-      if (!t.customerId || !t.productCode) continue;
-      if (!ticketCropsByCustomer.has(t.customerId)) {
-        ticketCropsByCustomer.set(t.customerId, new Set());
-      }
-      ticketCropsByCustomer.get(t.customerId)!.add(t.productCode);
-    }
-
-    // Pre-index stored grain crops by customerId
-    const storedGrainCropsByCustomer = new Map<number, Set<string>>();
-    for (const sg of this.storedGrain()) {
-      if (!sg.customerId || !sg.crop) continue;
-      if (!storedGrainCropsByCustomer.has(sg.customerId)) {
-        storedGrainCropsByCustomer.set(sg.customerId, new Set());
-      }
-      storedGrainCropsByCustomer.get(sg.customerId)!.add(sg.crop);
-    }
-
-    for (const customer of this.customers()) {
-      const detailCrops = customer.commodities?.length ? [...customer.commodities] : [];
-      const contractCrops = customer.scoularId
-        ? [...new Set(
-            (contractMap.get(customer.scoularId) || [])
-              .map(c => c.commodityCode)
-              .filter((crop): crop is string => !!crop)
-          )]
-        : [];
-      const intentionCrops = [...(intentionCropsByCustomer.get(customer.id) || [])];
-      const ticketCrops = [...(ticketCropsByCustomer.get(customer.id) || [])];
-      const storageCrops = [...(storedGrainCropsByCustomer.get(customer.id) || [])];
-      // Dedupe by trimmed uppercase value, but keep original casing for display
-      const seen = new Set<string>();
-      const unique: string[] = [];
-      for (const crop of [...detailCrops, ...contractCrops, ...intentionCrops, ...ticketCrops, ...storageCrops]) {
-        const key = crop.trim().toUpperCase();
-        if (key && !seen.has(key)) { seen.add(key); unique.push(crop.trim()); }
-      }
-      map.set(customer.id, unique.slice(0, 5));
-    }
-    return map;
-  });
+  readonly cropsByCustomer = computed(() => cropsByCustomer(
+    this._contractsByCustomer(), this.plantingIntentions(), this.tickets(), this.storedGrain(), this.customers()));
 
   // ── Query Library ──────────────────────────────────────────────────────
   queryLibrary = signal<QueryLibraryItem[]>([]);
   queryLibraryLoaded = signal(false);
   librarySearchText = signal('');
+  /** A Help panel example query waiting for the library to load. See the constructor. */
+  private readonly _pendingExample = signal<string | null>(null);
   selectedCategory = signal<string | null>(null);
   selectedLibraryQuery = signal<QueryLibraryItem | null>(null);
   private _searchLogTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -1758,39 +921,12 @@ export class BuildListComponent {
   showRequestForm = signal(false);
   requestQueryText = signal('');
 
-  readonly filteredLibrary = computed(() => {
-    const search = this.librarySearchText().toLowerCase().trim();
-    const category = this.selectedCategory();
-    let items = this.queryLibrary();
-    // Prompt cards are database rows, so they appear the moment the migration runs — including in
-    // environments where the reminders feature is still switched off. There the follow-up card
-    // would resolve to nobody, every time, so hide it rather than leave a dead end on the page.
-    if (!environment.remindersEnabled) {
-      items = items.filter(q => !(q.tags || '').toLowerCase().includes('reminders'));
-    }
-    if (category) items = items.filter(q => q.category === category);
-    if (search) {
-      items = items.filter(q =>
-        q.name.toLowerCase().includes(search) ||
-        (q.description || '').toLowerCase().includes(search) ||
-        (q.tags || '').toLowerCase().includes(search) ||
-        q.category.toLowerCase().includes(search) ||
-        q.queryText.toLowerCase().includes(search)
-      );
-    }
-    return items;
-  });
+  /** Prompt cards for the selected category and search text. Cards tagged "reminders" are hidden while
+   *  the reminders feature is off — see filterLibrary. */
+  readonly filteredLibrary = computed(() =>
+    filterLibrary(this.queryLibrary(), this.librarySearchText().toLowerCase().trim(), this.selectedCategory(), environment.remindersEnabled));
 
-  readonly libraryCategories = computed(() => {
-    const cats = new Set(this.queryLibrary().map(q => q.category));
-    const sorted = [...cats].sort();
-    // Prepend pseudo-categories so they sit right after "All" (rendered separately, before this loop).
-    // 'Team Lists' (managers only) goes between 'Saved Lists' and the first real category. unshift in
-    // reverse order so the final order is: Saved Lists, Team Lists, <alphabetical categories>.
-    if (this.isManager()) sorted.unshift('Team Lists');
-    sorted.unshift('Saved Lists');
-    return sorted;
-  });
+  readonly libraryCategories = computed(() => libraryCategories(this.queryLibrary(), this.isManager()));
 
   /** Team lists shown in the library — manager-only, scoped to the current TU (overlap match done
    *  server-side), and matched against the library search text. Hidden when a non-'Team Lists'
@@ -1800,15 +936,7 @@ export class BuildListComponent {
     const cat = this.selectedCategory();
     if (cat && cat !== 'Team Lists') return [];
     const search = this.librarySearchText().toLowerCase().trim();
-    let lists = this.teamSavedLists();
-    if (search) {
-      lists = lists.filter(l =>
-        l.name.toLowerCase().includes(search) ||
-        l.query.toLowerCase().includes(search) ||
-        (l.createdBy ?? '').toLowerCase().includes(search)
-      );
-    }
-    return lists;
+    return searchTeamLists(this.teamSavedLists(), search);
   });
 
   /** Saved lists shown in the library — user-owned (API filters by createdBy already), overlap-
@@ -1818,14 +946,7 @@ export class BuildListComponent {
     const cat = this.selectedCategory();
     if (cat && cat !== 'Saved Lists') return [];
     const search = this.librarySearchText().toLowerCase().trim();
-    let lists = this.visibleSavedLists();
-    if (search) {
-      lists = lists.filter(l =>
-        l.name.toLowerCase().includes(search) ||
-        l.query.toLowerCase().includes(search)
-      );
-    }
-    return lists;
+    return searchSavedLists(this.visibleSavedLists(), search);
   });
 
   /** The library category driving refine-panel visibility. Prefers the explicitly selected
@@ -1837,9 +958,7 @@ export class BuildListComponent {
     if (explicit) return explicit;
     const active = this.activeSavedList();
     if (!active) return null;
-    const qLower = active.query.trim().toLowerCase();
-    const matched = this.queryLibrary().find(q => q.queryText.trim().toLowerCase() === qLower);
-    return matched?.category ?? null;
+    return libraryCategoryForQuery(this.queryLibrary(), active.query);
   });
 
   /** True when we have an active saved list whose category we can't resolve yet because the
@@ -1859,51 +978,8 @@ export class BuildListComponent {
   /** Filters that are redundant given the selected query — hide them from the UI.
    *  Reads the explicit library prompt OR the active saved list's query so the same hide
    *  rules apply whether the user just clicked a library prompt or re-opened a saved list. */
-  readonly hiddenFilters = computed<Set<string>>(() => {
-    const q = (this.selectedLibraryQuery()?.queryText || this.activeSavedList()?.query || '').toLowerCase();
-    const hidden = new Set<string>();
-    // Contract filters
-    if (q.includes('active contract'))      { hidden.add('noActiveContracts'); hidden.add('hasActiveContracts'); }
-    // "no contracts" prompts already mean "nothing live", so the status checkboxes are redundant.
-    // 'noContractsAtAll' stays visible on purpose — it's a STRICTER narrowing (zero contracts of any
-    // kind vs. none currently open), so it's still a useful refinement on top of the prompt.
-    if (q.includes('no contract'))          { hidden.add('noActiveContracts'); hidden.add('hasActiveContracts'); }
-    if (q.includes('unsigned') || q.includes('unconfirmed')) hidden.add('hasUnsignedContracts');
-    if (q.includes('unpriced'))             hidden.add('hasUnpricedContracts');
-    if (q.includes('pacing') || q.includes('contract pace')) hidden.add('downHarvestPace');
-    if (q.includes('overdue'))              hidden.add('hasOverdueContracts');
-    if (q.includes('no deliver'))           hidden.add('hasDeliveriesThisYear');
-    if (q.includes('expiring'))             hidden.add('contractsExpiringThisMonth');
-    // Contact filters
-    if (q.includes('never contacted'))      hidden.add('neverContacted');
-    if (/not contacted.*\d+\s*days/.test(q)) hidden.add('notContactedDays');
-    if (/notes?\s+(?:added|made|entered|written|created|left).*(?:\d+\s*days?|today|yesterday|this\s+week)/.test(q)) hidden.add('notesInLastDays');
-    if (q.includes('i contacted') || q.includes('i have contacted')) { hidden.add('contactedByMeOnly'); hidden.add('neverContacted'); }
-    if (q.includes('i have never'))         { hidden.add('contactedByMeOnly'); hidden.add('neverContacted'); }
-    if (q.includes('contacted this week'))  hidden.add('neverContacted');
-    // Notes
-    if (q.includes('with notes'))           { hidden.add('hasPinnedNotes'); hidden.add('neverContacted'); }
-    if (q.includes('notes mentioning'))     { hidden.add('noteKeyword'); hidden.add('neverContacted'); }
-    // General
-    if (q.includes('linked producer'))      hidden.add('hasLinkedProducers');
-    if (q.includes('no primary contact'))   { hidden.add('noPrimaryContact'); hidden.add('hasPrimaryContact'); }
-    if (q.includes('without esign') || q.includes('not esign')) hidden.add('notEsignEnrolled');
-    if (q.includes('largest') || q.includes('by acres')) hidden.add('acresOver');
-    if (q.includes('planting'))             hidden.add('hasPlantingIntentions');
-    if (/planting.*\d{4}|\d{4}.*planting/.test(q)) hidden.add('plantingYear');
-    if (q.includes('irrigat'))              hidden.add('irrigatedOnly');
-    if (q.includes('dryland'))              hidden.add('drylandOnly');
-    if (q.includes('double crop'))          hidden.add('doubleCropOnly');
-    if (q.includes('corn') && q.includes('planting')) hidden.add('plantingCrop');
-    if (q.includes('wheat') && q.includes('planting')) hidden.add('plantingCrop');
-    if (q.includes('in storage') || q.includes('stored')) hidden.add('hasGrainInStorage');
-    if (/stored.*over.*\d+\s*days|storage.*over.*\d+\s*days/.test(q)) hidden.add('storageDaysOver');
-    if (/\bon dp\b/.test(q) || /\bdp contract/.test(q) || q.includes('delayed pricing')) hidden.add('hasDpContracts');
-    if (/dp.*over.*\d+\s*days/.test(q)) hidden.add('dpDaysOver');
-    if (/dp\s*(?:charges?|cost)\s*(?:over|above|more than)/.test(q)) hidden.add('dpChargesOver');
-    if (q.includes('unapplied') || q.includes('applied ticket')) hidden.add('hasDeliveriesThisYear');
-    return hidden;
-  });
+  readonly hiddenFilters = computed<Set<string>>(() =>
+    hiddenRefineFilters((this.selectedLibraryQuery()?.queryText || this.activeSavedList()?.query || '').toLowerCase()));
 
   readonly showTicketFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Tickets');
   /** True when the active prompt is specifically about APPLIED tickets (which aren't grouped
@@ -1923,7 +999,89 @@ export class BuildListComponent {
   readonly showStorageFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Storage');
   readonly showDpFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'DP Contracts');
   readonly showPlantingFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Planting');
-  readonly showGrainOnFarmFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Grain on Farm');
+  /** The "Grain on Farm & Bin Sites" prompts (or a saved list from the pre-rename "Grain on Farm"):
+   *  grain filters plus has/no bin sites in one panel, and crop + bushel chips on each result. */
+  readonly showGrainOnFarmFilters = computed(() => !this.isResolvingSavedListCategory() && isGrainAndBinSitesCategory(this.effectiveLibraryCategory()));
+
+  // ── Notes that mention a bin site (Grain on Farm & Bin Sites prompts, user 2026-10-09) ────────
+  // Notes are added as usual; on these prompts a result row's middle column shows the producer's
+  // notes that name one of their saved bin sites — the same column and note stack note prompts use.
+  // Loaded by its own small batch loader (not the note-prompt machinery): as rows render, one fetch
+  // per batch for those producers' notes containing any of their site names (a server superset the
+  // client re-matches exactly).
+
+  /** A bin-mention note's text split into runs, the site names marked (shown in blue). */
+  binSiteRuns(text: string, siteNames: readonly string[]) { return splitByBinSiteNames(text ?? '', siteNames); }
+  readonly binSiteNameClass = BIN_SITE_NAME_CLASS;
+
+  /** Bin-site mention notes are on screen: these prompts, unless a notes filter owns the middle column. */
+  readonly binNotesActive = computed(() => this.showGrainOnFarmFilters() && !this.noteFilterActive());
+
+  /** Notes fetched for bin-site mentions (accumulated across render batches). */
+  private readonly _binNotes = signal<Note[]>([]);
+  /** "customerId:site names" already fetched — a renamed site changes the key, so it refetches. */
+  private readonly _binNoteFetchedKeys = new Set<string>();
+  private _binNotesFetchInFlight = false;
+
+  /** Per producer: the notes naming one of their bin sites, pinned first then newest, and which sites. */
+  readonly binSiteNotesByCustomer = computed(() => {
+    const map = new Map<number, { notes: Note[]; sites: string[] }>();
+    if (!this.binNotesActive()) return map;
+    const byCustomer = new Map<number, Note[]>();
+    for (const n of this._binNotes()) {
+      const arr = byCustomer.get(n.customerId);
+      if (arr) arr.push(n); else byCustomer.set(n.customerId, [n]);
+    }
+    for (const c of this.customers()) {
+      const notes = byCustomer.get(c.id);
+      if (!notes) continue;
+      const found = notesMentioningBinSites(notes, binSiteNames(c.binSites));
+      if (found) map.set(c.id, found);
+    }
+    return map;
+  });
+
+  /**
+   * Fetches the bin-mention notes for EVERY producer in the result that has named bin sites (not just
+   * the rendered rows) — the result is ordered by the latest such note, so it needs them all up front.
+   * The ids and site names travel in the query string, and many sites could pass the 2,048-character
+   * limit IIS applies by default (a rejected request would read as "no notes"), so the work is split
+   * into requests under BIN_NOTES_QUERY_BUDGET, sent together; the rows re-order once when they land.
+   * A single producer whose names alone pass the budget is fetched by id only (the client still matches).
+   */
+  private _loadBinSiteNotes(): void {
+    if (!this.binNotesActive() || this._binNotesFetchInFlight) return;
+    const chunks = planBinSiteNoteChunks(this.filteredCustomers(), this._binNoteFetchedKeys, BuildListComponent.BIN_NOTES_QUERY_BUDGET);
+    if (chunks.length === 0) return;
+
+    this._binNotesFetchInFlight = true;
+    const requests = chunks.map(ch => this.apiService.getNotes(undefined, {
+      customerIds: ch.ids,
+      contentAny: binNoteContentAny(ch, BuildListComponent.BIN_NOTES_QUERY_BUDGET),
+    }).pipe(catchError(() => of([] as Note[]))));
+    // At most four requests in flight at once; order doesn't matter (results are flattened and deduped).
+    from(requests).pipe(mergeMap(r => r, 4), toArray(), takeUntilDestroyed(this.destroyRef)).subscribe(results => {
+      this._binNotesFetchInFlight = false;
+      // Also on a failed piece: don't retry-loop it; the rows just show no mention notes.
+      chunks.forEach(ch => ch.keys.forEach(k => this._binNoteFetchedKeys.add(k)));
+      const seen = new Set(this._binNotes().map(n => n.id));
+      const fresh: Note[] = [];
+      for (const n of results.flat()) {
+        if (seen.has(n.id)) continue;
+        seen.add(n.id);
+        fresh.push(n);
+      }
+      if (fresh.length) this._binNotes.set([...this._binNotes(), ...fresh]);
+      this._loadBinSiteNotes(); // anything that changed while these were in flight
+    });
+  }
+
+  /** Load bin-mention notes whenever the result (or the prompt) changes. */
+  private readonly _binNotesLoader = effect(() => {
+    this.binNotesActive();
+    this.filteredCustomers();
+    untracked(() => this._loadBinSiteNotes());
+  });
   readonly showGeneralFilters = computed(() => {
     if (this.isResolvingSavedListCategory()) return false;
     const cat = this.effectiveLibraryCategory();
@@ -1934,15 +1092,7 @@ export class BuildListComponent {
     return !cat || cat === 'General' || cat === 'Producers';
   });
 
-  readonly groupedLibrary = computed(() => {
-    const items = this.filteredLibrary();
-    const map = new Map<string, QueryLibraryItem[]>();
-    for (const item of items) {
-      const arr = map.get(item.category);
-      if (arr) arr.push(item); else map.set(item.category, [item]);
-    }
-    return [...map.entries()].map(([category, queries]) => ({ category, queries }));
-  });
+  readonly groupedLibrary = computed(() => groupLibrary(this.filteredLibrary()));
 
 
   constructor() {
@@ -1958,9 +1108,11 @@ export class BuildListComponent {
         next: (lists) => {
           this.savedLists.set(lists);
           this.appState.setSavedLists(lists);
+          this.appState.setSavedListsLoadFailed(false);
           this.loadingSavedLists.set(false);
         },
-        error: () => { this.loadingSavedLists.set(false); }
+        // The library panel says "Couldn't load your saved lists" from this, not "No saved lists yet".
+        error: () => { this.appState.setSavedListsLoadFailed(true); this.loadingSavedLists.set(false); }
       });
     }
 
@@ -1975,12 +1127,33 @@ export class BuildListComponent {
       this.apiService.getQueryLibrary().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (items) => {
           this.queryLibrary.set(items);
-          this.appState.queryLibrary.set(items);
+          this.appState.setQueryLibrary(items);
           this.queryLibraryLoaded.set(true);
         },
         error: () => { this.queryLibraryLoaded.set(true); this.toastService.error('Failed to load query library'); }
       });
     }
+
+    // The Help panel's "Try an example" opens this page as /build-list?query=<Query Library name> —
+    // including when the user is already on it, where the router reuses this component, so the param
+    // is watched rather than read once. Once the library has loaded, run that query exactly as if its
+    // card had been clicked; if no entry has that name (it was renamed), pre-fill the library search
+    // with it instead. The param is then dropped so a reload or Back doesn't re-run it.
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
+      const name = params.get('query');
+      if (name) this._pendingExample.set(name);
+    });
+    effect(() => {
+      const name = this._pendingExample();
+      if (!name || !this.queryLibraryLoaded()) return;
+      untracked(() => {
+        this._pendingExample.set(null);
+        const item = this.queryLibrary().find(q => q.name.trim().toLowerCase() === name.trim().toLowerCase());
+        if (item && !this.appState.allProducersMode()) this.selectLibraryQuery(item);
+        else this.librarySearchText.set(name);
+        void this.router.navigate([], { relativeTo: this.route, queryParams: { query: null }, queryParamsHandling: 'merge', replaceUrl: true });
+      });
+    });
 
     // Curated crop list — the source for the Crops refine chips. Scoped to the selected trade
     // units in availableCrops(); failure just leaves the chips falling back to the codes present
@@ -2162,6 +1335,7 @@ export class BuildListComponent {
   /** Fetches all data fresh from the API for the current trade units.
    *  @param clearSignals If true, clears data signals immediately (TU change). If false, keeps them for display (background refresh). */
   private _loadFresh(clearSignals = false): void {
+    this._cancelLoad$.next();
     const requestId = ++this._loadRequestId;
     this._ticketsReady.set(false);
     // Fresh contracts not yet confirmed — contract-aware queries will wait on this until the
@@ -2197,15 +1371,21 @@ export class BuildListComponent {
     // background; the full note set is lazily fetched by _fetchAndFilter the first time a
     // query runs while it's missing, so page load never waits on the note download)
     forkJoin({
-      customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
+      customers: this.apiService.getCustomers(tuParam).pipe(
+        tap(() => this.appState.setCustomersLoadFailed(false)),
+        catchError(() => { this.appState.setCustomersLoadFailed(true); return of([] as Customer[]); })),
       contracts: this.apiService.getContracts(tuParam).pipe(
         tap(() => this.appState.setContractsLoadFailed(false)),
         catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })),
-      plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
+      plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(
+        tap(() => this.appState.setPlantingIntentionsLoadFailed(false)),
+        catchError(() => { this.appState.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); })),
       storedGrain: this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
-      savedLists: this.apiService.getSavedLists().pipe(catchError(() => of([] as SavedList[]))),
+      savedLists: this.apiService.getSavedLists().pipe(
+        tap(() => this.appState.setSavedListsLoadFailed(false)),
+        catchError(() => { this.appState.setSavedListsLoadFailed(true); return of([] as SavedList[]); })),
       producerDetails: this.apiService.getAllProducerDetails().pipe(catchError(() => of([] as ProducerDetails[])))
-    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    }).pipe(takeUntil(this._cancelLoad$), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         // Ignore stale response from a previous TU's load
         if (requestId !== this._loadRequestId) return;
@@ -2243,6 +1423,16 @@ export class BuildListComponent {
         // stale cache and needs to silently refresh with the now-complete data.
         if (this.queryText().trim() && this.hasGenerated() && !this.isProcessing()) {
           this._applyNlqFilter();
+        } else if (this._parkedQuery) {
+          // A prompt picked DURING this reload was parked by processQuery's coreDataLoaded guard
+          // (the library stays clickable while a trade-unit change reloads). Re-enter processQuery
+          // instead of leaving it to _dataReadyEffect: that effect only WAITS for data, it never
+          // starts the lazy note/DP fetches, so a note or DP prompt would spin forever.
+          // Keyed on the explicit parked marker, NOT on isProcessing && !hasGenerated: a saved list
+          // clicked during the cache-path background refresh is ALSO in that state while its own
+          // _fetchAndFilter is in flight, and re-entering would bump _queryGenId and discard that
+          // fetch - the list rendered without its hand-added members.
+          this._runParkedQuery();
         }
       },
       error: () => {
@@ -2252,6 +1442,9 @@ export class BuildListComponent {
         this._contractsReady.set(true); // Don't strand contract-queries waiting forever on error
         this._storageReady.set(true); // Same — don't strand storage-queries waiting forever on error
         this.toastService.error('Failed to load data');
+        // Same re-entry as the success path: a prompt parked during this reload must not sit on
+        // "Processing query..." for a note/DP fetch that nothing started.
+        if (this._parkedQuery) this._runParkedQuery();
       }
     });
 
@@ -2278,6 +1471,7 @@ export class BuildListComponent {
         else ticketFetchFailed = true;
         return of([] as Ticket[]);
       }),
+      takeUntil(this._cancelLoad$),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe(tickets => {
       if (requestId !== this._loadRequestId) return;
@@ -2297,7 +1491,7 @@ export class BuildListComponent {
     });
   }
 
-  /** Merge ProducerDetails into customer objects (commodities, bin capacity, etc.). */
+  /** Merge ProducerDetails into customer objects (commodities, acres, bin sites, etc.). */
   private _mergeProducerDetails(details: ProducerDetails[]): void {
     if (details.length === 0) return;
     const detailsMap = new Map(details.map(d => [d.customerId, d]));
@@ -2309,13 +1503,19 @@ export class BuildListComponent {
         return {
           ...customer,
           totalAcres: pd.totalAcres ?? customer.totalAcres,
-          binCapacity: pd.binCapacity ?? customer.binCapacity,
+          binSitesModifiedAt: pd.binSitesModifiedAt ?? customer.binSitesModifiedAt,
           primaryContact: pd.primaryContact ?? customer.primaryContact,
           primaryPhone: pd.primaryPhone ?? customer.primaryPhone,
+          // User-entered contact rows exist only on producer details (the customer record never
+          // carries them), and the has-email / has-phone refinements read them. Same rule as the
+          // shared applyProducerDetails.
+          contacts: pd.contacts ?? customer.contacts,
           commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
           // Per-commodity grain-on-farm (bushels on hand + $/bu target) — carried onto the customer
           // so the NLQ engine can filter "grain on farm" / "target" prompts client-side.
           grainOnFarm: pd.grainOnFarm ?? customer.grainOnFarm,
+          // Bin sites (lat/long) — carried over so "producers with bin sites" filters client-side.
+          binSites: pd.binSites ?? customer.binSites,
           linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
         };
       }
@@ -2375,8 +1575,16 @@ export class BuildListComponent {
     this.hasGenerated() ? this.displayedCustomers() : this.customers()
   );
 
+  /** Re-runs the processQuery call that was parked behind the coreDataLoaded guard. */
+  private _runParkedQuery(): void {
+    const parked = this._parkedQuery;
+    this._parkedQuery = null;
+    if (parked && this.queryText().trim()) this.processQuery(parked.override);
+  }
+
   clearQuery(): void {
     this._queryGenId++;
+    this._parkedQuery = null;
     this.isProcessing.set(false);
     this.waitingForTickets.set(false);
     // Must be cleared here too: the recovery effect only clears it while a query is active, so a
@@ -2494,8 +1702,10 @@ export class BuildListComponent {
     // auto-triggers this query when coreDataLoaded becomes true.
     if (!this.coreDataLoaded()) {
       this.isProcessing.set(true);
+      this._parkedQuery = { override: overrideTradeUnits };
       return;
     }
+    this._parkedQuery = null;
 
     const queryGen = ++this._queryGenId;
     this.isProcessing.set(true);
@@ -2559,88 +1769,12 @@ export class BuildListComponent {
     if (!this._applyNlqFilter()) this.isProcessing.set(false);
   }
 
-  /** Bounded recency window (days) a positive date-scoped prompt/refine needs for DISPLAY, or null
-   *  if it isn't a bounded positive-recency one. Padded +1 day so the fetch slice is always at
-   *  least as wide as the display cutoff (never drops a shown note). */
-  private _recencyWindowDays(r: RefinementFilters = this.appliedRefinements()): number | null {
-    if (r.notesInLastDays != null && r.notesInLastDays > 0) return r.notesInLastDays + 1;
-    const q = this.queryText().toLowerCase();
-    const numeric = q.match(/(?:notes?\s+(?:added|made|entered|written|created|left)|contacted|called|reach(?:ed)?\s+out)\s*(?:in|within)?\s*(?:the\s+)?(?:last|past)?\s*(\d+)\s*days?/);
-    if (numeric) return parseInt(numeric[1], 10) + 1;
-    if (/\btoday\b/.test(q)) return 2;
-    if (/\byesterday\b/.test(q)) return 3;
-    if (/\b(?:this|last)\s+week\b/.test(q)) return 8;
-    if (/\b(?:this|last)\s+month\b/.test(q)) return 32;
-    return null;
-  }
-
-  /** The note load the CURRENT prompt needs. The matched SET and last-contact badge come from the
-   *  aggregate regardless — this governs only the DISPLAY payload:
-   *   - 'none'    : no note-focused criterion active.
-   *   - 'scoped'  : a server-narrowed slice (recency window / content keywords / pinned / author),
-   *                 fetched LOCAL-only; the client then matches exactly, so the set is unchanged.
-   *   - 'batched' : huge "everyone with notes" / "not contacted" lists — the set comes from the
-   *                 aggregate (instant) and note bodies load one RENDER BATCH at a time by
-   *                 customerId, so the first screen never waits on the whole 28.8k-note set.
-   *   - 'full'    : needs the whole set (note counts, "by someone else", or any unclassifiable combo). */
-  private _noteScope(r: RefinementFilters = this.appliedRefinements()): { mode: 'none' } | { mode: 'full' } | { mode: 'batched' } | { mode: 'scoped'; key: string; opts: { sinceDays?: number; contentAny?: string[]; authorAny?: string[]; pinnedOnly?: boolean } } {
-    if (!this._isNoteFilterActive(r, this.queryText())) return { mode: 'none' };
-    const q = this.queryText().toLowerCase();
-    // Note-COUNT prompts genuinely need every note (to count per producer).
-    const count = !!r.contactedOnlyOnce || !!r.contactedMoreThan5 || /most\s+notes|most\s+engaged|by\s+notes/.test(q);
-    if (count) return { mode: 'full' };
-    // "contacted by someone else" = notes NOT by me — that's ~all notes, not a cheap server
-    // superset, so it stays full.
-    if (r.contactedBySomeoneElse) return { mode: 'full' };
-
-    const absence = !!r.neverContacted || (r.notContactedDays != null && r.notContactedDays > 0)
-      || /never\s+contacted|not\s+contacted|haven'?t\s+contacted|haven'?t\s+called/.test(q);
-    const kws = new Set<string>();
-    for (const k of this.nlqFilterService.extractNoteSearchKeywords(this.queryText())) kws.add(k);
-    const refineKw = r.noteKeyword?.trim().toLowerCase();
-    if (refineKw) kws.add(refineKw);
-    const contentActive = kws.size > 0;
-    const pinnedActive = /pinned/.test(q) || !!r.hasPinnedNotes;
-    // "Producers I have contacted" / "by me" / "my notes" — an author search on the CURRENT user.
-    // The server authorAny filter (CreatedBy/ModifiedBy Contains candidate) is identical to the
-    // client's matchesAuthor, so a scoped author fetch returns exactly the by-me notes — no need to
-    // load all ~28.8k. Guarded by !absence so "I have NOT contacted…" still routes to batched.
-    const byMe = !absence && (!!r.contactedByMeOnly
-      || /\b(?:who\s+have\s+)?i\s+(?:have\s+)?(?:contacted|called|reached|noted)\b/.test(q)
-      || /\bby\s+me\b/.test(q) || /\bmy\s+notes?\b/.test(q));
-    // Absence phrasing ("not contacted in 30 days") trips the recency regex — ignore the window
-    // for absence so it routes to 'batched', not a wrong positive-recency slice.
-    const window = absence ? null : this._recencyWindowDays(r);
-    const gen = this._queryGenId;
-
-    // Absence: batched on its own; but mixed with a note-content/pinned criterion it needs the real
-    // bodies → full (safe).
-    if (absence) return (contentActive || pinnedActive) ? { mode: 'full' } : { mode: 'batched' };
-
-    // Combine EVERY active scopable criterion (author / content / pinned / recency window) into ONE
-    // server-narrowed slice — this is what keeps "Producers I contacted this week" (author + window)
-    // fast instead of falling to a full load. Each server filter is a superset-or-equal of the
-    // client's per-criterion match, so their AND still contains everything the client needs; the
-    // client then re-matches exactly, so the result set is unchanged.
-    const opts: { sinceDays?: number; contentAny?: string[]; authorAny?: string[]; pinnedOnly?: boolean } = {};
-    const keyParts: string[] = [];
-    if (byMe) {
-      const account = this.msalService.instance.getActiveAccount() ?? this.msalService.instance.getAllAccounts()[0];
-      const cands = this.nlqFilterService.buildAuthorCandidates(null, account?.name ?? '', account?.username ?? '');
-      if (cands.length === 0) return { mode: 'full' }; // no identity to scope on — fall back
-      const list = [...cands].sort();
-      opts.authorAny = list; keyParts.push(`author:${list.join('|')}`);
-    }
-    if (contentActive) { const list = [...kws].sort(); opts.contentAny = list; keyParts.push(`content:${list.join('|')}`); }
-    if (pinnedActive) { opts.pinnedOnly = true; keyParts.push('pinned'); }
-    if (window != null) { opts.sinceDays = window; keyParts.push(`w:${window}`); }
-
-    if (keyParts.length > 0) return { mode: 'scoped', key: `${gen}:${keyParts.join('+')}`, opts };
-
-    // No scopable criterion — bare "producers with notes" (has-any-note), but NOT "with notes BY
-    // <name>" (that's author) → batched; otherwise full.
-    if (/(?:with|has|have)\s+notes?\b/.test(q) && !/\bby\b/.test(q)) return { mode: 'batched' };
-    return { mode: 'full' };
+  /** The note load the CURRENT prompt needs — see noteScope in utils/note-filters. */
+  private _noteScope(r: RefinementFilters = this.appliedRefinements()): NoteScope {
+    return noteScope(r, this.queryText(), this._queryGenId, {
+      searchKeywords: q => this.nlqFilterService.extractNoteSearchKeywords(q),
+      authorCandidates: () => this._authorCandidates(),
+    });
   }
 
   /** True when the notes this prompt needs for display are already loaded. Batched prompts never
@@ -2685,6 +1819,7 @@ export class BuildListComponent {
         if (isStale()) return;
         this.dpContracts.set(data ?? []);
         this.appState.setDpContracts(data ?? []);  // also flips dpContractsLoaded
+        this.appState.setDpContractsLoadFailed(false);
         this._dpReady.set(true);                   // re-triggers _dataReadyEffect to run the query
       },
       error: () => {
@@ -2692,6 +1827,7 @@ export class BuildListComponent {
         if (isStale()) return;
         this.dpContracts.set([]);
         this.appState.setDpContracts([]);          // loaded-but-empty, not "still loading"
+        this.appState.setDpContractsLoadFailed(true); // ...and says so, or a DP prompt answers "none"
         this._dpReady.set(true);
       }
     });
@@ -2847,19 +1983,25 @@ export class BuildListComponent {
     const fetchingNotes = needsNotes && !this.appState.notesLoaded();
     let ticketFetchFailed = false;
     forkJoin({
-      customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
+      customers: this.apiService.getCustomers(tuParam).pipe(
+        tap(() => this.appState.setCustomersLoadFailed(false)),
+        catchError(() => { this.appState.setCustomersLoadFailed(true); return of([] as Customer[]); })),
       contracts: this.apiService.getContracts(tuParam).pipe(
         tap(() => this.appState.setContractsLoadFailed(false)),
         catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })),
       tickets: this.apiService.getTickets(tuParam).pipe(
         tap(() => this.appState.setTicketsLoadFailed(false)),
         catchError(() => { ticketFetchFailed = true; return of([] as Ticket[]); })),
-      plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
+      plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(
+        tap(() => this.appState.setPlantingIntentionsLoadFailed(false)),
+        catchError(() => { this.appState.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); })),
       notes: fetchingNotes
         ? this.apiService.getNotes().pipe(catchError(() => of([] as Note[])))
         : of(this.appState.notes()),
       storedGrain: this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
-      dpContracts: this.apiService.getDpContracts(tuParam).pipe(catchError(() => of([] as DpContract[]))),
+      dpContracts: this.apiService.getDpContracts(tuParam).pipe(
+        tap(() => this.appState.setDpContractsLoadFailed(false)),
+        catchError(() => { this.appState.setDpContractsLoadFailed(true); return of([] as DpContract[]); })),
       producerDetails: (this.appState.producerDetails().length > 0 ? of(this.appState.producerDetails()) : this.apiService.getAllProducerDetails()).pipe(catchError(() => of([] as ProducerDetails[])))
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
@@ -3119,7 +2261,7 @@ export class BuildListComponent {
    *  flight. Tickets/contracts/storage have no on-demand fetch of their own — they're already in
    *  flight from _loadFresh — so only notes and DP have anything to kick here. */
   private _ensureDataForCriteria(r: RefinementFilters = this.appliedRefinements()): void {
-    if (this._isNoteFilterActive(r, this.queryText())) this._ensureNotesForQuery(r);
+    if (isNoteFilterActive(r, this.queryText())) this._ensureNotesForQuery(r);
     if (this.nlqFilterService.dataNeedsForCriteria(this.queryText(), r).dp) this._ensureDpForQuery();
   }
 
@@ -3357,60 +2499,13 @@ export class BuildListComponent {
     });
   }
 
-  /**
-   * Harvest-window-based pacing direction for a customer.
-   * Returns 'down' if ANY commodity's bushels declined year-over-year,
-   * 'up' if at least one increased and none declined, 'flat' if no movement, null if no data.
-   * Mirrors the contract-pacing-card logic so the build-a-list result matches
-   * the arrow the user sees on the customer profile.
-   */
+  /** Harvest-window pacing direction for one producer — see customerPacingDirection (utils). */
   private _getCustomerPacingDirection(customer: Customer): 'up' | 'down' | 'flat' | null {
     const customerContracts = this._contractsByCustomer().get(customer.scoularId!) || [];
+    // Checked here as well as in customerPacingDirection so a producer with no contracts never
+    // reads the harvest windows (the same dependencies as before the logic moved out).
     if (customerContracts.length === 0) return null;
-    const windows = this.appState.harvestWindows().filter(hw => hw.isActive !== false);
-    if (windows.length === 0) return null;
-    const year = new Date().getFullYear();
-    let anyDown = false;
-    let anyData = false;
-    let anyMovement = false;
-    for (const hw of windows) {
-      let thisYear = 0;
-      let lastYear = 0;
-      for (const c of customerContracts) {
-        if (!this._contractMatchesPacingCommodity(c, hw.commodity)) continue;
-        if (this._contractOverlapsWindow(c, hw, year)) thisYear += c.quantity;
-        if (this._contractOverlapsWindow(c, hw, year - 1)) lastYear += c.quantity;
-      }
-      if (thisYear === 0 && lastYear === 0) continue;
-      anyData = true;
-      if (thisYear < lastYear) { anyDown = true; anyMovement = true; }
-      else if (thisYear > lastYear) { anyMovement = true; }
-    }
-    if (!anyData) return null;
-    if (anyDown) return 'down';
-    return anyMovement ? 'up' : 'flat';
-  }
-
-  private _contractOverlapsWindow(c: Contract, hw: { deliveryStartMonth: number; deliveryStartDay: number; deliveryEndMonth: number; deliveryEndDay: number }, cropYear: number): boolean {
-    if (!c.deliveryStart && !c.deliveryEnd) return false;
-    const wStart = new Date(cropYear, hw.deliveryStartMonth - 1, hw.deliveryStartDay);
-    const wEnd = new Date(cropYear, hw.deliveryEndMonth - 1, hw.deliveryEndDay);
-    wEnd.setHours(23, 59, 59, 999);
-    const dStart = c.deliveryStart ? new Date(c.deliveryStart) : new Date(c.deliveryEnd!);
-    const dEnd = c.deliveryEnd ? new Date(c.deliveryEnd) : new Date(c.deliveryStart!);
-    return dStart <= wEnd && dEnd >= wStart;
-  }
-
-  private _contractMatchesPacingCommodity(c: Contract, hwCommodity: string): boolean {
-    const target = hwCommodity.trim().toUpperCase();
-    if (!target) return false;
-    const group = (c.commodityGroup || '').trim().toUpperCase();
-    if (group && group === target) return true;
-    const desc = (c.commodityDescription || '').trim().toUpperCase();
-    if (desc && desc.includes(target)) return true;
-    const code = (c.commodityCode || '').trim().toUpperCase();
-    if (code && code.includes(target)) return true;
-    return false;
+    return customerPacingDirection(customerContracts, this.appState.harvestWindows());
   }
 
   /**
@@ -3460,150 +2555,18 @@ export class BuildListComponent {
           )))
         : of([] as DashboardPlantingEstimate[][]),
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(({ contracts: results, estimates: estimateBatches }) => {
-      // Merge all fetched contracts
-      const allContracts: Contract[] = [];
-      for (const batch of results) allContracts.push(...batch);
-
-      // Every year's estimates in one list; findYieldEstimate scopes by year internally.
-      const allEstimates: DashboardPlantingEstimate[] = [];
-      for (const batch of estimateBatches) allEstimates.push(...batch);
-
-      // Commodity CODE → planting category, the key season targets are actually stored under
-      // ("Corn" / "Dryland Corn" / "Organic Soybeans"), never the code. Looking up by code returned
-      // undefined every time, which made both coverage prompts below return an empty list no matter
-      // the data. Resolved through the same planting-category rule as the dashboard, so an organic
-      // planting row finds its own season target and is covered by organic contracts only.
-      const codeToCategory = new Map<string, string>();
-      const commodityByCode = new Map<string, Commodity>();
-      for (const cm of this.appState.commodities()) {
-        if (!cm.code) continue;
-        commodityByCode.set(cm.code.trim().toUpperCase(), cm);
-        const label = commodityPlantingCategory(cm);
-        if (label) codeToCategory.set(cm.code.trim().toUpperCase(), label);
-      }
-
-      // Index contracts by customer + year + commodity
-      const contractsByCustomer = new Map<string, Contract[]>();
-      for (const c of allContracts) {
-        if (!c.ctrmCustomerId) continue;
-        const arr = contractsByCustomer.get(c.ctrmCustomerId);
-        if (arr) arr.push(c); else contractsByCustomer.set(c.ctrmCustomerId, [c]);
-      }
-
-      // Group planting by customer. `crop` stays the CODE (contract matching uses it); `category`
-      // and `type` are carried alongside because that pair is what a season target is keyed by.
-      const plantingByCustomer = new Map<number, { year: number; crop: string; category: string; type?: string; acres: number }[]>();
-      for (const p of intentions) {
-        const crop = (p.crop || '').trim().toUpperCase();
-        if (!crop || !p.plantingYear) continue;
-        const arr = plantingByCustomer.get(p.customerId);
-        const entry = {
-          year: p.plantingYear,
-          crop,
-          category: plantingCategory(p, commodityByCode.get(crop)),
-          type: p.type,
-          acres: p.acres,
-        };
-        if (arr) arr.push(entry); else plantingByCustomer.set(p.customerId, [entry]);
-      }
-
-      const allCustomers = this.customers();
-
-      // Same conversion table the producer page uses, so contracted bushels agree across screens.
-      const lbsPerBushelByCode = buildLbsPerBushelMap(this.appState.commodityConversions());
-
-      /**
-       * Does this contract cover the planting crop? Matched on the resolved commodity CATEGORY, the
-       * same join the producer page's Growth Opportunity panel uses.
-       *
-       * It used to match on substrings in either direction, which quietly pulled in different
-       * products: planting crop "YC" matched commodity code "CKYC" (cracked corn) and "SOR" matched
-       * "CSOR", because one string contains the other.
-       */
-      const contractMatchesCrop = (ct: Contract, cropCategory: string): boolean => {
-        const target = cropCategory.trim().toUpperCase();
-        if (!target) return false;
-        const code = (ct.commodityCode || '').trim().toUpperCase();
-        // Exact code match covers the case where the planting crop isn't in dbo.Commodities either,
-        // so its "category" fell back to the raw code — otherwise that producer would match nothing.
-        if (code && code === target) return true;
-        const category = (codeToCategory.get(code) || ct.commodityGroup || ct.commodityDescription || code || '')
-          .trim().toUpperCase();
-        return category === target;
-      };
-
-      // Tracks whether the "under X% contracted" / "uncontracted" branches below could find a
-      // saved season yield target for ANY planting row they evaluated. Coverage can't be computed
-      // without one (estimatedProduction = acres × yield), so if every row lacks a target the
-      // result is an empty list that looks IDENTICAL to "everyone is well-contracted" — this
-      // distinguishes the two so the UI can point at the real cause instead of "No Producers Found".
-      let plantingRowsEvaluated = 0;
-      let plantingRowsWithEstimate = 0;
-
-      if (lq.includes('planting') && (lq.includes('no contract') || lq.includes('no active contract'))) {
-        // 0% coverage: any planting crop+year with zero matching contracts
-        this.filteredCustomers.set(allCustomers.filter(c => {
-          const plantings = plantingByCustomer.get(c.id);
-          if (!plantings) return false;
-          const custContracts = contractsByCustomer.get(c.scoularId!) || [];
-          return plantings.some(p =>
-            !custContracts.some(ct => ct.cropYear === p.year && contractMatchesCrop(ct, p.category))
-          );
-        }));
-      } else if (lq.includes('under') && lq.includes('percent contracted')) {
-        // Under X% coverage: planting bushels vs contracted bushels per crop+year
-        const pctMatch = lq.match(/under\s+(\d+)\s*percent/);
-        const threshold = pctMatch ? parseInt(pctMatch[1]) / 100 : 0.5;
-
-        this.filteredCustomers.set(allCustomers.filter(c => {
-          const plantings = plantingByCustomer.get(c.id);
-          if (!plantings) return false;
-          const custContracts = contractsByCustomer.get(c.scoularId!) || [];
-          // Check each planting crop: estimated production vs contracted bushels
-          return plantings.some(p => {
-            // Same rule as the producer page: the estimate must belong to THIS crop and THIS year.
-            plantingRowsEvaluated++;
-            const yieldEst = findYieldEstimate(allEstimates, p.type, p.category, p.year);
-            if (!yieldEst) return false; // can't calculate without a season target
-            plantingRowsWithEstimate++;
-            const estimatedProduction = p.acres * yieldEst;
-            // Bushels, not raw quantity: contracts for meal / oil / popcorn sit in the same
-            // commodity group but are priced by weight, and adding them in would overstate coverage
-            // and drop this producer off the very list that should surface them.
-            const { contracted: contractedBu } = sumInBushels(
-              custContracts.filter(ct => ct.cropYear === p.year && contractMatchesCrop(ct, p.category)),
-              lbsPerBushelByCode);
-            const coverage = estimatedProduction > 0 ? contractedBu / estimatedProduction : 0;
-            return coverage < threshold;
-          });
-        }));
-      } else if (lq.includes('uncontracted')) {
-        // Highest uncontracted bushels — top 10 by gap
-        const customerGaps: { customer: Customer; gap: number }[] = [];
-        for (const c of allCustomers) {
-          const plantings = plantingByCustomer.get(c.id);
-          if (!plantings) continue;
-          const custContracts = contractsByCustomer.get(c.scoularId!) || [];
-          let totalGap = 0;
-          for (const p of plantings) {
-            plantingRowsEvaluated++;
-            const yieldEst = findYieldEstimate(allEstimates, p.type, p.category, p.year);
-            if (!yieldEst) continue;
-            plantingRowsWithEstimate++;
-            const estimatedProduction = p.acres * yieldEst;
-            const { contracted: contractedBu } = sumInBushels(
-              custContracts.filter(ct => ct.cropYear === p.year && contractMatchesCrop(ct, p.category)),
-              lbsPerBushelByCode);
-            totalGap += Math.max(0, estimatedProduction - contractedBu);
-          }
-          if (totalGap > 0) customerGaps.push({ customer: c, gap: totalGap });
-        }
-        customerGaps.sort((a, b) => b.gap - a.gap);
-        this.filteredCustomers.set(customerGaps.slice(0, 10).map(g => g.customer));
-      }
+      const coverage = evaluatePlantingCoverage(lq, {
+        intentions,
+        customers: this.customers(),
+        contractBatches: results,
+        estimateBatches,
+        commodities: this.appState.commodities(),
+        commodityConversions: this.appState.commodityConversions(),
+      });
+      if (coverage.customers) this.filteredCustomers.set(coverage.customers);
 
       const noResults = this.filteredCustomers().length === 0;
-      const missingYieldTargets = noResults && plantingRowsEvaluated > 0 && plantingRowsWithEstimate === 0;
+      const missingYieldTargets = noResults && coverage.plantingRowsEvaluated > 0 && coverage.plantingRowsWithEstimate === 0;
       this.coverageNeedsYieldTargets.set(missingYieldTargets);
       // Suppress the generic "no match" banner in favor of the yield-target-specific one —
       // same pattern as contractsUnavailableForQuery/ticketsUnavailableForQuery suppressing it
@@ -3613,52 +2576,7 @@ export class BuildListComponent {
     });
   }
 
-  hasAnyRefinement(filters: RefinementFilters): boolean {
-    return !!(
-      filters.noActiveContracts ||
-      filters.hasUnsignedContracts ||
-      filters.downHarvestPace ||
-      filters.hasUnpricedContracts ||
-      filters.hasOverdueContracts ||
-      filters.noContractsAtAll ||
-      (filters.contractQuantityOver != null && filters.contractQuantityOver > 0) ||
-      filters.contractsExpiringThisMonth ||
-      filters.multipleCommoditiesContracted ||
-      filters.neverContacted ||
-      (filters.notContactedDays != null && filters.notContactedDays > 0) ||
-      (filters.notesInLastDays != null && filters.notesInLastDays > 0) ||
-      filters.contactedOnlyOnce ||
-      filters.contactedMoreThan5 ||
-      filters.contactedByMeOnly ||
-      filters.contactedBySomeoneElse ||
-      filters.hasPinnedNotes ||
-      filters.noteKeyword?.trim() ||
-      (filters.acresOver != null && filters.acresOver > 0) ||
-      filters.hasBinCapacity || filters.noBinCapacity ||
-      filters.hasPrimaryContact || filters.noPrimaryContact ||
-      filters.hasEmail || filters.hasPhone || filters.hasLinkedProducers || filters.notEsignEnrolled ||
-      filters.hasActiveContracts || filters.hasDeliveriesThisYear ||
-      filters.hasPlantingIntentions || filters.hasGrainInStorage ||
-      (filters.ticketQuantityOver != null && filters.ticketQuantityOver > 0) ||
-      (filters.ticketsInLastDays != null && filters.ticketsInLastDays > 0) ||
-      filters.avgMoistureOver != null || filters.avgMoistureUnder != null ||
-      filters.avgTestWeightOver != null || filters.avgTestWeightUnder != null ||
-      filters.avgProteinOver != null || filters.avgProteinUnder != null ||
-      (filters.storageDaysOver != null && filters.storageDaysOver > 0) ||
-      (filters.storageQuantityOver != null && filters.storageQuantityOver > 0) ||
-      (filters.storageReceivableOver != null && filters.storageReceivableOver > 0) ||
-      filters.plantingYear != null || filters.irrigatedOnly || filters.drylandOnly || filters.doubleCropOnly ||
-      (filters.plantingAcresOver != null && filters.plantingAcresOver > 0) ||
-      (filters.grainOnFarmBushelsOver != null && filters.grainOnFarmBushelsOver > 0) ||
-      filters.hasGrainTarget || filters.noGrainTarget || filters.hasGrade ||
-      (filters.grainTargetOver != null && filters.grainTargetOver > 0) ||
-      (filters.grainTargetUnder != null && filters.grainTargetUnder > 0) ||
-      filters.gradeOver != null || filters.gradeUnder != null ||
-      (filters.crops && filters.crops.length > 0) ||
-      (filters.states && filters.states.length > 0) ||
-      (filters.deliveryLocations && filters.deliveryLocations.length > 0)
-    );
-  }
+  readonly hasAnyRefinement = hasAnyRefinement;
 
   openSaveDialog(): void {
     this.showSaveDialog.set(true);
@@ -3681,31 +2599,24 @@ export class BuildListComponent {
     if (opening) this.usageTracking.postClickEvent('interaction', 'build-a-list', 'manage-members');
   }
 
+  /** The current list as a saved-list body (query, trade units, refinements + prompt category,
+   *  member overrides) — see buildSavedListPayload. */
+  private _listPayload(): SavedListPayload {
+    return buildSavedListPayload({
+      query: this.queryText(),
+      tradeUnits: this.effectiveTradeUnits(),
+      refinements: this.activeRefinementCount() > 0 ? this.appliedRefinements() : null,
+      category: this.effectiveLibraryCategory(),
+      includedIds: this._allIncludedCustomerIds(),
+      excludedIds: [...this.manuallyExcludedCustomerIds()],
+    });
+  }
+
   saveList(): void {
     if (!this.newListName().trim() || this.displayedCustomers().length === 0) return;
     this.usageTracking.postClickEvent('interaction', 'build-a-list', 'save-list');
 
-    const tradeUnits = this.effectiveTradeUnits();
-    const includedIds = this._allIncludedCustomerIds();
-    const excludedIds = [...this.manuallyExcludedCustomerIds()];
-    // Resolve the prompt's library category (Contracts / Tickets / etc.) and persist it as a
-    // private hint on the filters so home/customer-list can run the dimension-aware crops filter
-    // identically — they don't load the query library and can't recover the category from
-    // queryText otherwise. Build-list reads it back too, but its own UI uses effectiveLibraryCategory.
-    const category = this.effectiveLibraryCategory();
-    const baseFilters = this.activeRefinementCount() > 0 ? { ...this.appliedRefinements() } : null;
-    const filtersWithCategory = baseFilters
-      ? (category ? { ...baseFilters, _promptCategory: category } : baseFilters)
-      : (category ? { _promptCategory: category } : undefined);
-
-    const payload = {
-      name: this.newListName(),
-      query: this.queryText(),
-      tradeUnits: tradeUnits.length > 0 ? tradeUnits.join(',') : undefined,
-      filters: filtersWithCategory,
-      includedCustomerIds: includedIds.length > 0 ? includedIds : undefined,
-      excludedCustomerIds: excludedIds.length > 0 ? excludedIds : undefined,
-    };
+    const payload = { name: this.newListName(), ...this._listPayload() };
 
     const request$ = this.activeSavedList()
       ? this.apiService.updateSavedList(this.activeSavedList()!.id, payload)
@@ -3774,21 +2685,7 @@ export class BuildListComponent {
   /** Step 3: finalize — open the naming/confirm dialog with the locked-in members pre-selected. */
   openFinalizeAssign(): void {
     if (this.buildingForMembers().length === 0 || this.displayedCustomers().length === 0) return;
-    const tradeUnits = this.effectiveTradeUnits();
-    const includedIds = this._allIncludedCustomerIds();
-    const excludedIds = [...this.manuallyExcludedCustomerIds()];
-    const category = this.effectiveLibraryCategory();
-    const baseFilters = this.activeRefinementCount() > 0 ? { ...this.appliedRefinements() } : null;
-    const filtersWithCategory = baseFilters
-      ? (category ? { ...baseFilters, _promptCategory: category } : baseFilters)
-      : (category ? { _promptCategory: category } : undefined);
-    this._assignBase = {
-      query: this.queryText(),
-      tradeUnits: tradeUnits.length > 0 ? tradeUnits.join(',') : undefined,
-      filters: filtersWithCategory,
-      includedCustomerIds: includedIds.length > 0 ? includedIds : undefined,
-      excludedCustomerIds: excludedIds.length > 0 ? excludedIds : undefined,
-    };
+    this._assignBase = this._listPayload();
     // Members already chosen — show them in the dialog, all selected; manager just names + confirms.
     this.teamMembers.set(this.buildingForMembers());
     this.assignTargetIds.set(new Set(this.buildingForMembers().map(m => m.userId)));
@@ -3937,77 +2834,10 @@ export class BuildListComponent {
     this.router.navigate(['/'], { queryParams: params });
   }
 
-  /** Map the active prompt/filter context to a customer-profile tab so that
-   *  clicking a producer lands on the section relevant to why they're in the
-   *  result list. Returns null when there's no clear focus (e.g., notes are
-   *  always visible in the sidebar, so no tab override is needed). */
+  /** The profile tab a clicked result opens on — see detectFocusTab (utils). */
   private _detectFocusTab(): string | null {
-    const r = this.appliedRefinements();
-    const q = this.queryText().toLowerCase();
-
-    // Notes already visible in the sidebar — no tab override needed.
-    if (this.noteFilterActive()) return null;
-
-    // DP contracts. Checked BEFORE storage: DP prompts share storage vocabulary (both talk about
-    // days accruing and charges), so a storage-first test would swallow "on dp over 90 days" and
-    // land the user on the Storage tab instead.
-    if (this.nlqFilterService.queryInvolvesDpContracts(q) ||
-        r.hasDpContracts ||
-        (r.dpBushelsOver != null && r.dpBushelsOver > 0) ||
-        (r.dpDaysOver != null && r.dpDaysOver > 0) ||
-        (r.dpChargesOver != null && r.dpChargesOver > 0)) {
-      return 'dpContracts';
-    }
-
-    // Storage
-    if (q.includes('storage') || q.includes('stored grain') ||
-        (r.storageDaysOver != null && r.storageDaysOver > 0) ||
-        (r.storageQuantityOver != null && r.storageQuantityOver > 0) ||
-        (r.storageReceivableOver != null && r.storageReceivableOver > 0) ||
-        r.hasGrainInStorage) {
-      return 'storage';
-    }
-
-    // Tickets — quantity, recency, or quality metrics.
-    // Customer profile has only ONE ticket tab and it's "Unapplied Tickets" — applied
-    // tickets are surfaced inside Contracts (expand a contract row to see its applied
-    // tickets). So an "applied tickets" prompt should land on the contracts tab, not
-    // the unapplied-tickets tab. Only route to the tickets tab when the prompt is
-    // explicitly about unapplied tickets (or is generic about tickets with no
-    // applied/unapplied qualifier).
-    const isAppliedTicketsQuery = q.includes('applied ticket') && !q.includes('unapplied');
-    if (isAppliedTicketsQuery) {
-      return 'contracts';
-    }
-    if (q.includes('ticket') || q.includes('unapplied') ||
-        (r.ticketQuantityOver != null && r.ticketQuantityOver > 0) ||
-        (r.ticketsInLastDays != null && r.ticketsInLastDays > 0) ||
-        r.avgMoistureOver != null || r.avgMoistureUnder != null ||
-        r.avgTestWeightOver != null || r.avgTestWeightUnder != null ||
-        r.avgProteinOver != null || r.avgProteinUnder != null) {
-      return 'tickets';
-    }
-
-    // Planting intentions
-    if (q.includes('planting') || q.includes('intention') ||
-        r.plantingYear != null || r.irrigatedOnly || r.drylandOnly || r.doubleCropOnly ||
-        (r.plantingAcresOver != null && r.plantingAcresOver > 0) ||
-        r.hasPlantingIntentions) {
-      return 'planting';
-    }
-
-    // Contracts — explicit signals or contract-flavored query
-    if (q.includes('contract') || q.includes('unsigned') || q.includes('expir') ||
-        q.includes('unpriced') || q.includes('overdue') ||
-        r.noActiveContracts || r.hasUnsignedContracts || r.downHarvestPace ||
-        r.hasUnpricedContracts || r.hasOverdueContracts ||
-        (r.contractQuantityOver != null && r.contractQuantityOver > 0) ||
-        r.contractsExpiringThisMonth || r.multipleCommoditiesContracted ||
-        r.hasActiveContracts) {
-      return 'contracts';
-    }
-
-    return null;
+    return detectFocusTab(this.appliedRefinements(), this.queryText(), this.noteFilterActive(),
+      q => this.nlqFilterService.queryInvolvesDpContracts(q));
   }
 
   /** How many earlier notes are currently revealed for this customer. */
@@ -4098,60 +2928,38 @@ export class BuildListComponent {
   }
 
   getInitials(name: string): string {
-    const parts = name.split(' ').filter(p => p.length > 0);
-    if (parts.length >= 2) {
-      return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-    }
-    if (parts.length === 1 && parts[0].length >= 2) {
-      return parts[0].substring(0, 2).toUpperCase();
-    }
-    return '??';
+    return initials(name);
   }
 
   getFormattedLocation(customer: Customer): string {
-    if (customer.extendedCity && customer.extendedStateProvince) {
-      return `${customer.extendedCity}, ${customer.extendedStateProvince}`;
-    }
-    if (customer.location && customer.stateProvince) {
-      return `${customer.location}, ${customer.stateProvince}`;
-    }
-    return customer.extendedCity || customer.location || customer.stateProvince || '';
+    return formattedLocation(customer);
   }
 
   getLastContactInfo(customerId: number): { text: string; colorClass: string; daysAgo: number } {
+    // The badges read only the last-contact aggregate; if that failed to load, "no row" means unknown.
+    const unknown = this.appState.noteLastContactsLoadFailed() && this.appState.noteLastContacts().length === 0;
     return this.lastContactByCustomer().get(customerId)
-      ?? { text: 'Never contacted', colorClass: 'text-scoular-red', daysAgo: Infinity };
+      ?? (unknown
+        ? { text: 'Last contact unavailable', colorClass: 'text-gray-400 dark:text-gray-500', daysAgo: Infinity }
+        : { text: 'Never contacted', colorClass: 'text-scoular-red', daysAgo: Infinity });
   }
 
   getCustomerCrops(customerId: number): string[] {
     return this.cropsByCustomer().get(customerId) ?? [];
   }
 
-  /**
-   * Per-crop grain-on-farm rows that actually have bushels on hand, largest first — the chips
-   * shown inline on Grain on Farm results.
-   */
+  /** Per-crop grain on farm with bushels on hand, largest first — see grainOnFarmBreakdown (utils). */
   grainOnFarmBreakdown(customer: Customer): GrainOnFarmItem[] {
-    return (customer.grainOnFarm ?? [])
-      .filter(g => !!g.commodityCode && (g.bushelsOnHand ?? 0) > 0)
-      .sort((a, b) => (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0));
+    return grainOnFarmBreakdown(customer);
   }
 
   /** Storage receipts grouped by numeric customerId (StoredGrain joins on Customer.id, not scoularId). */
-  private readonly _storageByCustomerId = computed(() => {
-    const map = new Map<number, StoredGrain[]>();
-    for (const s of this.storedGrain()) {
-      const arr = map.get(s.customerId);
-      if (arr) arr.push(s); else map.set(s.customerId, [s]);
-    }
-    return map;
-  });
+  private readonly _storageByCustomerId = computed(() => groupByCustomerId(this.storedGrain()));
 
   /** Total bushels a producer currently has in storage (sum of NET_QUANTITY across all receipts).
    *  Drives the Storage-results sort (most storage first). */
   storageBu(customer: Customer): number {
-    const recs = this._storageByCustomerId().get(customer.id) ?? [];
-    return recs.reduce((sum, s) => sum + (s.quantity ?? 0), 0);
+    return storageTotalBushels(this._storageByCustomerId().get(customer.id) ?? []);
   }
 
   /** Shared per-crop chip color, exposed to the template. */
@@ -4159,44 +2967,18 @@ export class BuildListComponent {
 
   /** Lower-cased commodity code OR name → crop category ("yc"/"corn" → "Corn"), from the
    *  Commodities table — so storage chips (which carry codes like YC/SOR) color by their crop. */
-  private readonly _commodityCategoryByKey = computed(() => {
-    const map = new Map<string, string>();
-    for (const cm of this.appState.commodities()) {
-      const group = (cm.category || cm.name || '').trim();
-      if (!group) continue;
-      if (cm.code) map.set(cm.code.trim().toLowerCase(), group);
-      if (cm.name) map.set(cm.name.trim().toLowerCase(), group);
-    }
-    return map;
-  });
+  private readonly _commodityCategoryByKey = computed(() => commodityCategoryByKey(this.appState.commodities()));
 
   /** Per-commodity storage totals (bushels summed across locations), largest first — mirrors the
    *  grain-on-farm chips so Storage results show each commodity + bushels inline without opening
    *  the producer. `category` is the resolved crop name used for the shared chip color (the raw
    *  `crop` code is still what's displayed). */
-  storageBreakdown(customer: Customer): { crop: string; bushels: number; category: string }[] {
-    const byCrop = new Map<string, number>();
-    for (const s of this._storageByCustomerId().get(customer.id) ?? []) {
-      const qty = s.quantity ?? 0;
-      if (qty <= 0) continue;
-      const crop = (s.crop || 'Unknown').trim();
-      byCrop.set(crop, (byCrop.get(crop) ?? 0) + qty);
-    }
-    const catByKey = this._commodityCategoryByKey();
-    return [...byCrop.entries()]
-      .map(([crop, bushels]) => ({ crop, bushels, category: catByKey.get(crop.toLowerCase()) ?? crop }))
-      .sort((a, b) => b.bushels - a.bushels);
+  storageBreakdown(customer: Customer): CropBushels[] {
+    return storageBreakdown(this._storageByCustomerId().get(customer.id) ?? [], this._commodityCategoryByKey());
   }
 
   /** DP rows grouped by numeric customerId. Mirror of `_storageByCustomerId`. */
-  private readonly _dpByCustomerId = computed(() => {
-    const map = new Map<number, DpContract[]>();
-    for (const d of this.dpContracts()) {
-      const arr = map.get(d.customerId);
-      if (arr) arr.push(d); else map.set(d.customerId, [d]);
-    }
-    return map;
-  });
+  private readonly _dpByCustomerId = computed(() => groupByCustomerId(this.dpContracts()));
 
   /** Total bushels a producer has on DP. Drives the DP-results sort (most DP first).
    *  Counted once per delivery — the view repeats the quantity on every charge-type row. */
@@ -4206,26 +2988,13 @@ export class BuildListComponent {
 
   /** Per-commodity DP totals, largest first — the inline chips on DP results. Bushels are
    *  per-delivery and charges are summed across charge rows (see dp-aggregate). */
-  dpBreakdown(customer: Customer): { crop: string; bushels: number; category: string }[] {
+  dpBreakdown(customer: Customer): CropBushels[] {
     const catByKey = this._commodityCategoryByKey();
-    return dpBreakdownByCrop(this._dpByCustomerId().get(customer.id) ?? [])
-      .filter(b => b.bushels > 0)
-      .map(b => ({
-        crop: b.crop,
-        bushels: b.bushels,
-        category: catByKey.get(b.crop.toLowerCase()) ?? b.crop,
-      }));
+    return dpBreakdown(this._dpByCustomerId().get(customer.id) ?? [], catByKey);
   }
 
   /** Planting intentions grouped by numeric customerId. Mirror of `_storageByCustomerId`. */
-  private readonly _plantingByCustomerId = computed(() => {
-    const map = new Map<number, PlantingIntention[]>();
-    for (const p of this.plantingIntentions()) {
-      const arr = map.get(p.customerId);
-      if (arr) arr.push(p); else map.set(p.customerId, [p]);
-    }
-    return map;
-  });
+  private readonly _plantingByCustomerId = computed(() => groupByCustomerId(this.plantingIntentions()));
 
   /**
    * Season / irrigation type the running prompt asks about ("Producers with 2025 planting
@@ -4262,7 +3031,7 @@ export class BuildListComponent {
    *
    * Numbers are formatted here rather than in the template because each chip is a single string.
    */
-  resultChips(customer: Customer): { text: string; colorKey: string }[] {
+  resultChips(customer: Customer): { text: string; colorKey: string; neutral?: boolean }[] {
     if (this.showDpFilters()) {
       return this.dpBreakdown(customer)
         .map(b => ({ text: `${b.crop} ${b.bushels.toLocaleString('en-US')}`, colorKey: b.category }));
@@ -4276,10 +3045,83 @@ export class BuildListComponent {
         .map(c => ({ text: `${c.label} · ${c.acres.toLocaleString('en-US')} ac · ${c.year}`, colorKey: c.colorKey }));
     }
     if (this.showGrainOnFarmFilters()) {
-      return this.grainOnFarmBreakdown(customer)
-        .map(g => ({ text: `${g.commodityCode} ${(g.bushelsOnHand ?? 0).toLocaleString('en-US')}`, colorKey: grainOnFarmColorKey(g.commodityCode, this._cropGroupLookup()) }));
+      // Only how many bin sites the producer has (a neutral chip — it is not a crop). The crops are in the
+      // bin-site breakdown next to the name, so no per-crop chips here (user 2026-10-12: too much at once).
+      const sites = customer.binSites?.length ?? 0;
+      return [{ text: sites > 0 ? `${sites} bin site${sites === 1 ? '' : 's'}` : 'No bin sites', colorKey: '', neutral: true }];
     }
     return [];
+  }
+
+  // ── Bin sites & grain (Grain on Farm & Bin Sites prompts, user 2026-10-09) ────────────────────
+  // Each result row shows its bin sites and the grain stored at each one in a column right after the
+  // name (the same grouping the producer profile uses); the notes column follows it.
+
+  readonly formatLastBid = formatLastBid;
+
+  /** Opens the producer from its name — unless the click ended a text selection (the user was
+   *  selecting the name to copy it). */
+  openProducerFromName(customer: Customer): void {
+    if (window.getSelection()?.toString().trim()) return;
+    this.selectCustomer(customer);
+  }
+
+  /** Bin sites listed per producer before "Show more". Each is one line until opened, so a few more fit
+   *  than when every site showed its grain. */
+  readonly binSitesVisible = 4;
+
+  /** "Show 3 more bin sites", or null when every site is listed. */
+  binSiteGrainHiddenLabel(groups: BinSiteGrainGroup[]): string | null {
+    return binSiteGrainHiddenLabel(groups, this.binSitesVisible);
+  }
+
+  /** Open bin sites, as "customerId:index" (index into binSiteGrainBreakdown, which keeps the saved site
+   *  order). Every site starts closed — its grain shows only once the user opens it (user 2026-10-12: a
+   *  producer with many bins showed too much at once). */
+  readonly openBinSites = signal<ReadonlySet<string>>(new Set());
+
+  isBinSiteOpen(customerId: number, index: number): boolean {
+    return this.openBinSites().has(`${customerId}:${index}`);
+  }
+
+  toggleBinSite(customerId: number, index: number): void {
+    const key = `${customerId}:${index}`;
+    this.openBinSites.update(open => {
+      const next = new Set(open);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  }
+
+  /** Whether any of this producer's sites is open — the crop column headings show only then. */
+  anyBinSiteOpen(customerId: number): boolean {
+    const prefix = `${customerId}:`;
+    for (const key of this.openBinSites()) if (key.startsWith(prefix)) return true;
+    return false;
+  }
+
+  /** A closed site's line: "2 crops · 35,000 bu", or "No grain on farm". */
+  binSiteGrainSummary(group: BinSiteGrainGroup): string {
+    return binSiteGrainSummary(group);
+  }
+  /** Producers whose full list of bin sites is showing. */
+  readonly binSitesShowAll = signal<ReadonlySet<number>>(new Set());
+
+  toggleBinSitesShowAll(customerId: number): void {
+    this.binSitesShowAll.update(open => {
+      const next = new Set(open);
+      if (!next.delete(customerId)) next.add(customerId);
+      return next;
+    });
+  }
+
+  hasBinSiteGrain(customer: Customer): boolean {
+    return hasBinSiteGrain(customer);
+  }
+
+  /** The rows of a producer's breakdown — see binSiteGrainBreakdown in shared/utils/grain-on-farm. */
+  binSiteGrainBreakdown(customer: Customer): BinSiteGrainGroup[] {
+    return binSiteGrainBreakdown(customer.binSites, customer.grainOnFarm);
   }
 
   /**

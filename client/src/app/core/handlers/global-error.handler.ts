@@ -1,11 +1,15 @@
-import { ErrorHandler, inject, Injectable, isDevMode, NgZone } from '@angular/core';
+import { ErrorHandler, inject, Injectable, Injector, isDevMode, NgZone } from '@angular/core';
 
+import { AppInsightsService } from '@core/services/app-insights.service';
 import { ToastService } from '@core/services/toast.service';
 
 @Injectable()
 export class GlobalErrorHandler implements ErrorHandler {
   private readonly toastService = inject(ToastService);
   private readonly ngZone = inject(NgZone);
+  // Resolved on first use, not injected: the ErrorHandler is created during bootstrap, before
+  // HttpClient and MSAL, which AppInsightsService depends on.
+  private readonly injector = inject(Injector);
 
   // ---------------------------------------------------------
   handleError(error: unknown): void {
@@ -16,6 +20,10 @@ export class GlobalErrorHandler implements ErrorHandler {
       console.error('[GlobalErrorHandler]', error);
     }
 
+    // Reported before the chunk-load early return on purpose: a burst of those right after a deploy
+    // is worth seeing, even though the user is spared the toast.
+    this.report(error);
+
     // Skip chunk-load errors (lazy route not yet downloaded) — Angular retries automatically
     if (message.includes('ChunkLoadError') || message.includes('Loading chunk')) {
       return;
@@ -25,6 +33,14 @@ export class GlobalErrorHandler implements ErrorHandler {
     this.ngZone.run(() => {
       this.toastService.error('An unexpected error occurred. Please try again.');
     });
+  }
+
+  // ---------------------------------------------------------
+  private report(error: unknown): void {
+    // Never let reporting an error become a second error.
+    try {
+      this.injector.get(AppInsightsService).trackException(error);
+    } catch { /* telemetry unavailable */ }
   }
 
   // ---------------------------------------------------------

@@ -147,6 +147,16 @@ public class MyService(ILogger<MyService> logger)
 
 ---
 
+## Operations Workbook
+
+Azure Monitor → Workbooks → **Origination Workbench — Operations** (hosted in `rg-origination-dev-eus`,
+spans Dev / QA / Production through an Environment picker). Shows deployments, Logic App runs,
+CustomerSync and other background-job outcomes, fired alerts, and per-integration failure rate and
+latency, with links into App Insights and the in-app Usage Dashboard. Source and deploy steps:
+[infra/workbooks/README.md](infra/workbooks/README.md).
+
+---
+
 ## Security Rules
 
 1. **Use managed identity** for Azure services (SQL, Storage, Key Vault)

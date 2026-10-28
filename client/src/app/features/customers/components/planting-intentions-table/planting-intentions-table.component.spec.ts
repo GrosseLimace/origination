@@ -1,12 +1,12 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { TestBed } from '@angular/core/testing';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ComponentRef, signal } from '@angular/core';
-import { NEVER, of } from 'rxjs';
+import { NEVER, of, Subject } from 'rxjs';
 import { PlantingIntentionsTableComponent } from './planting-intentions-table.component';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { AppStateService } from '@core/services/app-state.service';
-import { Customer, PlantingIntention } from '@models';
+import { Commodity, Customer, PlantingIntention } from '@models';
 
 // Which trade unit a planting intention is recorded for. A test producer is on Pratt (2190) and
 // Tribune (2210); the form offers THAT PRODUCER's trade units, auto-fills when there is only one
@@ -63,7 +63,8 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
         },
       ],
     });
-    // happy-dom + JIT can't fetch templateUrl; the rules under test are class-level.
+    // The rules under test here are class-level, so the template is blanked; the "rendering"
+    // describe at the end of this file covers the real template.
     TestBed.overrideComponent(PlantingIntentionsTableComponent, {
       set: { template: '', templateUrl: undefined, imports: [] },
     });
@@ -71,6 +72,31 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
     component = fixture.componentInstance;
     ref = fixture.componentRef;
     ref.setInput('customer', makeCustomer());
+  });
+
+  // ── Escape in the crop search boxes ───────────────────────────────────────
+  // Escape pressed to dismiss the crop suggestion list must close the list and claim the keypress.
+  // The add and edit dialogs themselves do not close on Escape: a half-filled form would be lost.
+  it('Escape in a crop search box with suggestions open closes the list and claims the keypress', () => {
+    for (const which of ['add', 'edit'] as const) {
+      if (which === 'add') component.showAddCropSuggestions.set(true);
+      else component.showEditCropSuggestions.set(true);
+      const esc = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+
+      component.onCropSearchEscape(esc, which);
+
+      expect(which === 'add' ? component.showAddCropSuggestions() : component.showEditCropSuggestions()).toBe(false);
+      expect(esc.defaultPrevented).toBe(true);
+    }
+  });
+
+  it('Escape in a crop search box with no suggestions open is left for the dialog', () => {
+    component.showAddCropSuggestions.set(false);
+    const esc = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+
+    component.onCropSearchEscape(esc, 'add');
+
+    expect(esc.defaultPrevented).toBe(false);
   });
 
   // ── Add dialog defaults ────────────────────────────────────────────────────
@@ -161,7 +187,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
 
     component.openAddDialog();
 
-    expect(component.isLoadingProducerTradeUnits).toBe(false);
+    expect(component.isLoadingProducerTradeUnits()).toBe(false);
     expect(component.tradeUnitOptions).toEqual(['2190', '2210']);
     expect(component.addForm.tradeUnit).toBe('2210');
   });
@@ -183,7 +209,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
 
     component.openAddDialog();
 
-    expect(component.isLoadingProducerTradeUnits).toBe(true);
+    expect(component.isLoadingProducerTradeUnits()).toBe(true);
   });
 
   it('labels a code with its description', () => {
@@ -276,5 +302,164 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
 
     expect(component.editTradeUnitOptions).toEqual(['2190', '2210']);
     expect(component.tradeUnitLabel('2210')).toBe('2210 — Tribune, KS (no longer assigned)');
+  });
+});
+
+// The same component through its REAL template. Everything above drives the class with the template
+// blanked, which cannot show whether a change reaches the screen. These tests cover each way the view
+// changes without a template event of its own: the parent opening the Add dialog through @ViewChild,
+// the producer's trade units and the commodity lists answering after the dialog or table rendered,
+// and the crop suggestions closing on a timer after the search box loses focus.
+describe('PlantingIntentionsTableComponent — rendering', () => {
+  let fixture: ComponentFixture<PlantingIntentionsTableComponent>;
+  let component: PlantingIntentionsTableComponent;
+  let tradeUnits$: Subject<Membership[]>;
+  let commodities$: Subject<Commodity[]>;
+  let plantingCommodities$: Subject<Commodity[]>;
+
+  const SOY_ORGANIC: Commodity = { id: 1, code: 'YSBO', name: 'Organic Soybeans', category: 'Soybeans', plantingCategory: 'Organic Soybeans', isActive: true };
+  const CORN: Commodity = { id: 2, code: 'YC', name: 'Yellow Corn', category: 'Corn', isActive: true };
+
+  const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
+  const text = (): string => (host().textContent ?? '').replace(/\s+/g, ' ');
+  const openDialogTitles = (): string[] =>
+    Array.from(host().querySelectorAll('app-dialog-title')).map(t => (t.textContent ?? '').trim());
+  /** The select whose placeholder option reads "Select trade unit..." (Add dialog, several options). */
+  const addTradeUnitSelect = (): HTMLSelectElement | undefined =>
+    Array.from(host().querySelectorAll<HTMLSelectElement>('select'))
+      .find(s => Array.from(s.options).some(o => o.text.trim() === 'Select trade unit...'));
+  const cropSearch = (): HTMLInputElement =>
+    host().querySelector<HTMLInputElement>('input[placeholder="Search crops by name or code..."]')!;
+  /** Names in the open crop-suggestion list; empty when the list is closed. */
+  const suggestions = (): string[] =>
+    Array.from(host().querySelectorAll('div.absolute.z-10 button span.font-medium')).map(s => (s.textContent ?? '').trim());
+
+  beforeEach(async () => {
+    tradeUnits$ = new Subject<Membership[]>();
+    commodities$ = new Subject<Commodity[]>();
+    plantingCommodities$ = new Subject<Commodity[]>();
+    await TestBed.configureTestingModule({
+      imports: [PlantingIntentionsTableComponent],
+      providers: [
+        {
+          provide: ApiService,
+          useValue: {
+            getCommodities: () => commodities$,
+            getPlantingCommodities: () => plantingCommodities$,
+            getCustomerTradeUnits: () => tradeUnits$,
+          },
+        },
+        { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
+        {
+          provide: AppStateService,
+          useValue: {
+            inScopeTradeUnitCodes: signal<readonly string[]>(['2190']),
+            inScopeGroupNames: signal<readonly string[]>([]),
+            tradeUnitDescriptions: signal(new Map([['2190', 'Pratt, KS'], ['2210', 'Tribune, KS']])),
+          },
+        },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(PlantingIntentionsTableComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('customer', makeCustomer());
+    fixture.componentRef.setInput('plantingIntentions', [makeIntention({ id: 1, crop: 'YSBO', category: 'Soybeans' })]);
+    fixture.detectChanges();
+  });
+
+  afterEach(() => {
+    document.body.style.overflow = '';
+  });
+
+  it('opens the Add dialog when the parent calls openAddDialog()', () => {
+    // customer-profile's own "Add" button calls this through @ViewChild: no event in THIS view.
+    expect(openDialogTitles()).toEqual([]);
+
+    component.openAddDialog();
+    fixture.detectChanges();
+
+    expect(openDialogTitles()).toEqual(['Add Planting Intention']);
+  });
+
+  it('swaps "Loading trade units..." for the producer\'s trade units, preselecting the header\'s, when they arrive after the dialog opened', async () => {
+    fixture.componentRef.setInput('tradeUnits', ['2210']);
+    host().querySelector<HTMLButtonElement>('app-table-head button')!.click();
+    fixture.detectChanges();
+    expect(text()).toContain('Loading trade units...');
+
+    tradeUnits$.next([member('2190'), member('2210')]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(text()).not.toContain('Loading trade units...');
+    const select = addTradeUnitSelect();
+    expect(Array.from(select!.options).map(o => o.text.trim())).toEqual(['Select trade unit...', '2190 — Pratt, KS', '2210 — Tribune, KS']);
+    expect(select!.value).toBe('2210');
+  });
+
+  it('relabels a row and drops "Loading crops..." when the commodity list arrives after render', () => {
+    // Stored category "Soybeans" defers to the commodity's planting label once the list is known.
+    expect(text()).not.toContain('Organic Soybeans');
+    component.openAddDialog();
+    fixture.detectChanges();
+    expect(text()).toContain('Loading crops...');
+
+    commodities$.next([SOY_ORGANIC, CORN]);
+    fixture.detectChanges();
+
+    expect(text()).not.toContain('Loading crops...');
+    expect(text()).toContain('Organic Soybeans');
+  });
+
+  it('closes the crop suggestions shortly after the search box loses focus', async () => {
+    commodities$.next([SOY_ORGANIC, CORN]);
+    plantingCommodities$.next([CORN]);
+    component.openAddDialog();
+    fixture.detectChanges();
+
+    cropSearch().value = 'corn';
+    cropSearch().dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(suggestions()).toEqual(['Yellow Corn']);
+
+    cropSearch().dispatchEvent(new Event('blur'));
+    fixture.detectChanges();
+    expect(suggestions()).toEqual(['Yellow Corn']); // still open: a click on a suggestion lands first
+
+    await new Promise(resolve => setTimeout(resolve, 200));
+    fixture.detectChanges();
+
+    expect(suggestions()).toEqual([]);
+  });
+
+  // ── Escape and the delete prompt ──────────────────────────────────────────
+
+  it('keeps the Add and Edit dialogs open on Escape, so a half-filled form is not lost', () => {
+    component.openAddDialog();
+    fixture.detectChanges();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+    expect(openDialogTitles()).toContain('Add Planting Intention');
+    component.closeAddDialog();
+
+    component.openEditDialog(makeIntention({ id: 1 }));
+    fixture.detectChanges();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+    expect(openDialogTitles()).toContain('Edit Planting Intention');
+  });
+
+  it('does not carry an open delete prompt over to the next row edited', () => {
+    component.openEditDialog(makeIntention({ id: 1 }));
+    component.openDeleteConfirm();
+    fixture.detectChanges();
+    expect(text()).toContain('Delete Planting Intention?');
+
+    component.closeEditDialog();
+    component.openEditDialog(makeIntention({ id: 2 }));
+    fixture.detectChanges();
+
+    expect(component.showDeleteConfirm()).toBe(false);
+    expect(text()).not.toContain('Delete Planting Intention?');
   });
 });

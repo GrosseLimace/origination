@@ -1,3 +1,5 @@
+using GrainOriginatorPortal.Api.Services;
+
 namespace GrainOriginatorPortal.Api.Middleware;
 
 /// <summary>
@@ -17,11 +19,7 @@ public class SecurityHeadersMiddleware
     {
         _next = next;
         _env = env;
-        // Per-environment API/App Service hosts the SPA may call, e.g.
-        // "https://app-origination-eus.azurewebsites.net". Configured in appsettings.{Env}.json so
-        // each environment allows only its own host — replaces the old *.azurewebsites.net wildcard.
-        _spaConnectHosts = config.GetSection("SecurityHeaders:SpaConnectSrcHosts").Get<string[]>()
-            ?? Array.Empty<string>();
+        _spaConnectHosts = SpaConnectHosts(config);
 
         // The ACS Calling SDK (incoming-call popup) talks to Microsoft's signalling and media hosts
         // straight from the browser. Those origins are only admitted when the feature is actually
@@ -34,6 +32,21 @@ public class SecurityHeadersMiddleware
             : Array.Empty<string>();
         _spaCallingMediaSrc = callingEnabled ? config["SecurityHeaders:SpaCallingMediaSrc"] : null;
         _spaCallingWorkerSrc = callingEnabled ? config["SecurityHeaders:SpaCallingWorkerSrc"] : null;
+    }
+
+    /// <summary>The hosts the SPA may reach beyond 'self' and Microsoft login/graph:
+    /// <list type="bullet">
+    /// <item>this environment's own API/App Service host, e.g. <c>https://app-origination-eus.azurewebsites.net</c>,
+    /// from <c>SecurityHeaders:SpaConnectSrcHosts</c> in appsettings.{Env}.json, which replaces the old
+    /// <c>*.azurewebsites.net</c> wildcard;</item>
+    /// <item>its App Insights ingestion host, and only that one, when the browser app is sending
+    /// telemetry. See <see cref="ClientTelemetrySettings"/> for why it is not a wildcard.</item>
+    /// </list></summary>
+    public static string[] SpaConnectHosts(IConfiguration config)
+    {
+        var configured = config.GetSection("SecurityHeaders:SpaConnectSrcHosts").Get<string[]>() ?? [];
+        var ingestion = ClientTelemetrySettings.From(config).IngestionOrigin;
+        return ingestion is null ? configured : [.. configured, ingestion];
     }
 
     public async Task InvokeAsync(HttpContext context)

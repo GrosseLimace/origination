@@ -191,20 +191,20 @@ public class CustomerServiceTests
     {
         var codes = new List<string> { "2090", "2291" };
         _repositoryMock
-            .Setup(r => r.AssignTradeUnitsAsync(7L, codes, CurrentUser, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AssignTradeUnitsResult.Ok);
+            .Setup(r => r.AssignTradeUnitsAsync(7L, codes, null, CurrentUser, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AssignTradeUnitsOutcome.Ok(7L));
         _repositoryMock
             .Setup(r => r.DeactivateDormantTradeUnitAsync(7L, "2090", CurrentUser, It.IsAny<CancellationToken>()))
             .ReturnsAsync(DeactivateTradeUnitResult.StillActive);
 
-        var assigned = await _sut.AssignTradeUnitsAsync(7L, codes, CancellationToken.None);
+        var assigned = await _sut.AssignTradeUnitsAsync(7L, codes, null, CancellationToken.None);
         var deactivated = await _sut.DeactivateDormantTradeUnitAsync(7L, "2090", CancellationToken.None);
 
-        Assert.Equal(AssignTradeUnitsResult.Ok, assigned);
+        Assert.Equal(AssignTradeUnitsOutcome.Ok(7L), assigned);
         Assert.Equal(DeactivateTradeUnitResult.StillActive, deactivated);
         // The strict-argument setups above only match when the acting user is passed through; make
         // the negative explicit so a dropped stamp reads as "wrong user", not "no setup matched".
-        _repositoryMock.Verify(r => r.AssignTradeUnitsAsync(It.IsAny<long>(), It.IsAny<List<string>>(), It.Is<string>(u => u != CurrentUser), It.IsAny<CancellationToken>()), Times.Never);
+        _repositoryMock.Verify(r => r.AssignTradeUnitsAsync(It.IsAny<long>(), It.IsAny<List<string>>(), It.IsAny<string?>(), It.Is<string>(u => u != CurrentUser), It.IsAny<CancellationToken>()), Times.Never);
         _repositoryMock.Verify(r => r.DeactivateDormantTradeUnitAsync(It.IsAny<long>(), It.IsAny<string>(), It.Is<string>(u => u != CurrentUser), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

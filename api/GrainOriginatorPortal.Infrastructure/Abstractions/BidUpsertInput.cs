@@ -7,6 +7,9 @@ namespace GrainOriginatorPortal.Infrastructure.Abstractions;
 /// </summary>
 public record BidUpsertInput
 {
+    /// <summary>The location this bid belongs to. Preferred over Name.</summary>
+    public int? LocationId { get; init; }
+
     public string? Name { get; init; }
     public string? ElevatorCode { get; init; }
     public string? GroupName { get; init; }
@@ -18,4 +21,5 @@ public record BidUpsertInput
     public int CropYear { get; init; }
     public int Month { get; init; }
     public string Bid { get; init; } = string.Empty;
+    public string BasisBid { get; init; } = string.Empty;
 }

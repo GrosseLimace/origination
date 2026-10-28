@@ -3,54 +3,42 @@
 Style guide: `style-guides/sql.md`
 Scope: `api/GrainOriginatorPortal.Api/Scripts`, `api/GrainOriginatorPortal.Infrastructure/Data` (migrations, `ApplicationDbContext`, repositories), `scripts/`, `SECURITY-REVIEWS/scripts/`
 
-**Findings:** 19 total — 6 open, 5 accepted, 1 won't-fix, 7 resolved
-**Opened:** 2026-09-19 | **Last verified:** 2026-09-28
+**Findings:** 19 total — 0 open, 6 accepted, 1 won't-fix, 12 resolved
+**Opened:** 2026-09-19 | **Last verified:** 2026-10-20
 
 ## What was checked this pass
 
-- Re-verified every still-open finding from the 2026-09-21 pass against the current working tree (one week later): the five prior `open` findings, the `_VerifySchema.sql` "resolved" claim, and the accepted/won't-fix dispositions. All files named still exist and every claim still holds as described, with one exception below.
-- Diffed the schema surface for what changed in the last week: `git log --since=2026-09-21` on `**/*.sql` and the migrations folder. Four new migrations landed (`AddCustomerIndustryCode2AndNopId`, `AddFlaxCommoditiesForTradeUnit3811`, `SplitFlaxPlantingCategoryByColour`, `RenameGrainOnFarmGroupToCommodityCode`) plus two new standalone scripts (`AddIndustryCode2AndNopIdToCustomerTradeUnitsView.sql`, `planting-intentions-trade-unit-audit.sql`). Read all six in full — no new schema-quality, injection, or migration-safety issues; they're well-documented (explicit run-order notes, insert-if-missing guards for hand-curated seed data, read-only audit queries) and consistent with the patterns already covered by open/accepted findings.
-- Confirmed `scripts/_VerifySchema.sql` is being actively kept current, not just fixed once: its `@Tables`/`@UniqueIndexes`/`@Migrations` counts (40 tables, 21 unique indexes, 53 migrations) match `ApplicationDbContextModelSnapshot.cs` and the migrations folder exactly as of this pass, and three of the intervening commits are literally `chore(schema): add ... to the drift check`. This is the strongest positive signal in the domain this pass.
-- Used a sub-agent to trace whether `sql.customertradeunit-cascade-delete-breaks-pattern`'s premise ("inert today, decide before the manual-curation feature ships") still holds. It doesn't — see below.
-- Did not inspect a live database (Dev/QA/Prod). All schema conclusions are migration/snapshot-evidence, not runtime-verified, same as every prior pass.
+This pass found **no new migrations since 2026-10-13** (`20261013163045_RestrictCustomerTradeUnitDeleteAndValidateCustomerFks` is still the newest file on disk), so the schema surface is unchanged from the last reconciliation. The actual work this pass was discovering and fixing a **drift between `AUDIT-TRACKING.json` and this file**: the JSON already recorded five findings as `resolved`/`accepted` (with dates and resolution notes from 2026-10-13/14), but this markdown's `## Open` section still listed all five as open, unchanged since the 2026-09-28 pass. That made the file self-contradictory — the header said "Last verified: 2026-10-13" while the body described a pre-fix world.
+
+Re-verified all five directly against the current working tree (not just trusting the JSON):
+
+- **`sql.customertradeunit-cascade-delete-breaks-pattern`** — confirmed `ApplicationDbContextModelSnapshot.cs` and migration `20261013163045` show the `CustomerTradeUnit`→`Customer` FK re-added without a cascade override (default `NoAction`), matching every sibling FK to `Customer`. Resolved, confirmed.
+- **`sql.nocheck-foreign-keys-never-revalidated`** — confirmed migration `20261013163045` contains the `WITH CHECK CHECK CONSTRAINT` statements for all three previously-untrusted FKs (`Notes`, `ProducerDetails`, `ProducerPlantingIntentions`). Resolved, confirmed.
+- **`sql.ambiguous-displayname-join-createdby-backfill`** — read `SECURITY-REVIEWS/scripts/B4_migrate_createdby.sql` in full; every `CreatedBy`/`ModifiedBy` join now carries the `GROUP BY ... HAVING COUNT(DISTINCT UserId) = 1` guard, across all nine table joins (Notes, ProducerPlantingIntentions, ProducerDetails, SavedLists, three Dashboard* tables, two BidSheet* tables). Resolved, confirmed.
+- **`sql.fromsqlraw-interpolated-string`** — read `CustomerRepository.cs` in full; `BuildSearchSql`/`BuildOdsSearchSql` are the only place the WHERE text is assembled, and only fixed fragments plus generated parameter names (`@w{i}`, `@d{i}`, `@tradeUnits`) are interpolated — every typed value is a `SqlParameter` built via `SqlSanitization.SanitizeCsv`'s allow-list regex. Resolved, confirmed.
+- **`sql.hardcoded-location-data-duplicated`** — no change to `PopulateMbpLocationSynonym.sql` since the 2026-10-14 acceptance. Accepted, confirmed (was mis-listed as Open).
+
+Also independently re-derived, from a fresh read rather than relying on the tracker:
+
+- Every FK-bearing table sampled (`CustomerTradeUnit`, `ProducerPlantingIntentions`, `Notes`, `ProducerDetails`) has a supporting index on its FK column(s) in the current model snapshot.
+- `CustomerRepository`, `ContractRepository`, `TicketRepository`, `UsageRepository` raw-SQL call sites (`FromSqlRaw`, `FromSqlInterpolated`, `ExecuteSqlRawAsync`) all parameterize caller-controlled values correctly; the only interpolated text is fixed SQL fragments, generated parameter names, or `OdsConstants`/private-const values that never carry user input.
+- Sampled ops scripts (`CheckCustomerFkOrphans.sql`, `Drop-BidSheetPreGlobalSnapshots.sql`, `Restore-ElapsedBidMonths.sql`, `planting-intentions-trade-unit-audit.sql`) are read-only or guarded by `@DryRun`/idempotency checks, with no new issues.
+- Did not inspect a live database (Dev/QA/Prod) this pass either — same blind spot as every prior pass.
+
+No new findings were opened this pass.
 
 ## Open
 
-### CustomerTradeUnit→Customer cascade delete breaks the codebase's own documented pattern, and manual rows now exist (`sql.customertradeunit-cascade-delete-breaks-pattern`) — **severity raised medium → high this pass**
-- **Files:** `api/GrainOriginatorPortal.Infrastructure/Data/ApplicationDbContext.cs`, `api/GrainOriginatorPortal.Infrastructure/Repositories/CustomerRepository.cs`
-- Every other FK to `Customer` is explicit `NoAction` with a rationale comment; `CustomerTradeUnit`'s is `Cascade`, uncommented.
-- The 2026-09-21 pass called this inert and said "decide before [manual curation] ships." That premise no longer holds: `PUT /api/customers/{id}/trade-units` (`CustomersController.AssignTradeUnits` → `CustomerService.AssignTradeUnitsAsync` → `CustomerRepository.AssignTradeUnitsAsync`, lines 553–651) is live today, `[Authorize]`-only with no admin gate (documented as accepted risk AR-03), and inserts `CustomerTradeUnit` rows with `IsManual = true` on real requests. The feature this finding was gating on (`feature_NewCustomerTradeUnits`) merged 2026-05-27 — before this finding was even first opened.
-- What's still true: nothing hard-deletes a `Customer` row today. `CustomerSyncService.SyncAsync` is upsert + soft-delete only (`IsActive = false`), never a rebuild. So no data has actually been lost.
-- Why this is now high, not medium: real hand-curated membership data sits behind a `Cascade` FK, and the only thing protecting it is the absence of a hard-delete code path — a fragile invariant to depend on, not a design decision. `docs/application-context/STYLE-DEVIATIONS.md` still frames this as a pending decision ("Decide before that feature lands") and should be updated to reflect that the feature has shipped.
-
-### Ambiguous DisplayName join can mis-assign UPN during CreatedBy backfill (`sql.ambiguous-displayname-join-createdby-backfill`)
-- **Severity:** medium
-- **Files:** `SECURITY-REVIEWS/scripts/B4_migrate_createdby.sql`
-- Joins `CreatedBy`/`ModifiedBy` to `UserTradeUnitSnapshot.DisplayName`, which is not unique; duplicate display names can get an arbitrary/wrong UserId remapped in. Unchanged this pass.
-- Still blocked on an unrecorded fact: has this script already run in each environment? Not something the repo can answer.
-
-### FromSqlRaw fed a C#-interpolated string instead of FromSqlInterpolated (`sql.fromsqlraw-interpolated-string`)
-- **Severity:** medium
-- **Files:** `api/GrainOriginatorPortal.Infrastructure/Repositories/CustomerRepository.cs`
-- `SearchAsync` builds the WHERE clause text via C# string interpolation (parameter *names* only), then passes it to `FromSqlRaw` with a matching `SqlParameter[]`. Still correctly parameterized, still one careless edit away from a real injection. Unchanged this pass.
-
-### Foreign keys added WITH NOCHECK are never revalidated (`sql.nocheck-foreign-keys-never-revalidated`)
-- **Severity:** medium
-- **Files:** `api/GrainOriginatorPortal.Infrastructure/Data/Migrations/20260513195804_AddCustomerFkAndCustomerLink.cs`
-- Three FKs (`Notes`, `ProducerDetails`, `ProducerPlantingIntentions` → `Customer`) were added `WITH NOCHECK` with a promised later `WITH CHECK CHECK CONSTRAINT` pass that never happened. Unchanged this pass; next step is a read-only orphan-row count per environment, not a code change.
-
-### Location master data hardcoded independently in one remaining script (`sql.hardcoded-location-data-duplicated`)
-- **Severity:** low
-- **Files:** `api/GrainOriginatorPortal.Api/Scripts/PopulateMbpLocationSynonym.sql`
-- `CheckMbpLocationCoverage.sql` — the other half of the original duplication — is confirmed still deleted. `PopulateMbpLocationSynonym.sql` still embeds ~1,000+ literal location rows rather than sourcing from a tracked location table. Tracker's `files` list corrected to drop the deleted script.
+None. All previously-open findings are either resolved or accepted (see below) as of 2026-10-13/14, confirmed again 2026-10-20.
 
 ## Accepted (real, deliberately not fixed — see `docs/application-context/STYLE-DEVIATIONS.md`)
 
 - **`sql.migration-down-applies-unrelated-destructive-changes`** (high) — `AddNoteCustomerCode.cs` `Down()` still widens `ProducerDetails.Id`/`Notes.Id` to `bigint`, unrelated to `Up()`. Accepted: migrations run forward-only in this deploy workflow.
-- **`sql.unjustified-string-primary-keys`** (medium) — `ElevatorCache.ElevatorCode` and `UserTradeUnitSnapshot`'s composite key remain string-typed. Accepted: natural key from ODS. Re-checked this pass that no new child table has added an FK against either string key — none has.
+- **`sql.unjustified-string-primary-keys`** (medium) — `ElevatorCache.ElevatorCode` and `UserTradeUnitSnapshot`'s composite key remain string-typed. Accepted: natural key from ODS, with `BarchartInstrument.Symbol` as a precedent for the same shape.
 - **`sql.yn-flags-as-nvarchar-not-bit`** (low) — `MbpLocationSynonym` Y/N columns remain `nvarchar`. Accepted: faithful mirror of an external export.
 - **`sql.executesqlraw-interpolated-constant`** (low) — `UsageRepository.cs` still splices a private `const` into an interpolated SQL string. Accepted: no runtime value ever reaches the string.
 - **`sql.select-star-in-raw-sql`** (low) — `ContractRepository.cs`/`CustomerRepository.cs` still use `SELECT c.*` mapped onto full entity types. Accepted: entity is the shape contract.
+- **`sql.hardcoded-location-data-duplicated`** (low) — `PopulateMbpLocationSynonym.sql` still embeds ~1,000+ literal location rows. Accepted 2026-10-14: it's a pasted export of the source system and the live QA/PROD load path, guarded by `@maxDeletePct`; a real fix needs a scheduled load from the data team.
 
 ## Won't fix
 
@@ -58,13 +46,17 @@ Scope: `api/GrainOriginatorPortal.Api/Scripts`, `api/GrainOriginatorPortal.Infra
 
 ## Resolved
 
-All fixed on branch `fix_AuditPhase1Findings` (PR #615) unless noted, and re-confirmed still absent/fixed this pass:
+All fixed on branch `fix_AuditPhase1Findings` (PR #615) unless noted:
 
 - **`sql.inconsistent-table-definitions-producerdetails-savedlists`** (critical), **`sql.handrolled-ddl-faked-migration-history`** (high), **`sql.linkedproducerids-column-type-mismatch`** (high), **`sql.unguarded-mass-delete-merge`** (medium), **`sql.orphaned-stale-script-nonexistent-column`** (medium), **`sql.non-idempotent-alter-scripts`** (low), **`sql.n-plus-one-bid-insert-reconciliation`** (low) — all as previously recorded.
-- **`sql.stale-schema-verification-script`** (high) — regenerated 2026-09-21 and, notably, kept current since: `_VerifySchema.sql`'s table/index/migration counts still match the live model snapshot and migrations folder exactly as of 2026-09-28, across three intervening schema-affecting commits that each updated the drift check alongside the schema change.
+- **`sql.stale-schema-verification-script`** (high) — regenerated 2026-09-21 and kept current since, most recently through the 2026-10-09 Bin Sites changes.
+- **`sql.customertradeunit-cascade-delete-breaks-pattern`** (high) — fixed 2026-10-13: migration `20261013163045` swaps the FK from `Cascade` to the pattern-matching default (`NoAction`).
+- **`sql.nocheck-foreign-keys-never-revalidated`** (medium) — fixed 2026-10-13: same migration validates all three previously-untrusted FKs; production had zero orphan rows behind any of them.
+- **`sql.ambiguous-displayname-join-createdby-backfill`** (medium) — closed 2026-10-13 on production evidence (no shared `DisplayName` maps to more than one login), and the script was hardened with a `COUNT(DISTINCT UserId) = 1` guard on every join regardless.
+- **`sql.fromsqlraw-interpolated-string`** (medium) — fixed 2026-10-14: query building moved into public static `CustomerRepository.BuildSearchSql`/`BuildOdsSearchSql` with a dedicated injection-guard test (`CustomerSearchSqlTests`) that fails the build if a value ever reaches the SQL text directly.
 
 ## Blind spots
 
 - No live database (Dev/QA/Prod) was inspected in this pass; all conclusions rest on migration files, the EF model snapshot, and the standalone `.sql` scripts in the repo.
-- `SECURITY-REVIEWS/scripts/B4_migrate_createdby.sql`'s open finding still depends on operational state (has it run per environment?) that isn't recorded anywhere in the repo.
-- The cascade-delete finding's live-write-path confirmation came from tracing `CustomersController`/`CustomerService`/`CustomerRepository` code, not from checking whether any `CustomerTradeUnit` rows with `IsManual = 1` actually exist in a real database yet — the code path is reachable and used in principle, but row-level confirmation would need live DB access.
+- Row-level confirmation that `CustomerTradeUnit` rows with `IsManual = 1` exist in a real database (beyond the 22,491 counted during the 2026-10-13 production check) was not re-verified this pass.
+- This pass's main contribution was tracker hygiene (reconciling this file with `AUDIT-TRACKING.json`), not new schema or query analysis — the schema surface hasn't changed since 2026-10-13, so a deeper re-read of the full migration history was not repeated.

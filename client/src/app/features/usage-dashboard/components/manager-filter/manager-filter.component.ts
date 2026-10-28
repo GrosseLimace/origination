@@ -1,19 +1,20 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, model, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, model, output, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
-import { ApiService } from '@core/services/api.service';
 import { UsageManager } from '@models';
 
 /**
  * Manager filter for the usage dashboard: a searchable dropdown over the org hierarchy's active
  * managers (from the TradeUnitPreferences user/manager lookup). Picking one narrows every panel to
- * that manager's entire team — reports of reports included, manager included.
+ * that manager's entire team — reports of reports included, manager included. Clearing it shows the
+ * whole organisation.
  *
- * The roster loads lazily on first open. If the managers endpoint is unavailable (the server fails
- * closed with a 503 on a TradeUnitPreferences outage) the panel shows a retry affordance rather
- * than a stale or empty roster.
+ * Presentational: the roster comes in as an input. The dashboard page owns the load, because it has
+ * to know the roster before its first data fetch — the filter defaults to the signed-in user, and
+ * that can only be decided once the page knows whether they manage anyone. If the managers endpoint
+ * is unavailable (the server fails closed with a 503 on a TradeUnitPreferences outage) the panel
+ * shows a retry affordance rather than a stale or empty roster.
  */
 @Component({
   selector: 'app-manager-filter',
@@ -23,16 +24,17 @@ import { UsageManager } from '@models';
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ManagerFilterComponent {
-  private readonly api = inject(ApiService);
-  private readonly destroyRef = inject(DestroyRef);
-
   /** Two-way: the selected manager's short name, or null for "All Managers". */
   readonly managerId = model<string | null>(null);
 
+  readonly managers = input<UsageManager[]>([]);
+  readonly loading = input(false);
+  readonly loadFailed = input(false);
+
+  /** The user asked to reload the roster after a failed load. */
+  readonly retry = output<void>();
+
   readonly open = signal(false);
-  readonly managers = signal<UsageManager[]>([]);
-  readonly loading = signal(false);
-  readonly loadFailed = signal(false);
   readonly search = signal('');
 
   readonly selected = computed<UsageManager | null>(() => {
@@ -49,26 +51,12 @@ export class ManagerFilterComponent {
   });
 
   toggle(): void {
-    const next = !this.open();
-    this.open.set(next);
-    // Load on first open rather than on construction — most visits never open this dropdown.
-    if (next && this.managers().length === 0 && !this.loading()) this.load();
+    this.open.set(!this.open());
   }
 
   close(): void {
     this.open.set(false);
     this.search.set('');
-  }
-
-  load(): void {
-    this.loading.set(true);
-    this.loadFailed.set(false);
-    this.api.getUsageManagers()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: rows => { this.managers.set(rows); this.loading.set(false); },
-        error: () => { this.loadFailed.set(true); this.loading.set(false); }
-      });
   }
 
   select(manager: UsageManager): void {

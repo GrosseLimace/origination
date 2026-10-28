@@ -1,4 +1,5 @@
-import { Component, input, output, inject, DestroyRef } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, input, output, inject, DestroyRef, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
@@ -39,13 +40,19 @@ type PlantingRow = PlantingIntention;
     DialogFooterComponent,
     InputComponent
   ],
-  templateUrl: './planting-intentions-table.component.html'
+  templateUrl: './planting-intentions-table.component.html',
+  // State written outside a template event is a signal: the API responses (trade units, both
+  // commodity lists), the suggestion lists' close timers, and the dialog flags (the parent opens the
+  // Add dialog through @ViewChild). The response that fills addForm.tradeUnit marks the view. The
+  // remaining plain fields (forms, crop search, sort, selected row) change only from template events.
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class PlantingIntentionsTableComponent {
   private apiService = inject(ApiService);
   private destroyRef = inject(DestroyRef);
   private toast = inject(ToastService);
   private appState = inject(AppStateService);
+  private cdr = inject(ChangeDetectorRef);
 
   public isLoading = input(false);
   public plantingIntentions = input<PlantingIntention[]>([]);
@@ -64,20 +71,21 @@ export class PlantingIntentionsTableComponent {
   // acres by the trade unit on the row. So the choices are the PRODUCER's own trade units
   // (GET /customers/{id}/trade-units), not the header filter. Loaded on dialog open (like the
   // commodity lists) so a membership change in the edit-customer dialog is picked up.
-  producerTradeUnits: string[] = [];
-  isLoadingProducerTradeUnits = false;
+  readonly producerTradeUnits = signal<string[]>([]);
+  readonly isLoadingProducerTradeUnits = signal(false);
   private _producerTradeUnitsForCustomerId: number | null = null;
 
   /** Options for the Add dialog: the producer's trade units; for a producer with no membership
    *  rows yet (contracts-only / not yet synced) fall back to the user's in-scope trade units. */
   get tradeUnitOptions(): string[] {
-    if (this.producerTradeUnits.length > 0) return this.producerTradeUnits;
+    const own = this.producerTradeUnits();
+    if (own.length > 0) return own;
     return [...this.appState.inScopeTradeUnitCodes()];
   }
 
   /** True when the Add options are a fallback because the producer has no trade-unit assignment. */
   get usingFallbackTradeUnits(): boolean {
-    return this.producerTradeUnits.length === 0 && !this.isLoadingProducerTradeUnits;
+    return this.producerTradeUnits().length === 0 && !this.isLoadingProducerTradeUnits();
   }
 
   /** Options for the Edit dialog: the Add options plus the row's current trade unit when the
@@ -91,7 +99,8 @@ export class PlantingIntentionsTableComponent {
   /** "2190 — Pratt, KS" when a description is known, else just the code. Flags stale tags. */
   tradeUnitLabel(code: string): string {
     const description = this.appState.tradeUnitDescriptions().get(code);
-    const stale = this.producerTradeUnits.length > 0 && !this.producerTradeUnits.includes(code);
+    const own = this.producerTradeUnits();
+    const stale = own.length > 0 && !own.includes(code);
     return `${code}${description ? ' — ' + description : ''}${stale ? ' (no longer assigned)' : ''}`;
   }
 
@@ -110,7 +119,7 @@ export class PlantingIntentionsTableComponent {
   private _loadProducerTradeUnits(): void {
     const customerId = this.customer().id;
     if (this._producerTradeUnitsForCustomerId !== customerId) {
-      this.producerTradeUnits = [];
+      this.producerTradeUnits.set([]);
       this._producerTradeUnitsForCustomerId = customerId;
     }
     // Show the codes the customer list already carries straight away. Waiting on the request below
@@ -118,41 +127,43 @@ export class PlantingIntentionsTableComponent {
     // all held by contract and ticket reads, and this small call queued behind them for 30s or more.
     // The request still runs, quietly, to pick up a membership changed since the list loaded.
     const known = (this.customer().activeTradeUnits ?? []).map(t => t.trim()).filter(Boolean);
-    if (this.producerTradeUnits.length === 0 && known.length > 0) {
-      this.producerTradeUnits = [...known].sort();
-      if (this.showAddDialog && this.addForm.tradeUnit === '') {
+    if (this.producerTradeUnits().length === 0 && known.length > 0) {
+      this.producerTradeUnits.set([...known].sort());
+      if (this.showAddDialog() && this.addForm.tradeUnit === '') {
         this.addForm.tradeUnit = this.defaultTradeUnit(this.tradeUnitOptions);
       }
     }
-    this.isLoadingProducerTradeUnits = this.producerTradeUnits.length === 0;
+    this.isLoadingProducerTradeUnits.set(this.producerTradeUnits().length === 0);
     // Codes only: the open-activity check the edit-customer dialog needs is a contract and ticket read
     // for the producer, which kept this picker waiting seconds for a flag it never uses.
-    this.apiService.getCustomerTradeUnits(customerId, { includeActivity: false }).subscribe({
+    this.apiService.getCustomerTradeUnits(customerId, { includeActivity: false }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: rows => {
-        this.producerTradeUnits = rows.filter(r => r.isActive).map(r => r.tradeUnit.trim()).filter(Boolean).sort();
-        this.isLoadingProducerTradeUnits = false;
+        this.producerTradeUnits.set(rows.filter(r => r.isActive).map(r => r.tradeUnit.trim()).filter(Boolean).sort());
+        this.isLoadingProducerTradeUnits.set(false);
         // The Add dialog may have opened before the list arrived; fill the default in now.
-        if (this.showAddDialog && this.addForm.tradeUnit === '') {
+        if (this.showAddDialog() && this.addForm.tradeUnit === '') {
           this.addForm.tradeUnit = this.defaultTradeUnit(this.tradeUnitOptions);
+          // addForm is a plain object behind ngModel, and this is a response, not a template event.
+          this.cdr.markForCheck();
         }
       },
       error: (e: Error) => {
-        this.isLoadingProducerTradeUnits = false;
+        this.isLoadingProducerTradeUnits.set(false);
         console.error('[PlantingIntentions] Failed to load the producer\'s trade units', e);
       }
     });
   }
 
-  allCommodities: Commodity[] = [];
+  readonly allCommodities = signal<Commodity[]>([]);
   // Curated subset (ShowInPlantingIntentions) used ONLY for the crop dropdown suggestions.
   // Display/resolution still uses the full allCommodities list so existing intentions whose
   // crop isn't in the curated set keep showing their name/category.
-  plantingCommodities: Commodity[] = [];
-  isLoadingCommodities = false;
+  readonly plantingCommodities = signal<Commodity[]>([]);
+  readonly isLoadingCommodities = signal(false);
   // Separate flag for the curated list so it loads INDEPENDENTLY of the full list and is retried
   // on each dialog open until it succeeds. A one-time miss must not leave the crop search stuck
   // falling back to the full ~250-commodity list for the rest of the session.
-  isLoadingPlantingCommodities = false;
+  readonly isLoadingPlantingCommodities = signal(false);
 
   // ── Crop search-and-select state (Add + Edit dialogs) ─────────────────────
   // Mirrors the pattern in edit-customer-dialog: user types into a search box,
@@ -163,11 +174,11 @@ export class PlantingIntentionsTableComponent {
   // on save.
   addCropSearchInput = '';
   filteredAddCrops: Commodity[] = [];
-  showAddCropSuggestions = false;
+  readonly showAddCropSuggestions = signal(false);
 
   editCropSearchInput = '';
   filteredEditCrops: Commodity[] = [];
-  showEditCropSuggestions = false;
+  readonly showEditCropSuggestions = signal(false);
 
   private readonly _commodityAliases: Record<string, string[]> = {
     'milo':    ['milo', 'sorghum', 'sor', 'sg'],
@@ -178,13 +189,13 @@ export class PlantingIntentionsTableComponent {
 
   /** Display label for the currently-selected Add crop ("Yellow Corn (YC)") */
   get addSelectedCropDisplay(): string {
-    const c = this.allCommodities.find(c => c.code === this.addForm.crop);
+    const c = this.allCommodities().find(c => c.code === this.addForm.crop);
     return c ? `${c.name} (${c.code})` : '';
   }
 
   /** Display label for the currently-selected Edit crop */
   get editSelectedCropDisplay(): string {
-    const c = this.allCommodities.find(c => c.code === this.editForm.crop);
+    const c = this.allCommodities().find(c => c.code === this.editForm.crop);
     return c ? `${c.name} (${c.code})` : '';
   }
 
@@ -197,7 +208,7 @@ export class PlantingIntentionsTableComponent {
     this._loadCommodities();
 
     this.destroyRef.onDestroy(() => {
-      if (this.showDeleteConfirm || this.showEditDialog || this.showAddDialog) {
+      if (this.showDeleteConfirm() || this.showEditDialog() || this.showAddDialog()) {
         document.body.style.overflow = '';
       }
     });
@@ -206,7 +217,7 @@ export class PlantingIntentionsTableComponent {
   /** Crop label for a row or a form (crop code + its stored category) — the same resolution the
    *  dashboard uses, so a YSBO row reads "Organic Soybeans" here too. See plantingCategory(). */
   cropCategoryFor(cropCode: string, storedCategory?: string): string {
-    const commodity = this.allCommodities.find(c => c.code === cropCode);
+    const commodity = this.allCommodities().find(c => c.code === cropCode);
     return plantingCategory({ crop: cropCode, category: storedCategory }, commodity);
   }
 
@@ -214,9 +225,9 @@ export class PlantingIntentionsTableComponent {
   currentSortColumn: SortColumn | null = null;
   currentSortDirection: SortDirection = 'none';
 
-  showAddDialog = false;
-  showEditDialog = false;
-  showDeleteConfirm = false;
+  readonly showAddDialog = signal(false);
+  readonly showEditDialog = signal(false);
+  readonly showDeleteConfirm = signal(false);
   selectedIntention: PlantingIntention | null = null;
 
   addForm = {
@@ -259,9 +270,9 @@ export class PlantingIntentionsTableComponent {
    *  loaded in Dev, and it is the default the form auto-fills, so it must always be a valid option. */
   private _categoryOptionsFor(crop: string): string[] {
     if (!crop) return [];
-    const commodity = this.allCommodities.find(c => c.code === crop);
+    const commodity = this.allCommodities().find(c => c.code === crop);
     if (!commodity) return [];
-    const sameCategory = this.allCommodities.filter(c => c.category === commodity.category);
+    const sameCategory = this.allCommodities().filter(c => c.category === commodity.category);
     const options = new Set<string>();
     const planting = commodityPlantingCategory(commodity);
     if (planting) options.add(planting);
@@ -379,17 +390,17 @@ export class PlantingIntentionsTableComponent {
 
   private _loadCommodities(): void {
     // Full list — used for display/resolution everywhere in this component.
-    if (this.allCommodities.length === 0 && !this.isLoadingCommodities) {
-      this.isLoadingCommodities = true;
-      this.apiService.getCommodities().subscribe({
+    if (this.allCommodities().length === 0 && !this.isLoadingCommodities()) {
+      this.isLoadingCommodities.set(true);
+      this.apiService.getCommodities().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (commodities) => {
-          this.allCommodities = commodities;
-          this.isLoadingCommodities = false;
+          this.allCommodities.set(commodities);
+          this.isLoadingCommodities.set(false);
         },
         // Log so a failed full-list load (which breaks crop name/category resolution) is captured
         // rather than silently swallowed. Retried on the next dialog open.
         error: (e: Error) => {
-          this.isLoadingCommodities = false;
+          this.isLoadingCommodities.set(false);
           console.error('[PlantingIntentions] Failed to load commodity list', e);
         }
       });
@@ -398,18 +409,18 @@ export class PlantingIntentionsTableComponent {
     // retried on each dialog open until it succeeds, so a transient miss doesn't leave the search
     // permanently falling back to the full commodity list (the bug fix). The _rankedCropMatches
     // fallback to allCommodities remains only as a last resort so the dropdown is never blank.
-    if (this.plantingCommodities.length === 0 && !this.isLoadingPlantingCommodities) {
-      this.isLoadingPlantingCommodities = true;
-      this.apiService.getPlantingCommodities().subscribe({
+    if (this.plantingCommodities().length === 0 && !this.isLoadingPlantingCommodities()) {
+      this.isLoadingPlantingCommodities.set(true);
+      this.apiService.getPlantingCommodities().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (commodities) => {
-          this.plantingCommodities = commodities;
-          this.isLoadingPlantingCommodities = false;
+          this.plantingCommodities.set(commodities);
+          this.isLoadingPlantingCommodities.set(false);
         },
         // Surface the failure: when the curated list doesn't load, the crop search silently falls
         // back to the full ~250-commodity list. Warn the user (and log) so this is visible instead
         // of looking like the filter "isn't working". Retried on the next dialog open.
         error: (e: Error) => {
-          this.isLoadingPlantingCommodities = false;
+          this.isLoadingPlantingCommodities.set(false);
           console.error('[PlantingIntentions] Failed to load curated planting crop list', e);
           this.toast.warning('Couldn\'t load the planting crop list — showing all commodities. Reopen to retry.');
         }
@@ -418,7 +429,7 @@ export class PlantingIntentionsTableComponent {
   }
 
   onAddCropChange(code: string): void {
-    const commodity = this.allCommodities.find(c => c.code === code);
+    const commodity = this.allCommodities().find(c => c.code === code);
     const name = commodity?.name || '';
     this.addForm.description = [this.addForm.type, name].filter(Boolean).join(' ');
     // Auto-populate category from the commodity's planting label ("Organic Soybeans" for YSBO),
@@ -429,14 +440,14 @@ export class PlantingIntentionsTableComponent {
   // ── Add Crop search-and-select handlers ──────────────────────────────────
   onAddCropSearch(): void {
     this.filteredAddCrops = this._rankedCropMatches(this.addCropSearchInput);
-    this.showAddCropSuggestions = true;
+    this.showAddCropSuggestions.set(true);
   }
 
   selectAddCrop(commodity: Commodity): void {
     this.addForm.crop = commodity.code;
     this.addCropSearchInput = '';
     this.filteredAddCrops = [];
-    this.showAddCropSuggestions = false;
+    this.showAddCropSuggestions.set(false);
     this.onAddCropChange(commodity.code);
   }
 
@@ -451,11 +462,22 @@ export class PlantingIntentionsTableComponent {
     this.addForm.category = '';
     this.addCropSearchInput = '';
     this.filteredAddCrops = [];
-    this.showAddCropSuggestions = false;
+    this.showAddCropSuggestions.set(false);
+  }
+
+  /** Escape in a crop search box closes its suggestion list and stops there. Without this the
+   *  keypress reached the dialog, which closed and took the whole add or edit form with it. When
+   *  no list is open the Escape is left alone, so it still closes the dialog as usual. */
+  onCropSearchEscape(event: Event, which: 'add' | 'edit'): void {
+    const open = which === 'add' ? this.showAddCropSuggestions() : this.showEditCropSuggestions();
+    if (!open) return;
+    event.preventDefault();
+    if (which === 'add') this.showAddCropSuggestions.set(false);
+    else this.showEditCropSuggestions.set(false);
   }
 
   hideAddCropSuggestionsDelayed(): void {
-    setTimeout(() => { this.showAddCropSuggestions = false; }, 150);
+    setTimeout(() => this.showAddCropSuggestions.set(false), 150);
   }
 
   onAddTypeChange(): void {
@@ -466,7 +488,7 @@ export class PlantingIntentionsTableComponent {
   }
 
   onEditCropChange(code: string): void {
-    const commodity = this.allCommodities.find(c => c.code === code);
+    const commodity = this.allCommodities().find(c => c.code === code);
     const name = commodity?.name || '';
     this.editForm.description = [this.editForm.type, name].filter(Boolean).join(' ');
     this.editForm.category = commodityPlantingCategory(commodity) || '';
@@ -475,7 +497,7 @@ export class PlantingIntentionsTableComponent {
   // ── Edit Crop search-and-select handlers ─────────────────────────────────
   onEditCropSearch(): void {
     this.filteredEditCrops = this._rankedCropMatches(this.editCropSearchInput);
-    this.showEditCropSuggestions = true;
+    this.showEditCropSuggestions.set(true);
   }
 
   /**
@@ -501,8 +523,8 @@ export class PlantingIntentionsTableComponent {
     // reflects the current selection. The fallback is scoped too, so a transient curated-list
     // failure can't leak organics into a conventional picker.
     const inScope = { groupNames: this.appState.inScopeGroupNames(), tradeUnitCodes: this.appState.inScopeTradeUnitCodes() };
-    const curated = scopeCommodities(this.plantingCommodities, inScope);
-    const source = curated.length > 0 ? curated : scopeCommodities(this.allCommodities, inScope);
+    const curated = scopeCommodities(this.plantingCommodities(), inScope);
+    const source = curated.length > 0 ? curated : scopeCommodities(this.allCommodities(), inScope);
     const matches: { c: Commodity; rank: number }[] = [];
     for (const c of source) {
       const name = c.name.toLowerCase();
@@ -525,7 +547,7 @@ export class PlantingIntentionsTableComponent {
     this.editForm.crop = commodity.code;
     this.editCropSearchInput = '';
     this.filteredEditCrops = [];
-    this.showEditCropSuggestions = false;
+    this.showEditCropSuggestions.set(false);
     this.onEditCropChange(commodity.code);
   }
 
@@ -540,11 +562,11 @@ export class PlantingIntentionsTableComponent {
     this.editForm.category = '';
     this.editCropSearchInput = '';
     this.filteredEditCrops = [];
-    this.showEditCropSuggestions = false;
+    this.showEditCropSuggestions.set(false);
   }
 
   hideEditCropSuggestionsDelayed(): void {
-    setTimeout(() => { this.showEditCropSuggestions = false; }, 150);
+    setTimeout(() => this.showEditCropSuggestions.set(false), 150);
   }
 
   onEditTypeChange(): void {
@@ -566,22 +588,22 @@ export class PlantingIntentionsTableComponent {
       acres: '',
       plantingYear: currentYear.toString(),
       // From the cached producer list when we have it; otherwise filled in when the load completes.
-      tradeUnit: this.producerTradeUnits.length > 0 && this._producerTradeUnitsForCustomerId === this.customer().id
+      tradeUnit: this.producerTradeUnits().length > 0 && this._producerTradeUnitsForCustomerId === this.customer().id
         ? this.defaultTradeUnit(this.tradeUnitOptions)
         : ''
     };
     this.addCropSearchInput = '';
     this.filteredAddCrops = [];
-    this.showAddCropSuggestions = false;
+    this.showAddCropSuggestions.set(false);
     this._loadCommodities();
-    this.showAddDialog = true;
+    this.showAddDialog.set(true);
     // After showAddDialog: the load's completion fills the default only while the dialog is open.
     this._loadProducerTradeUnits();
     document.body.style.overflow = 'hidden';
   }
 
   closeAddDialog(): void {
-    this.showAddDialog = false;
+    this.showAddDialog.set(false);
     document.body.style.overflow = '';
   }
 
@@ -659,7 +681,7 @@ export class PlantingIntentionsTableComponent {
     this.selectedIntention = row;
 
     // Resolve category: use saved value if set, otherwise look up from Commodities table
-    const commodity = this.allCommodities.find(c => c.code === row.crop);
+    const commodity = this.allCommodities().find(c => c.code === row.crop);
     const category = row.category || commodity?.category || '';
     const formData = {
       crop: row.crop,
@@ -674,15 +696,17 @@ export class PlantingIntentionsTableComponent {
     this.originalEditForm = { ...formData };
     this.editCropSearchInput = '';
     this.filteredEditCrops = [];
-    this.showEditCropSuggestions = false;
+    this.showEditCropSuggestions.set(false);
     this._loadCommodities();
     this._loadProducerTradeUnits();
-    this.showEditDialog = true;
+    this.showEditDialog.set(true);
     document.body.style.overflow = 'hidden';
   }
 
   closeEditDialog(): void {
-    this.showEditDialog = false;
+    this.showEditDialog.set(false);
+    // The delete prompt belongs to this dialog. Left up, it would reappear over the next row opened.
+    this.showDeleteConfirm.set(false);
     this.selectedIntention = null;
     document.body.style.overflow = '';
   }
@@ -729,12 +753,12 @@ export class PlantingIntentionsTableComponent {
   }
 
   openDeleteConfirm(): void {
-    this.showDeleteConfirm = true;
+    this.showDeleteConfirm.set(true);
     document.body.style.overflow = 'hidden';
   }
 
   closeDeleteConfirm(): void {
-    this.showDeleteConfirm = false;
+    this.showDeleteConfirm.set(false);
     document.body.style.overflow = '';
   }
 

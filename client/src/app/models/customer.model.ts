@@ -1,5 +1,5 @@
 import { Coordinates } from './coordinates.model';
-import { GrainOnFarmItem, ProducerContactItem } from './producer-details.model';
+import { GrainOnFarmItem, ProducerBinSiteItem, ProducerContactItem } from './producer-details.model';
 
 export interface Customer {
   id: number;             // Maps to bigint in C# API
@@ -25,6 +25,7 @@ export interface Customer {
   extendedStateProvince?: string;
   extendedCountry?: string;
   totalAcres: number;
+  binSitesModifiedAt?: string | null; // when bin sites / grain on farm last changed (producer details)
   linkedProducerIds: string[];
   eSignEnabled: boolean;
   achEnabled: boolean;             // base.Customer.PaymentMethod == 'H'
@@ -44,12 +45,12 @@ export interface Customer {
   coordinates?: Coordinates;
 
   // CustomerDetails fields (populated from app DB / ProducerDetails table)
-  binCapacity?: number;       // Bushels - bin storage capacity
   grainOnFarm?: GrainOnFarmItem[]; // Per-commodity bushels on hand + target
   commodities?: string[];     // e.g. ['Corn', 'Soybeans', 'Wheat']
   primaryContact?: string;    // Derived from the primary contact row (kept for compat/search)
   primaryPhone?: string;      // Derived from the primary contact row (kept for compat/search)
   contacts?: ProducerContactItem[]; // User-entered contacts, primary first
+  binSites?: ProducerBinSiteItem[]; // User-entered bin sites, display order
 
   // Onboarding: true when a user manually added this producer (assigned trade units)
   // rather than the nightly sync. Used to distinguish ODS search candidates and to

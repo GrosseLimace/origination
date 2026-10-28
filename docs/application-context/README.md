@@ -22,13 +22,16 @@ This folder is the canonical reference for **what each screen of the Origination
 | [Security Model](./SECURITY-MODEL.md) | _(read first)_ | Why trade-unit entitlements are a UX filter, not a per-user access boundary, and which endpoints are the exception |
 | [Customer Home Page](./Customer%20Home%20Page.md) | `/` | Day-to-day producer view — list, profile tabs, notes sidebar, deep-link query params |
 | [Build a List](./Build%20a%20List.md) | `/build-list` | NLQ-driven producer list builder, refine filters, saved lists, linked-producer entity view |
-| [Actionable Insights](./Actionable%20Insights.md) | `/insights` (+ `/unshipped-bushels`) | Three urgent-work categories: Unconfirmed Contracts, Spot Loads, Unshipped Bushels |
+| [Actionable Insights](./Actionable%20Insights.md) | `/insights` | Three urgent-work categories: Unconfirmed Contracts, Spot Loads, Unshipped Bushels |
 | [Planting Intentions Dashboard](./Planting%20Intentions%20Dashboard.md) | `/dashboard` | Yield, market share, actual harvest planning by trade unit and growing season |
 | [Bid Sheet](./Bid%20Sheet.md) | `/bid-sheet` _(env-gated)_ | Map-based competitor bid tracking and management |
+| [BarChart Bid Feed — Database Plan](./Barchart%20Bid%20Feed%20-%20Database%20Plan.md) | _(backend)_ | Vendor bid feed: landing tables, load and bridge SQL, and the feed-vs-manual bid ownership rules |
+| [BarChart Ingestion API Contract](./Barchart%20Ingestion%20API%20Contract.md) | `/api/barchart-ingest` | The contract handed to the data-pipeline team: endpoints, auth, payload rules, daily call sequence |
 | [Usage Dashboard](./Usage%20Dashboard.md) | `/usage-dashboard` _(admin-only, env-gated)_ | Adoption metrics, originator-level activity, query-library usage and gaps |
 | [App Access Graph Check](./App%20Access%20Graph%20Check.md) | _(backend + diagnostic)_ | Entra access group read via managed identity; usage-dashboard/digest filtering; IT grants + outcome table |
 | [Producer Reminders](./Producer%20Reminders.md) | `/` _(env-gated)_ | Personal follow-up reminders on the producer pane and list badge, mirrored to the user's own Outlook calendar |
 | [What's New](./Whats%20New.md) | `/whats-new` | In-app release notes and the build stamp — how to write the entry before a PROD deploy |
+| [Self Help](./Self%20Help.md) | `/help` (+ the Help panel on every page) | In-app FAQ and troubleshooting — editing `help-faq.json`, the drift tests that keep it current, spotlight anchors, unanswered-question review |
 | [Teams Channel Mentions](./Teams%20Channel%20Mentions.md) | _(notes composer + `/daily-digest`)_ | @-mention a Teams channel to post a note there; delegated Graph channel lookup, the registry, and the consent still outstanding |
 | [Incoming Calls](./Incoming%20Calls.md) | _(global popup, env-gated, Dev spike)_ | A producer calling your Teams number pops their name + code with Answer / Decline / Hold; ACS Teams-user calling, the IT ask, and the 2028 ACS retirement caveat |
 

@@ -26,22 +26,19 @@ namespace GrainOriginatorPortal.Api.Services;
 public sealed class CtrmKeepWarmService : BackgroundService
 {
     private readonly CtrmWarmRegistry _registry;
-    private readonly CtrmContractReader _contractReader;
-    private readonly CtrmTicketReader _ticketReader;
+    private readonly ICtrmWarmReads _reads;
     private readonly IConfiguration _configuration;
     private readonly ILogger<CtrmKeepWarmService> _logger;
     private readonly CtrmKeepWarmBackoff _backoff = new();
 
     public CtrmKeepWarmService(
         CtrmWarmRegistry registry,
-        CtrmContractReader contractReader,
-        CtrmTicketReader ticketReader,
+        ICtrmWarmReads reads,
         IConfiguration configuration,
         ILogger<CtrmKeepWarmService> logger)
     {
         _registry = registry;
-        _contractReader = contractReader;
-        _ticketReader = ticketReader;
+        _reads = reads;
         _configuration = configuration;
         _logger = logger;
     }
@@ -94,7 +91,9 @@ public sealed class CtrmKeepWarmService : BackgroundService
         && nowUtc - lastRunUtc >= TimeSpan.FromMinutes(cadenceMinutes)
         && string.Equals(configuredSource?.Trim(), "ctrm", StringComparison.OrdinalIgnoreCase);
 
-    private async Task WarmActiveSetsAsync(CancellationToken stoppingToken)
+    /// <summary>One warm cycle over every active producer set. Internal so the per-set failure
+    /// isolation below can be exercised directly, without the one-minute timer in front of it.</summary>
+    internal async Task WarmActiveSetsAsync(CancellationToken stoppingToken)
     {
         var keepFor = TimeSpan.FromHours(Math.Max(1, ReadInt("Ctrm:KeepWarmForHours", 2)));
         var sets = _registry.ActiveSets(keepFor, DateTime.UtcNow);
@@ -133,7 +132,7 @@ public sealed class CtrmKeepWarmService : BackgroundService
 
             try
             {
-                var contracts = await _contractReader.GetForProducersAsync(codes, CancellationToken.None);
+                var contracts = await _reads.ContractsAsync(codes, CancellationToken.None);
                 if (!contracts.Ok)
                 {
                     _backoff.Record(codes, DateTime.UtcNow, backoff);
@@ -142,7 +141,7 @@ public sealed class CtrmKeepWarmService : BackgroundService
                     continue;
                 }
 
-                var tickets = await _ticketReader.GetForProducersHistoryAsync(codes, CancellationToken.None);
+                var tickets = await _reads.TicketHistoryAsync(codes, CancellationToken.None);
                 if (!tickets.Ok)
                 {
                     _backoff.Record(codes, DateTime.UtcNow, backoff);
@@ -159,7 +158,7 @@ public sealed class CtrmKeepWarmService : BackgroundService
                 // dates - and therefore the cache key - cannot drift from what the request itself computes.
                 var (from, to) = CtrmTicketRepository.SpotLoadWindow(
                     CtrmTicketRepository.RecentTicketDaysFrom(_configuration));
-                var spotLoads = await _ticketReader.GetForProducersAsync(codes, from, to, CancellationToken.None);
+                var spotLoads = await _reads.SpotLoadsAsync(codes, from, to, CancellationToken.None);
                 if (!spotLoads.Ok)
                     _logger.LogWarning("CTRM keep-warm: Spot Loads read for {Producers} producer(s) did not complete: {Status}.",
                         codes.Count, spotLoads.Status);

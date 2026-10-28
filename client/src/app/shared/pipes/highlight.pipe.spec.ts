@@ -17,7 +17,7 @@ describe('HighlightPipe', () => {
 
   /** bypassSecurityTrustHtml returns an opaque SafeHtml; unwrap it back to the string it will
    *  actually render as. */
-  const render = (text: string | null | undefined, keyword: string | null | undefined): string =>
+  const render = (text: string | null | undefined, keyword: string | readonly string[] | null | undefined): string =>
     sanitizer.sanitize(SecurityContext.HTML, pipe.transform(text, keyword)) ?? '';
 
   beforeEach(() => {
@@ -117,5 +117,28 @@ describe('HighlightPipe', () => {
 
     expect(out).not.toContain('<mark');
     expect(out).toContain('Jones Farm');
+  });
+
+  // -------------------------------------------------------------------------
+  // Several words (a producer's bin site names, 2026-10-09).
+
+  it('marks every word in a list, longest first', () => {
+    const out = render('North Bins full; Home Place empty; north side ok', ['North', 'North Bins', 'Home Place']);
+    expect(out).toContain('<mark class="bg-yellow-200 dark:bg-yellow-700/60 text-gray-900 dark:text-white rounded px-0.5">North Bins</mark>');
+    expect(out).toContain('>Home Place</mark>');
+    expect(out).toContain('>north</mark> side');
+  });
+
+  it('still escapes the text when highlighting a list, and treats each word literally', () => {
+    const out = render('<img src=x onerror=alert(1)> Bins (East) & A+B', ['Bins (East)', 'A+B', '&']);
+    expect(out).not.toContain('<img');
+    expect(out).toContain('&lt;img');
+    expect(out).toContain('>Bins (East)</mark>');
+    expect(out).toContain('>A+B</mark>');
+    expect(out).toContain('>&amp;</mark>');
+  });
+
+  it('highlights nothing for an empty list', () => {
+    expect(render('North Bins', [])).not.toContain('<mark');
   });
 });

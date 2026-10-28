@@ -26,7 +26,6 @@ export class UsageTrackingService {
     '/insights': 'insights',
     '/dashboard': 'dashboard',
     '/bid-sheet': 'bidsheet',
-    '/unshipped-bushels': 'unshipped-bushels',
     '/daily-digest': 'daily-recap',
     '/usage-dashboard': 'usage-dashboard',
   };
@@ -51,6 +50,40 @@ export class UsageTrackingService {
     this.postClickEvent('interaction', 'system', 'whats-new');
   }
 
+  // Help panel and Help page. App chrome like What's New, so they report under 'system'. Events carry
+  // FAQ ids, never what the user typed — except help-no-match, which has to carry the question for the
+  // FAQ to learn from it; the API redacts that one as free text (TelemetrySanitizer).
+
+  /** The panel was opened. `source` is where from: header, menu, drawer or page. */
+  trackHelpOpened(source: string): void {
+    this.postClickEvent('interaction', 'system', 'help-opened', source);
+  }
+
+  /** An answer was shown, whether typed, picked from a chip, or opened on the Help page. */
+  trackHelpAnswer(faqId: string): void {
+    this.postClickEvent('interaction', 'system', 'help-answer', faqId);
+  }
+
+  /** A typed question the content couldn't answer. Truncated here with headroom for the server's
+   *  redaction markers, which lengthen the text; the stored column is 200 characters. */
+  trackHelpNoMatch(question: string): void {
+    this.postClickEvent('interaction', 'system', 'help-no-match', question.slice(0, 150));
+  }
+
+  /** How a troubleshooter run ended, as an outcome code only — never the name that was searched. */
+  trackHelpTroubleshoot(outcome: string): void {
+    this.postClickEvent('interaction', 'system', 'help-troubleshoot', outcome);
+  }
+
+  /** "Open ServiceNow" on the Still need help? card — how often help ends in a ticket. */
+  trackHelpTicketOpened(): void {
+    this.postClickEvent('interaction', 'system', 'help-ticket-opened');
+  }
+
+  trackHelpFeedback(faqId: string, helpful: boolean): void {
+    this.postClickEvent('interaction', 'system', helpful ? 'help-helpful' : 'help-not-helpful', faqId);
+  }
+
   // Customer Page interactions
   trackProfileOpened(customerId: string): void {
     this.postClickEvent('interaction', 'customers', 'profile-opened', customerId);
@@ -69,6 +102,12 @@ export class UsageTrackingService {
    *  stored and then counted nowhere. */
   trackMapClick(customerId: string): void {
     this.postClickEvent('interaction', 'customers', 'map-click', customerId);
+  }
+
+  /** Bin site opened in Google Maps. Same 'interaction' event type as the address link, for the
+   *  same reason; the subfeature keeps the two distinguishable. */
+  trackBinSiteMapClick(customerId: string): void {
+    this.postClickEvent('interaction', 'customers', 'bin-site-map-click', customerId);
   }
 
   trackTicketDropdownOpen(customerId?: string): void {

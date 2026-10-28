@@ -11,12 +11,13 @@ these patterns; triage against the AR-IDs below before re-opening.
 | AR-02 | Customer-scoped reads not restricted by trade-unit entitlement (no object-level authz) | High | CWE-639 / CWE-284 | Accepted — engineering only (see *Countersignature* below) | 2026-06-23 | 2027-06-23 |
 | AR-03 | Rep-driven trade-unit assignment (CustomerTradeUnit membership mutable by any rep) | High | CWE-284 / CWE-639 | Accepted | 2026-06-23 | 2027-06-23 |
 | AR-04 | ODS onboarding search exposes producer-master PII to any authenticated rep | High | CWE-284 / CWE-200 | Accepted | 2026-06-23 | 2027-06-23 |
-| AR-05 | Bid-sheet **location** reads unscoped across trade units (writes are gated; the elevators half was fixed 2026-09-14) | High | CWE-284 | Accepted | 2026-06-23 | 2027-06-23 |
+| AR-05 | Bid-sheet **location** reads are company-wide; destructive ops restricted to creator/Admin; the elevators half is gone (route deleted 2026-09-14); sheet rename/reshare opened to any member (2026-09-16) | High | CWE-284 | Accepted — **awaiting countersign** (amended 2026-09-16) | 2026-09-02 | 2027-09-02 |
 | AR-06 | Production SQL hostnames / db names in appsettings.Production.json (no credentials) | Low | CWE-200 | Accepted | 2026-06-23 | Before go-live |
 | AR-07 | Mentioning a group addresses that group's members, not the mentioner's entitlements — and, since 2026-09-14, may post the note to its Teams channel instead | Medium | CWE-284 | Accepted — engineering only (see *Countersignature* below) | 2026-08-11 (amended 2026-09-14) | 2027-08-11 |
 | AR-08 | Person mentions require a real active user, but are not scoped to the mentioner's colleagues | High | CWE-284 | Accepted — engineering only (see *Countersignature* below) | 2026-09-01 | 2027-09-01 |
 | AR-09 | The caller's UPN (an email-shaped identifier) is written into the structured log scope of every request | Low | CWE-532 | Accepted | 2026-09-21 | 2027-09-21 |
-| AR-10 | The incoming-call popup widens the SPA `connect-src` to Microsoft's ACS / Teams / Skype wildcard hosts (Dev only, config-gated) | Low | CWE-942 | Accepted — Dev spike | 2026-10-07 | Before any QA/PROD enablement |
+| AR-10 | Every Super Users member sees whole-organisation usage data and the full manager roster on the Usage Dashboard (the per-caller ViewAll scoping was retired) | Medium | CWE-284 | Accepted — engineering only (see *Countersignature* below) | 2026-10-09 | 2027-10-09 |
+| AR-11 | The incoming-call popup widens the SPA `connect-src` to Microsoft's ACS / Teams / Skype wildcard hosts (Dev only, config-gated) | Low | CWE-942 | Accepted — Dev POC | 2026-10-28 | Before any QA/PROD enablement |
 
 ---
 
@@ -993,37 +994,38 @@ city/state) and fetch full contact detail only for a producer the rep actually o
 
 ---
 
-## AR-05 — Bid-sheet location/elevator reads unscoped across trade units
+## AR-05 — Bid-sheet locations and bids are company-wide, with only destructive actions restricted
 
-**Finding** (scan 2026-06-23; HIGH; CWE-284). `GET /api/bidsheet/locations` and
-`GET /api/bidsheet/elevators` become unscoped when the `tradeUnitCode` query parameter is omitted:
-`BidSheetController` only validates entitlements when the parameter is present, and the service then
-returns every location (with its full `Bids` collection) / every elevator across all trade units. Any
-authenticated user can read bid-sheet data outside their assigned trade units by omitting the filter.
+**Superseded 2026-09-02.** The original finding (scan 2026-06-23; HIGH; CWE-284) was that
+`GET /api/bidsheet/locations` and `GET /api/bidsheet/elevators` return every trade unit's data when the
+`tradeUnitCode` parameter is omitted. That was accepted on the grounds that *"the authorization
+boundary that matters for bid sheets is mutation, and that is enforced"* — every write validated the
+caller's trade-unit entitlement.
 
-**Update (2026-09-14) — AR-05 NARROWED to `GET /api/bidsheet/locations`. The elevators read is
-FIXED, not accepted.** Re-flagged as **H-066** (`codex`). Re-examined, and the entry's justification
-only ever covered half of what it defended:
+**That rationale is no longer true, and this entry is rewritten rather than re-accepted.**
 
-- **`GET /api/bidsheet/locations` — re-accepted.** The map genuinely needs it.
-  `_loadAllMapLocations` and the All-Producers refresh in `bid-sheet.component.ts` both call the
-  parameterless read, so cross-trade-unit visibility here is on the product's happy path.
-- **`GET /api/bidsheet/elevators` — fixed.** `tradeUnitCode` is now **required** and validated.
-  Nothing in the client ever called it (`getElevators()` in `api.service.ts` had no caller), so the
-  map rationale never applied and requiring a scope costs no behaviour. The client signature was
-  tightened from optional to required in the same change, so a future caller fails at compile time
-  rather than with a runtime 400.
+**Update (2026-09-14) — AR-05 covers `GET /api/bidsheet/locations` only. The elevators half is
+gone.** The entry defended two reads, and its justification only ever fitted one of them:
 
-One correction to the finding: it implies the write side is exposed too. It is not — mutations
-re-authorize against the row's **stored** trade unit via
-`BidSheetService.AuthorizeLocationByStoredTradeUnitAsync`, not the client-supplied one, added as an
-earlier AR-05 fix. A client cannot escalate by sending a trade unit it happens to hold.
+- **`GET /api/bidsheet/locations` — still accepted, on the terms set out below.** The map genuinely
+  needs it: the bid sheet loads every location in one unscoped request, so cross-trade-unit
+  visibility here is the product's happy path, not an oversight.
+- **`GET /api/bidsheet/elevators` — the route no longer exists.** It was re-flagged as **H-066**
+  (`codex`) and fixed on `main` by making `tradeUnitCode` required. This branch went further and
+  **deleted the endpoint**, along with its service and repository methods and the client's uncalled
+  `getElevators()`, as part of retiring the trade-unit-scoped API surface. Nothing called it, and
+  `dbo.ElevatorCache` does not even exist in the Dev database. A deleted route cannot be re-opened
+  by accident; if one is ever needed again, it must be written scoped from the start.
 
-⚠ **A bypass worth remembering, found while fixing this.** `ValidateTradeUnitsOrThrowAsync` filters
-blank codes and returns early on an empty set, so `?tradeUnitCode=` (empty string) passes validation
-**vacuously**. On the elevators route that would have fallen straight through to the unscoped
-repository path. Any route that treats a trade-unit parameter as required must reject
-null/whitespace explicitly *before* calling the validator — validating is not the same as requiring.
+⚠ **A bypass worth remembering, recorded on `main` while fixing H-066 and kept here because it
+applies to every route, not just that one.** `ValidateTradeUnitsOrThrowAsync` filters blank codes and
+returns early on an empty set, so `?tradeUnitCode=` (empty string) passes validation **vacuously**.
+Any route that treats a trade-unit parameter as required must reject null/whitespace explicitly
+*before* calling the validator — validating is not the same as requiring.
+
+(`main`'s note that writes re-authorize via `AuthorizeLocationByStoredTradeUnitAsync` was true of the
+pre-remodel model and is deliberately not carried forward: that method is gone, because there is no
+per-row trade unit left to authorize against. What replaced it is set out under "What changed" below.)
 
 **Update (2026-09-21):** re-flagged as **H-068** (`claude`, CWE-284, confidence 8/10) against the
 remaining half, `GET /api/bidsheet/locations`. **Re-accepted — no behaviour change.**
@@ -1057,26 +1059,152 @@ the difference at the point of the difference, not only in this file.**
 
 ### Decision: Accepted (locations only — see the 2026-09-14 and 2026-09-21 updates above)
 
-**Rationale.** Cross-trade-unit *visibility* of bid-sheet locations and bids is **intended** — the
-frontend deliberately loads all locations for the map view, and reps benefit from seeing the wider
-bid picture. The authorization boundary that matters for bid sheets is **mutation**, and that is
-enforced: every write path validates the caller's trade-unit entitlement —
-`POST/PUT/DELETE /locations`, `DELETE /locations/{id}/bids/...`, `POST /bids/bulk`, and the
-`cropyears` / `commodities` / `bidmonths` / `location-order` endpoints all call
-`ValidateTradeUnitsOrThrowAsync`. A user can only **edit** trade units they are entitled to; the
-broad read is a deliberate product decision, not financial/PII data.
+### What changed
 
-**Scope / compensating controls.** Authenticated Scoular employees only; the unscoped path is
-**read-only**; all bid-sheet mutations are entitlement-gated; data is internal bid info (no PII).
+The bid sheet was remodelled so that a location is a **company-wide** record rather than a per-desk
+one. Previously the same elevator was stored once per trade unit — one row per desk, each with its own
+bids — and every mutation was authorized against the row's persisted `TradeUnitCode`
+(`BidSheetService.AuthorizeLocationByStoredTradeUnitAsync`, the AR-05-era IDOR fix).
 
-**Residual risk.** An employee can read bid-sheet locations/bids outside their trade units. Accepted
-as intended visibility.
+There is now **one row per elevator and one shared set of bids**, so there is no per-row trade unit
+left to authorize against. Trade-unit scoping has been removed from the Bid Sheet screen entirely;
+`TradeUnitCode` survives on the row only as provenance (which desk first added it) and nothing reads it
+to decide what a user may see or change.
 
-**Re-evaluate if:** bid pricing becomes competitively sensitive *between* trade units such that a
-read boundary is required. At that point, scope the omitted-parameter path to the caller's allowed
-trade units (derive server-side via `IUserEntitlementService`) instead of returning all.
+### Decision: Accepted, with destructive operations newly restricted
 
-**Accepted by:** Origination engineering — recorded 2026-06-23.
+**Rationale.** Shared visibility was always intended, and is now the explicit product model: everyone
+sees every location and every bid, and users curate what they care about into their own sheets. What
+changed is the *blast radius of a write*. Previously a bad or careless edit damaged one desk's copy;
+now one row serves everybody.
+
+Mutations are therefore split by kind:
+
+- **Open to any authenticated user** — entering and overriding bids, renaming a location, re-siting it,
+  and the Scoular flag. These are shared-record edits, consistent with AR-01's position that bid sheet
+  records are shared rather than owned, and they match how originators actually work: whoever is looking
+  at a bid is the person best placed to correct it. A wrong value is visible, correctable, and
+  reclaimed by the feed on its next run.
+- **Restricted to the row's creator or an Admin** — deleting a location, and deleting every bid for a
+  commodity on it. These are destructive, irreversible from the UI, and now remove the elevator and its
+  whole bid history from *every* user's sheet at once. Enforced by
+  `BidSheetService.AuthorizeDestructiveLocationChangeAsync`, which reads the persisted `CreatedBy` and
+  throws `ForbiddenException` (a real 403 — a 404 would tell the user the row vanished and send them
+  hunting a bug that isn't there).
+
+**Scope / compensating controls.** Authenticated Scoular employees only. Data is internal competitor
+bid information — no PII, no financial account data. Destructive actions are creator-or-Admin and carry
+a UI confirmation stating how many sheets hold the location. Feed-owned cells are reclaimed by the
+nightly bridge, so an incorrect override to a fed bid self-heals within a day. The pre-remodel state of
+every table is preserved in `dbo.*_PreGlobal` snapshots.
+
+**Residual risk — larger than before, and stated plainly.**
+1. Any authenticated employee can change any bid on any location company-wide. There is no audit trail
+   of *who* changed a bid beyond `ModifiedBy` on the row, and no undo in the UI.
+2. Bids auto-save on blur with no confirmation. Two users editing the same cell will each keep their
+   own value locally and **neither is told they overwrote the other**. A concurrency answer
+   (last-write-wins with an indicator, or a version token) is an open item for the sheets phase.
+3. A hand-typed bid on a location the feed does not publish has no self-healing path — it persists
+   until someone notices.
+
+**Re-evaluate if:** bid pricing becomes competitively sensitive *between* desks (which would require a
+read boundary and undo this model); or if concurrent-edit collisions prove to happen in practice; or if
+the sheets phase introduces membership, at which point mutation could reasonably be scoped to "a
+location on a sheet you belong to" instead of being fully open.
+
+### Addendum — the sheets phase, 2026-09-03
+
+The "re-evaluate if" clause above named the sheets phase specifically, so here is what it changed.
+**The decision is unchanged**; two facts about the authorization surface are not.
+
+**1. Sheets are a new authorization boundary, but not over bids.** `dbo.BidSheets` /
+`BidSheetShares` / `BidSheetLocationLinks` give a sheet an owner and a share list. Reading or editing a
+sheet requires being its owner or on its share list; renaming, resharing and deleting one are
+owner-only (`BidSheetService.RequireVisibleSheetAsync` / `RequireSheetOwnerAsync`, both checking
+persisted values, both returning a real 403 rather than a 404 for a genuine outsider).
+**⚠ Superseded 2026-09-16 — only DELETE is owner-only now. See the addendum below.**
+
+Mutation of **bids and locations was deliberately NOT scoped to sheet membership.** The clause above
+offered that as an option; it was not taken, because a location is company-wide and appears on many
+sheets at once, so "a location on a sheet you belong to" is satisfied by almost every user for almost
+every location — it would read as a control while enforcing nearly nothing. Residual risk 1 stands
+unchanged: any authenticated employee can change any bid.
+
+**2. The two destructive endpoints no longer call `ValidateTradeUnitsOrThrowAsync`.**
+`DELETE /bidsheet/locations/{id}` and `DELETE /bidsheet/locations/{id}/bids/{commodity}` used to
+validate the caller against a `tradeUnitCode` the **caller supplied in the query string**. Post-remodel
+the client could only supply the row's provenance trade unit — the desk that first added the
+location — which is very often not the caller's. The check therefore denied legitimate deletes while
+adding nothing against an attacker, who chose the value being checked. It has been removed; the
+creator-or-Admin guard on the persisted `CreatedBy` is now the sole and actual authorization on both
+endpoints. **This is a narrowing of a check that was decorative, not the removal of a real one**, but
+it is a reduction in the surface as written and is recorded here rather than left to a diff.
+
+**3. Deleting a location clears its sheet links.** The link FK is `RESTRICT`, so no other code path can
+empty a colleague's sheet as a side effect; the delete path clears links explicitly, after the UI has
+shown the caller how many sheets hold the elevator
+(`GET /bidsheet/locations/{id}/sheet-count`). Residual risk: that count is the only warning, and the
+delete is still irreversible from the UI.
+
+**4. Residual risk 2 (concurrent edits) is unchanged and now applies to more than bids.** A sheet's
+shared column layout and row order are last-write-wins with no indicator, so two members rearranging
+the same sheet will silently overwrite each other. Lower stakes than a bid — a layout is re-set in
+seconds — but the same missing mechanism.
+
+**Countersign note:** this addendum changes what is being signed off. It is part of the same pending
+request to asksecurity@scoular.com, not a separate one.
+
+**Amended by:** Origination engineering — 2026-09-03.
+
+### Addendum — rename and reshare opened to sheet members, 2026-09-16
+
+**A deliberate relaxation, requested by the product owner, recorded here because it widens who can
+change who sees a sheet.** The 2026-09-03 addendum above recorded rename, reshare and delete as
+owner-only; two of the three no longer are.
+
+| Action on a sheet | Before | Now | Enforced by |
+|---|---|---|---|
+| Rename | Owner only | **Any member** | `RequireVisibleSheetAsync` |
+| Reshare (add/remove members) | Owner only | **Any member** | `RequireVisibleSheetAsync` |
+| Delete | Owner only | Owner only — unchanged | `RequireSheetOwnerAsync` |
+
+**Why.** A bid sheet is a shared working list, not a personal document. The people working from it are
+the ones who know what it should be called and which colleague needs to be on it, and routing both
+through whoever happened to create it made the owner a bottleneck for clerical changes. Deleting is
+the one action that cannot be undone and takes the sheet away from everyone on it, so it stays with
+the creator.
+
+**The residual risk this adds, stated plainly: a member can widen who sees a sheet they do not own,
+and the owner is not notified.** They find out by opening the share dialog. Bounded by:
+
+- A member can only reshare a sheet already shared with them — this grants no new reach to an
+  outsider, it lets an insider extend an existing circle.
+- Every share row records `SharedBy`, so who widened it is on the record and queryable.
+- Sharing a sheet conveys no privilege the recipient did not already have: locations and bids are
+  company-wide and readable by every authenticated employee (residual risk 1 above). A sheet is a
+  *curated view* of data the recipient could already see. What leaks is the curation — which elevators
+  a desk watches — not the prices.
+- Authenticated Scoular employees only; internal competitor bid data, no PII.
+
+**A related check that had to move with it.** The rename endpoint tested the new name for uniqueness
+against the CALLER's sheets, which was the same set as the owner's while only the owner could rename.
+Left alone it would have let a member give the owner two sheets with one name, while rejecting a name
+the owner was not using. It now checks the OWNER's list. Not a security fault — a correctness one
+that the authorization change created.
+
+**Not done, and worth knowing:** there is no notification to the owner, and no per-sheet setting to
+keep resharing owner-only. Both were considered and left out as disproportionate for the data class.
+
+**Re-evaluate if:** which elevators a desk tracks becomes competitively sensitive between desks, or if
+sheets are ever used to carry data that is not already company-readable. Either would make the
+curation itself worth protecting and should restore owner-only resharing.
+
+**Amended by:** Origination engineering — 2026-09-16.
+
+**Status: awaiting IT Security countersign** (asksecurity@scoular.com), alongside AR-02. The feature is
+Dev-only and gated behind `environment.barchartBidsEnabled`; it must not reach PROD without sign-off.
+
+**Rewritten by:** Origination engineering — 2026-09-02. Supersedes the 2026-06-23 acceptance.
 
 ---
 
@@ -1414,7 +1542,67 @@ object-level authorization gap — raise it with AR-01/02/08 if Security would r
 
 ---
 
-## AR-10 — The incoming-call popup widens the SPA connect-src (Dev only)
+## AR-10 — Every Super Users member sees whole-organisation usage data and the manager roster
+
+**Finding:** Until 2026-10-09 the Usage Dashboard answered two questions separately: "may you open
+it" (the `Admin` app role, granted by the *Origination App {Env} Super Users* group) and "how much of
+it do you see" (the `dbo.UsageDashboardViewAllUsers` table — a handful of names who got the manager
+dropdown and the whole organisation, while everyone else was pinned server-side to their own team
+and never received the manager roster). Branch `feature_UsageDashboardManagerForAll` retires the
+second question: the table is dropped, `UsageDashboardService` honours any `managerId` it is sent,
+`GET /usage-dashboard/managers` returns every manager's name, short name and report counts to every
+caller who passes the read policy, and the whole-organisation view is one click ("All Managers")
+away for all of them. The deleted code carried a comment warning that the roster is the company org
+chart and should not be handed out "just because someone can open the dashboard"; the pre-push code
+review flagged the widening against the least-privilege principle (CWE-284).
+
+**Accepted, because the narrower model no longer matched how the dashboard is meant to be used.**
+This was a product decision by the Origination owner (2026-10-09): everyone who can open the
+dashboard should be able to select any manager and see that team, with the signed-in user as the
+default. The people granted access are managers and IT (that is what the Super Users group is for),
+and the only effect of the retired control was to hide adoption numbers from other managers inside
+the same company.
+
+**What makes the residual risk acceptable:**
+
+- The data is adoption telemetry about Scoular employees — logins, screens used, notes written,
+  producers contacted — not customer PII and not credentials. The per-user drill-down shows the same
+  counters, not note contents or producer records.
+- The manager roster is names, short names and report counts. The same org chart is visible to every
+  employee in Outlook and Teams ("Organization" tab), so the endpoint discloses nothing the directory
+  does not already.
+- There is still exactly one gate, the Super Users Entra group, and it is administered in Entra, not
+  in app code or SQL. Membership is the access review surface.
+- Every read still passes the `UsageDashboardViewer` policy (pinned by a convention test), still goes
+  through `SecurityAuditMiddleware` for 401/403 outcomes, and still has `dbo.UsageDashboardExcludedUsers`
+  subtracted. Exclusion administration remains restricted to the `ExclusionManagers` allowlist.
+- Scope is Scoular-internal only — no external or guest accounts (see
+  [SECURITY-MODEL.md](../docs/application-context/SECURITY-MODEL.md)).
+
+**Revisit if any of these becomes true:**
+
+- The Super Users group starts being used to grant something other than dashboard access, so that
+  non-managers land in it for unrelated reasons.
+- The dashboard gains content that is sensitive per person (note text, compensation-adjacent
+  metrics, anything beyond activity counts).
+- A data-classification decision treats employee adoption telemetry as restricted.
+
+**Compensating direction if it ever needs changing:** migration
+`20261009145425_DropUsageDashboardViewAllUsers` has a `Down()` that recreates the table **with its
+original five-name seed**, and the scoping code (`ResolveEffectiveManagerIdAsync`,
+`UsageDashboardViewAllProvider`, the synthetic `UsageDashboardViewAll` role) is intact in git history
+immediately before commit `2c7df34d`. Re-introducing per-caller scoping is a revert, not a design.
+
+**Accepted by:** Origination engineering — recorded 2026-10-09 at the product owner's request.
+Surfaced by the pre-push code review of the branch. This entry does not change the 2026-09-21
+decision recorded at the top of this file: IT Security countersignature for AR-01, AR-02 and AR-08 is
+closed as declined, and AR-07's remains open. AR-10 is an authorization-scope widening rather than a
+classification choice, so whether it (and AR-07) should go to asksecurity@scoular.com is the project
+owner's call; as of 2026-10-13 that has not been done and this entry should not be read as saying it has.
+
+---
+
+## AR-11 — The incoming-call popup widens the SPA connect-src (Dev only)
 
 **What changed:** the incoming-call popup runs the Azure Communication Services Calling SDK in the
 browser ("Communication as a Microsoft 365 user"), which talks straight to Microsoft's signalling and
@@ -1436,19 +1624,23 @@ it dropped `*.azurewebsites.net` (that wildcard stays banned; a test pins it).
   widens where already-injected script could reach, and every listed host is Microsoft-operated.
 - The Calling SDK cannot work without these origins; there is no narrower published list.
 
-**Token boundary (not a risk, recorded so it is not re-raised):** `GET /api/calling/token` mints an
-ACS token for the CALLER'S OWN Entra object id via on-behalf-of. There is no parameter that selects
-another user, the token is cached per object id, and it is never logged. The boundary is the same as
-the Graph OBO features (Teams channel lookup, Outlook reminders). `GET /api/calling/match` reads the
-same producer rows the caller can already search; cross-trade-unit producer reads are covered by
-AR-02, which already names the incoming-call popup.
+**Token boundary (not a risk, recorded so it is not re-raised):** the browser acquires an Entra
+token for the ACS `Teams.ManageCalls` / `Teams.ManageChats` scopes with its own MSAL session (admin
+consent on the SPA registration), and `POST /api/calling/token` exchanges it for an ACS calling token
+with the Identity SDK. The user's object id is taken from the VALIDATED API token, never from the
+request body, and ACS rejects the exchange unless the Entra token was issued to that same user and to
+the configured SPA client id — so a caller can only ever mint a calling token for themselves. Tokens
+are not cached server-side and are never logged. `GET /api/calling/match` reads the same producer
+rows the caller can already search; cross-trade-unit producer reads are covered by AR-02, which
+already names the incoming-call popup.
 
 **Must be re-reviewed before the feature is enabled in QA or Production:** narrow the list to what
 the Dev console actually needed (drop any host that never appeared), and route the result to IT
 Security with the ACS consent request.
 
 **Accepted by:** Origination engineering — recorded 2026-10-07 with the Dev spike
-(`spike_IncomingCallAcs`).
+(`spike_IncomingCallAcs`); renumbered AR-11 and token paragraph rewritten 2026-10-28 for the
+Infrastructure-provisioned design (see docs/application-context/TEAMS-CALLING-GUIDE.md).
 
 ---
 
@@ -1516,6 +1708,7 @@ matches them to their remediation instead of re-doing the work.
 
 | Finding | Date | Disposition |
 |---------|------|-------------|
+| **M-048** — BarChart catalog `elevator` / `locationName` / `city` interpolated raw into a Leaflet `bindTooltip` string (`bid-sheet.component.ts` `onBarchartResults`), which Leaflet renders as `innerHTML`, so a crafted upstream instrument record could put live markup (links, styling) on a picker pin (CWE-79; inline script already blocked by CSP) | 2026-10-26 | **Fixed** on `fix_M048_BarchartTooltipEscape`: the label goes through the component's existing `_esc()` helper, the same one every `divIcon` label on the bid-sheet map already used — this tooltip was the only Leaflet sink that missed it (the customer-map popup escapes via `_escapeHtml`). Regression spec `catalog pin tooltip is text, not markup` fails on the old code. |
 | **M-046 / M-047** — recap group `Name` interpolated raw into the daily-recap HTML email (`<h2>CRM Activities for @{variables('groupName')}</h2>`), so any rep could name a group `<a href="https://attacker.example/login">…</a>` and have it delivered as live markup from the shared mailbox to every member and every Teams channel the recap posts to (CWE-79) | 2026-10-07 | **Fixed** on `fix_RecapGroupNameHtmlEncoding`. The `<h2>` now applies the same `&`→`<`→`>` replace chain the instant-share Logic App already uses in production (`&` first, or the entities double-encode). One change covers all four sends — two email, two Teams — because all four deliver the single `emailBody`. Subjects and run-log text deliberately stay RAW: Graph renders subjects as plain text, so encoding them would show `Corn &amp; Soy` to recipients. Pinned by `DailyRecapHtmlEncodingTests`, which read the template itself: no raw interpolation, `&`-first ordering, every `contentType: HTML` send delivers `emailBody` only, subjects still raw. Mutation-verified. **Server-side input restriction NOT added**, deliberately: with output encoded there is nothing left to defend, and rejecting `<`/`>` would block names like `Corn & Soy <West>` that now render correctly (before the fix, `<West>` was swallowed as a tag). ⚠ **Takes effect only after each environment's "Daily Digest … Deploy Logic App" workflow is run** — the app deploy does not touch Logic Apps. |
 | **M-044 / M-039** — `PUT /api/customers/{id}` performs an unguarded mutation of producer contact info, farm links and `LinkedProducerIds` with no entitlement check and no audit trail (CWE-639) | 2026-09-21 | **Fixed by deletion (2026-09-21) — and the finding's premise was false.** The route mutated nothing: `CustomerRepository.UpdateAsync` ran an `AsNoTracking` existence probe, wrote a log line and returned, with no `SaveChanges`. Location/phone/email originate in the ODS and cannot be written from the app; `FarmIds`, `LinkedProducerIds` and `TotalAcres` live on `ProducerDetails`. So there was no write to authorize and no mutation to audit. It was also **dead** — `api.service.updateCustomer` had no caller and no test referenced it — so the whole surface was removed: controller action, `UpdateCustomerRequest`, `ICustomerService`/`CustomerService.UpdateAsync`, `ICustomerRepository`/`CustomerRepository.UpdateAsync`, client wrapper. ⚠ **This route was listed under AR-01 in error on 2026-09-14** (M-039) because the triage accepted the scanner's description without opening the repository. Second register error of its class after H-062 and H-071, both of which claimed an `AUDIT_` control that did not exist. **Rule: read a route to its last layer before it enters or leaves this register.** Backend 533/533, client 601/601. |
 | **H-049** — Dashboard write endpoints don't validate `TradeUnitKey` inside `List<T>` bodies (`EnforceTradeUnitAccessAttribute.cs`) | 2026-06-29 | **Fixed** in commit `7d124a5`. `EnforceTradeUnitAccess` recurses into `IEnumerable` request bodies (`ExtractTradeUnitKeys`) and validates **every element's** `TradeUnitKey` for POST/PUT/DELETE — a foreign trade unit in any list element is rejected (403). The scan that flagged H-049 predates that same-day commit. Regression tests cover all three dashboard upsert routes (estimates, market shares, actual harvest) in `EnforceTradeUnitAccessFilterTests`. **Not a live vulnerability.** |

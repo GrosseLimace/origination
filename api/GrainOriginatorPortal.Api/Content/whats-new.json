@@ -1,5 +1,144 @@
 [
   {
+    "version": "2026.10.4",
+    "releasedOn": "2026-10-22",
+    "title": "Producers straight from CTRM, and help inside the app",
+    "summary": "Add a producer as soon as they are set up in CTRM, and get answers from a new Help panel on any page.",
+    "items": [
+      {
+        "group": "Producers",
+        "kind": "changed",
+        "text": "Producers now come from CTRM, the customer master, instead of the ODS. Names, addresses, contact details, NOP ID and ACH payment details are refreshed from CTRM every night."
+      },
+      {
+        "group": "Producers",
+        "kind": "added",
+        "text": "Searching to add a producer now looks in CTRM directly, so a producer set up in CTRM today can be found and added right away, without waiting for the next day."
+      },
+      {
+        "group": "Help",
+        "kind": "added",
+        "text": "A new Help panel answers questions about the Workbench. Click the ? at the top right, next to your profile menu, then type a question or pick a suggestion. Answers include steps and buttons that take you straight to the right place."
+      },
+      {
+        "group": "Help",
+        "kind": "added",
+        "text": "Can't find a producer? Help searches every trade unit in the Workbench for them. If they aren't in the Workbench yet, it checks CTRM, so you can add them. Either way, it tells you where the producer is and how to open or add them."
+      },
+      {
+        "group": "Help",
+        "kind": "added",
+        "text": "Browse every help topic on the Help page, from Help in the profile menu. If you still need help, Still need help? gathers the details support asks for and walks you through opening a ServiceNow ticket."
+      },
+      {
+        "group": "Daily Recap",
+        "kind": "fixed",
+        "text": "A note on a producer with no trade unit could stop the Daily Recap going out to some groups. The recap now goes out as normal."
+      },
+      {
+        "group": "Daily Recap",
+        "kind": "changed",
+        "text": "Notes on a producer with no trade unit are left out of the Daily Recap. Before adding a note, make sure the producer has a trade unit; you can check or add one in Edit Producer."
+      }
+    ]
+  },
+  {
+    "version": "2026.10.3",
+    "releasedOn": "2026-10-21",
+    "title": "Bid sheets you can share, with bids fed from BarChart",
+    "summary": "The Bid Sheet is rebuilt around named, shareable sheets of company-wide locations, and bids can now come straight from BarChart.",
+    "items": [
+      {
+        "group": "Bid Sheet",
+        "kind": "added",
+        "text": "Bid sheets are now named working sets of locations. Create a sheet, add locations from the map or the picker, and share it with a desk, a group or a recap group. Several sheets can be open at once."
+      },
+      {
+        "group": "Bid Sheet",
+        "kind": "changed",
+        "text": "Locations are company-wide: one row per elevator, no longer tied to a trade unit. You can give a location your own display name on a sheet without changing it for anyone else."
+      },
+      {
+        "group": "Bid Sheet",
+        "kind": "changed",
+        "text": "The grid shows delivery months only, across several crop years at once, with the crop year and the futures board on each column header. The Yearly column is gone; a Yearly bid you had typed now sits on the month its basis letter names."
+      },
+      {
+        "group": "Bid Sheet",
+        "kind": "added",
+        "text": "Show cash, basis or both. The choice is remembered for you and carries to the map, the bids popup and print. A positive basis shows with a leading +."
+      },
+      {
+        "group": "Bid Sheet",
+        "kind": "added",
+        "text": "Pick which columns Edit Bids shows from its header, and export the grid to Excel. Edit Bids refreshes itself, so the header refresh button is gone."
+      },
+      {
+        "group": "Bid Sheet",
+        "kind": "added",
+        "text": "On the map, All locations browses every elevator in the catalog. Clicking a pin shows that location's published bids, filtered by the chosen crop."
+      },
+      {
+        "group": "BarChart bids",
+        "kind": "added",
+        "text": "Add from BarChart: search by name, town, state or zip, tick several locations and add them in one go. Their bids come from the BarChart feed, carry the board symbol, fill every month the bid covers, and refresh daily."
+      },
+      {
+        "group": "BarChart bids",
+        "kind": "added",
+        "text": "A green Feed chip marks a fed bid and a blue Manual chip one you typed. You can override a fed bid by hand until the feed's next run."
+      }
+    ]
+  },
+  {
+    "version": "2026.10.2",
+    "releasedOn": "2026-10-14",
+    "title": "Bin sites with grain on farm, and search by email",
+    "summary": "Record a producer's bin sites and the grain stored at each one, and find producers by email.",
+    "items": [
+      {
+        "group": "Bin sites",
+        "kind": "added",
+        "text": "A producer's page now lists their bin sites under Contact and Locations: a name, the capacity, and an optional map location that opens in Google Maps. Add or change them in Edit Producer."
+      },
+      {
+        "group": "Grain on farm",
+        "kind": "changed",
+        "text": "Grain on farm is now recorded at a bin site. In Edit Producer, add a site, then add the crops stored there with bushels on hand, bushels sold, grade, target price and last bid. The producer's page groups the grain by site."
+      },
+      {
+        "group": "Grain on farm",
+        "kind": "changed",
+        "text": "The producer-level Bin Capacity field is gone. Any capacity or grain on farm entered before this release was moved onto a bin site named Bin 1, so nothing was lost; rename it when you next edit the producer."
+      },
+      {
+        "group": "Build a List",
+        "kind": "added",
+        "text": "A new Grain on Farm & Bin Sites group of prompts finds producers by what they have on farm. Each result shows the producer's bin sites with the grain at each one, and any notes that mention a bin site by name. The refine filters cover every bin site and grain on farm field."
+      },
+      {
+        "group": "Notes",
+        "kind": "added",
+        "text": "When a note mentions one of the producer's bin sites by name, the name shows in blue, and the note appears with that producer in Build a List."
+      },
+      {
+        "group": "Producer search",
+        "kind": "added",
+        "text": "You can now find a producer by their email address."
+      },
+      {
+        "group": "Usage dashboard",
+        "kind": "changed",
+        "text": "Anyone with access to the usage dashboard can now pick a manager and see the people who report to them. It starts on whoever is signed in."
+      },
+      {
+        "group": "Lists and insights",
+        "kind": "changed",
+        "text": "Lists and insights built from contracts now load faster for large trade units."
+      }
+    ]
+  },
+  {
     "version": "2026.10.1",
     "releasedOn": "2026-10-06",
     "title": "Contracts and tickets now come straight from CTRM",

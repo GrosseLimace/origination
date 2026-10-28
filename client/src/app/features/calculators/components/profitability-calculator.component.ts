@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, input, OnInit } from '@angular/core';
+import { Component, inject, signal, computed, input, OnInit, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 import { InputComponent } from '@shared/components/input/input.component';
@@ -51,6 +51,7 @@ function blankCrop(): CropForm {
 @Component({
   selector: 'app-profitability-calculator',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, AccountingCurrencyPipe, InputComponent, SelectComponent, ButtonComponent],
   templateUrl: './profitability-calculator.component.html',
 })

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Customer } from '@models';
 
-import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl } from './address';
+import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl, googleMapsCoordinatesUrl } from './address';
 
 /** Minimal Customer — only the address fields matter here. */
 function customer(fields: Partial<Customer>): Customer {
@@ -84,5 +84,17 @@ describe('googleMapsSearchUrl', () => {
   it('links on city alone when no street is known', () => {
     expect(googleMapsSearchUrl({ street: '', city: 'Hastings', state: 'NE', zip: '' }))
       .toBe('https://www.google.com/maps/search/?api=1&query=Hastings%2C%20NE');
+  });
+});
+
+describe('googleMapsCoordinatesUrl', () => {
+  it('builds a Maps search link on the exact point', () => {
+    expect(googleMapsCoordinatesUrl(39.115876, -95.143955))
+      .toBe('https://www.google.com/maps/search/?api=1&query=39.115876%2C-95.143955');
+  });
+
+  it('uses the full pasted precision, not the shortened display form', () => {
+    expect(googleMapsCoordinatesUrl(41.39034548435109, -95.00754031349179))
+      .toContain('query=41.39034548435109%2C-95.00754031349179');
   });
 });

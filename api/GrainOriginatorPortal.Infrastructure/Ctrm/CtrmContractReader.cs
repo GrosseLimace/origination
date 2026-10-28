@@ -58,6 +58,13 @@ public sealed class CtrmContractReader
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _setsByProducer =
         new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>producer-set cache key → the trade units that set was resolved from. The repositories know
+    /// the units; keep-warm and the ticket read ask by codes alone. Remembering the units here keeps every
+    /// caller on ONE cache entry per set whatever strategy builds it, and lets a refresh started by a
+    /// codes-only caller still read by trade unit.</summary>
+    private readonly ConcurrentDictionary<string, IReadOnlyList<string>> _unitsBySet =
+        new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// A cached read. Holds the fetch LAZILY, which is the whole point.
     /// </summary>
@@ -199,6 +206,11 @@ public sealed class CtrmContractReader
     private CtrmReadResult<List<CtrmContractDto>>? TryServeFromProducerSet(string code)
     {
         if (!ReadBool("Ctrm:ServeClickFromTradeUnitCache", fallback: true)) return null;
+
+        // A set read BY TRADE UNIT holds only the contracts tagged to that unit. A producer's own screen shows
+        // every contract they hold whatever unit it sits in, so such a set cannot answer a click - it would
+        // show the producer a shorter book than they have. Live read instead, same as before the sets existed.
+        if (IsTradeUnitStrategy()) return null;
         if (!_setsByProducer.TryGetValue(code, out var setKeys) || setKeys.IsEmpty) return null;
 
         var maxAge = TimeSpan.FromMinutes(Math.Max(1, ReadInt("Ctrm:ServeClickFromTradeUnitCacheMaxMinutes", 15)));
@@ -267,6 +279,20 @@ public sealed class CtrmContractReader
     /// </remarks>
     public Task<CtrmReadResult<List<CtrmContractDto>>> GetForProducersAsync(
         IReadOnlyCollection<string> scoularIds, CancellationToken cancellationToken)
+        => GetForProducersAsync(scoularIds, tradeUnits: null, cancellationToken);
+
+    /// <summary>
+    /// <see cref="GetForProducersAsync(IReadOnlyCollection{string}, CancellationToken)"/>, with the trade
+    /// units the producer set was resolved from, for callers that know them.
+    /// </summary>
+    /// <remarks>
+    /// The units are remembered against the set's cache key, not used in it: the key stays the hash of the
+    /// codes so a keep-warm cycle or the ticket read, which ask by codes alone, share this entry. Under the
+    /// <see cref="TradeUnitStrategy"/> the remembered units are what the read is made with; under every other
+    /// strategy they are ignored.
+    /// </remarks>
+    public Task<CtrmReadResult<List<CtrmContractDto>>> GetForProducersAsync(
+        IReadOnlyCollection<string> scoularIds, IReadOnlyCollection<string>? tradeUnits, CancellationToken cancellationToken)
     {
         // Keeps EVERY code: the length limit is a defect in the customerIds argument, not in the data, and
         // the per-producer strategy uses the singular filter which handles a long code fine. The drop now
@@ -282,9 +308,25 @@ public sealed class CtrmContractReader
         // Hashed rather than joined: the key would otherwise be tens of kilobytes for a full trade unit.
         var key = $"producers:{codes.Count}:{StableHash(codes)}";
         RegisterSet(key, codes);
+
+        var units = NormalizeUnits(tradeUnits);
+        if (units.Count > 0) _unitsBySet[key] = units;
+
         var ttl = TimeSpan.FromMinutes(Math.Max(1, ReadInt("Ctrm:TradeUnitCacheMinutes", 5)));
-        return GetCachedAsync(key, ttl, () => FetchForProducersAsync(codes), staleWhileRevalidate: true);
+        return GetCachedAsync(key, ttl, () => FetchForProducersAsync(codes, key), staleWhileRevalidate: true);
     }
+
+    private static List<string> NormalizeUnits(IReadOnlyCollection<string>? tradeUnits) =>
+        tradeUnits is null
+            ? []
+            : tradeUnits.Select(u => u?.Trim() ?? string.Empty)
+                .Where(u => u.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(u => u, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+    private bool IsTradeUnitStrategy() =>
+        string.Equals(_configuration["Ctrm:TradeUnitContractStrategy"]?.Trim(), TradeUnitStrategy, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>True when a producer set is already cached (fresh, stale or in flight) - i.e. a caller
     /// would not have to wait on CTRM. For diagnostics and tests.</summary>
@@ -569,6 +611,11 @@ public sealed class CtrmContractReader
     /// <see cref="FetchAliasedAsync"/>.</summary>
     public const string AliasedStrategy = "aliased";
 
+    /// <summary>Strategy name for the read BY TRADE UNIT: one windowed <c>contracts(tradeUnit:)</c> read per
+    /// selected unit, kept only for roster producers. Answers a different question from the walk, on
+    /// purpose - see <see cref="FetchByTradeUnitsAsync"/>.</summary>
+    public const string TradeUnitStrategy = "tradeUnit";
+
     /// <summary>
     /// Full-history read for a producer set, by whichever strategy <c>Ctrm:TradeUnitContractStrategy</c> names.
     /// </summary>
@@ -580,14 +627,185 @@ public sealed class CtrmContractReader
     /// cheap indexed calls beat a handful of scans that do not finish. The list path stays one config flip
     /// away because it is the right shape once the server can run it.
     /// </remarks>
-    private Task<CtrmReadResult<List<CtrmContractDto>>> FetchForProducersAsync(List<string> codes)
+    private Task<CtrmReadResult<List<CtrmContractDto>>> FetchForProducersAsync(List<string> codes, string setKey)
     {
         var strategy = _configuration["Ctrm:TradeUnitContractStrategy"]?.Trim();
         if (string.Equals(strategy, CustomerIdsStrategy, StringComparison.OrdinalIgnoreCase))
             return FetchByCustomerIdsAsync(codes);
         if (string.Equals(strategy, AliasedStrategy, StringComparison.OrdinalIgnoreCase))
             return FetchAliasedAsync(codes);
+        if (string.Equals(strategy, TradeUnitStrategy, StringComparison.OrdinalIgnoreCase))
+        {
+            if (_unitsBySet.TryGetValue(setKey, out var units) && units.Count > 0)
+                return FetchByTradeUnitsAsync(units, codes);
+
+            // Only reachable when a codes-only caller (keep-warm, the ticket read) gets here before any
+            // trade-unit load has told us the units for this set. Read by producer rather than guess.
+            _logger.LogInformation(
+                "CTRM contracts: strategy is '{Strategy}' but no trade units are known for this {Producers}-producer set yet - reading it by producer instead.",
+                TradeUnitStrategy, codes.Count);
+            return FetchAliasedAsync(codes);
+        }
         return FetchPerProducerAsync(codes);
+    }
+
+    /// <summary>
+    /// One windowed <c>contracts(tradeUnit:)</c> read per selected trade unit, kept only for producers on the
+    /// roster the caller resolved: a producer is listed when they are IN the unit AND the contract is TAGGED
+    /// to the unit.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>This answers a different question from the other strategies, deliberately.</b> The walk
+    /// returns every contract a roster producer holds whichever unit it is tagged to; this returns the
+    /// unit's own book. Measured 2026-10-12 on TU 2190: 164 of the 1,181 contracts the app keeps (21 open,
+    /// 17 of those unconfirmed) carry another unit's tag, so 6 of the 61 producers with an open contract
+    /// drop off the contract prompts and the two Insights cards. The producer's own page is unaffected: it
+    /// reads by producer, and <see cref="TryServeFromProducerSet"/> refuses to answer it from a set built
+    /// this way. Rows for producers the unit's contracts name but our roster does not are dropped here.</para>
+    ///
+    /// <para>Why it is worth that: the cost is per page, not per producer. The same unit was 6 pages in
+    /// 7-10 s against 59 batched requests in 52-70 s on the same slow gateway, minutes apart; the
+    /// 1,271-producer unit 21 pages in 18-21 s against 128 requests in 60 s. The server requires the date
+    /// window; three years back loses nothing the app keeps (the oldest open unit-tagged contract on 2190 is
+    /// dated 2024-02), and a wider one only adds closed contracts the keep rule discards.</para>
+    ///
+    /// <para>Pages run on the batched-contract pool (<see cref="CtrmTradeUnitThrottle.RunContractBatchAsync"/>)
+    /// so they still yield to a user's click, at most <c>Ctrm:TradeUnitReadPageConcurrency</c> at once across
+    /// all selected units. A page the server times out on is re-sent once by <see cref="CtrmServerTimeoutRetry"/>;
+    /// any page that still fails fails the WHOLE read - never a shorter list.</para>
+    /// </remarks>
+    private async Task<CtrmReadResult<List<CtrmContractDto>>> FetchByTradeUnitsAsync(IReadOnlyList<string> units, List<string> codes)
+    {
+        var years = Math.Clamp(ReadInt("Ctrm:TradeUnitReadWindowYears", 3), 1, 25);
+        var concurrency = Math.Clamp(ReadInt("Ctrm:TradeUnitReadPageConcurrency", 4), 1, 16);
+        var today = DateOnly.FromDateTime(_utcNow());
+        var from = today.AddYears(-years).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        // A year forward: contractDate is the booking date and the filter is inclusive, so this is margin
+        // for anything dated ahead, not a window anyone tunes.
+        var to = today.AddYears(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        using var slot = new SemaphoreSlim(concurrency, concurrency);
+
+        async Task<CtrmReadResult<CtrmPage<CtrmContractDto>>> Page(string unit, int skip)
+        {
+            await slot.WaitAsync(CancellationToken.None);
+            try
+            {
+                return await FetchTradeUnitPageAsync(unit, from, to, skip);
+            }
+            finally
+            {
+                slot.Release();
+            }
+        }
+
+        var firstPages = await Task.WhenAll(units.Select(unit => Page(unit, 0)));
+
+        var failure = firstPages.FirstOrDefault(p => !p.Ok);
+        if (failure is not null) return PropagateUnits(failure, units, codes.Count);
+
+        var pages = firstPages.Select(p => p.Value!).ToList();
+        var rest = new List<Task<CtrmReadResult<CtrmPage<CtrmContractDto>>>>();
+
+        for (var i = 0; i < units.Count; i++)
+        {
+            var first = firstPages[i].Value!;
+            // hasNextPage decides "is there more"; totalCount only sizes the fan-out (same rule as the
+            // customerIds strategy - the two can disagree and the arithmetic alone would over-ask).
+            if (first.PageInfo?.HasNextPage != true) continue;
+
+            var pagesAvailable = Math.Max(2, (int)Math.Ceiling(first.TotalCount / (double)PageSize));
+            for (var p = 1; p < pagesAvailable; p++)
+                rest.Add(Page(units[i], p * PageSize));
+        }
+
+        if (rest.Count > 0)
+        {
+            var restPages = await Task.WhenAll(rest);
+
+            failure = restPages.FirstOrDefault(p => !p.Ok);
+            if (failure is not null) return PropagateUnits(failure, units, codes.Count);
+
+            pages.AddRange(restPages.Select(p => p.Value!));
+        }
+
+        // Roster filter and de-duplication. A contract carries exactly one tag, so two selected units
+        // cannot both return it; the de-dup guards skip-based paging against rows shifting between pages.
+        var roster = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
+        var kept = new List<CtrmContractDto>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var offRoster = 0;
+
+        foreach (var dto in pages.SelectMany(p => p.Items))
+        {
+            if (!roster.Contains(dto.CustomerId?.Trim() ?? string.Empty))
+            {
+                offRoster++;
+                continue;
+            }
+
+            if (dto.ContractId is { Length: > 0 } id && !seen.Add(id)) continue;
+            kept.Add(dto);
+        }
+
+        _logger.LogInformation(
+            "CTRM live contracts: {Count} purchase contracts tagged to {Units} trade unit(s) ({Years}y window) for {Producers} roster producer(s) via {Pages} page(s) in {Seconds}s; {OffRoster} row(s) for producers off the roster dropped.",
+            kept.Count, units.Count, years, codes.Count, pages.Count, stopwatch.Elapsed.TotalSeconds.ToString("F0"), offRoster);
+
+        return new CtrmReadResult<List<CtrmContractDto>> { Status = CtrmReadStatus.Ok, Value = kept };
+    }
+
+    private static CtrmReadResult<List<CtrmContractDto>> PropagateUnits(
+        CtrmReadResult<CtrmPage<CtrmContractDto>> failure, IReadOnlyList<string> units, int producers) => new()
+        {
+            Status = failure.Status,
+            HttpStatus = failure.HttpStatus,
+            ErrorCode = failure.ErrorCode,
+            Detail = $"Trade-unit contract read failed for trade unit(s) {string.Join(", ", units)} ({producers} roster producer(s)): {failure.Detail}",
+            Value = []
+        };
+
+    private async Task<CtrmReadResult<CtrmPage<CtrmContractDto>>> FetchTradeUnitPageAsync(string unit, string from, string to, int skip)
+    {
+        var result = await CtrmTradeUnitThrottle.RunContractBatchAsync(_configuration, () => CtrmServerTimeoutRetry.RunAsync(
+            () => _client.QueryAsync<CtrmContractsResponse>(
+                CtrmQueries.ContractsByTradeUnit,
+                new
+                {
+                    tradeUnit = unit,
+                    prefix = CtrmMappings.PurchasePrefix,
+                    from,
+                    to,
+                    skip,
+                    take = PageSize
+                },
+                CancellationToken.None),
+            _configuration, _logger, $"contracts page skip={skip} for trade unit {unit}", interactive: false));
+
+        if (!result.Ok)
+            return new CtrmReadResult<CtrmPage<CtrmContractDto>>
+            {
+                Status = result.Status,
+                HttpStatus = result.HttpStatus,
+                ErrorCode = result.ErrorCode,
+                Detail = result.Detail
+            };
+
+        var page = result.Value?.Contracts;
+        if (page is null)
+            return new CtrmReadResult<CtrmPage<CtrmContractDto>>
+            {
+                Status = CtrmReadStatus.Error,
+                HttpStatus = result.HttpStatus,
+                Detail = $"CTRM returned no contracts object for trade unit {unit} at skip {skip}."
+            };
+
+        return new CtrmReadResult<CtrmPage<CtrmContractDto>>
+        {
+            Status = CtrmReadStatus.Ok,
+            HttpStatus = result.HttpStatus,
+            Value = page
+        };
     }
 
     /// <summary>

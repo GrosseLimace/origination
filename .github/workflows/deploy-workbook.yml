@@ -1,0 +1,80 @@
+name: Operations Workbook Deploy
+
+on:
+  # Manual-only, matching the Logic App deploy workflows. Trigger from the Actions tab (Run workflow).
+  # One shared workbook, hosted in the Dev resource group, reads every environment the viewer can see —
+  # so there is a single workflow rather than one per environment.
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'what-if (preview only) or create (deploy)'
+        type: choice
+        default: what-if
+        options:
+          - what-if
+          - create
+
+env:
+  RESOURCE_GROUP: rg-origination-dev-eus
+  TEMPLATE: infra/workbooks/origination-workbench/azuredeploy.json
+  PARAMETERS: infra/workbooks/origination-workbench/azuredeploy.parameters.json
+  GENERATED_PARAMETERS: infra/workbooks/origination-workbench/azuredeploy.parameters.generated.json
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    environment: dev
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version: '24.x'
+
+      # The workbook body is kept as a readable JSON file (it round-trips with the portal's Advanced Editor).
+      # ARM needs it as one string parameter, so build a second parameters file here instead of hand-escaping
+      # it into the template. The script parses the workbook first, so a malformed file fails here, not in Azure.
+      - name: Build deployment parameters (embed workbook JSON)
+        run: node infra/workbooks/origination-workbench/build-parameters.mjs
+
+      # azure/login has no built-in retry, and the GHE data-residency OIDC token service can blip
+      # intermittently ("Failed to fetch federated token from GitHub"). Attempt once, wait, then retry —
+      # the job fails only if BOTH attempts fail. (Token handling stays inside the action; never logged.)
+      - name: Azure Login (OIDC)
+        id: azlogin
+        continue-on-error: true
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6  # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_NONPROD }}
+
+      - name: Wait before Azure login retry
+        if: steps.azlogin.outcome == 'failure'
+        run: sleep 15
+
+      - name: Azure Login (OIDC) — retry
+        if: steps.azlogin.outcome == 'failure'
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6  # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_NONPROD }}
+
+      # Preview the change set. Always run so the deploy step has a diff to compare against, and so
+      # a manual "what-if" run is useful on its own.
+      #
+      # NOTE: call az directly rather than via azure/cli@v2 — that action runs az inside a Linux
+      # container and fails on our Windows self-hosted runners ("Please use Linux-based OS as a runner").
+      # azure/login above leaves the CLI authenticated for the rest of the job, and the runner has az
+      # installed. The @-prefixed parameters paths are quoted so PowerShell treats them as literal strings.
+      - name: What-if (preview)
+        run: az deployment group what-if -g "${{ env.RESOURCE_GROUP }}" --template-file "${{ env.TEMPLATE }}" --parameters "@${{ env.PARAMETERS }}" --parameters "@${{ env.GENERATED_PARAMETERS }}"
+
+      - name: Deploy
+        if: ${{ inputs.mode == 'create' }}
+        run: az deployment group create -g "${{ env.RESOURCE_GROUP }}" --template-file "${{ env.TEMPLATE }}" --parameters "@${{ env.PARAMETERS }}" --parameters "@${{ env.GENERATED_PARAMETERS }}"

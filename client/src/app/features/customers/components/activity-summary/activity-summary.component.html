@@ -22,8 +22,18 @@
         </button>
         @if (expanded()) {
           <p id="activity-summary-body" class="text-gray-700 dark:text-gray-300 text-sm leading-relaxed">
-            {{ summaryText }}
+            {{ summaryText() }}
           </p>
+          <!-- A failed load must not read as a quiet season or a smaller book. -->
+          @if (harvestPaceUnavailable()) {
+            <p class="text-xs mt-2 text-amber-600 dark:text-amber-400">Harvest contract pace couldn't be shown — the harvest windows couldn't be loaded. Refresh the page to try again.</p>
+          }
+          @if (contractsMissingConversions() > 0) {
+            <p class="text-xs mt-2 text-amber-600 dark:text-amber-400">
+              {{ contractsMissingConversions() }} contract{{ contractsMissingConversions() === 1 ? '' : 's' }}
+              left out of the bushel totals — the bushel conversions couldn't be loaded. Refresh the page to try again.
+            </p>
+          }
         }
       </div>
     </div>

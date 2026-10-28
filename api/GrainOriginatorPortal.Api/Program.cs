@@ -112,6 +112,12 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("AdminOnly", policy =>
         policy.RequireRole("Admin"));
 
+    // BarChart ingestion: the data pipeline's managed identity holding the pre-existing
+    // application-only app role, or an Admin so the feed can be exercised and re-run by hand.
+    // RequireRole is OR across the listed roles.
+    options.AddPolicy("BarchartIngest", policy =>
+        policy.RequireRole("Origination.Application", "Admin"));
+
     // Usage-dashboard read surface: Super Users group membership, surfaced as the Admin role.
     // Equivalent to AdminOnly today; kept as its own named policy so the read surface stays distinct
     // from exclusion administration (a convention test pins that split), and so how much of the org
@@ -149,6 +155,9 @@ builder.Services.AddHostedService<CustomerSyncBackgroundService>();
 
 // Keeps the trade-unit-wide CTRM caches warm for recently-used producer sets, so Build-a-List prompts
 // never pay for a cache that expired between uses. No-op unless Ctrm:Source is 'ctrm'.
+// The keep-warm cycle reads CTRM through a small seam so its per-set failure isolation is testable;
+// production wires the one adapter over the real readers.
+builder.Services.AddSingleton<ICtrmWarmReads, CtrmWarmReads>();
 builder.Services.AddHostedService<CtrmKeepWarmService>();
 
 // Hook JWT bearer events to log token validation failures per security-guide.md §8.1.
@@ -305,16 +314,20 @@ builder.Services.AddScoped<IStoredGrainService, StoredGrainService>();
 builder.Services.AddScoped<IDpContractService, DpContractService>();
 builder.Services.AddScoped<ISavedListService, SavedListService>();
 builder.Services.AddScoped<IProducerDetailsService, ProducerDetailsService>();
-builder.Services.AddScoped<IFarmService, FarmService>();
 builder.Services.AddScoped<IPlantingIntentionService, PlantingIntentionService>();
 builder.Services.AddScoped<INoteService, NoteService>();
 builder.Services.AddScoped<IReminderService, ReminderService>();
+// Admin diagnostics: six services the DiagnosticsController delegates to (schema, CTRM probes, commodity
+// seed, elevator cache, usage-rollup backfill, app-access members). Registered together in one place.
+builder.Services.AddDiagnosticsServices();
 builder.Services.AddScoped<IOutlookCalendarService, OutlookCalendarService>();
 builder.Services.AddScoped<ITicketService, TicketService>();
 builder.Services.AddScoped<IContractService, ContractService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IBidSheetService, BidSheetService>();
+builder.Services.AddScoped<IBarchartIngestService, BarchartIngestService>();
+builder.Services.AddScoped<IBarchartCatalogService, BarchartCatalogService>();
 builder.Services.AddScoped<IUserPreferenceService, UserPreferenceService>();
 builder.Services.AddScoped<IUserTradeUnitService, UserTradeUnitService>();
 builder.Services.AddScoped<ITradeUnitService, TradeUnitService>();
@@ -324,14 +337,14 @@ builder.Services.AddScoped<IUsageDashboardService, UsageDashboardService>();
 // Scoped (not singleton like IAppAccessService) because it reads through the scoped
 // IUsageRepository/DbContext; the directory itself is shared via IMemoryCache.
 builder.Services.AddScoped<IManagerDirectoryService, ManagerDirectoryService>();
-// Who may read the WHOLE org and pick any manager, from dbo.UsageDashboardViewAllUsers. Scoped
-// because it reads through IUsageRepository; the result is cached for a minute inside the provider.
-builder.Services.AddScoped<IUsageDashboardViewAllProvider, UsageDashboardViewAllProvider>();
 // Generation stamp that lets an excluded-user edit invalidate the (scoped) dashboard service's
 // cached user universes process-wide. Singleton by necessity — see the type's remarks.
 builder.Services.AddSingleton<UsageUniverseCacheState>();
 builder.Services.AddScoped<IDailyRecapGroupService, DailyRecapGroupService>();
 builder.Services.AddScoped<ITeamsChannelService, TeamsChannelService>();
+builder.Services.AddScoped<IEntitlementsDirectoryService, EntitlementsDirectoryService>();
+// Read once: the connection string and the switch are app settings, which restart the app when changed.
+builder.Services.AddSingleton(ClientTelemetrySettings.From(builder.Configuration));
 builder.Services.AddScoped<ITeamsDirectoryService, TeamsDirectoryService>();
 
 // Incoming-call popup (ACS "Communication as a Microsoft 365 user"). The identity client is built
@@ -363,25 +376,23 @@ builder.Services.AddSingleton<IGraphDirectoryClient>(sp =>
 builder.Services.AddSingleton<IAppAccessService, AppAccessService>();
 
 // CTRM GraphQL client (DB2Connector.GraphQL spike) — singleton so the cached token is shared.
-// Unlike Graph, this API is not an Azure first-party resource: it needs client credentials
-// against its own app registration, so this is the one place in the app using a
-// ClientSecretCredential. The secret comes from Key Vault as 'Ctrm--ClientSecret' (Key Vault
-// maps '--' to ':'); when any piece is missing the credential stays null and the client reports
+// With Ctrm:UseManagedIdentity on App Service, tokens come from the managed identity (app roles on
+// scoular-graphql-api), the same way Graph is done above; otherwise on App Service it is client
+// credentials with the secret from Key Vault as 'Ctrm--ClientSecret' (Key Vault maps '--' to ':').
+// A laptop calls CTRM as the developer's own 'az login' (see CtrmCredentialFactory) and never reads
+// the secret. When nothing usable is configured the credential stays null and the client reports
 // NotConfigured. That is a FAILED read, not a fallback: with Ctrm:Source=ctrm the contract and ticket
 // screens show a load error. Rolling back to ODS is the setting Ctrm__Source=ods.
-// Longer term the cleaner shape is an app-role grant to the App Service managed identity, which
-// would remove the secret entirely and match how Graph is done above.
 builder.Services.AddSingleton<GrainOriginatorPortal.Infrastructure.Ctrm.ICtrmGraphQlClient>(sp =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
-    var tenantId = config.GetValue<string>("Ctrm:TenantId")?.Trim();
-    var clientId = config.GetValue<string>("Ctrm:ClientId")?.Trim();
-    var clientSecret = config.GetValue<string>("Ctrm:ClientSecret")?.Trim();
+    var isAppService = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEBSITE_SITE_NAME"));
+    var (ctrmCredential, ctrmCredentialKind) =
+        GrainOriginatorPortal.Api.Services.Ctrm.CtrmCredentialFactory.Create(config, isAppService);
 
-    Azure.Core.TokenCredential? ctrmCredential =
-        !string.IsNullOrEmpty(tenantId) && !string.IsNullOrEmpty(clientId) && !string.IsNullOrEmpty(clientSecret)
-            ? new ClientSecretCredential(tenantId, clientId, clientSecret)
-            : null;
+    // Logged once so a deployed environment shows which identity it is calling CTRM as.
+    sp.GetRequiredService<ILogger<GrainOriginatorPortal.Api.Services.Ctrm.CtrmGraphQlClient>>()
+        .LogInformation("CTRM GraphQL credential: {CtrmCredentialKind}", ctrmCredentialKind);
 
     return new GrainOriginatorPortal.Api.Services.Ctrm.CtrmGraphQlClient(
         ctrmCredential,

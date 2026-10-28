@@ -232,9 +232,6 @@ public record InsightsEngagementDto
     public int SpotLoadsClicks { get; set; }
     public int UnshippedBushelsClicks { get; set; }
     public int OtherCategoryClicks { get; set; }
-    /// <summary>Searches run on the Unshipped Bushels page (any of its three search boxes).</summary>
-    public int UnshippedSearches { get; set; }
-    public int UnshippedGroupsExpanded { get; set; }
 }
 
 public record BidSheetEngagementDto

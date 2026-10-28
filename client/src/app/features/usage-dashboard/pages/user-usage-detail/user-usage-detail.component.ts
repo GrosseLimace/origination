@@ -5,16 +5,13 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { ApiService } from '@core/services/api.service';
-import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
-import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import {
   TableComponent, TableHeaderComponent, TableBodyComponent,
   TableRowComponent, TableHeadComponent, TableCellComponent
 } from '@shared/components/table/table.component';
 import { UserUsageDetail, RecentActivity } from '@models';
 
-import { tradeUnitKeySignal } from '../../utils/trade-unit-key';
 import {
   formatDayLabel, formatFeatureLabel, formatLastActive, formatSessionDuration,
   formatTimeSpent, formatUsageTimestamp, getInitials, getStatusClasses,
@@ -28,7 +25,6 @@ type TabId = 'producer-page' | 'build-a-list' | 'insights' | 'bidsheet' | 'dashb
   standalone: true,
   imports: [
     CommonModule, FormsModule,
-    TradeUnitSelectorComponent,
     TableComponent, TableHeaderComponent, TableBodyComponent,
     TableRowComponent, TableHeadComponent, TableCellComponent
   ],
@@ -38,7 +34,6 @@ type TabId = 'producer-page' | 'build-a-list' | 'insights' | 'bidsheet' | 'dashb
 export class UserUsageDetailComponent {
   readonly Math = Math;
   private readonly api = inject(ApiService);
-  readonly appState = inject(AppStateService);
   private readonly toast = inject(ToastService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -63,9 +58,6 @@ export class UserUsageDetailComponent {
     { id: 'dashboard',     label: 'Planting Dashboard',  featureCode: 'dashboard' },
     { id: 'daily-recap',   label: 'Daily Recap',         featureCode: 'daily-recap' },
   ];
-
-  // Same derivation as the parent dashboard so the detail respects group selection too.
-  readonly tradeUnitKey = tradeUnitKeySignal(this.appState);
 
   // ── Formatters (shared with the parent dashboard) ──
   readonly formatTimeSpent = formatTimeSpent;
@@ -144,30 +136,28 @@ export class UserUsageDetailComponent {
       if (id) this.userId.set(id);
     });
 
-    // Date range / TU defaults can be seeded from the parent's query params on entry
+    // The date range can be seeded from the parent's query params on entry. Nothing else carries
+    // over: the dashboard's manager filter narrows who is listed, not one person's numbers.
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(qp => {
       const from = qp.get('from');
       const to = qp.get('to');
       if (from) this.dateFrom.set(from);
       if (to) this.dateTo.set(to);
-      // tradeUnitKey is derived from appState, so we don't write it here — the
-      // selector value is the source of truth and persists across pages.
     });
 
-    // Re-fetch whenever userId, date range, or TU key change
+    // Re-fetch whenever userId or the date range change
     effect(() => {
       const id = this.userId();
       const from = this.dateFrom();
       const to = this.dateTo();
-      const tuKey = this.tradeUnitKey();
       if (!id || !from || !to) return;
-      this.load(id, from, to, tuKey);
+      this.load(id, from, to);
     });
   }
 
-  load(userId: string, from: string, to: string, tradeUnitKey?: string): void {
+  load(userId: string, from: string, to: string): void {
     this.loading.set(true);
-    this.api.getUserUsageDetail(userId, from, to, tradeUnitKey)
+    this.api.getUserUsageDetail(userId, from, to)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: data => { this.detail.set(data); this.loading.set(false); },

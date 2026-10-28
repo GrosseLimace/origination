@@ -47,24 +47,24 @@ table, no `resource:action:scope` permission strings, no `IPermissionService`, a
 `GET /api/me/permissions`. The style guide's enterprise permissions model prescribes all of those;
 this app deliberately doesn't have them, and that is not an oversight:
 
-- The real authorization surface is nearly binary — "may you open the Usage Dashboard" (the `Admin`
-  app role, granted by the *Origination App {Env} Super Users* group) and "how much of it do you
-  see" (the `UsageDashboard:ViewAll` config list). Everything else is trade-unit **data scoping**,
-  which is a tenancy filter, not a role.
+- The real authorization surface is binary — "may you open the Usage Dashboard" (the `Admin` app
+  role, granted by the *Origination App {Env} Super Users* group). Everyone who can open it sees the
+  whole organisation and may filter it by any manager. Everything else is trade-unit **data
+  scoping**, which is a tenancy filter, not a role.
 - Adding the table model would mean maintaining a second source of truth beside Azure AD group
   membership, which is where access is actually administered.
 
 Two consequences worth stating plainly, so a scan flagging them gets triaged rather than re-fixed:
 
-- **No in-app audit trail of role changes.** `Admin` membership lives in an Azure AD group and the
-  `ViewAll` list lives in `appsettings`, so neither is ever mutated through app code and
-  `role_assigned` / `role_removed` events can't exist in our telemetry. That history is in Azure
-  AD's own audit log and in config/deployment history. `SecurityAuditMiddleware` plus
+- **No in-app audit trail of role changes.** `Admin` membership lives in an Azure AD group, so it is
+  never mutated through app code and `role_assigned` / `role_removed` events can't exist in our
+  telemetry. That history is in Azure AD's own audit log. `SecurityAuditMiddleware` plus
   `AuthorizationAuditResultHandler` do cover the one event type we can emit: 401/403 outcomes.
-- **`/api/me` appends a synthetic `UsageDashboardViewAll` role.** It is presentational only — it
-  tells the SPA whether to render the manager dropdown. The server never trusts it back;
-  `UsageDashboardService` re-derives scope from config on every request, so forging it client-side
-  changes a menu and nothing else.
+- **`/api/me` reports only the token's roles.** It used to append a synthetic `UsageDashboardViewAll`
+  role for the names in `dbo.UsageDashboardViewAllUsers` (the former "how much of the dashboard do
+  you see" list). That table, the role and the per-caller scoping behind them were retired on
+  2026-10-09 when the manager dropdown was opened to every dashboard user; the response's `userId`
+  is now what the SPA uses to default that dropdown to the signed-in user.
 
 Revisit if the role surface stops being near-binary — more than a handful of distinct roles, or
 any need to grant a permission to someone who isn't in the corresponding AAD group.

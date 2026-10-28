@@ -4,6 +4,9 @@ export const environment = {
   // 'production', which rendered an odd lowercase pill next to the title-cased ones.
   envName: 'Production',
   bidSheetEnabled: true,
+  // "Add from BarChart" picker + fed-bid display. ON since the 2026-10-20 release: the PROD catalog
+  // finished its first full 7-day load on 2026-10-20 (84k listings, 4,024 locations, priced daily).
+  barchartBidsEnabled: true,
   usageDashboardEnabled: true,
   // Daily Digest (recap groups): ON in PROD. Surfaces the /daily-digest route + the
   // "Daily Recap" nav link. NOTE: enabling the UI is only half of launch — the prod
@@ -57,6 +60,14 @@ export const environment = {
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.
   tradeUnitPreferencesUrl: 'https://tradeunitprefs.scoular.com/my-preferences',
+  // ServiceNow form behind the Help panel's "Still need help?" card (one ServiceNow instance, so the
+  // same form in every environment). The card walks the user through it: open the form, pick
+  // helpDeskTopic, then copy the short description and additional information in. A plain link —
+  // nothing is added to the URL; the details travel by clipboard. Empty URL hides the walk-through.
+  // SIMS replaces ServiceNow at the end of November 2026: change these two values at cutover.
+  helpDeskUrl: 'https://scoular.service-now.com/sp?id=sc_cat_item&sys_id=7c12ac1ddbc43340289064904b961939&sysparm_category=99935075db949f00df8168d35b96192b',
+  // The topic users pick on that form. "Something Else" until the Help Desk adds an Origination topic.
+  helpDeskTopic: 'Something Else',
   apiBaseUrl: '/api',
   msalConfig: {
     auth: {

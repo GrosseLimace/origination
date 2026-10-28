@@ -296,7 +296,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
         // connections) - the gateway has a fixed throughput and both reads saturate it. The original 2026-08-27
         // reason (contract pages were ~25 s list scans) no longer applies but the conclusion still holds.
         // Contracts are normally already cached by the home-page load, so this costs nothing warm.
-        var contracts = await _contractReader.GetForProducersAsync(codes, cancellationToken);
+        var contracts = await _contractReader.GetForProducersAsync(codes, tradeUnits, cancellationToken);
         var read = await _reader.GetForProducersHistoryAsync(codes, cancellationToken);
         if (!read.Ok)
         {

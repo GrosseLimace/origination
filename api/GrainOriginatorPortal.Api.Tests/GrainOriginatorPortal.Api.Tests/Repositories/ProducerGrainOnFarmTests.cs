@@ -146,4 +146,50 @@ public class ProducerGrainOnFarmTests
         Assert.Equal("YC", only.CommodityCode);
         Assert.Equal(2, only.BushelsOnHand);
     }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task Upsert_PersistsBushelsSold_OnBothReadPaths()
+    {
+        using var db = NewContext();
+        var repo = Repo(db);
+
+        await repo.UpsertAsync(Args(new[]
+        {
+            new GrainOnFarmEntry { CommodityCode = "YC", BushelsOnHand = 80_000, BushelsSold = 30_000, TargetBushels = 4.25m, LastBid = 4.1025m },
+            Entry("YSB", 40_000, null),
+        }), "tuser", CancellationToken.None);
+
+        // Single-producer read (profile) and the batched read (Build-A-List) compose separately.
+        var single = await repo.GetAsync(100, CancellationToken.None);
+        var batched = Assert.Single(await repo.GetAllAsync(CancellationToken.None));
+        foreach (var pd in new[] { single!, batched })
+        {
+            var corn = Assert.Single(pd.GrainOnFarm, g => g.CommodityCode == "YC");
+            Assert.Equal(80_000, corn.BushelsOnHand);
+            Assert.Equal(30_000, corn.BushelsSold);
+            Assert.Equal(4.1025m, corn.LastBid);
+            var beans = Assert.Single(pd.GrainOnFarm, g => g.CommodityCode == "YSB");
+            Assert.Null(beans.BushelsSold);
+            Assert.Null(beans.LastBid);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task Upsert_KeepsNegativeTargetAndLastBid()
+    {
+        // Basis values are negative; nothing on the write or read path may clamp or drop them.
+        using var db = NewContext();
+        var repo = Repo(db);
+
+        await repo.UpsertAsync(Args(new[]
+        {
+            new GrainOnFarmEntry { CommodityCode = "YC", BushelsOnHand = 10_000, TargetBushels = -0.25m, LastBid = -0.3525m },
+        }), "tuser", CancellationToken.None);
+
+        var corn = Assert.Single((await repo.GetAsync(100, CancellationToken.None))!.GrainOnFarm);
+        Assert.Equal(-0.25m, corn.TargetBushels);
+        Assert.Equal(-0.3525m, corn.LastBid);
+    }
 }

@@ -58,7 +58,7 @@ The app's global state container, built on Angular signals. No NgRx, no Redux �
 | `storedGrain` | `StoredGrain[]` | Computed in service from `ctrm.vw_GNTA39D1` |
 | `savedLists` | `SavedList[]` | User's saved Build-a-List queries |
 | `commodities`, `commodityConversions`, `harvestWindows` | reference | Crop catalog and lb-per-bushel conversions |
-| `producerDetails` | `ProducerDetails[]` | App-DB enrichment (acres, bin capacity, etc.) |
+| `producerDetails` | `ProducerDetails[]` | App-DB enrichment (acres, bin sites, grain on farm, etc.) |
 | `pricingLines` | `ContractPricingLine[]` | Pricing lines for the selected producer — CTRM (live, inline on the contract) or ODS `vw_ContractPricing` per `Ctrm:Source` |
 | `selectedTradeUnits`, `selectedGroupNames` | `string[]` | The TU selector's current state |
 | `allProducersMode` | `boolean` | Session-only "All Producers" selector mode — clears TU scope so the customer list searches every producer (incl. ODS producers with no contract/ticket) for onboarding. Never persisted. |
@@ -125,7 +125,7 @@ Posts click-event telemetry to `/api/usage-dashboard/click-event`. Methods like 
 
 | `DbSet` | Backing view | Schema |
 | --- | --- | --- |
-| `CustomerTradeUnits` (`CustomerTradeUnitView`) | `vw_CustomerTradeUnits` | `originations` (no key — view only; drives the dbo.Customer / dbo.CustomerTradeUnit sync) |
+| `CustomerTradeUnits` (`CustomerTradeUnitView`) | `vw_CustomerTradeUnits` | `originations` (no key — view only; drives the dbo.Customer / dbo.CustomerTradeUnit sync when `CustomerSync:Source` is not `ctrm`) |
 | `Contracts` | `vw_CurrentContracts` | `base` |
 | `Tickets` | `vw_CurrentTickets` | `base` |
 | `TicketQualities` | `vw_TicketQuality` | `base` |
@@ -133,7 +133,7 @@ Posts click-event telemetry to `/api/usage-dashboard/click-event`. Methods like 
 | `Elevators` | `vw_GNP026` | `ctrm` |
 | `CommodityConversions` | `vw_GNP024` | `ctrm` |
 
-**Customer data is no longer in `OriginationDbContext`.** The previous `Customers` DbSet on `vw_CurrentCustomers` was removed when `dbo.CustomerSnapshot` was dropped (migration `20260513185441`). Customers and their TU mappings are now app-owned (`dbo.Customer` + `dbo.CustomerTradeUnit` on `ApplicationDbContext`), populated by `CustomerSyncBackgroundService`. The remaining ODS-side `vw_CustomerTradeUnits` view is still consulted for per-request access checks in `UserEntitlementService.ValidateCustomerAccessAsync`.
+**Customer data is no longer in `OriginationDbContext`.** The previous `Customers` DbSet on `vw_CurrentCustomers` was removed when `dbo.CustomerSnapshot` was dropped (migration `20260513185441`). Customers and their TU mappings are now app-owned (`dbo.Customer` + `dbo.CustomerTradeUnit` on `ApplicationDbContext`), populated by `CustomerSyncBackgroundService` from ODS or from the CTRM GraphQL API, per `CustomerSync:Source` (see [CTRM GraphQL Data Source](./CTRM%20GraphQL%20Data%20Source.md)). The access check in `UserEntitlementService.ValidateCustomerAccessAsync` now reads `dbo.CustomerTradeUnit` (active rows, manual ones included), not the live ODS view.
 
 **Storage data** (`StoredGrain`) is **not** a DbSet — it's queried as raw SQL against `ctrm.vw_GNTA39D1` from `SqlDataService.GetStoredGrainAsync` (see Customer Home Page doc).
 
@@ -147,20 +147,21 @@ All app-owned tables, all in `dbo`:
 
 | Table | Purpose |
 | --- | --- |
-| `Customer` | App-owned customer master (one row per customer, synced from ODS `vw_CustomerTradeUnits` by `CustomerSyncBackgroundService`). Replaces the old read-from-ODS pattern + `CustomerSnapshot` cache. `IsManual` flags producers onboarded by hand (no contract/ticket) so the nightly sync's soft-delete pass won't deactivate them. |
+| `Customer` | App-owned customer master (one row per customer, synced from ODS `vw_CustomerTradeUnits` or from CTRM GraphQL, per `CustomerSync:Source`, by `CustomerSyncBackgroundService`). Replaces the old read-from-ODS pattern + `CustomerSnapshot` cache. `IsManual` flags producers onboarded by hand (no contract/ticket) so the nightly sync's soft-delete pass won't deactivate them. |
 | `CustomerTradeUnit` | Customer ↔ trade-unit junction (multi-TU producers get multiple rows). Synced alongside `Customer`. `IsManual` marks TU assignments made by a user in the Edit Producer dialog (vs sync-sourced from a contract/ticket) — manual ones are user-removable; sync ones are locked. |
 | `CustomerLink` | Linked-producer edges (formerly `ProducerDetails.LinkedProducerIds` CSV; now a proper relationship table). |
 | `CustomerCommodity` | Per-customer commodity list (formerly `ProducerDetails.Commodities` CSV). |
 | `Notes` | Producer notes (with pin, soft-delete). Joined to `Customer` via FK; `CustomerName`/`CustomerCode` resolved on read. |
-| `ProducerDetails` | Enrichment fields (acres, bin capacity, etc. — linked producers / commodities / contacts are separate tables). `PrimaryContact`/`PrimaryPhone` are legacy columns dual-written from the primary `ProducerContact` row for search/lookup compat. |
+| `ProducerDetails` | Enrichment fields (acres, etc. — `BinCapacity` was dropped 2026-10-09, capacity lives on `ProducerBinSite` — linked producers / commodities / contacts are separate tables). `PrimaryContact`/`PrimaryPhone` are legacy columns dual-written from the primary `ProducerContact` row for search/lookup compat. |
 | `ProducerContact` | User-entered contacts per producer (name, phone, email; exactly one `IsPrimary`). Replaced as a set on producer-details upsert; searched by customer search (name + digits-only phone). |
+| `ProducerBinSite` | User-entered on-farm bin sites per producer (stable `SiteKey` uniqueidentifier, unique, matched on save so sites update in place; grain-on-farm rows link to them via `ProducerGrainOnFarm.BinSiteId` (nullable FK, NoAction; unique customer + site + code), required name (app-enforced; column stays NULLable for older rows) + optional `Latitude`/`Longitude` + optional `Capacity` bushels `decimal(18,2)`; the only capacity recorded since ProducerDetails.BinCapacity was dropped; `decimal(18,15)`, the full pasted value — display shortens to six places), as many as needed (100-site sanity ceiling). Replaced as a set on producer-details upsert (null = preserve); hand-cascaded on details delete. North American bounds in `BinSiteRules`, mirrored by `client/src/app/shared/utils/coordinates.ts`. |
 | `ProducerPlantingIntentions` | Per-producer planting intentions (note: table named "Producer..." but EF model is `PlantingIntention`) |
 | `Commodities` | Crop catalog (synced additively from ODS contract/ticket codes). `ShowInPlantingIntentions` (bit) flags the curated subset shown in the Planting Intentions crop dropdown — served by `GET /commodities/planting`; the full list is still `GET /commodities`. |
 | `DashboardPlantingEstimates`, `DashboardMarketShares`, `DashboardActualHarvests` | Planting Intentions Dashboard persistence |
 | `SavedLists` | User-saved Build-a-List queries |
 | `ESignEnrollment` | eSign integration data |
 | `UserPreferences` | Per-user UI preferences |
-| `BidSheetLocations`, `BidSheetLocationBids`, `BidSheetLocationOrders`, `BidSheetPreferences` | Bid Sheet feature |
+| `BidSheetLocations`, `BidSheetLocationBids`, `BidSheets`, `BidSheetShares`, `BidSheetLocationLinks`, `BidSheetPreferences` | Bid Sheet feature |
 | `ElevatorCache` | Cached elevator data |
 | `HarvestWindows` | Crop-specific harvest windows |
 | `UserActivity`, `UserClickEvent`, `UserSession`, `UserActivityDaily`, `FeatureUsageDaily`, `WeeklyLoginAggregate`, `UserTradeUnitSnapshot` | Usage analytics |
@@ -183,7 +184,7 @@ All controllers depend on `IDataService` (DI'd as `SqlDataService` today, with `
 - **Commodity**: `GetCommoditiesAsync` (full catalog), `GetPlantingCommoditiesAsync` (curated subset where `ShowInPlantingIntentions = 1`, for the planting crop dropdown), `GetCommodityConversionsAsync`, `GetHarvestWindowsAsync`.
 - **Saved List**: `GetSavedListsAsync`, `SaveListAsync`, `UpdateListAsync`, `DeleteListAsync`.
 - **Dashboard**: `GetDashboardSummaryAsync`, `GetDashboardPlantingEstimatesAsync`, `UpsertDashboardPlantingEstimatesAsync`, `GetDashboardMarketSharesAsync`, `UpsertDashboardMarketSharesAsync`, `GetDashboardActualHarvestAsync`, `UpsertDashboardActualHarvestAsync`, `DeleteDashboardActualHarvestAsync`.
-- **Bid Sheet**: `GetElevatorsAsync`, `GetBidSheetLocationsAsync`, `GetAllBidSheetLocationsAsync`, `CreateBidSheetLocationAsync`, `UpdateBidSheetLocationAsync`, `DeleteBidSheetLocationAsync`, `BulkUpsertBidSheetBidsAsync`, `GetBidCropYearsAsync`, `GetBidCommoditiesAsync`, `GetBidMonthsAsync`, `GetBidSheetLocationOrderAsync`, `SetBidSheetLocationOrderAsync`, `GetBidSheetPreferenceAsync`, `SetBidSheetPreferenceAsync`.
+- **Bid Sheet**: `GetAllBidSheetLocationsAsync`, `CreateBidSheetLocationAsync`, `UpdateBidSheetLocationAsync`, `DeleteBidSheetLocationAsync`, `BulkUpsertBidSheetBidsAsync`, `GetBidSheetPreferenceAsync`, `SetBidSheetPreferenceAsync`, and the sheet family (`GetSheetsAsync`, `CreateSheetAsync`, `RenameSheetAsync`, `SetSheetLayoutAsync`, `SetSheetSharesAsync`, `AddSheetLocationAsync`, `DeleteSheetAsync`).
 - **Query Library**: `GetQueryLibraryAsync`, `LogQuerySearchAsync`.
 
 **User identity inside the service:** `SqlDataService` extracts the caller's UPN from the `HttpContext.User` claims (priority: `preferred_username` > `upn` > `oid` > `Identity.Name` > `"system"`). Display names are resolved via `UserTradeUnitSnapshot` for user-facing text.
@@ -196,7 +197,7 @@ All controllers depend on `IDataService` (DI'd as `SqlDataService` today, with `
 | --- | --- |
 | `GetAllowedTradeUnitCodesAsync()` | Returns the set of trade-unit codes the user is entitled to. Loads from `UserTradeUnitAccess` once per request and caches. **Fails open** on entitlement-DB outage (returns empty set, sets `EntitlementsAvailable = false`). |
 | `ValidateTradeUnitsOrThrowAsync(codes)` | Throws `ForbiddenException` if any requested code isn't entitled. Used by controllers that take a `tradeUnits` query param. |
-| `ValidateCustomerAccessAsync(customerId)` | Looks up the customer's TUs from `originations.vw_CustomerTradeUnits` and checks against the user's entitled set. |
+| `ValidateCustomerAccessAsync(customerId)` | Looks up the customer's TUs from `dbo.CustomerTradeUnit` (`IsActive = 1`, manual rows included) and checks against the user's entitled set. |
 
 **Important:** Most customer-bound *read* and *write* endpoints **deliberately do not call `ValidateCustomerAccessAsync`**. See [SECURITY-MODEL.md](./SECURITY-MODEL.md) — trade units are a UX filter, not an access boundary.
 
