@@ -147,7 +147,7 @@ The CSP widening is recorded as **AR-11** in `SECURITY-REVIEWS/ACCEPTED-RISKS.md
 | --- | --- |
 | ACS resource | `acs-origination-dev-eus` in `rg-origination-dev-eus` (`scoular-apps-nonprod`), data location United States, **local auth disabled** |
 | Endpoint | `https://acs-origination-dev-eus.unitedstates.communication.azure.com` |
-| Role | `Communication and Email Service Owner` for the `app-origination-dev-eus` system-assigned identity (principal `7ff98598-…`) and for `Azure - Origination App - Developer Admins` (so developers can run the exchange locally) |
+| Role | `Communication and Email Service Owner` for the `app-origination-dev-eus` system-assigned identity (principal `7ff98598-…`) and for `Azure - Origination App - Developer Admins`. **Direct assignments only:** ACS ignores roles that reach an identity through group membership (Infrastructure, 2026-10-28), so the group grant does not let a developer run the exchange locally — each developer must be added individually on the resource |
 | Consent | Tenant-wide admin consent on the SPA registration `Origination - Dev` for ACS `Teams.ManageCalls` + `Teams.ManageChats` |
 | Egress | FortiGate rule for the App Service → ACS endpoint, **staged** — confirm the push before testing from the deployed API |
 
@@ -232,9 +232,10 @@ allow the microphone, and call your own Teams number from a phone that is on fil
   `Acs:TeamsClientId` is empty in that environment's appsettings.
 - **…answers 502** — App Insights has "Calling token exchange failed: ACS answered {status} {code}:
   {detail}", where the detail is ACS's own error text. `401 Denied — "Denied by the resource
-  provider"` = the identity holds no role that covers the ACS **data plane** (seen 2026-10-28 with
-  `Communication and Email Service Owner`, a management-only role; **Contributor** on the resource is
-  what works). Other 401/403 texts: `Acs:TeamsClientId` is not the SPA that acquired the token
+  provider"` = the identity has no role assignment **directly** on the ACS resource. ACS ignores
+  roles granted through group membership (Infrastructure, 2026-10-28), so locally it means you have
+  not been added individually — the Developer Admins group grant is not enough. The App Service
+  identity is assigned directly, so deployed environments are unaffected. Other 401/403 texts: `Acs:TeamsClientId` is not the SPA that acquired the token
   (passing the API's client id is the classic mistake), or the token was issued to another user. A
   timeout from the deployed API that works locally = the FortiGate rule has not been pushed.
 - **MSAL `AADSTS65001` (consent required) for the ACS scopes** — consent is only on the Dev SPA

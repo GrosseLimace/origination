@@ -1,6 +1,6 @@
 # Origination — Teams Calling in the Browser (POC) Implementation Notes
 
-*Origination's response to Infrastructure's implementation guide of 2026-10-27 (TEAMS-CALLING-GUIDE.md). The guide has been implemented on branch `spike_IncomingCallAcs`. This document covers what was built, the exact values the code uses, every place the implementation differs from the guide and why, corrections we'd suggest to the guide, the blocker found in the first local test, and what Origination still needs from Infrastructure before the POC calls can be made.*
+*Origination's response to Infrastructure's implementation guide of 2026-10-27 (TEAMS-CALLING-GUIDE.md). The guide has been implemented on branch `spike_IncomingCallAcs`. This document covers what was built, the exact values the code uses, every place the implementation differs from the guide and why, corrections we'd suggest to the guide, the blocker found in the first local test together with Infrastructure's explanation of it, and what Origination still needs from Infrastructure before the POC calls can be made.*
 
 ## What this is
 
@@ -13,8 +13,8 @@ We followed the guide. The browser acquires the ACS Teams token, the API exchang
 | Angular call agent, single-tab election, popup | **Built**, tests green |
 | CSP `connect-src` for the calling hosts (config-gated) | **Built**; to be tightened from the Dev console findings |
 | Dev config (`appsettings.Dev.json`, `environment.dev.ts`) | **Set** to the guide's reference values |
-| First local exchange against `acs-origination-dev-eus` | **Fails — `401 Denied by the resource provider`** (see Blocker) |
-| Deployed to Dev | **Not yet** — waiting on the role fix |
+| First local exchange against `acs-origination-dev-eus` | **Fails — `401 Denied by the resource provider`.** Infrastructure's finding: ACS ignores role grants that arrive through group membership, so developers need an individual assignment (see Blocker) |
+| Deployed to Dev | **Not yet** — next step. The local blocker does not affect it: the App Service identity is assigned directly |
 
 ## How it was built
 
@@ -61,22 +61,23 @@ All deliberate and all on our side; nothing here changes what Infrastructure pro
 3. **`CspNonceMiddleware.cs`** — doesn't exist; see #12.
 4. **Beta SDK for `transferorInfo`** — not needed on 2.0.0; see #9.
 5. **2028 retirement wording.** The guide says the Calling SDK "continues for Teams-aligned scenarios". Microsoft's guide names three such scenarios (Teams Phone Extensibility, Teams *Meeting* interoperability, Click-to-Call) and does not spell out one-to-one PSTN calls received as a Teams user, even though the Teams interop page documents it. We'd still like a Microsoft support ticket (`https://aka.ms/acs-retirement-support`) to confirm before QA/PROD; the Dev test does not depend on the answer.
+6. **"You must be in Developer Admins" for local development** (API section). Per your finding below, group membership is not enough for ACS — the developer must be assigned individually on the resource. Worth changing in the guide so the next developer doesn't hit the same 401.
 
-## Blocker (2026-10-28): the granted role does not cover the ACS data plane
+## Blocker (2026-10-28): local developers are denied — ACS ignores group-based role grants
 
-| Symptom | Cause | Fix needed |
+| Symptom | Cause (Infrastructure's finding) | Fix needed |
 |---|---|---|
-| The exchange fails with **`401 Denied — "Denied by the resource provider"`** from ACS, locally, with the `az login` of a *Developer Admins* member | **`Communication and Email Service Owner` is a management-plane role.** Its definition (`az role definition list --name "Communication and Email Service Owner"`) lists only `Microsoft.Communication/*` read / write / delete / ListKeys-style **actions** and **no data actions**, so ACS refuses data-plane calls (identity creation, token exchange) made with it | **Contributor**, scoped to the one ACS resource `acs-origination-dev-eus`, for both principals |
+| The exchange fails with **`401 Denied — "Denied by the resource provider"`** from ACS, locally, with the `az login` of a *Developer Admins* member | ACS does not honour role assignments that reach an identity **through group membership**, unlike the rest of Azure. The `Communication and Email Service Owner` grant is fine for the App Service identity (assigned directly) but not for developers, who hold it only through *Azure - Origination App - Developer Admins* | Add each developer who runs the exchange locally **individually** on `acs-origination-dev-eus`, same role. Deployed Dev is unaffected |
 
-**How we isolated it.** A plain `CreateUser` on the Identity SDK — no Teams token, no client ID, no user involved — gets the same 401 with the same identity, whose token does carry the *Azure - Origination App - Developer Admins* group (`83f44135-230c-4b28-a633-009e57088080`) in its `groups` claim. So it is not the Teams token, the client ID or the group membership: the identity is not authorised to use the resource at all.
+**What we saw.** A plain `CreateUser` on the Identity SDK — no Teams token, no client ID involved — gets the same 401 with the same identity, whose token does carry the Developer Admins group (`83f44135-230c-4b28-a633-009e57088080`) in its `groups` claim. So the Teams token, the client ID and the `oid` are not the problem: the identity itself is refused, which fits the group explanation. The resource's own role assignments today are exactly two, both `Communication and Email Service Owner`: the App Service identity directly, and the Developer Admins group.
 
-**Why Contributor.** It is the role Microsoft's own ACS quickstarts assign for Entra authentication (`az ad sp create-for-rbac --role Contributor`), and Microsoft Q&A answers to this exact error point to Contributor or Owner. We have only tested the granted role, which fails; we have not found a documented narrower role. Role assignments take a few minutes to propagate; we re-test as soon as it is in.
+**Our first explanation was wrong.** We initially read the 401 as the role lacking data actions and asked for Contributor. `Microsoft.Communication` defines no data actions at all (`az provider operation show --namespace Microsoft.Communication`), so that cannot be the cause. The Contributor request is withdrawn.
 
 ## What Origination needs from Infrastructure
 
 | # | Item | Needed for |
 |---|---|---|
-| 1 | **Contributor on `acs-origination-dev-eus`** for the `app-origination-dev-eus` managed identity (`7ff98598-94a0-42cb-81d9-87a6200cb3d9`) and for *Azure - Origination App - Developer Admins* (`83f44135-230c-4b28-a633-009e57088080`), replacing `Communication and Email Service Owner` | **Everything.** Nothing can be tested until it lands |
+| 1 | **An individual assignment of `Communication and Email Service Owner` on `acs-origination-dev-eus`** for each developer who runs the exchange locally — today Caden Egr (`CEgr@scoular.com`, object ID `5f9a9409-33a2-4961-bf77-b22fb0d09a5c`) | Local testing only. Deployed Dev works off the App Service identity's direct assignment |
 | 2 | Confirmation that the FortiManager install push for the FortiGate rule has run | The exchange from the **deployed** Dev API (locally it goes out as the developer) |
 | 3 | User-device network: `20.202.0.0/16` on UDP 3478–3481 (plus TCP 443) from the originator's PC, in the office and over GlobalProtect | Audio in the browser. Ringing and the popup work without it; audio does not |
 | 4 | A test originator with a Direct Routing number who is an agent on one conference-mode site queue | Scenarios 2 and 3 |
@@ -92,18 +93,17 @@ In non-production builds the browser console logs, for every incoming call:
 
 The tester records that line plus: scenario (1 / 2 / 3), site queue name, time, whether the tab and Teams desktop rang together, who could answer and what happened on the other endpoints, and audio quality on the office network and on VPN. Caller numbers are never sent to App Insights. The tester's step-by-step checklist is in the Testing section of our *Incoming Calls* doc in the repo.
 
-## After the role fix
+## Next steps
 
-1. Re-run the exchange locally (a microphone prompt on `http://localhost:4200` means the exchange worked) and place a real call to the developer's own Teams number — scenario 1.
-2. Deploy the branch to Dev and repeat from the deployed API (this is where item 2 above matters).
+1. Deploy the branch to Dev and run scenario 1 from the deployed app — the App Service identity is assigned directly, so the exchange should work there. This is also where item 2 above matters.
+2. Once a developer is assigned individually, re-run locally as well (a microphone prompt on `http://localhost:4200` means the exchange worked).
 3. Run scenarios 2 and 3 with the test originator and send the captured console lines and observations to Infrastructure.
 
 ## References
 
 - TEAMS-CALLING-GUIDE.md — Infrastructure's guide this document responds to (stored verbatim in the Origination repo)
-- https://learn.microsoft.com/en-us/azure/communication-services/quickstarts/identity/service-principal — Microsoft's Entra authentication quickstart for ACS (assigns Contributor)
 - https://learn.microsoft.com/en-us/azure/communication-services/quickstarts/manage-teams-identity
 - https://learn.microsoft.com/en-us/azure/communication-services/acs-retirement-and-breaking-changes-guide
 - https://aka.ms/acs-retirement-support
 
-*Document version: 1.0 | 2026-10-28 (Origination)*
+*Document version: 1.1 | 2026-10-28 (Origination) — blocker section revised after Infrastructure's reply; Contributor request withdrawn*

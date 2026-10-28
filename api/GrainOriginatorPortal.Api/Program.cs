@@ -352,9 +352,11 @@ builder.Services.AddScoped<ITeamsDirectoryService, TeamsDirectoryService>();
 // scopes and POSTs it to /api/calling/token; the service exchanges it with the ACS Identity SDK,
 // authenticated with the same credential split as the Graph directory client below (App Service
 // managed identity when deployed, the developer's own az login locally). Whichever identity it is
-// needs a role that covers the ACS DATA plane on the resource — Contributor does; "Communication and
-// Email Service Owner" is management-only and ACS answered "401 Denied by the resource provider"
-// with it on 2026-10-28. Nothing connects until Acs:Endpoint and
+// needs its ACS role ("Communication and Email Service Owner") assigned DIRECTLY on the resource:
+// ACS does not honour roles that arrive through group membership (Infrastructure's finding,
+// 2026-10-28 — the Developer Admins group grant alone gave "401 Denied by the resource provider"
+// locally; the App Service identity is assigned directly, so deployed Dev is unaffected). Nothing
+// connects until Acs:Endpoint and
 // Acs:TeamsClientId are configured: without them the endpoint answers 204 and the client never
 // loads the calling SDK.
 builder.Services.AddSingleton<ICommunicationIdentityClientFactory, CommunicationIdentityClientFactory>();
