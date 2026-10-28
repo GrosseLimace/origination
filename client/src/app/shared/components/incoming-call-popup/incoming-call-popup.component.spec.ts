@@ -24,6 +24,7 @@ function makeCallStub() {
     state,
     matches,
     callerNumber: signal<string | null>('+14025554914'),
+    callerDisplayName: signal<string | null>(null),
     matchesLoading: signal(false),
     connectedSince: signal<number | null>(null),
     isSimulated: signal(false),
@@ -168,6 +169,15 @@ describe('IncomingCallPopupComponent', () => {
 
     expect(screen.getByTestId('incoming-call-ended')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
+  });
+
+  it('shows the display name when the caller is not a phone number (e.g. a call queue)', async () => {
+    call.callerNumber.set(null);
+    call.callerDisplayName.set('Omaha Main');
+    call.matches.set([]);
+    await setup();
+
+    expect(screen.getByText('Omaha Main')).toBeTruthy();
   });
 
   it('renders nothing when idle', async () => {

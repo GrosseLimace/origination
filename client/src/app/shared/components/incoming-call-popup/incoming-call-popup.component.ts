@@ -141,7 +141,13 @@ export class IncomingCallPopupComponent {
   /** Ticks once a second while a call is connected, driving the timer. */
   private readonly now = signal(Date.now());
 
-  readonly formattedNumber = computed(() => formatCallerId(this.call.callerNumber()));
+  /** The caller line: the formatted number, or the SDK's display name when the caller is not a phone
+   *  number (a call queue / resource account), or "Unknown caller". */
+  readonly formattedNumber = computed(() => {
+    const number = this.call.callerNumber();
+    if (number) return formatCallerId(number);
+    return this.call.callerDisplayName() ?? 'Unknown caller';
+  });
 
   readonly callerLabel = computed(() => {
     const m = this.call.selectedMatch();

@@ -27,6 +27,17 @@ export const environment = {
   // token the calling SDK is never even downloaded. Outside production the profile menu offers
   // "Simulate incoming call" to exercise the popup without a real call.
   incomingCallEnabled: true,
+  // Azure Communication Services scopes the browser asks Entra for when the incoming-call popup
+  // starts; the API exchanges that token for a calling token (POST /calling/token). Admin consent
+  // for them lives on THIS environment's SPA registration — granted for Dev on 2026-10-27, not yet
+  // for QA or PROD. Not added to the MSAL protected-resource map or the login request on purpose:
+  // they are requested explicitly, only when the call agent starts.
+  acs: {
+    teamsScopes: [
+      'https://auth.msft.communication.azure.com/Teams.ManageCalls',
+      'https://auth.msft.communication.azure.com/Teams.ManageChats',
+    ],
+  },
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.
   tradeUnitPreferencesUrl: 'https://tradeunitprefs-dev.scoular.com/my-preferences',

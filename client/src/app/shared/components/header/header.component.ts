@@ -231,6 +231,8 @@ export class HeaderComponent {
 
   signOut(): void {
     this.profileMenuOpen.set(false);
+    // Unregister this tab as a Teams calling endpoint before the session goes away.
+    void this.incomingCall.stop();
     this.appState.clearAll();
     this.msalService.logoutRedirect();
   }

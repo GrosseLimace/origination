@@ -33,7 +33,9 @@ This folder is the canonical reference for **what each screen of the Origination
 | [What's New](./Whats%20New.md) | `/whats-new` | In-app release notes and the build stamp — how to write the entry before a PROD deploy |
 | [Self Help](./Self%20Help.md) | `/help` (+ the Help panel on every page) | In-app FAQ and troubleshooting — editing `help-faq.json`, the drift tests that keep it current, spotlight anchors, unanswered-question review |
 | [Teams Channel Mentions](./Teams%20Channel%20Mentions.md) | _(notes composer + `/daily-digest`)_ | @-mention a Teams channel to post a note there; delegated Graph channel lookup, the registry, and the consent still outstanding |
-| [Incoming Calls](./Incoming%20Calls.md) | _(global popup, env-gated, Dev spike)_ | A producer calling your Teams number pops their name + code with Answer / Decline / Hold; ACS Teams-user calling, the IT ask, and the 2028 ACS retirement caveat |
+| [Incoming Calls](./Incoming%20Calls.md) | _(global popup, env-gated, Dev POC)_ | A producer calling your Teams number pops their name + code with Answer / Decline / Hold; ACS Teams-user calling, the token path, the POC test plan, and the 2028 ACS retirement caveat |
+| [Teams Calling Guide (Infrastructure)](./TEAMS-CALLING-GUIDE.md) | _(reference)_ | Infrastructure's 2026-10-27 guide: what was provisioned in Dev, the values, the code patterns and the POC scenarios — stored verbatim |
+| [Incoming Calls - Notes for Infrastructure](./Incoming%20Calls%20-%20Notes%20for%20Infrastructure.md) | _(reference)_ | Every place the implementation differs from the guide, corrections to send back, and what is still needed from Infrastructure |
 
 ## Conventions used in these docs
 

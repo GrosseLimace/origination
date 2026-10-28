@@ -1274,11 +1274,12 @@ export class ApiService {
 
   // --- Incoming-call popup ------------------------------------------------------------------
 
-  /** ACS calling token for the signed-in user's own Teams identity, or null when calling is off
-   *  in this environment (the API answers 204: no ACS resource, no consent, or the exchange
-   *  failed). Errors also become null: a dormant popup must never surface as an error toast. */
-  getCallingToken(): Observable<CallingToken | null> {
-    return this.http.get<CallingToken>(`${this.baseUrl}/calling/token`, { observe: 'response' })
+  /** Exchanges the Entra token the browser acquired for the Azure Communication Services scopes
+   *  into an ACS calling token for the signed-in user's own Teams identity. Null when calling is off
+   *  in this environment (the API answers 204) or the exchange failed (502): a dormant popup must
+   *  never surface as an error toast. The token travels in the body, never the URL. */
+  exchangeCallingToken(teamsUserAadToken: string): Observable<CallingToken | null> {
+    return this.http.post<CallingToken>(`${this.baseUrl}/calling/token`, { teamsUserAadToken }, { observe: 'response' })
       .pipe(
         map(r => (r.status === 204 ? null : r.body)),
         catchError(() => of(null))

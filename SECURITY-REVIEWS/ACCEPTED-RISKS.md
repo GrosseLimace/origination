@@ -1618,8 +1618,8 @@ it dropped `*.azurewebsites.net` (that wildcard stays banned; a test pins it).
 **Accepted for the Dev spike, because:**
 
 - **It is gated twice.** The hosts are only added when `Acs:Endpoint` is configured, and only
-  `appsettings.Dev.json` lists them. QA and Production policies are byte-for-byte unchanged (pinned by
-  `Csp_WithoutCallingConfig_IsUnchanged`).
+  `appsettings.Dev.json` and the local `appsettings.Development.json` list them. QA and Production
+  policies are byte-for-byte unchanged (pinned by `Csp_WithoutCallingConfig_IsUnchanged`).
 - `script-src` stays `'self'`, so the widening does not make script injection easier — it only
   widens where already-injected script could reach, and every listed host is Microsoft-operated.
 - The Calling SDK cannot work without these origins; there is no narrower published list.
