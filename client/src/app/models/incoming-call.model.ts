@@ -26,8 +26,6 @@ export interface CallingToken {
  * Where the incoming-call popup is.
  * - `unavailable`: calling is off in this environment (token endpoint answered 204) or the SDK
  *   failed to start. Terminal for the session; the popup never shows.
- * - `answeredElsewhere`: the user picked up on another Teams endpoint (desktop / mobile). The popup
- *   collapses to a banner that still offers the producer link.
  */
 export type IncomingCallState =
   | 'idle'
@@ -36,5 +34,4 @@ export type IncomingCallState =
   | 'connecting'
   | 'connected'
   | 'held'
-  | 'answeredElsewhere'
   | 'ended';

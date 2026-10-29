@@ -5,7 +5,6 @@ import { InteractionRequiredAuthError, InteractionStatus } from '@azure/msal-bro
 import { filter, firstValueFrom, take } from 'rxjs';
 import type {
   CallClient,
-  CallEndReason,
   CallState,
   ConnectionState,
   ConnectionStateChangedReason,
@@ -21,13 +20,6 @@ import { CallingSdk, CallingSdkLoader } from '@core/services/calling-sdk-loader.
 import { ToastService } from '@core/services/toast.service';
 import { CallingToken, IncomingCallMatch, IncomingCallState } from '@models';
 import { environment } from '@env/environment';
-
-/** Call end reason when the call was picked up on another of the user's Teams endpoints. */
-const ACCEPTED_ELSEWHERE = { code: 487, subCode: 10003 } as const;
-
-/** How long the "answered in Teams" banner lingers if nobody dismisses it. The SDK sends nothing
- *  further for a call accepted elsewhere, so there is no "that call has now ended" signal. */
-const ANSWERED_ELSEWHERE_TTL_MS = 15 * 60 * 1000;
 
 /** How long "Call ended" shows before the popup clears. */
 const ENDED_LINGER_MS = 2500;
@@ -496,21 +488,20 @@ export class IncomingCallService {
     const number = id?.kind === 'phoneNumber' ? id.phoneNumber : null;
     const seq = this.ring(number, info?.displayName ?? null);
 
-    call.on('callEnded', ({ callEndReason }) => this.onRingEnded(seq, callEndReason));
+    call.on('callEnded', () => this.onRingEnded(seq));
   }
 
-  /** Ringing stopped without this tab answering. */
-  private onRingEnded(seq: number, reason: CallEndReason | undefined): void {
+  /**
+   * Ringing stopped without this tab answering: the popup simply goes away, whatever the reason —
+   * picked up in Teams desktop / mobile (487 / 10003), caller hung up, rang out to voicemail, or
+   * declined elsewhere. Like Teams on several devices: whichever endpoint answers, the others stop.
+   * (There used to be an "answered in Teams" banner, but the SDK sends nothing when that Teams call
+   * ends, so it could only linger after the call was over — decision 2026-10-29.)
+   */
+  private onRingEnded(seq: number): void {
     if (seq !== this.callSeq || this.state() !== 'ringing') return;
     this.incomingCall = null;
-
-    if (reason?.code === ACCEPTED_ELSEWHERE.code && reason.subCode === ACCEPTED_ELSEWHERE.subCode) {
-      this.state.set('answeredElsewhere');
-      this.scheduleReset(seq, ANSWERED_ELSEWHERE_TTL_MS);
-    } else {
-      // Caller hung up, it rang out to voicemail, or it was declined on another endpoint.
-      this.reset();
-    }
+    this.reset();
   }
 
   /** Puts a call on screen and starts the producer lookup. Returns the call's sequence number. */
@@ -618,12 +609,6 @@ export class IncomingCallService {
     await call?.hangUp().catch(err => console.warn('Hang up failed', err));
   }
 
-  /** Closes the "answered in Teams" banner or the "call ended" card. */
-  dismiss(): void {
-    const s = this.state();
-    if (s === 'answeredElsewhere' || s === 'ended') this.reset();
-  }
-
   // ── Simulation (local and Dev only) ──────────────────────────────────────
 
   /** Runs the whole popup flow for a typed-in number, without the SDK or a real call. */
@@ -640,10 +625,10 @@ export class IncomingCallService {
     if (s === 'connected' || s === 'held') this.markEnded();
   }
 
-  /** Simulates the user picking up on the Teams desktop app instead. */
+  /** Simulates the user picking up on the Teams desktop app instead: the popup goes away. */
   simulateAnsweredElsewhere(): void {
     if (!this.isSimulated()) return;
-    this.onRingEnded(this.callSeq, { code: ACCEPTED_ELSEWHERE.code, subCode: ACCEPTED_ELSEWHERE.subCode });
+    this.onRingEnded(this.callSeq);
   }
 
   // ── Internals ─────────────────────────────────────────────────────────────

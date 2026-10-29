@@ -34,7 +34,7 @@ function makeCallStub() {
     choose: vi.fn((id: number) => chosen.set(id)),
     answer: vi.fn(async () => state.set('connected')),
     decline: vi.fn(async () => state.set('idle')),
-    hold: vi.fn(), resume: vi.fn(), hangUp: vi.fn(), dismiss: vi.fn(), simulateAnsweredElsewhere: vi.fn(),
+    hold: vi.fn(), resume: vi.fn(), hangUp: vi.fn(), simulateAnsweredElsewhere: vi.fn(),
   };
 }
 
@@ -69,14 +69,6 @@ describe('IncomingCallPopupComponent', () => {
 
     expect(screen.getByTestId('incoming-call-caller-name').textContent).toContain('Jane Smith');
     expect(screen.getByText('Smith Farms')).toBeTruthy(); // and whose contact she is
-  });
-
-  it('the answered-in-Teams banner names the contact too', async () => {
-    call.matches.set([{ ...SMITH, contactName: 'Jane Smith', contactNames: ['Jane Smith'] }]);
-    call.state.set('answeredElsewhere');
-    await setup();
-
-    expect(screen.getByTestId('incoming-call-banner').textContent).toContain('Jane Smith, Smith Farms (SMIFAR)');
   });
 
   it('shows the customer code and location under the name, but not the trade unit', async () => {
@@ -148,20 +140,6 @@ describe('IncomingCallPopupComponent', () => {
     expect(call.resume).toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Hang up' }));
     expect(call.hangUp).toHaveBeenCalled();
-  });
-
-  it('answered in Teams: a one-line banner that keeps the producer link', async () => {
-    call.state.set('answeredElsewhere');
-    const { navigate } = await setup();
-
-    const banner = screen.getByTestId('incoming-call-banner');
-    expect(banner.textContent).toContain('Smith Farms (SMIFAR)');
-    expect(banner.textContent).toContain('Answered in Teams:');
-    expect(banner.textContent).not.toContain('On a call'); // it cannot know the Teams call is still going
-    await userEvent.click(screen.getByRole('button', { name: 'Open' }));
-    expect(navigate).toHaveBeenCalledWith(['/'], { queryParams: { customerId: 158259 } });
-    await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
-    expect(call.dismiss).toHaveBeenCalled();
   });
 
   it('after the caller hangs up there is no Close button to click (it closes itself)', async () => {
