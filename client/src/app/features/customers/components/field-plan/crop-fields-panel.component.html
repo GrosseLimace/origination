@@ -127,12 +127,22 @@
         @default {
           <div class="flex flex-wrap items-end gap-2">
             <label class="block text-xs text-gray-600 dark:text-gray-300">Split ID
-              <input #splitInput class="ci-input ci-compact !w-64" [attr.list]="'splits-' + intention().id" placeholder="Split ID or field name" (keydown.escape)="cancelAdd()"
+              <input #splitInput class="ci-input ci-compact !w-64" [attr.list]="'splits-' + intention().id" [placeholder]="manualAllowed() ? 'Split ID, e.g. TATOB43' : 'Split ID or field name'" (keydown.escape)="cancelAdd()"
                      [(ngModel)]="newSplit" (ngModelChange)="onSplitChange()" />
               <datalist [id]="'splits-' + intention().id">
                 @for (o of splitOptions(); track o.split.splitId) { <option [value]="o.value">{{ o.label }}</option> }
               </datalist>
             </label>
+            @if (isNewManualField) {
+              <!-- SPLITS-GRAPHQL: typed by hand until CTRM's splits query is live. -->
+              <label class="block text-xs text-gray-600 dark:text-gray-300">Field name
+                <input class="ci-input ci-compact !w-44" [placeholder]="typedSplitId ?? ''" [(ngModel)]="newName" maxlength="255" />
+              </label>
+              <label class="block text-xs text-gray-600 dark:text-gray-300">Split %
+                <input type="number" min="0.001" max="100" step="any" class="ci-input ci-compact !w-20 text-right"
+                       [class.ci-missing]="!newPercent || newPercent <= 0 || newPercent > 100" [(ngModel)]="newPercent" />
+              </label>
+            }
             @if (isNewField) {
               <label class="block text-xs text-gray-600 dark:text-gray-300">State
                 <select class="ci-input ci-compact !w-20" [(ngModel)]="newState" (ngModelChange)="newCounty = ''">
@@ -158,8 +168,15 @@
               {{ sp.name }} · {{ +sp.splitPercent.toFixed(3) }}% · effective {{ sp.effectiveDate | date:'MM/dd/yy' }}
               @if (sp.kind === 'Bin') { <span class="text-amber-700 dark:text-amber-400"> · a bin site collects grain from several fields, so it can't be a field here.</span> }
             </div>
+          } @else if (typedSplitId; as id) {
+            <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              @if (store.field(id); as f) { {{ f.name }} · {{ +f.splitPercent.toFixed(3) }}% · entered by hand }
+              @else { Entered by hand: check the split ID against CTRM. It's how the field's tickets are found. }
+            </div>
           } @else if (newSplit.trim()) {
-            <div class="mt-1 text-xs text-amber-700 dark:text-amber-400">Not one of this producer's current CTRM splits.</div>
+            <div class="mt-1 text-xs text-amber-700 dark:text-amber-400">
+              {{ manualAllowed() ? 'A split ID is up to 7 letters or digits, as in CTRM.' : "Not one of this producer's current CTRM splits." }}
+            </div>
           }
           @if (sampleSplits()) {
             <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">Sample split IDs, until the CTRM splits feed is connected.</div>
@@ -172,5 +189,5 @@
 }
 
 @if (openSeasonId) {
-  <app-field-season-dialog [seasonId]="openSeasonId" [startProgram]="openProgram" (close)="openSeasonId = null; openProgram = null" />
+  <app-field-season-dialog [seasonId]="openSeasonId" [startProgram]="openProgram" [producer]="producerForExport()" (close)="openSeasonId = null; openProgram = null" />
 }

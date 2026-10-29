@@ -32,6 +32,11 @@ export function createFdCicProgram(api: FdCicApiService): SustainabilityProgramD
    */
   const fieldResult = ({ season, record, field }: Item): FieldResult => {
     const group = fdCicCropFor(season.cropLabel) ?? season.cropLabel;
+    // Confirmed with the producer: the confirmed CI and its CTRM ticket bushels.
+    const official = record.official;
+    if (official?.status === 'Documented' && official.score) {
+      return { recordId: record.id, group, value: official.score.value, unitShort: 'g/bu', bushels: official.bushels ?? null, projected: false };
+    }
     const frozen = record.frozen;
     if (frozen?.score) {
       const inputs = frozen.inputs as { acres?: number | null; actualYield?: number | null };
@@ -147,7 +152,7 @@ export function createFdCicProgram(api: FdCicApiService): SustainabilityProgramD
 
     official: {
       resultName: '45Z CI',
-      requirementsNote: 'Requirements for an official 45Z CI are being defined.',
+      requirementsNote: 'Each field is confirmed after harvest: review its inputs and CTRM tickets with the producer, then confirm.',
     },
 
     enrollment: {

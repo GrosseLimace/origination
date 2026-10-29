@@ -76,7 +76,7 @@ build.
 locked be rescored under it? Recommended: yes, with a visible "rescored under vX" note. Locked fields
 keep their version either way.
 
-## Where field-plan data is kept (database pending approval)
+## Where field-plan data is kept
 
 The client keeps fields, field seasons, program records and enrollments in `FieldPlanStore`
 (`client/src/app/features/customers/components/field-plan/store/`). It loads one producer at a time and
@@ -108,7 +108,7 @@ The proposed tables, rules and endpoints are written up for approval in
   - the record's `Data` and frozen result stored as `nvarchar(max)` JSON, like `Note.Mentions`.
   - `FieldProgramRecord.CopiedFromField`: the field a record's inputs were copied from this year, if any.
   - `FieldProgramRecord.Official` (JSON, nullable): the official result, kept apart from the estimate (see
-    [Estimate vs official CI](#estimate-vs-official-ci)). It may become its own table once its shape is known.
+    [Estimate vs confirmed (official) CI](#estimate-vs-confirmed-official-ci)). It may become its own table once its shape is known.
 - Access is the same as planting intentions: any signed-in user (accepted risks AR-01 to AR-03).
 - The server owns two rules:
   - refusing duplicate claims at attestation (a split ID in two enrollments of one program and year);
@@ -131,22 +131,50 @@ the producer's enrollment. The server will offer the same as `GET api/field-plan
   CTRM crop year); a split growing two crops in one program year (the crop would need to be in the key);
   whether auditors need the ID stored as well as derived.
 
-## Estimate vs official CI
+## Estimate vs confirmed (official) CI
 
-Every CI the app produces is a **planning estimate** from the USDA FD-CIC calculator. The meeting identified
-that an official, documented CI for the program may need more, and what it needs is still being gathered, so
-the app keeps the two apart and builds nothing that guesses at the official requirements.
+Every CI is a **planning estimate** from the USDA FD-CIC calculator until the field is **confirmed** after
+harvest. The business decided on 2026-10-29 that the confirmed CI is the one the Bins use: it's the official
+result.
 
-- **Estimates:** projected (expected yield) before harvest, then actual. Marking the enrollment's harvest
-  complete **locks** each field's estimate (`Locked`, formerly "Final"): inputs, outputs and USDA version
-  frozen for the audit trail, with `basis: Estimate`. A locked estimate can be unlocked with a reason, which
-  is kept. Screens say "estimate · projected" or "estimate · locked", and the locked banner says "Not an
-  official 45Z CI".
-- **Official result:** each program record has an empty `official` slot (status, score, method, requirements,
-  evidence, who documented it and when). Nothing writes it yet, and an estimate is never copied into it.
-  Screens show "Official 45Z CI: not started".
-- **Open questions:** which extra inputs or records an official CI needs; what evidence and who verifies it;
-  who signs off; which method or USDA version applies; whether it's per field or per delivery lot.
+- **Estimates:**
+  - Before harvest the estimate is projected from the expected yield; after harvest it uses the actual yield.
+  - Marking the enrollment's harvest complete **locks** each field's estimate (`basis: Estimate`).
+  - A locked estimate can be unlocked with a reason, which is kept.
+  - Screens say "estimate · projected / actual / locked".
+- **Confirmed CI:** see [Review with tickets and the Bins' CSV](#review-with-tickets-and-the-bins-csv). The record's `official` result holds:
+  - `status: Documented`;
+  - the CI, rescored on the server with the confirmed actual yield;
+  - the USDA version;
+  - the actual yield;
+  - the confirmed bushels and tickets;
+  - who confirmed it and when.
+
+  An estimate is never copied into it. Screens say "confirmed".
+- **Unlocking a confirmed field** moves both its estimate and its confirmed CI into the record's history, with the reason. The field can then be reviewed again.
+- **Still open:** whether an official CI will need more than the review (evidence, a verifier, sign-off). `requirements` and `evidence` on the official result are kept for that.
+
+## Review with tickets and the Bins' CSV
+
+1. Once a 45Z field has an estimated CI, its tab shows **Review with tickets…**.
+2. The review lists the field's CTRM tickets (`GET api/field-plan/records/{id}/tickets`), **settled or not**. A ticket is listed when:
+   - it was delivered under the field's split ID (the ticket detail's customer code);
+   - its product code is the crop row's crop (`FieldPlanCropGroups`, ported from the client's `CROP_CODE_MAP`, with a test that keeps them in step);
+   - it's in the crop year. CTRM tickets carry no crop year, so:
+     - a ticket on one of the producer's or the split's contracts takes **that contract's crop year**;
+     - any other ticket counts when its **BL date** is in the crop year's window: `FieldPlan:TicketWindow:{crop}:From/To` (MM-dd), default `08-01` to `07-31` of the next year.
+   - Net bushels are the split's net pounds ÷ the ODS conversion for the product code, or the crop's standard weight when ODS has none.
+3. The originator and the producer go over the inputs and the tickets. Any ticket that isn't the field's can be unticked. The actual yield is suggested as included bushels ÷ acres and can be edited. The CI at that yield shows live.
+4. After harvest, with "Reviewed these inputs and tickets with the producer after harvest" ticked, **Confirm CI** (`POST .../records/{id}/confirm`):
+   - reads the tickets again on the server and keeps only the ones listed, so the bushels are CTRM's;
+   - sets the actual yield, rescores, locks, and writes the confirmed CI.
+   - Confirming is allowed while an attested enrollment holds the record, because attesting comes before harvest and confirming after.
+5. **CSV for the Bins' mass balance ledger:** "Download confirmed CI (CSV)" appears on the enrollment card for the producer and year, and in a confirmed review.
+   - One row per confirmed ticket: producer code and name, split ID, field, enrollment ID, crop year, commodity, ticket #, product code, BL date, location, contract #, net bushels, settled (Y/N), settled date, CI (g CO2e/bu), USDA version, confirmed by and at.
+   - Built in the browser (`programs/fd-cic/confirmed-ci-export.ts`), with spreadsheet formula injection guarded (`shared/utils/csv.ts`).
+   - File name: `45Z-confirmed-CI_{producer}_{year}_{yyyymmdd}.csv`.
+
+**To verify on real data:** that tickets name the split ID as their customer code. A split is its own CTRM customer: TATOB02 "T-A TOBIN - PARKER WEST" is synced as a producer with that code. The tickets query is therefore the standard per-customer one. TATOB02 had no deliveries in the last three years, though, so this still needs checking against a split that has delivered.
 
 ## Reporting: field-level CI and bushels
 
@@ -169,24 +197,31 @@ different CI target, so the question is **how many bushels sit at or below a giv
 
 A field-plan field is one of the producer's CTRM split IDs (combined customer IDs, e.g. `TATOB43` "T-A TOBIN
 - JARBOE WEST", 100%). Producers set up a split per field, and tickets are delivered under it, which is
-what will tie a delivery to a field. Originators pick the split from a type-ahead; they never type a field
-name or FSA numbers. The split's name, split % and effective date come from CTRM and are read-only. State
-and county are asked once, the first time a split is used, because 45Z scores by county. Expired splits are
-hidden; bin-site splits are listed but can't be fields.
+what ties a delivery to a field. State and county are asked once, the first time a split is used, because 45Z scores by county.
+
+**Go-live: split IDs are typed by hand (SPLITS-GRAPHQL).** The CTRM splits query may not be ready for go-live, so `Ctrm:SplitsSource` defaults to **`manual`**:
+- the originator types the split ID (1 to 7 letters or digits, as CTRM customer codes are), a field name (defaulting to the ID) and the producer's share (default 100%);
+- the field is stored with `SplitSource = Manual`, and its name and share stay editable;
+- the split ID is how the field's tickets are found, so the screen asks the originator to check it against CTRM.
+
+Every temporary spot is marked `SPLITS-GRAPHQL:` in code and config (`git grep SPLITS-GRAPHQL`).
+
+**Once the CTRM splits query exists**, originators pick the split from a type-ahead. The split's name, split % and effective date then come from CTRM and are read-only. Expired splits are hidden; bin-site splits are listed but can't be fields.
 
 - **Endpoint:** `GET api/ctrm-splits/customer/{customerId}` returns `{ source, splits }`, with every split
   including expired and bin-site ones. A producer without a CTRM code is a 404; a failed CTRM read is a
   503, never an empty list.
-- **Source today: sample data.** The CTRM GraphQL query for splits isn't known yet, and CTRM blocks schema
-  introspection (`HC0046`), so `SampleCtrmSplitReader` returns a made-up list built from the producer's
-  code. The screen says "Sample split IDs" while `source` is `sample`.
-- **Switching to CTRM:** `CtrmSplitReader` is built and tested against a placeholder query
-  (`CtrmQueries.SplitsByCustomer`, `CtrmSplitDto`). Once Lisa/Travis confirm the splits root field and
-  field names:
+- **Source today: `manual`** (no list; typed by hand). `sample` (`SampleCtrmSplitReader`, a made-up list) is for local demos only.
+  - The CTRM GraphQL query for splits isn't known yet, and CTRM blocks schema introspection (`HC0046`).
+  - Integrations were asked for a standalone `customerSplits` query rather than an extension of the customer query.
+- **Switching to the CTRM splits query:** `CtrmSplitReader` is built and tested against a placeholder query
+  (`CtrmQueries.SplitsByCustomer`, `CtrmSplitDto`). Once Integrations confirm the root field and field names:
   1. Replace the query text and the DTO's property names.
   2. Set `CtrmQueries.SplitsQueryConfirmed = true`.
   3. Set `Ctrm:SplitsSource` to `ctrm` per environment. Until step 2, `ctrm` stops the API at startup, so a
-     guessed query is never sent.
+     guessed query is never sent. With `ctrm`, a typed split that isn't in CTRM's list is refused.
+  4. Reconcile the fields typed by hand. Match each `Manual` field to CTRM's split by split ID, take CTRM's name, share and effective date, and set `SplitSource = Ctrm`. Report any manual split ID CTRM doesn't know, so it can be corrected; nothing is deleted.
+  5. Remove the manual-entry inputs (`crop-fields-panel`, field dialog) and `ManualCtrmSplitReader`, guided by the `SPLITS-GRAPHQL` markers.
 - **Open:** confirming that a landlord's and a tenant's shares are separate split IDs (the duplicate check
   relies on it), and whether 45Z acres should be the whole field or the producer's share.
 

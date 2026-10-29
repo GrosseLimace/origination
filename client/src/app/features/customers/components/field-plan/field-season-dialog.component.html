@@ -12,13 +12,26 @@
       <!-- The field: a CTRM split, set up once and reused every year -->
       <div>
         <h4 class="font-semibold text-gray-900 dark:text-white">Field <span class="text-sm font-normal text-gray-500">(kept for every year)</span></h4>
-        <dl class="mt-2 grid gap-3 text-sm sm:grid-cols-4">
-          <div><dt class="text-gray-500 dark:text-gray-400">CTRM split ID</dt><dd class="font-medium text-gray-900 dark:text-white">{{ draftField.splitId }}</dd></div>
-          <div><dt class="text-gray-500 dark:text-gray-400">Field name</dt><dd class="font-medium text-gray-900 dark:text-white">{{ draftField.name }}</dd></div>
-          <div><dt class="text-gray-500 dark:text-gray-400">Producer's split</dt><dd class="text-gray-900 dark:text-white">{{ +draftField.splitPercent.toFixed(3) }}%</dd></div>
-          <div><dt class="text-gray-500 dark:text-gray-400">Effective</dt><dd class="text-gray-900 dark:text-white">{{ draftField.effectiveDate | date:'MM/dd/yyyy' }}</dd></div>
-        </dl>
-        <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">From CTRM; change these there.</div>
+        @if (draftField.splitSource === 'Ctrm') {
+          <dl class="mt-2 grid gap-3 text-sm sm:grid-cols-4">
+            <div><dt class="text-gray-500 dark:text-gray-400">CTRM split ID</dt><dd class="font-medium text-gray-900 dark:text-white">{{ draftField.splitId }}</dd></div>
+            <div><dt class="text-gray-500 dark:text-gray-400">Field name</dt><dd class="font-medium text-gray-900 dark:text-white">{{ draftField.name }}</dd></div>
+            <div><dt class="text-gray-500 dark:text-gray-400">Producer's split</dt><dd class="text-gray-900 dark:text-white">{{ +draftField.splitPercent.toFixed(3) }}%</dd></div>
+            <div><dt class="text-gray-500 dark:text-gray-400">Effective</dt><dd class="text-gray-900 dark:text-white">{{ draftField.effectiveDate | date:'MM/dd/yyyy' }}</dd></div>
+          </dl>
+          <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">From CTRM; change these there.</div>
+        } @else {
+          <!-- SPLITS-GRAPHQL: typed by hand until CTRM's splits query is live; then these come from CTRM, read-only. -->
+          <div class="mt-2 grid gap-3 text-sm sm:grid-cols-4">
+            <div><div class="text-gray-500 dark:text-gray-400">CTRM split ID</div><div class="font-medium text-gray-900 dark:text-white">{{ draftField.splitId }}</div></div>
+            <label class="block"><span class="text-gray-700 dark:text-gray-300">Field name</span>
+              <input class="ci-input" maxlength="255" [disabled]="seasonLocked()" [(ngModel)]="draftField.name" (change)="saveField()" /></label>
+            <label class="block"><span class="text-gray-700 dark:text-gray-300">Producer's split %</span>
+              <input type="number" min="0.001" max="100" step="any" class="ci-input" [disabled]="seasonLocked()"
+                     [(ngModel)]="draftField.splitPercent" (change)="saveField()" /></label>
+          </div>
+          <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">Entered by hand: the split ID is how this field's CTRM tickets are found, so check it against CTRM.</div>
+        }
         <div class="mt-3 grid gap-3 sm:grid-cols-4">
           <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">State</span>
             <select class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftField.state" (ngModelChange)="draftField.county = ''; saveField()">
@@ -116,7 +129,20 @@
             }
 
             @if (a.def.official; as o) {
-              <div class="text-xs text-gray-500 dark:text-gray-400">Official {{ o.resultName }}: {{ officialStatus(a.record) }}</div>
+              <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                @if (a.record.official?.status === 'Documented') {
+                  <span>Confirmed {{ o.resultName }}: {{ a.record.official?.score?.value | number:'1.0-0' }} g CO₂e/bu · {{ a.record.official?.bushels | number:'1.0-0' }} bu</span>
+                  <button type="button" class="text-scoular-green-accessible bg-transparent border-0 p-0 hover:underline" (click)="reviewRecordId.set(a.record.id)">View review</button>
+                } @else {
+                  <span>Official {{ o.resultName }}: {{ officialStatus(a.record) }}</span>
+                  @if (canReview(a.record)) {
+                    <button type="button" class="h-7 rounded-md px-2 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green border-0"
+                            (click)="reviewRecordId.set(a.record.id)">Review with tickets…</button>
+                  } @else {
+                    <span>· Review opens once the field has an estimated CI.</span>
+                  }
+                }
+              </div>
             }
 
             @if (a.record.copiedFromField && a.record.status !== 'Locked') {
@@ -139,7 +165,11 @@
 
             @if (a.record.frozen; as fz) {
               <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 px-4 py-3 text-sm text-blue-900 dark:text-blue-200">
-                <span>🔒 Harvest estimate locked ({{ fz.calculatorVersion }}, at {{ fz.lockedBy }})@if (fz.score; as sc) {: {{ sc.value | number:'1.0-0' }} {{ sc.unit }}}.@if (a.def.official; as o) { Not an official {{ o.resultName }}.}</span>
+                @if (a.record.official?.status === 'Documented') {
+                  <span>✓ Confirmed with the producer ({{ fz.calculatorVersion }}, by {{ a.record.official?.documentedBy }})@if (fz.score; as sc) {: {{ sc.value | number:'1.0-0' }} {{ sc.unit }}}.</span>
+                } @else {
+                  <span>🔒 Harvest estimate locked ({{ fz.calculatorVersion }}, at {{ fz.lockedBy }})@if (fz.score; as sc) {: {{ sc.value | number:'1.0-0' }} {{ sc.unit }}}.@if (a.def.official; as o) { Not an official {{ o.resultName }} until it's reviewed and confirmed.}</span>
+                }
                 @if (heldBy(); as enrolled) {
                   <span>Held by the producer's attested {{ a.def.shortLabel }} enrollment.</span>
                 } @else {
@@ -186,4 +216,8 @@
       </div>
     </div>
   </div>
+}
+
+@if (reviewRecordId(); as rid) {
+  <app-fd-cic-review [recordId]="rid" [producer]="producer()" (close)="reviewRecordId.set(null)" />
 }

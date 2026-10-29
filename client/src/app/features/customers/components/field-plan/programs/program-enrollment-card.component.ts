@@ -6,9 +6,11 @@ import { EnrollableRecord, OFFICIAL_STATUS_TEXT } from '@models';
 import { ProgramRegistry } from './program-registry';
 import { FieldResult } from './program-def';
 import { LadderRow, atOrBelowTarget, ciLadder } from './ci-ladder';
+import { downloadCsv } from '@shared/utils/csv';
+import { confirmedCiCsv, confirmedCiFileName } from './fd-cic/confirmed-ci-export';
 
 /** One field in the card: what the enrollment lists, plus its score and bushels. */
-type CardField = EnrollableRecord & { result: FieldResult; official: string };
+type CardField = EnrollableRecord & { result: FieldResult; official: string; confirmed: boolean };
 
 /**
  * A producer's enrollment in one sustainability program for one year, above the planting table. It starts
@@ -21,7 +23,9 @@ type CardField = EnrollableRecord & { result: FieldResult; official: string };
  * - the fields not scored yet;
  * - "harvest complete", which locks the harvest estimate of every field that has its actual yield.
  *
- * Every CI here is a planning estimate. An official result has its own, still empty, place on each record.
+ * Every CI here is a planning estimate until the field is reviewed with the producer and its CTRM tickets after
+ * harvest and confirmed; then the confirmed CI and its ticket bushels show, and the card downloads the
+ * confirmed fields as the Bins' CSV (one row per ticket).
  *
  * Shows nothing until the producer has a field in the program. PROTOTYPE ONLY (in memory).
  */
@@ -62,7 +66,13 @@ type CardField = EnrollableRecord & { result: FieldResult; official: string };
             }
           } @else {
             @if (p.official; as o) {
-              <p class="text-xs text-gray-500 dark:text-gray-400">Planning estimates from the {{ p.shortLabel }} calculator. {{ o.requirementsNote }}</p>
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <p class="text-xs text-gray-500 dark:text-gray-400">Planning estimates from the {{ p.shortLabel }} calculator. {{ o.requirementsNote }}</p>
+                @if (confirmedCount() && producer()) {
+                  <button type="button" class="h-8 rounded-md px-3 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible"
+                          (click)="downloadConfirmed()">Download confirmed CI (CSV) · {{ confirmedCount() }} field{{ confirmedCount() === 1 ? '' : 's' }}</button>
+                }
+              </div>
             }
             <!-- Bushels by CI, one ladder per crop -->
             @for (g of groups(); track g.group) {
@@ -80,7 +90,7 @@ type CardField = EnrollableRecord & { result: FieldResult; official: string };
                 </div>
                 <table class="mt-1 w-full text-left">
                   <thead class="text-xs uppercase text-gray-500 dark:text-gray-400">
-                    <tr><th class="py-1 text-right pr-4">CI {{ g.unitShort }}</th><th>Field</th><th>Enrollment ID</th><th class="text-right">Acres</th><th class="text-right">Bushels</th><th class="text-right">At or below this CI</th>@if (p.official) { <th class="text-right">Official</th> }</tr>
+                    <tr><th class="py-1 text-right pr-4">CI {{ g.unitShort }}</th><th>Field</th><th>Enrollment ID</th><th class="text-right">Acres</th><th class="text-right">Bushels</th><th class="text-right">At or below this CI</th>@if (p.official) { <th class="text-right">Confirmed</th> }</tr>
                   </thead>
                   <tbody>
                     @for (row of g.ladder; track row.item.recordId) {
@@ -88,7 +98,7 @@ type CardField = EnrollableRecord & { result: FieldResult; official: string };
                         <td class="py-1 pr-4 text-right tabular-nums">
                           <div class="font-semibold text-gray-900 dark:text-white">{{ row.value | number:'1.0-0' }}</div>
                           <!-- Locked once harvest is complete; otherwise actual or projected by the yield the score used. -->
-                          <div class="whitespace-nowrap text-xs text-gray-500">estimate · {{ row.item.status === 'Locked' ? 'locked' : row.item.result.projected ? 'projected' : 'actual' }}</div>
+                          <div class="whitespace-nowrap text-xs text-gray-500">{{ row.item.confirmed ? 'confirmed' : 'estimate · ' + (row.item.status === 'Locked' ? 'locked' : row.item.result.projected ? 'projected' : 'actual') }}</div>
                         </td>
                         <td class="text-gray-900 dark:text-white">{{ row.item.fieldName }}</td>
                         <td class="whitespace-nowrap text-gray-600 dark:text-gray-300">{{ row.item.enrollmentId }}</td>
@@ -165,6 +175,8 @@ export class ProgramEnrollmentCardComponent {
   readonly programKey = input.required<string>();
   readonly customerId = input.required<number>();
   readonly year = input.required<number>();
+  /** The producer's CTRM code and name, for the confirmed-CI CSV. */
+  readonly producer = input<{ code: string; name: string } | null>(null);
 
   /** The program, if it has a producer-level enrollment (otherwise the card shows nothing). */
   readonly program = computed(() => {
@@ -197,8 +209,21 @@ export class ProgramEnrollmentCardComponent {
       production: program.production ? program.production(r.data, season) : undefined,
       result: results.get(r.id) ?? { recordId: r.id, group: season.cropLabel, value: null, unitShort: '', bushels: null, projected: true },
       official: OFFICIAL_STATUS_TEXT[r.official?.status ?? 'NotStarted'],
+      confirmed: r.official?.status === 'Documented',
     }));
   });
+
+  readonly confirmedCount = computed(() => this.records().filter(r => r.confirmed).length);
+
+  /** The Bins' mass balance ledger file: every confirmed field's tickets, one row each, with its confirmed CI. */
+  downloadConfirmed(): void {
+    const producer = this.producer();
+    if (!producer) return;
+    const fields = this.items()
+      .filter(i => i.record.official?.status === 'Documented')
+      .map(i => ({ ...i, enrollmentId: this.store.enrollmentIdOf(i.record) }));
+    downloadCsv(confirmedCiCsv(producer, fields), confirmedCiFileName(producer.code, this.year(), new Date()));
+  }
 
   /** Per group (45Z: crop), the scored fields as a ladder, lowest CI first, with the range and total bushels. */
   readonly groups = computed(() => {

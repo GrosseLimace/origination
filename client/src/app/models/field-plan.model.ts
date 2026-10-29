@@ -39,13 +39,18 @@ export interface ProducerField {
   fieldKey: string;
   splitId: string;
   customerId: number;
-  /** From CTRM, e.g. "JARBOE WEST"; read-only here. */
+  /** e.g. "JARBOE WEST": from CTRM (read-only here), or typed by hand for a Manual split. */
   name: string;
   splitPercent: number;
-  /** yyyy-mm-dd. */
+  /** yyyy-mm-dd, or "" when unknown. */
   effectiveDate: string;
   state: string;
   county: string;
+  /**
+   * SPLITS-GRAPHQL: "Manual" while originators type split IDs by hand (go-live, before CTRM's splits query is
+   * ready; name and share stay editable), "Ctrm" once they come from CTRM. Absent reads as Manual.
+   */
+  splitSource?: 'Manual' | 'Ctrm';
 }
 
 /** One field's share of one planting intention (crop row). */
@@ -91,16 +96,17 @@ export type OfficialResultStatus = 'NotStarted' | 'InProgress' | 'Documented';
 
 /** How an official result's status reads on screen. */
 export const OFFICIAL_STATUS_TEXT: Record<OfficialResultStatus, string> = {
-  NotStarted: 'not started',
+  NotStarted: 'not confirmed',
   InProgress: 'in progress',
-  Documented: 'documented',
+  Documented: 'confirmed',
 };
 
 /**
- * A field's official, documented result for a program (45Z: the CI of record), kept apart from the
- * planning estimate. PLACEHOLDER: what an official result requires (more inputs, evidence, a verifier,
- * sign-off, a method) is still being gathered, so nothing writes this yet. The planning estimate must
- * never be copied into it automatically.
+ * A field's official result for a program (45Z: the CI of record), kept apart from the planning estimate.
+ * For 45Z it is the confirmed CI: written only when the originator confirms the field after harvest, having
+ * gone over its inputs and CTRM tickets with the producer (the server rescores with the actual yield and keeps
+ * the tickets and their bushels). The estimate is never copied into it automatically. Requirements and
+ * evidence stay open for whatever else an official result may come to need.
  */
 export interface OfficialResult {
   status: OfficialResultStatus;
@@ -111,6 +117,41 @@ export interface OfficialResult {
   evidence?: { kind: string; reference: string; addedBy: string; addedAt: string }[];
   documentedBy?: string;
   documentedAt?: string;
+  /** 45Z confirmed CI: the actual yield it was rescored with (bu/ac). */
+  actualYield?: number;
+  /** 45Z confirmed CI: net bushels of the confirmed tickets. */
+  bushels?: number;
+  /** 45Z confirmed CI: the CTRM tickets reviewed with the producer: the rows of the Bins' CSV. */
+  tickets?: FieldTicket[];
+}
+
+/** One delivery (a CTRM ticket's detail row for the field's split), as reviewed, confirmed and exported. */
+export interface FieldTicket {
+  ticketKey: string;
+  ticketNumber: string;
+  /** yyyy-mm-dd. */
+  blDate: string | null;
+  location: string | null;
+  productCode: string | null;
+  contractNumber: string | null;
+  /** How the ticket was matched to the crop year: the applied contract's year, or its BL date in the window. */
+  cropYearMatch: 'contract' | 'window';
+  /** The split's net bushels; null when CTRM's pounds or the conversion are missing. */
+  netBushels: number | null;
+  settled: boolean;
+  settledDate: string | null;
+  status: string | null;
+}
+
+/** A field's CTRM tickets for its crop and crop year (GET api/field-plan/records/{id}/tickets). */
+export interface FieldTickets {
+  splitId: string;
+  cropYear: number;
+  cropGroup: string | null;
+  /** yyyy-mm-dd: the BL-date window for tickets not on a contract with a crop year. */
+  windowFrom: string;
+  windowTo: string;
+  tickets: FieldTicket[];
 }
 
 /** One sustainability program on one field season. `data` is the program's own shape. */
@@ -127,8 +168,8 @@ export interface FieldProgramRecord<TData = unknown> {
   frozen?: FrozenProgramResult;
   /** The official, documented result, once there is one; see OfficialResult. Absent means not started. */
   official?: OfficialResult;
-  /** Each time a locked record was reopened for correction, with the reason given. */
-  reopened?: { reason: string; at: string; frozen: FrozenProgramResult }[];
+  /** Each unlock (or replacement by a confirmed CI): the reason, when, the locked estimate and any confirmed CI it held. */
+  reopened?: { reason: string; at: string; frozen: FrozenProgramResult; official?: OfficialResult }[];
 }
 
 /** Open: ID issued, producer hasn't signed. Attested: producer signed. Withdrawn: ID retired. */

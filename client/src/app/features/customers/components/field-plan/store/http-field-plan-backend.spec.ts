@@ -42,9 +42,12 @@ describe('HttpFieldPlanBackend', () => {
   });
 
   it('should send only what the API declares (it refuses unknown properties)', async () => {
-    const field = backend.createField({ splitId: 'TATOB43', customerId: 9, name: 'ignored', splitPercent: 1, effectiveDate: '', state: 'KS', county: '' });
+    const field = backend.createField({ splitId: 'TATOB43', customerId: 9, name: 'Jarboe West', splitPercent: 50, effectiveDate: '', state: 'KS', county: '', splitSource: 'Manual' });
     const req = http.expectOne(`${BASE}/fields`);
-    expect(req.request.body).toEqual({ customerId: 9, splitId: 'TATOB43', state: 'KS', county: null });
+    // SPLITS-GRAPHQL: name and share are sent for a split typed by hand; the server ignores them for CTRM's.
+    expect(req.request.body).toEqual({
+      customerId: 9, splitId: 'TATOB43', state: 'KS', county: null, name: 'Jarboe West', splitPercent: 50, effectiveDate: null,
+    });
     req.flush({});
     await field;
 

@@ -1,5 +1,5 @@
 import { Injectable, inject, signal } from '@angular/core';
-import { EnrollableRecord, FieldProgramRecord, FieldSeason, ProducerField, ProgramEnrollment } from '@models';
+import { EnrollableRecord, FieldProgramRecord, FieldSeason, FieldTickets, ProducerField, ProgramEnrollment } from '@models';
 import { ToastService } from '@core/services/toast.service';
 import { ProgramRegistry } from '../programs/program-registry';
 import { enrollmentBlockers, enrollmentIdFor } from '../programs/program-enrollment';
@@ -400,6 +400,22 @@ export class FieldPlanStore {
     this.putRecord(result.record);
     if (result.enrollment) this.putEnrollment(result.enrollment);
     return true;
+  }
+
+  /** The field's CTRM tickets for its crop year (not kept in the store: the review reads them fresh). Throws on failure. */
+  async fieldTickets(recordId: string): Promise<FieldTickets> {
+    return this.backend.fieldTickets(recordId);
+  }
+
+  /**
+   * Confirms a 45Z field after harvest with the producer: the actual yield and the tickets kept. The record
+   * comes back locked with its confirmed CI (the official result). Undefined when refused; the store has said why.
+   */
+  async confirm(recordId: string, actualYield: number, ticketKeys: readonly string[]): Promise<FieldProgramRecord | undefined> {
+    await this.flush();
+    const confirmed = await this.write('confirm the CI', () => this.backend.confirm(recordId, actualYield, ticketKeys));
+    if (confirmed) this.putRecord(confirmed);
+    return confirmed;
   }
 
   /** Saves an open enrollment's attestation. An attested enrollment only changes by withdrawal. */

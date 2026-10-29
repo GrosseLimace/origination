@@ -8,6 +8,8 @@ import { FdCicApiService } from '@core/services/fd-cic-api.service';
 import { ToastService } from '@core/services/toast.service';
 import { FieldProgramRecord, FieldSeason, OFFICIAL_STATUS_TEXT, ProducerField } from '@models';
 import { ProgramRegistry } from './programs/program-registry';
+import { FD_CIC_PROGRAM_KEY } from './programs/fd-cic/fd-cic.program';
+import { FdCicReviewComponent } from './programs/fd-cic/fd-cic-review.component';
 
 /**
  * One field on one crop row: its CTRM split (ID, name, split %) and location, its acres this year, and the
@@ -19,7 +21,7 @@ import { ProgramRegistry } from './programs/program-registry';
   selector: 'app-field-season-dialog',
   standalone: true,
   imports: [
-    CommonModule, FormsModule, NgComponentOutlet, ButtonComponent,
+    CommonModule, FormsModule, NgComponentOutlet, ButtonComponent, FdCicReviewComponent,
     DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent,
   ],
   templateUrl: './field-season-dialog.component.html',
@@ -35,6 +37,10 @@ export class FieldSeasonDialogComponent {
   /** Opens straight onto this program, adding it to the field if it isn't there yet. */
   readonly startProgram = input<string | null>(null);
   readonly close = output<void>();
+  /** The producer's CTRM code and name, for the confirmed-CI CSV in the review. */
+  readonly producer = input<{ code: string; name: string } | null>(null);
+  /** The 45Z review open over this dialog, by record id. */
+  readonly reviewRecordId = signal<string | null>(null);
 
   readonly season = computed(() => this.store.season(this.seasonId()));
   readonly field = computed(() => this.store.field(this.season()?.fieldKey ?? ''));
@@ -103,6 +109,9 @@ export class FieldSeasonDialogComponent {
 
   saveField(): void {
     if (!this.draftField || this.seasonLocked()) return;
+    // A share typed by hand must be a real share; the API refuses anything else.
+    const share = this.draftField.splitPercent;
+    if (!(share > 0 && share <= 100)) return;
     this.store.updateField(this.draftField);
   }
 
@@ -189,6 +198,14 @@ export class FieldSeasonDialogComponent {
   }
 
   /** "not started" until a program's official result exists (requirements are being defined). */
+  /** A 45Z field can be reviewed with its tickets once it has an estimated CI (or a locked one). */
+  canReview(record: FieldProgramRecord): boolean {
+    if (record.programKey !== FD_CIC_PROGRAM_KEY) return false;
+    if (record.frozen?.score) return true;
+    const def = this.registry.get(record.programKey), season = this.season(), field = this.field();
+    return !!def && !!season && !!field && def.preview(record.data, season, field) !== null;
+  }
+
   officialStatus(record: FieldProgramRecord): string {
     return OFFICIAL_STATUS_TEXT[record.official?.status ?? 'NotStarted'];
   }

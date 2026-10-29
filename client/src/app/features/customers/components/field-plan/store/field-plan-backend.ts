@@ -1,5 +1,5 @@
 import { InjectionToken, inject } from '@angular/core';
-import { EnrollableRecord, FieldProgramRecord, FieldSeason, ProducerField, ProgramEnrollment, ProgramRecordStatus } from '@models';
+import { EnrollableRecord, FieldProgramRecord, FieldSeason, FieldTickets, ProducerField, ProgramEnrollment, ProgramRecordStatus } from '@models';
 import { environment } from '@env/environment';
 import { InMemoryFieldPlanBackend } from './in-memory-field-plan-backend';
 import { HttpFieldPlanBackend } from './http-field-plan-backend';
@@ -58,6 +58,17 @@ export interface FieldPlanBackend {
   lock(id: string, by: string): Promise<FieldProgramRecord>;
   /** POST api/field-plan/records/{id}/reopen: refused while an attested enrollment holds the record. */
   reopen(id: string, reason: string): Promise<ReopenResult>;
+  /**
+   * GET api/field-plan/records/{id}/tickets: the field's CTRM tickets for its crop and crop year, settled or
+   * not (delivered under its split ID; the applied contract's crop year, else the BL date in the window).
+   */
+  fieldTickets(id: string): Promise<FieldTickets>;
+  /**
+   * POST api/field-plan/records/{id}/confirm: after harvest, with the producer. The server reads the tickets
+   * again (its bushels, never ours), rescores with this actual yield, locks, and records the confirmed CI
+   * with its bushels and tickets as the record's official result.
+   */
+  confirm(id: string, actualYield: number, ticketKeys: readonly string[]): Promise<FieldProgramRecord>;
 
   /**
    * POST api/field-plan/enrollments: the producer's live enrollment in the program for the year, or a new

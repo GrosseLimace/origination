@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { ApiError } from '@core/errors/api-error';
 import { environment } from '@env/environment';
-import { EnrollableRecord, FieldProgramRecord, FieldSeason, ProducerField, ProgramEnrollment, ProgramRecordStatus } from '@models';
+import { EnrollableRecord, FieldProgramRecord, FieldSeason, FieldTickets, ProducerField, ProgramEnrollment, ProgramRecordStatus } from '@models';
 import type { FieldPlanBackend, FieldPlanSnapshot, ReopenResult } from './field-plan-backend';
 
 /**
@@ -39,12 +39,16 @@ export class HttpFieldPlanBackend implements FieldPlanBackend {
   createField(field: Omit<ProducerField, 'fieldKey'>): Promise<ProducerField> {
     return this.send(this.http.post<ProducerField>(`${this.base}/fields`, {
       customerId: field.customerId, splitId: field.splitId, state: field.state || null, county: field.county || null,
+      // SPLITS-GRAPHQL: used only while splits are typed by hand; with CTRM's splits query the server takes CTRM's.
+      name: field.name || null, splitPercent: field.splitPercent || null, effectiveDate: field.effectiveDate || null,
     }));
   }
 
   updateField(field: ProducerField): Promise<ProducerField> {
     return this.send(this.http.put<ProducerField>(`${this.base}/fields/${encodeURIComponent(field.fieldKey)}`, {
       state: field.state || null, county: field.county || null,
+      // Kept only for a split typed by hand (the server ignores them for CTRM's).
+      name: field.name || null, splitPercent: field.splitPercent || null,
     }));
   }
 
@@ -89,6 +93,17 @@ export class HttpFieldPlanBackend implements FieldPlanBackend {
     const r = await this.send(this.http.post<{ record: FieldProgramRecord; enrollment: ProgramEnrollment | null }>(
       `${this.base}/records/${id}/reopen`, { reason }));
     return { record: withoutNulls(r.record), ...(r.enrollment ? { enrollment: withoutNulls(r.enrollment) } : {}) };
+  }
+
+  fieldTickets(id: string): Promise<FieldTickets> {
+    return this.send(this.http.get<FieldTickets>(`${this.base}/records/${id}/tickets`));
+  }
+
+  /** The server reads the tickets again and uses its own bushels; it only needs which ones were kept. */
+  async confirm(id: string, actualYield: number, ticketKeys: readonly string[]): Promise<FieldProgramRecord> {
+    return withoutNulls(await this.send(this.http.post<FieldProgramRecord>(`${this.base}/records/${id}/confirm`, {
+      actualYield, ticketKeys, reviewedWithProducer: true,
+    })));
   }
 
   /** 204 (no body) for a program without enrollment. */

@@ -3,7 +3,8 @@
       @if (fieldPlanningEnabled) {
         <!-- Program enrollments for the plan year: the producer attestation and the ID each program issues -->
         @for (program of programs; track program.key) {
-          <app-program-enrollment-card class="block [&:not(:empty)]:mb-3" [programKey]="program.key" [customerId]="customer().id" [year]="fieldPlanYear" />
+          <app-program-enrollment-card class="block [&:not(:empty)]:mb-3" [programKey]="program.key" [customerId]="customer().id" [year]="fieldPlanYear"
+                                       [producer]="{ code: customer().scoularId ?? '', name: customer().name }" />
         }
       }
 

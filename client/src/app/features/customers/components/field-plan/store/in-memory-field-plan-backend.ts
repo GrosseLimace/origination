@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { EnrollableRecord, FieldProgramRecord, FieldSeason, ProducerField, ProgramEnrollment, ProgramRecordStatus } from '@models';
+import { EnrollableRecord, FieldProgramRecord, FieldSeason, FieldTicket, FieldTickets, ProducerField, ProgramEnrollment, ProgramRecordStatus } from '@models';
 import { ProgramRegistry } from '../programs/program-registry';
 import { blankAttestation, enrollmentBlockers } from '../programs/program-enrollment';
 import type { FieldPlanBackend, FieldPlanSnapshot, ReopenResult } from './field-plan-backend';
@@ -45,15 +45,20 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
     const existing = this.fields.find(f => f.fieldKey === splitId);
     if (existing && existing.customerId !== field.customerId) throw new Error(`Split ${splitId} is another producer's field.`);
     if (existing) return copy(existing);
-    const created: ProducerField = { ...copy(field), splitId, fieldKey: splitId };
+    // SPLITS-GRAPHQL: like the server's manual source, a split not from CTRM is kept as typed.
+    const created: ProducerField = { ...copy(field), splitId, fieldKey: splitId, splitSource: field.splitSource ?? 'Manual' };
     this.fields.push(created);
     return copy(created);
   }
 
-  /** Only the location changes: the split ID, name, split % and effective date are CTRM's. */
+  /** The location; and for a split typed by hand, its name and share. A CTRM split's are CTRM's; the split ID never changes. */
   async updateField(field: ProducerField): Promise<ProducerField> {
     const i = this.indexOf(this.fields, f => f.fieldKey === field.fieldKey, 'field');
-    this.fields[i] = { ...this.fields[i], state: field.state, county: field.county };
+    const manual = this.fields[i].splitSource !== 'Ctrm';
+    this.fields[i] = {
+      ...this.fields[i], state: field.state, county: field.county,
+      ...(manual ? { name: field.name.trim() || this.fields[i].splitId, splitPercent: field.splitPercent } : {}),
+    };
     return copy(this.fields[i]);
   }
 
@@ -130,11 +135,15 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
 
     const season = this.seasons.find(s => s.id === current.seasonId)!;
     const def = this.registry.get(current.programKey);
+    // A confirmed CI is unlocked with its estimate: both go to the history, and the field can be reviewed again.
     const reopened: FieldProgramRecord = {
       ...current,
       frozen: undefined,
+      official: undefined,
       status: def && def.missing(current.data, season).length === 0 ? 'Ready' : 'Draft',
-      reopened: [...(current.reopened ?? []), { reason: reason.trim(), at: new Date().toISOString(), frozen: current.frozen }],
+      reopened: [...(current.reopened ?? []), {
+        reason: reason.trim(), at: new Date().toISOString(), frozen: current.frozen, ...(current.official ? { official: current.official } : {}),
+      }],
     };
     this.records[i] = reopened;
 
@@ -144,6 +153,51 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
       && x.year === season.year && x.status !== 'Withdrawn');
     if (e >= 0) this.enrollments[e] = { ...this.enrollments[e], harvestCompleteAt: undefined };
     return copy({ record: reopened, enrollment: e >= 0 ? this.enrollments[e] : undefined });
+  }
+
+  /**
+   * PROTOTYPE ONLY: made-up deliveries for a demo without CTRM. Four tickets under the split in the crop
+   * year's harvest, adding up to about the field's expected production; the second is settled.
+   */
+  async fieldTickets(id: string): Promise<FieldTickets> {
+    const record = this.records[this.indexOf(this.records, r => r.id === id, 'program record')];
+    const season = this.seasons.find(s => s.id === record.seasonId)!;
+    const field = this.fields.find(f => f.fieldKey === season.fieldKey)!;
+    const expected = (record.data as { expectedYield?: number | null }).expectedYield ?? 180;
+    const each = Math.round(((season.acres ?? 100) * expected) / 4);
+    const day = (n: number) => `${season.year}-10-${String(n).padStart(2, '0')}`;
+    const tickets: FieldTicket[] = [4, 9, 15, 22].map((d, i) => ({
+      ticketKey: `${field.splitId}-${season.year}-${i + 1}`, ticketNumber: `S${season.year % 100}${field.splitId.slice(-2)}${i + 1}`,
+      blDate: day(d), location: 'Sample elevator', productCode: null, contractNumber: i === 1 ? 'P00001' : null,
+      cropYearMatch: i === 1 ? 'contract' : 'window', netBushels: each + i * 7,
+      settled: i === 1, settledDate: i === 1 ? day(28) : null, status: i === 1 ? 'Final Settled' : 'Unload',
+    }));
+    return copy({ splitId: field.splitId, cropYear: season.year, cropGroup: null, windowFrom: `${season.year}-08-01`, windowTo: `${season.year + 1}-07-31`, tickets });
+  }
+
+  /** As the server: the actual yield set, rescored (here: the program's freeze) and locked, the confirmed CI kept as the official result. */
+  async confirm(id: string, actualYield: number, ticketKeys: readonly string[]): Promise<FieldProgramRecord> {
+    const i = this.indexOf(this.records, r => r.id === id, 'program record');
+    const current = this.records[i];
+    if (current.official) throw new Error('This field\'s CI is already confirmed; unlock it to review it again.');
+    if (!ticketKeys.length) throw new Error('Include at least one ticket.');
+    const included = (await this.fieldTickets(id)).tickets.filter(t => ticketKeys.includes(t.ticketKey));
+    if (included.length !== ticketKeys.length) throw new Error('Some of those tickets are no longer this field\'s; reopen the review and try again.');
+    const season = this.seasons.find(s => s.id === current.seasonId)!;
+    const field = this.fields.find(f => f.fieldKey === season.fieldKey)!;
+    const def = this.registry.get(current.programKey)!;
+    const data = { ...(current.data as object), actualYield };
+    const at = new Date().toISOString();
+    const frozen = { ...def.freeze(data, season, field), basis: 'Estimate' as const, lockedBy: 'you', lockedAt: at };
+    const history = current.frozen ? [...(current.reopened ?? []), { reason: 'Replaced by the confirmed CI', at, frozen: current.frozen }] : current.reopened;
+    this.records[i] = {
+      ...current, data, status: 'Locked', frozen, ...(history ? { reopened: history } : {}),
+      official: {
+        status: 'Documented', score: frozen.score, method: frozen.calculatorVersion, actualYield,
+        bushels: included.reduce((sum, t) => sum + (t.netBushels ?? 0), 0), tickets: included, documentedBy: 'you', documentedAt: at,
+      },
+    };
+    return copy(this.records[i]);
   }
 
   // ── Enrollments ─────────────────────────────────────────────────────────

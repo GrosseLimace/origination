@@ -12,6 +12,12 @@
 > - a `release_DEV_<date>` branch (`main` plus this branch) deployed to DEV;
 > - a DBA running [scripts/field-plan-AddFieldPlanTables.sql](../../scripts/field-plan-AddFieldPlanTables.sql). It records the migration, so a later deploy skips it.
 
+> **As-built notes (after approval).** Two changes on 2026-10-29 for go-live (H. Collins with the business). Neither touches an existing table:
+> 1. **Split IDs typed by hand.** CTRM's splits query may not be ready for go-live, so `ProducerField` gained `SplitSource` (`Manual` or `Ctrm`). The migration had never been applied anywhere, so it was regenerated as `20261029193914_AddFieldPlanTables` rather than adding a second one, and the review SQL was regenerated with it.
+> 2. **The confirmed CI.** `FieldProgramRecord.Official` is no longer an empty placeholder. It holds the CI the originator confirms after harvest, having reviewed the inputs and the field's CTRM tickets with the producer: the bushels, the tickets, and who confirmed it. This needed no schema change; the column already existed.
+>
+> Two endpoints were added: `GET records/{id}/tickets` and `POST records/{id}/confirm`.
+
 ## What this is
 
 Originators can now plan a producer's crop year field by field and enroll those fields in sustainability programs:
@@ -65,11 +71,14 @@ dbo.Customer (existing)
 | `EffectiveDate` | `date` NULL | When the split took effect in CTRM |
 | `State` | `nvarchar(2)` NULL | Where the field is. 45Z needs it; asked once, not every year. |
 | `County` | `nvarchar(100)` NULL | 〃 |
+| `SplitSource` | `nvarchar(10)`, default `Manual` | `Manual` when the originator typed the split ID, name and share; `Ctrm` when they came from CTRM |
 | `CreatedAt/By`, `ModifiedAt/By` | | Audit |
 
 - **`SplitId` is unique across all producers.** A split belongs to one producer, so two producers can never hold the same field.
 - **There is no delete.** A field stays once added; it simply has no season in a year it isn't planted.
-- `Name`, `SplitPercent` and `EffectiveDate` are copied from CTRM when the field is added and are read-only in the app.
+- **Where `Name`, `SplitPercent` and `EffectiveDate` come from:**
+  - From CTRM's splits query (`SplitSource = Ctrm`), they're copied when the field is added and are read-only in the app.
+  - Until that query is live, the originator types them (`SplitSource = Manual`). See the as-built notes.
 
 ### ② `dbo.ProducerFieldSeason`: a field on a crop row for a year
 
@@ -100,7 +109,7 @@ dbo.Customer (existing)
 | `Frozen` | `nvarchar(max)` JSON NULL | The locked harvest estimate: inputs, outputs, CI, and the USDA calculator version that produced it |
 | `LockedBy`, `LockedAt` | NULL | Who locked it, and when |
 | `Reopened` | `nvarchar(max)` JSON NULL | Each unlock: the reason, when it happened, and the estimate that was unlocked. Kept forever. |
-| `Official` | `nvarchar(max)` JSON NULL | **Empty placeholder** for an official/documented CI. Its requirements are still being defined, and nothing writes it yet. |
+| `Official` | `nvarchar(max)` JSON NULL | The **confirmed CI** (45Z): written when the originator confirms the field after harvest with the producer. It holds the CI rescored at the confirmed actual yield, the USDA version, the bushels and the CTRM tickets, and who confirmed it and when. Null until then. |
 | Audit + soft delete | | |
 
 - **One record per program per season.** A unique index on (`ProducerFieldSeasonId`, `ProgramKey`) ignores removed rows.
@@ -162,6 +171,8 @@ One controller, `api/field-plan`, matching the client contract in `field-plan-ba
 | POST / PUT / DELETE | `seasons`, `seasons/{id}` | Put a field on a crop row; change acres; take it off |
 | POST / PUT / DELETE | `records`, `records/{id}` | Add a program to a field; save inputs; remove |
 | POST | `records/{id}/lock`, `records/{id}/reopen` | Lock the harvest estimate (server rescore); unlock with a reason |
+| GET | `records/{id}/tickets` | The field's CTRM tickets for its crop and crop year, settled or not |
+| POST | `records/{id}/confirm` | Confirm the CI after harvest with the producer: actual yield and tickets kept |
 | POST | `enrollments` | Open (or return) the producer's enrollment |
 | PUT / POST | `enrollments/{key}/attestation`, `/attest`, `/harvest-complete`, `/withdraw` | Enrollment lifecycle |
 
@@ -169,7 +180,7 @@ The planned `GET api/field-plan/enrollment?programKey&splitId&cropYear` lets tic
 
 ## Rollback
 
-The migration (`20261027115725_AddFieldPlanTables`) only creates four new tables and their indexes, so its `Down()` drops them. No existing table or row is touched.
+The migration (`20261029193914_AddFieldPlanTables`) only creates four new tables and their indexes, so its `Down()` drops them. No existing table or row is touched.
 
 The exact SQL it runs is in [scripts/field-plan-AddFieldPlanTables.sql](../../scripts/field-plan-AddFieldPlanTables.sql), for DBA review:
 - 4 `CREATE TABLE` statements and their indexes;

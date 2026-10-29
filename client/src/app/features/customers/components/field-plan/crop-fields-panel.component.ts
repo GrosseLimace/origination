@@ -20,9 +20,19 @@ export function splitFromText(text: string, splits: readonly CtrmSplit[]): CtrmS
 }
 
 /**
- * The fields under one crop row. A field is one of the producer's CTRM split IDs, looked up rather than
- * typed, because tickets are delivered under the split; its location is asked for the first time it's
- * used. The row's acres stay the total (what the
+ * A split ID as CTRM writes customer codes: 1 to 7 letters or digits, upper-cased (e.g. "TATOB43").
+ * Undefined when the text can't be one.
+ */
+export function splitIdFromText(text: string): string | undefined {
+  const id = text.trim().toUpperCase().split(/[\s·]/)[0];
+  return /^[A-Z0-9]{1,7}$/.test(id) ? id : undefined;
+}
+
+/**
+ * The fields under one crop row. A field is one of the producer's CTRM split IDs, because tickets are
+ * delivered under the split. SPLITS-GRAPHQL: until CTRM's splits query is live the ID, field name and
+ * share are typed by hand (the API's "manual" source); with it they're looked up. Its location is asked
+ * for the first time it's used. The row's acres stay the total (what the
  * dashboard counts); fields break it down. Adding a field pre-fills the acres not yet in a field, so a crop on one field needs
  * no extra typing. When the fields add up to more than the total, the row offers to update it — the
  * only way field data ever changes an intention, and it goes through the normal Edit dialog.
@@ -50,6 +60,8 @@ export class CropFieldsPanelComponent {
   readonly updateTotal = output<number>();
 
   readonly expanded = signal(false);
+  /** For the confirmed-CI CSV: the producer's CTRM code and name. */
+  readonly producerForExport = computed(() => ({ code: this.customer().scoularId ?? '', name: this.customer().name }));
   /** The producer's fields are in from the backend (the planting table asks for them). */
   readonly loaded = computed(() => this.store.isLoaded(this.customer().id));
   readonly loadFailed = computed(() => this.store.loadFailed(this.customer().id));
@@ -130,8 +142,11 @@ export class CropFieldsPanelComponent {
     void this.store.removeSeason(s.id);
   }
 
-  // ── Add a field: look up one of the producer's CTRM split IDs ─────────────
+  // ── Add a field: one of the producer's split IDs, looked up or (for now) typed ──
   newSplit = '';
+  /** SPLITS-GRAPHQL: the field name and share typed for a split entered by hand. */
+  newName = '';
+  newPercent: number | null = 100;
   newState = 'KS';
   newCounty = '';
   newAcres: number | null = null;
@@ -146,6 +161,14 @@ export class CropFieldsPanelComponent {
   readonly sampleSplits = computed(() => {
     const s = this.splits();
     return s.status === 'done' && s.source === 'sample';
+  });
+  /**
+   * SPLITS-GRAPHQL: a split not in a CTRM list can be typed by hand, with its field name and share. True
+   * unless the list really is CTRM's (then the server refuses anything not in it).
+   */
+  readonly manualAllowed = computed(() => {
+    const s = this.splits();
+    return s.status === 'done' && s.source !== 'ctrm';
   });
 
   /**
@@ -170,10 +193,30 @@ export class CropFieldsPanelComponent {
     return splitFromText(this.newSplit, this.splitOptions().map(o => o.split));
   }
 
-  /** A split this producer hasn't used as a field yet: its location is asked for once. */
-  get isNewField(): boolean {
+  /**
+   * SPLITS-GRAPHQL: the split ID typed by hand when it isn't one of the listed splits (manual source only).
+   * Undefined when the text isn't a split ID, or it's a listed split.
+   */
+  get typedSplitId(): string | undefined {
+    if (this.pickedSplit || !this.manualAllowed()) return undefined;
+    return splitIdFromText(this.newSplit);
+  }
+
+  /** The field being added: a listed split, or one typed by hand. */
+  private get entrySplitId(): string | undefined {
     const sp = this.pickedSplit;
-    return !!sp && sp.kind === 'Field' && !this.store.field(sp.splitId);
+    return sp ? (sp.kind === 'Field' ? sp.splitId : undefined) : this.typedSplitId;
+  }
+
+  /** A split this producer hasn't used as a field yet: its location (and, typed by hand, name and share) is asked for once. */
+  get isNewField(): boolean {
+    const id = this.entrySplitId;
+    return !!id && !this.store.field(id);
+  }
+
+  /** A new field typed by hand: ask for its name and share too. */
+  get isNewManualField(): boolean {
+    return this.isNewField && !this.pickedSplit;
   }
 
   retrySplits(): void {
@@ -200,35 +243,47 @@ export class CropFieldsPanelComponent {
     this.newState = this.customer().stateProvince || 'KS';
     this.newCounty = '';
     this.newSplit = '';
+    this.newName = '';
+    this.newPercent = 100;
     this.newAcres = this.remaining() > 0 ? this.remaining() : null;
   }
 
   /** Picking a split that's been a field before pre-fills its acres from last time, capped at what's left to place. */
   onSplitChange(): void {
-    const sp = this.pickedSplit;
-    if (!sp || !this.store.field(sp.splitId)) return;
-    const last = this.store.lastSeason(sp.splitId, this.intention().plantingYear)?.acres ?? null;
+    const id = this.entrySplitId;
+    if (!id || !this.store.field(id)) return;
+    const last = this.store.lastSeason(id, this.intention().plantingYear)?.acres ?? null;
     const left = this.remaining() > 0 ? this.remaining() : null;
     this.newAcres = last && left ? Math.min(last, left) : (last ?? left);
   }
 
   get canAdd(): boolean {
-    const sp = this.pickedSplit;
-    return !!sp && sp.kind === 'Field' && (this.newAcres ?? 0) > 0 && (!this.isNewField || !!this.newCounty);
+    const share = this.newPercent ?? 0;
+    return !!this.entrySplitId && (this.newAcres ?? 0) > 0 && (!this.isNewField || !!this.newCounty)
+      && (!this.isNewManualField || (share > 0 && share <= 100));
   }
 
   /** An add is being saved: the form stays open and its button waits. */
   readonly saving = signal(false);
 
   async add(): Promise<void> {
+    const id = this.entrySplitId;
+    if (!this.canAdd || !id || this.saving()) return;
     const sp = this.pickedSplit;
-    if (!this.canAdd || !sp || this.saving()) return;
     this.saving.set(true);
     try {
-      const field = this.store.field(sp.splitId) ?? await this.store.createField({
-        splitId: sp.splitId, customerId: this.customer().id, name: sp.fieldName,
-        splitPercent: sp.splitPercent, effectiveDate: sp.effectiveDate, state: this.newState, county: this.newCounty,
-      });
+      const field = this.store.field(id) ?? await this.store.createField(sp
+        ? {
+          splitId: sp.splitId, customerId: this.customer().id, name: sp.fieldName,
+          splitPercent: sp.splitPercent, effectiveDate: sp.effectiveDate, state: this.newState, county: this.newCounty,
+          splitSource: this.manualAllowed() ? 'Manual' : 'Ctrm',
+        }
+        : {
+          // SPLITS-GRAPHQL: typed by hand until CTRM's splits query is live.
+          splitId: id, customerId: this.customer().id, name: this.newName.trim() || id,
+          splitPercent: this.newPercent ?? 100, effectiveDate: '', state: this.newState, county: this.newCounty,
+          splitSource: 'Manual',
+        });
       if (!field) return; // the store has shown why; the form keeps what was typed
       const pi = this.intention();
       const season = await this.store.addSeason(field.fieldKey, pi.id, pi.plantingYear, this.cropLabel(), this.newAcres!);
