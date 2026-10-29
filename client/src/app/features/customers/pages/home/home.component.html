@@ -77,6 +77,7 @@
             (onAddNote)="addNote({ content: $event, mentions: [] })"
             (onTogglePin)="toggleNotePin($event)"
             (onSaveCustomer)="handleSaveCustomer($event)"
+            [isSavingTradeUnits]="isSavingTradeUnits()"
             (onSelectLinkedCustomer)="handleSelectLinkedCustomer($event)"
             [openContractId]="pendingContractId()"
             [openTab]="pendingTab()"

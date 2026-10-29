@@ -1,7 +1,11 @@
+// System namespaces
+using System.Text.Json;
+
 // Microsoft namespaces
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 // Third-party namespaces
 using Moq;
@@ -9,6 +13,7 @@ using Moq;
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
@@ -20,11 +25,15 @@ namespace GrainOriginatorPortal.Api.Tests.Repositories;
 /// Onboarding on the <c>ctrm</c> customer source (plan E3/E4): the search routes to the CTRM seam, a candidate
 /// carries a negative placeholder id, onboarding goes by ScoularId and mints the real id, and a placeholder
 /// without a code cannot be onboarded. The CTRM reader itself is covered by CtrmCustomerReaderSearchTests;
-/// here the seams are overridden, as the ODS tests do.
+/// here the seams are overridden, as the ODS tests do - except the lane test at the end, which runs the real reader.
 /// </summary>
+/// <remarks>In the throttle collection because that lane test holds the process-wide CTRM pool.</remarks>
+[Collection("CtrmThrottle")]
 public class CustomerRepositoryCtrmOnboardingTests
 {
     private const long MintedId = 5_000_000_000_000_777;
+
+    public CustomerRepositoryCtrmOnboardingTests() => CtrmTradeUnitThrottle.ResetForTests();
 
     private sealed class TestableCustomerRepository : CustomerRepository
     {
@@ -208,5 +217,96 @@ public class CustomerRepositoryCtrmOnboardingTests
         Assert.Equal(777, outcome.CustomerId);
         Assert.Equal(777, Assert.Single(app.Customers).Id);
         Assert.Equal(0, sut.IdLoads);
+    }
+
+    /// <summary>Answers a <c>customers(sourceCodes:)</c> page with one active, in-scope row per code asked for.</summary>
+    private sealed class OneRowPerCodeClient : ICtrmGraphQlClient
+    {
+        private int _calls;
+        public bool IsConfigured => true;
+        public int Calls => Volatile.Read(ref _calls);
+
+        public Task<CtrmReadResult<T>> QueryAsync<T>(string document, object? variables, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _calls);
+            var codes = ((IEnumerable<string>)variables!.GetType().GetProperty("codes")!.GetValue(variables)!).ToList();
+            var items = codes.Select(code => new CtrmCustomerDto
+            {
+                Id = JsonSerializer.SerializeToElement(42),
+                SourceCode = code,
+                Name = code + " Farms",
+                ActiveYN = "Y",
+                IndustryCode1 = "PR",
+                MdmMasterRecord = JsonSerializer.SerializeToElement(true)
+            }).ToList();
+            var page = new CtrmPage<CtrmCustomerDto>
+            {
+                TotalCount = items.Count,
+                PageInfo = new CtrmPageInfo { Skip = 0, Take = CtrmCustomerReader.SourceCodesPageSize, HasNextPage = false },
+                Items = items
+            };
+            object data = new Dictionary<string, CtrmPage<CtrmCustomerDto>> { ["customers"] = page };
+            return Task.FromResult(new CtrmReadResult<T> { Status = CtrmReadStatus.Ok, HttpStatus = 200, Value = (T)data });
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // The lane. PROD 2026-10-28: a rep onboarding a new producer into a trade unit had three saves held for ten
+    // minutes in the background CTRM pool while a keep-warm cycle drained; the browser reported each as
+    // failed, and the fourth went through once the cycle finished. Runs the real reader, not the seam.
+    [Fact]
+    public async Task AssignTradeUnitsAsync_OnboardingByCode_CompletesWhileTheBackgroundPoolIsFull()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["CustomerSync:Source"] = "ctrm",
+            ["Ctrm:TradeUnitMaxConcurrentRequests"] = "1",
+            ["Ctrm:BackgroundMaxDeferSeconds"] = "0"
+        }).Build();
+
+        // Keep-warm's stand-in: hold the only background slot for the whole save.
+        var release = new TaskCompletionSource();
+        var holding = new TaskCompletionSource();
+        var holder = CtrmTradeUnitThrottle.RunAsync(config, async () =>
+        {
+            holding.SetResult();
+            await release.Task;
+            return 0;
+        });
+        await holding.Task;
+
+        var ods = new OriginationDbContext(new DbContextOptionsBuilder<OriginationDbContext>()
+            .UseInMemoryDatabase($"onb-lane-ods-{Guid.NewGuid()}").Options);
+        var app = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"onb-lane-app-{Guid.NewGuid()}").Options);
+        var sync = new Mock<ICustomerSyncRepository>(MockBehavior.Strict);
+        sync.Setup(s => s.ReserveCustomerIdsAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync([MintedId]);
+        var client = new OneRowPerCodeClient();
+        var sut = new CustomerRepository(ods, app,
+            new Mock<ITicketRepository>(MockBehavior.Strict).Object,
+            new Mock<IContractRepository>(MockBehavior.Strict).Object,
+            new Mock<ILogger<CustomerRepository>>().Object,
+            config,
+            new CtrmCustomerReader(client, config, NullLogger<CtrmCustomerReader>.Instance),
+            sync.Object);
+
+        try
+        {
+            var outcome = await sut
+                .AssignTradeUnitsAsync(CtrmCustomerCandidateId.From("LANEFRM"), ["1340"], "LANEFRM", "rep@scoular.com", CancellationToken.None)
+                .WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.Equal(AssignTradeUnitsResult.Ok, outcome.Result);
+            Assert.Equal(MintedId, outcome.CustomerId);
+            Assert.Equal(1, client.Calls);
+            var tu = Assert.Single(app.CustomerTradeUnits);
+            Assert.Equal("1340", tu.TradeUnit);
+            Assert.True(tu.IsManual);
+        }
+        finally
+        {
+            release.SetResult();
+            await holder;
+        }
     }
 }

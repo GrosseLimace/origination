@@ -91,6 +91,18 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
     component.selectedTuCodes.set(memberships.filter(m => m.isManual && m.isActive).map(m => m.tradeUnit));
   }
 
+  it('sends nothing while the page is still saving this producer, then saves normally once it is done', () => {
+    withMemberships(manual('2190'));
+
+    ref.setInput('saving', true);
+    component.onSave();
+    expect(saved).toEqual([]);
+
+    ref.setInput('saving', false);
+    component.onSave();
+    expect(saved).toHaveLength(1);
+  });
+
   it('removes the trade unit with no prompt when nothing is planted for it', () => {
     withMemberships(manual('2190'), manual('2210'));
     intentions = [];
@@ -828,6 +840,17 @@ describe('EditCustomerDialogComponent — rendering', () => {
 
   afterEach(() => {
     document.body.style.overflow = '';
+  });
+
+  it('keeps Save off and labelled Saving… while the page is still saving this producer', async () => {
+    ref.setInput('saving', true);
+    await open(makeCustomer());
+
+    const button = Array.from(host().querySelectorAll<HTMLButtonElement>('button'))
+      .find(b => (b.textContent ?? '').trim() === 'Saving…');
+    expect(button).toBeDefined();
+    expect(button!.disabled).toBe(true);
+    expect(text()).not.toContain('Save Changes');
   });
 
   it('fills the form from the producer when the parent opens it', async () => {
