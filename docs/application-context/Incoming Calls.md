@@ -66,10 +66,23 @@ flowchart LR
    error code are logged). Either way the client settles in `unavailable` and **never downloads the SDK**.
 5. Otherwise the SDK chunk is lazy-loaded (~1.2 MB compressed, never in the initial bundle),
    `createTeamsCallAgent` registers the endpoint, and `AzureCommunicationTokenCredential` re-runs both
-   hops before the token expires. **The microphone is not touched at registration**: the SDK's
-   `askDevicePermission` opens a real capture stream and holds it for seconds even when permission is
-   already granted (it kept the mic-in-use light on during the Dev POC), so it is only asked for when
-   the user clicks **Answer**.
+   hops before the token expires. **The microphone is not opened at registration**: the SDK's
+   `askDevicePermission` opens a real capture stream and holds it for ~5 s even when permission is
+   already granted (it kept the mic-in-use light on during the Dev POC).
+6. **Microphone pre-approval ("ask once, release immediately").** Once the agent has registered, the
+   elected tab's `CallAudioPermissionService` checks `navigator.permissions.query({ name: 'microphone' })`,
+   which never opens the device (a browser where the query is missing or throws is treated as `prompt`):
+
+   | Permission | What the user sees |
+   |------------|--------------------|
+   | `granted` | Nothing. No device access. |
+   | `prompt` | A one-line banner under the header: *"Enable call audio so you can answer Teams calls here"* with **Enable** / **Not now**. Enable calls `getUserMedia({ audio: true })` from the click and stops every track at once (the grant is what is wanted, not the stream). Not now hides it for the browser session (`sessionStorage` `origination.callAudio.notNow`). |
+   | `denied` | A dismissible amber hint that the microphone is blocked for this site and how to allow it (site icon → Microphone → Allow, reload). Dismissed per session (`origination.callAudio.blockedHintDismissed`). |
+
+   The `PermissionStatus` `change` event is followed, so changing the permission in site settings updates
+   the banner/hint live. Nothing shows in non-leader tabs, when calling is off (204), or after the
+   agent gives up. `answer()` still asks through the SDK as the fallback (`client/src/app/shared/components/call-audio-banner/`,
+   `client/src/app/core/services/call-audio-permission.service.ts`).
 
 ### One endpoint per browser, kept alive
 
@@ -221,8 +234,8 @@ exercises the banner; once connected, **Simulate: caller hangs up** exercises th
 **Real call from a laptop (local):** `az login` first — the exchange runs as you, and
 `Azure - Origination App - Developer Admins` holds the ACS role. Start the API with the `http`
 profile and `ng serve`; `appsettings.Development.json` points at the Dev ACS resource. Sign in,
-call your own Teams number from a phone that is on file for a producer, and allow the microphone when
-you click Answer.
+click **Enable** on the call-audio banner (or allow the microphone when you click Answer), and call your
+own Teams number from a phone that is on file for a producer.
 
 **Real call (deployed Dev):**
 
@@ -290,6 +303,7 @@ you click Answer.
 | API | `api/GrainOriginatorPortal.Api/Middleware/SecurityHeadersMiddleware.cs` | Config-gated calling origins in the SPA CSP |
 | Repo | `api/GrainOriginatorPortal.Infrastructure/Repositories/CustomerRepository.cs` | `FindByPhoneAsync`, shared `StripPhone`, contact-name lookup |
 | Client | `client/src/app/core/services/incoming-call.service.ts` | Token path, leader lock, SDK registration, reconnect, state machine, simulate |
+| Client | `client/src/app/core/services/call-audio-permission.service.ts` + `shared/components/call-audio-banner/` | Microphone pre-approval: permission query, Enable (getUserMedia, tracks stopped at once), Not now, blocked hint |
 | Client | `client/src/app/core/services/calling-sdk-loader.service.ts` | Lazy import of the SDK |
 | Client | `client/src/app/shared/components/incoming-call-popup/incoming-call-popup.component.ts` | The popup and banner (draggable) |
 | Client | `client/src/app/app.component.ts/.html` | Starts the service; defers the popup |
