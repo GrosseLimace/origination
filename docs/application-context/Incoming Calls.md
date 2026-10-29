@@ -158,8 +158,17 @@ fetching the producer by id when the list does not contain them (AR-02 already c
 
 Other ring endings clear the popup: caller hung up (487/0), rang out to voicemail (487/10004),
 declined on every endpoint (487/10024). Teams-to-Teams calls from colleagues are ignored (they still
-ring this endpoint silently and are answered in Teams). A second call while one is in progress is
-left to Teams.
+ring this endpoint silently and are answered in Teams).
+
+**Several calls at once (call waiting, 2026-10-29).** Nothing is ignored: the popup keeps a list of
+calls. The main card is one of them; every other call is a row under it — **Also calling** ("Hold &
+answer", or "Answer" when nothing is live, plus **Decline**) or **On hold** (**Resume**, **Hang up**).
+Only one call is ever live: answering a waiting call or resuming a held one first puts the live call
+on hold, and that call takes the main card (answering also opens its producer page). When the main
+card's call ends, the next one moves up — a waiting call first, else the oldest held one, which stays
+on hold until Resume. A waiting call that stops ringing (caller gave up, answered in Teams, voicemail)
+and a held call whose caller hangs up just leave their row. The simulator adds a waiting call when
+used during a call, to exercise all of this without two phones.
 
 **Position:** every call opens in the top-right corner. The user can drag it by the grab bar (or the
 icon / status line) anywhere on screen for the rest of that call; double-clicking the grab bar puts it

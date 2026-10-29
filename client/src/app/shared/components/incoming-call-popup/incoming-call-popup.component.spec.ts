@@ -7,7 +7,7 @@ import userEvent from '@testing-library/user-event';
 import { IncomingCallPopupComponent } from './incoming-call-popup.component';
 import { IncomingCallService } from '@core/services/incoming-call.service';
 import { provideTestEnvironment } from '@testing/test-providers';
-import type { IncomingCallMatch, IncomingCallState } from '@models';
+import type { IncomingCallMatch, IncomingCallState, IncomingCallSummary } from '@models';
 
 const SMITH: IncomingCallMatch = {
   customerId: 158259, name: 'Smith Farms', scoularId: 'SMIFAR', location: 'Minden', stateProvince: 'NE',
@@ -33,6 +33,11 @@ function makeCallStub() {
       matches().length === 1 ? matches()[0] : matches().find(m => m.customerId === chosen()) ?? null),
     choose: vi.fn((id: number) => chosen.set(id)),
     clearChoice: vi.fn(() => chosen.set(null)),
+    otherCalls: signal<IncomingCallSummary[]>([]),
+    answerCall: vi.fn(async () => undefined),
+    declineCall: vi.fn(async () => undefined),
+    resumeCall: vi.fn(async () => undefined),
+    hangUpCall: vi.fn(async () => undefined),
     answer: vi.fn(async () => state.set('connected')),
     decline: vi.fn(async () => state.set('idle')),
     hold: vi.fn(), resume: vi.fn(), hangUp: vi.fn(), simulateAnsweredElsewhere: vi.fn(),
@@ -133,6 +138,86 @@ describe('IncomingCallPopupComponent', () => {
 
     await userEvent.click(screen.getByTestId('incoming-call-match-158259'));   // Smith Farms
     expect(navigate).toHaveBeenLastCalledWith(['/'], { queryParams: { customerId: 158259 } });
+  });
+
+  // ── Several calls at once ────────────────────────────────────────────────
+  const waiting = (over: Partial<IncomingCallSummary> = {}): IncomingCallSummary => ({
+    seq: 2, state: 'ringing', callerNumber: '+15155550000', displayName: null,
+    match: JONES, matchCount: 1, matchesLoading: false, ...over,
+  });
+
+  it('shows a second call as "Also calling" with Hold & answer while on a live call', async () => {
+    call.state.set('connected');
+    call.otherCalls.set([waiting()]);
+    const { navigate } = await setup();
+
+    const row = screen.getByTestId('incoming-call-other-2');
+    expect(row.textContent).toContain('Also calling');
+    expect(row.textContent).toContain('Jones Ag (JONAG)');
+
+    // Answering the waiting call: the service holds the live one; its producer page opens.
+    call.answerCall.mockImplementation(async () => {
+      call.matches.set([JONES]);
+      call.state.set('connected');
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Hold & answer' }));
+    expect(call.answerCall).toHaveBeenCalledWith(2);
+    expect(navigate).toHaveBeenCalledWith(['/'], { queryParams: { customerId: 7 } });
+  });
+
+  it('a waiting call can be declined from its row', async () => {
+    call.state.set('connected');
+    call.otherCalls.set([waiting()]);
+    await setup();
+
+    const row = screen.getByTestId('incoming-call-other-2');
+    await userEvent.click(row.querySelector('button:last-of-type') as HTMLElement);
+    expect(call.declineCall).toHaveBeenCalledWith(2);
+    expect(call.hangUp).not.toHaveBeenCalled();
+  });
+
+  it('says "Answer" (not Hold & answer) when the main call is not live', async () => {
+    call.state.set('held');
+    call.otherCalls.set([waiting()]);
+    await setup();
+
+    expect(screen.queryByRole('button', { name: 'Hold & answer' })).toBeNull();
+    expect(screen.getByTestId('incoming-call-other-2').textContent).toContain('Answer');
+  });
+
+  it('shows a held call as "On hold" with Resume and Hang up', async () => {
+    call.state.set('connected');
+    call.otherCalls.set([waiting({ state: 'held', match: SMITH })]);
+    await setup();
+
+    const row = screen.getByTestId('incoming-call-other-2');
+    expect(row.textContent).toContain('On hold');
+    expect(row.textContent).toContain('Smith Farms (SMIFAR)');
+    await userEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    expect(call.resumeCall).toHaveBeenCalledWith(2);
+    const hangUps = screen.getAllByRole('button', { name: 'Hang up' });
+    await userEvent.click(hangUps[hangUps.length - 1]);              // the row's, not the main card's
+    expect(call.hangUpCall).toHaveBeenCalledWith(2);
+    expect(call.hangUp).not.toHaveBeenCalled();
+  });
+
+  it('labels a waiting call by number while it is looked up, or when several producers share it', async () => {
+    call.state.set('connected');
+    call.otherCalls.set([
+      waiting({ seq: 2, match: null, matchCount: 0, matchesLoading: true }),
+      waiting({ seq: 3, match: null, matchCount: 3 }),
+      waiting({ seq: 4, match: null, matchCount: 0, callerNumber: null, displayName: 'Minden Main' }),
+    ]);
+    await setup();
+
+    expect(screen.getByTestId('incoming-call-other-label-2').textContent).toContain('looking up');
+    expect(screen.getByTestId('incoming-call-other-label-3').textContent).toContain('3 producers');
+    expect(screen.getByTestId('incoming-call-other-label-4').textContent).toContain('Minden Main');
+  });
+
+  it('shows no rows when there is only one call', async () => {
+    await setup();
+    expect(screen.queryByTestId('incoming-call-others')).toBeNull();
   });
 
   it('has no "back to list" link when only one producer has the number', async () => {

@@ -18,7 +18,7 @@ import { ApiService } from '@core/services/api.service';
 import { CallAudioPermissionService } from '@core/services/call-audio-permission.service';
 import { CallingSdk, CallingSdkLoader } from '@core/services/calling-sdk-loader.service';
 import { ToastService } from '@core/services/toast.service';
-import { CallingToken, IncomingCallMatch, IncomingCallState } from '@models';
+import { CallingToken, IncomingCallMatch, IncomingCallState, IncomingCallSummary } from '@models';
 import { environment } from '@env/environment';
 
 /** How long "Call ended" shows before the popup clears. */
@@ -94,6 +94,47 @@ function parseRetryAfter(value: unknown): number | null {
   return null;
 }
 
+/** One call this tab knows about: ringing, live, on hold, or just ended. */
+class CallSession {
+  readonly state = signal<IncomingCallState>('ringing');
+  readonly matches = signal<IncomingCallMatch[]>([]);
+  readonly matchesLoading = signal(false);
+  /** The producer the user picked from a multi-match chooser. */
+  readonly chosenId = signal<number | null>(null);
+  /** Epoch ms the call first connected; drives the timer. */
+  readonly connectedSince = signal<number | null>(null);
+  /** The producer this call is about: the only match, or the one the user picked. */
+  readonly selectedMatch = computed<IncomingCallMatch | null>(() => {
+    const all = this.matches();
+    if (all.length === 1) return all[0];
+    return all.find(m => m.customerId === this.chosenId()) ?? null;
+  });
+  /** Ringing: the SDK's incoming call. Answered: the live call. */
+  incoming: TeamsIncomingCall | null = null;
+  active: TeamsCall | null = null;
+  /** "The caller hung up" lingers briefly on the main card, then this removes it. */
+  endTimer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(
+    readonly seq: number,
+    readonly callerNumber: string | null,
+    readonly displayName: string | null,
+    readonly simulated: boolean,
+  ) {}
+
+  summary(): IncomingCallSummary {
+    return {
+      seq: this.seq,
+      state: this.state(),
+      callerNumber: this.callerNumber,
+      displayName: this.displayName,
+      match: this.selectedMatch(),
+      matchCount: this.matches().length,
+      matchesLoading: this.matchesLoading(),
+    };
+  }
+}
+
 /**
  * Incoming Teams phone calls, surfaced inside the Workbench.
  *
@@ -120,6 +161,12 @@ function parseRetryAfter(value: unknown): number | null {
  *
  * Teams-to-Teams calls from colleagues are ignored (they still ring this endpoint silently and are
  * answered in Teams as usual). Every other caller raises the popup; phone numbers are looked up.
+ *
+ * Several calls at once (call waiting): the service keeps a list of calls. One is on the popup's main
+ * card (the public state / caller / matches signals and answer / hold / resume / hangUp act on it);
+ * the others are rows under it (otherCalls), either waiting to be answered or on hold. Only one call
+ * is ever live: answering a waiting call, or resuming a held one, first puts the live call on hold.
+ * When the main card's call ends, the next one moves up (a waiting call first, else a held one).
  */
 @Injectable({ providedIn: 'root' })
 export class IncomingCallService {
@@ -131,27 +178,36 @@ export class IncomingCallService {
   private readonly msalBroadcast = inject(MsalBroadcastService);
   private readonly destroyRef = inject(DestroyRef);
 
-  readonly state = signal<IncomingCallState>('idle');
+  /** Every call this tab knows about, oldest first. */
+  private readonly sessions = signal<CallSession[]>([]);
+  /** The call on the popup's main card. */
+  private readonly focusedSeq = signal<number | null>(null);
+  private readonly focused = computed(() => this.sessions().find(s => s.seq === this.focusedSeq()) ?? null);
+  /** Calling is off in this environment, or the SDK could not (or can no longer) register. */
+  private readonly unavailable = signal(false);
+
+  /** The main card's call state; 'idle' (or 'unavailable') when there is no call. */
+  readonly state = computed<IncomingCallState>(() =>
+    this.focused()?.state() ?? (this.unavailable() ? 'unavailable' : 'idle'));
   /** Caller id as the SDK delivered it (E.164), or as typed into the simulator. Null when the caller
    *  is not a phone number (e.g. a call queue / resource account), in which case the popup shows
    *  `callerDisplayName`. */
-  readonly callerNumber = signal<string | null>(null);
+  readonly callerNumber = computed(() => this.focused()?.callerNumber ?? null);
   /** The display name the SDK supplied for the caller, if any. */
-  readonly callerDisplayName = signal<string | null>(null);
-  readonly matches = signal<IncomingCallMatch[]>([]);
-  readonly matchesLoading = signal(false);
-  /** The producer the user picked from a multi-match chooser. */
-  private readonly chosenId = signal<number | null>(null);
-  /** The producer this call is about: the only match, or the one the user picked. */
-  readonly selectedMatch = computed<IncomingCallMatch | null>(() => {
-    const all = this.matches();
-    if (all.length === 1) return all[0];
-    return all.find(m => m.customerId === this.chosenId()) ?? null;
+  readonly callerDisplayName = computed(() => this.focused()?.displayName ?? null);
+  readonly matches = computed<IncomingCallMatch[]>(() => this.focused()?.matches() ?? []);
+  readonly matchesLoading = computed(() => this.focused()?.matchesLoading() ?? false);
+  /** The producer the main card's call is about: the only match, or the one the user picked. */
+  readonly selectedMatch = computed<IncomingCallMatch | null>(() => this.focused()?.selectedMatch() ?? null);
+  /** Epoch ms the main card's call connected; drives the popup's timer. */
+  readonly connectedSince = computed(() => this.focused()?.connectedSince() ?? null);
+  /** True while the main card shows a simulated call (no SDK). */
+  readonly isSimulated = computed(() => this.focused()?.simulated ?? false);
+  /** The other calls, as rows under the main card: waiting to be answered, or on hold. */
+  readonly otherCalls = computed<IncomingCallSummary[]>(() => {
+    const main = this.focused();
+    return this.sessions().filter(s => s !== main).map(s => s.summary());
   });
-  /** Epoch ms the call connected; drives the popup's timer. */
-  readonly connectedSince = signal<number | null>(null);
-  /** True while a simulated call (no SDK) is on screen. */
-  readonly isSimulated = signal(false);
   /** True once the SDK is registered and listening for calls. */
   readonly isListening = signal(false);
   /** True in the tab that holds the call agent for this user; other tabs of the same browser wait. */
@@ -173,11 +229,8 @@ export class IncomingCallService {
   /** The credential the current agent was built with. Disposed with the agent, which stops its
    *  proactive-refresh timer (otherwise every discarded credential keeps fetching tokens). */
   private credential: AzureCommunicationTokenCredential | null = null;
-  private incomingCall: TeamsIncomingCall | null = null;
-  private activeCall: TeamsCall | null = null;
-  /** Guards async match lookups and timers against a newer call having replaced this one. */
+  /** Numbers the calls this tab sees. */
   private callSeq = 0;
-  private resetTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   /** Fires once a registration has stayed up STABLE_CONNECTION_MS; only then is the back-off reset. */
   private stableTimer: ReturnType<typeof setTimeout> | null = null;
@@ -248,7 +301,7 @@ export class IncomingCallService {
     this.reconnectAfterCall = false;
     this.clearReconnectTimer();
     this.clearStableTimer();
-    this.clearResetTimer();
+    for (const session of [...this.sessions()]) this.removeSession(session); // and their timers
     const client = this.callClient;
     this.callClient = null;
     this.isListening.set(false);
@@ -285,7 +338,7 @@ export class IncomingCallService {
         }
         // Off in this environment (204), or not a calling token at all (a 200 with some other body,
         // as a generic test stub answers). Either way the SDK is never downloaded.
-        this.state.set('unavailable');
+        this.unavailable.set(true);
         return;
       }
 
@@ -318,7 +371,7 @@ export class IncomingCallService {
         if (this.callAgent === agent) this.onConnectionStateChanged(newValue, reason);
       });
       this.isListening.set(true);
-      if (this.state() === 'unavailable') this.state.set('idle');
+      this.unavailable.set(false);
       this.armStableTimer();
       // This tab is now the endpoint: check (never open) the mic and offer the enable banner if needed.
       void this.audioPermission.activate();
@@ -327,7 +380,7 @@ export class IncomingCallService {
       // a host, licence. The popup just stays away; Teams itself is unaffected.
       console.warn('Incoming-call popup unavailable: calling SDK did not start', err);
       if (this.stopped) return;
-      if (!this.isVisible()) this.state.set('unavailable');
+      this.unavailable.set(true);
       this.registrationFailed(err, 'calling SDK did not start');
     }
   }
@@ -412,7 +465,7 @@ export class IncomingCallService {
         + `(last: ${why}). Calls still ring in Teams; reload the page to try again.`);
       void this.teardownAgent();
       this.audioPermission.deactivate(); // No endpoint here any more, so nothing to enable audio for.
-      if (!this.isVisible()) this.state.set('unavailable');
+      this.unavailable.set(true);
       return;
     }
 
@@ -481,205 +534,275 @@ export class IncomingCallService {
     }
 
     if (id?.kind === 'microsoftTeamsUser') return; // Colleague calling over Teams: not a producer.
-    if (this.isBusy()) return;                      // Already on a call here; Teams handles the second one.
 
-    this.incomingCall = call;
-    this.isSimulated.set(false);
+    // Already on a call here? Then this one waits as a row under it (Hold & answer / Decline).
     const number = id?.kind === 'phoneNumber' ? id.phoneNumber : null;
-    const seq = this.ring(number, info?.displayName ?? null);
-
-    call.on('callEnded', () => this.onRingEnded(seq));
+    const session = this.addSession(number, info?.displayName ?? null, false);
+    session.incoming = call;
+    call.on('callEnded', () => this.onRingEnded(session));
   }
 
   /**
-   * Ringing stopped without this tab answering: the popup simply goes away, whatever the reason —
+   * Ringing stopped without this tab answering: that call simply goes away, whatever the reason —
    * picked up in Teams desktop / mobile (487 / 10003), caller hung up, rang out to voicemail, or
    * declined elsewhere. Like Teams on several devices: whichever endpoint answers, the others stop.
    * (There used to be an "answered in Teams" banner, but the SDK sends nothing when that Teams call
    * ends, so it could only linger after the call was over — decision 2026-10-29.)
    */
-  private onRingEnded(seq: number): void {
-    if (seq !== this.callSeq || this.state() !== 'ringing') return;
-    this.incomingCall = null;
-    this.reset();
+  private onRingEnded(session: CallSession): void {
+    if (session.state() !== 'ringing') return;
+    session.incoming = null;
+    this.removeSession(session);
   }
 
-  /** Puts a call on screen and starts the producer lookup. Returns the call's sequence number. */
-  private ring(number: string | null, displayName: string | null = null): number {
-    this.clearResetTimer();
-    const seq = ++this.callSeq;
-    this.callerNumber.set(number);
-    this.callerDisplayName.set(displayName);
-    this.matches.set([]);
-    this.chosenId.set(null);
-    this.connectedSince.set(null);
-    this.state.set('ringing');
+  /** Adds a ringing call and starts its producer lookup. It takes the main card if that is free. */
+  private addSession(number: string | null, displayName: string | null, simulated: boolean): CallSession {
+    const session = new CallSession(++this.callSeq, number, displayName, simulated);
+    this.sessions.update(all => [...all, session]);
+    if (!this.focused()) this.focusedSeq.set(session.seq);
 
-    if (!number) {
-      this.matchesLoading.set(false); // Nothing to look up; the popup shows the display name.
-      return seq;
+    if (number) {
+      session.matchesLoading.set(true);
+      this.api.getIncomingCallMatches(number).subscribe(matches => {
+        session.matches.set(matches);
+        session.matchesLoading.set(false);
+      });
     }
-
-    this.matchesLoading.set(true);
-    this.api.getIncomingCallMatches(number).subscribe(matches => {
-      if (seq !== this.callSeq) return;
-      this.matches.set(matches);
-      this.matchesLoading.set(false);
-    });
-    return seq;
+    return session;
   }
 
-  // ── User actions ──────────────────────────────────────────────────────────
+  // ── User actions on the main card ─────────────────────────────────────────
 
   /** Remembers which producer the user picked when several share the number. */
   choose(customerId: number): void {
-    this.chosenId.set(customerId);
+    this.focused()?.chosenId.set(customerId);
   }
 
   /** Back to the list when several producers share the number (the user picked the wrong one). */
   clearChoice(): void {
-    this.chosenId.set(null);
+    this.focused()?.chosenId.set(null);
   }
 
-  /** Answers in the browser: asks for the microphone (the only place the service touches it), then
-   *  accepts the call. */
+  /** Answers the main card's call in the browser (putting any live call on hold first). */
   async answer(): Promise<void> {
-    if (this.state() !== 'ringing') return;
-
-    if (this.isSimulated()) {
-      this.markConnected();
-      return;
-    }
-
-    const call = this.incomingCall;
-    if (!call || !this.callClient) return;
-
-    this.state.set('connecting');
-    try {
-      const devices = await this.callClient.getDeviceManager();
-      await devices.askDevicePermission({ audio: true, video: false });
-      const active = await call.accept();
-      this.incomingCall = null;
-      this.activeCall = active;
-      // Ignore events from a call this service has already let go of (e.g. after the user hung up).
-      active.on('stateChanged', () => {
-        if (this.activeCall === active) this.onActiveCallState(active.state);
-      });
-      this.onActiveCallState(active.state);
-    } catch (err) {
-      console.warn('Could not answer the call in the browser', err);
-      this.toast.error('Could not answer here — pick up in Teams instead.');
-      // Still ringing in Teams; keep the popup so the producer link stays one click away.
-      if (this.state() === 'connecting') this.state.set('ringing');
-    }
+    const session = this.focused();
+    if (session?.state() === 'ringing') await this.answerSession(session);
   }
 
   async decline(): Promise<void> {
-    if (this.state() !== 'ringing') return;
-    const call = this.incomingCall;
-    this.reset();
-    if (call) {
-      try {
-        await call.reject();
-      } catch (err) {
-        console.warn('Could not decline the call', err);
-      }
-    }
+    const session = this.focused();
+    if (session?.state() === 'ringing') await this.declineSession(session);
   }
 
   async hold(): Promise<void> {
-    if (this.state() !== 'connected') return;
-    if (this.isSimulated()) {
-      this.state.set('held');
-      return;
-    }
-    await this.activeCall?.hold().catch(err => console.warn('Hold failed', err));
+    const session = this.focused();
+    if (session?.state() === 'connected') await this.holdSession(session);
   }
 
   async resume(): Promise<void> {
-    if (this.state() !== 'held') return;
-    if (this.isSimulated()) {
-      this.state.set('connected');
-      return;
-    }
-    await this.activeCall?.resume().catch(err => console.warn('Resume failed', err));
+    const session = this.focused();
+    if (session?.state() === 'held') await this.resumeSession(session);
   }
 
-  /** Ends the call and closes the popup straight away: the user knows they hung up, so there is
-   *  nothing to acknowledge. (When the CALLER hangs up, "Call ended" shows briefly instead.) */
+  /** Ends the call and takes it off the popup straight away: the user knows they hung up, so there
+   *  is nothing to acknowledge. (When the CALLER hangs up, "Call ended" shows briefly instead.) */
   async hangUp(): Promise<void> {
-    if (this.state() !== 'connected' && this.state() !== 'held') return;
-    const call = this.activeCall;
-    this.reset();
-    await call?.hangUp().catch(err => console.warn('Hang up failed', err));
+    const session = this.focused();
+    if (session) await this.hangUpSession(session);
+  }
+
+  // ── User actions on the other calls (rows under the main card) ────────────
+
+  /** "Hold & answer": the live call goes on hold, this one connects and takes the main card. */
+  async answerCall(seq: number): Promise<void> {
+    const session = this.find(seq);
+    if (session?.state() === 'ringing') await this.answerSession(session);
+  }
+
+  async declineCall(seq: number): Promise<void> {
+    const session = this.find(seq);
+    if (session?.state() === 'ringing') await this.declineSession(session);
+  }
+
+  /** Switches to a held call: the live one goes on hold, this one resumes and takes the main card. */
+  async resumeCall(seq: number): Promise<void> {
+    const session = this.find(seq);
+    if (session?.state() === 'held') await this.resumeSession(session);
+  }
+
+  async hangUpCall(seq: number): Promise<void> {
+    const session = this.find(seq);
+    if (session) await this.hangUpSession(session);
   }
 
   // ── Simulation (local and Dev only) ──────────────────────────────────────
 
-  /** Runs the whole popup flow for a typed-in number, without the SDK or a real call. */
+  /** Runs the popup flow for a typed-in number, without the SDK or a real call. While another call is
+   *  on screen it arrives as a waiting call, which exercises Hold & answer. */
   simulate(number: string): void {
-    if (!this.canSimulate || !number.trim() || this.isBusy()) return;
-    this.isSimulated.set(true);
-    this.ring(number.trim());
+    if (!this.canSimulate || !number.trim()) return;
+    this.addSession(number.trim(), null, true);
   }
 
   /** Simulates the caller hanging up mid-call. */
   simulateCallerHungUp(): void {
-    if (!this.isSimulated()) return;
-    const s = this.state();
-    if (s === 'connected' || s === 'held') this.markEnded();
+    const session = this.focused();
+    if (!session?.simulated) return;
+    const s = session.state();
+    if (s === 'connected' || s === 'held') this.markEnded(session);
   }
 
-  /** Simulates the user picking up on the Teams desktop app instead: the popup goes away. */
+  /** Simulates the user picking up on the Teams desktop app instead: the call goes away. */
   simulateAnsweredElsewhere(): void {
-    if (!this.isSimulated()) return;
-    this.onRingEnded(this.callSeq);
+    const session = this.focused();
+    if (session?.simulated) this.onRingEnded(session);
   }
 
   // ── Internals ─────────────────────────────────────────────────────────────
 
-  private onActiveCallState(state: CallState): void {
+  private find(seq: number): CallSession | null {
+    return this.sessions().find(s => s.seq === seq) ?? null;
+  }
+
+  /** Answers in the browser: puts any live call on hold, asks for the microphone (the only place the
+   *  service touches it), then accepts. The answered call takes the main card. */
+  private async answerSession(session: CallSession): Promise<void> {
+    if (this.hasLiveCallOtherThan(session)) await this.holdLiveCalls(session);
+    this.focusedSeq.set(session.seq);
+
+    if (session.simulated) {
+      this.markConnected(session);
+      return;
+    }
+
+    const call = session.incoming;
+    if (!call || !this.callClient) return;
+
+    session.state.set('connecting');
+    try {
+      const devices = await this.callClient.getDeviceManager();
+      await devices.askDevicePermission({ audio: true, video: false });
+      const active = await call.accept();
+      session.incoming = null;
+      session.active = active;
+      // Ignore events from a call this service has already let go of (e.g. after the user hung up).
+      active.on('stateChanged', () => {
+        if (session.active === active) this.onActiveCallState(session, active.state);
+      });
+      this.onActiveCallState(session, active.state);
+    } catch (err) {
+      console.warn('Could not answer the call in the browser', err);
+      this.toast.error('Could not answer here — pick up in Teams instead.');
+      // Still ringing in Teams; keep it on screen so the producer link stays one click away.
+      if (session.state() === 'connecting') session.state.set('ringing');
+    }
+  }
+
+  private async declineSession(session: CallSession): Promise<void> {
+    const call = session.incoming;
+    this.removeSession(session);
+    await call?.reject().catch(err => console.warn('Could not decline the call', err));
+  }
+
+  private async holdSession(session: CallSession): Promise<void> {
+    if (!session.simulated) {
+      try {
+        await session.active?.hold();
+      } catch (err) {
+        console.warn('Hold failed', err);
+        return;
+      }
+    }
+    // The SDK also reports LocalHold; setting it here keeps the screen right if that is late.
+    if (session.state() === 'connected') session.state.set('held');
+  }
+
+  private async resumeSession(session: CallSession): Promise<void> {
+    if (this.hasLiveCallOtherThan(session)) await this.holdLiveCalls(session);
+    this.focusedSeq.set(session.seq);
+    if (!session.simulated) {
+      try {
+        await session.active?.resume();
+      } catch (err) {
+        console.warn('Resume failed', err);
+        return;
+      }
+    }
+    if (session.state() === 'held') this.markConnected(session);
+  }
+
+  private async hangUpSession(session: CallSession): Promise<void> {
+    const s = session.state();
+    if (s !== 'connected' && s !== 'held') return;
+    const call = session.active;
+    this.removeSession(session);
+    await call?.hangUp().catch(err => console.warn('Hang up failed', err));
+  }
+
+  private hasLiveCallOtherThan(session: CallSession): boolean {
+    return this.sessions().some(s => s !== session && s.state() === 'connected');
+  }
+
+  /** Only one call is live at a time: hold whichever is, before another connects. */
+  private async holdLiveCalls(except: CallSession): Promise<void> {
+    for (const other of this.sessions()) {
+      if (other !== except && other.state() === 'connected') await this.holdSession(other);
+    }
+  }
+
+  private onActiveCallState(session: CallSession, state: CallState): void {
     switch (state) {
       case 'Connected':
-        this.markConnected();
+        this.markConnected(session);
         break;
       case 'LocalHold':
-        this.state.set('held');
+        session.state.set('held');
         break;
       case 'Disconnected':
-        this.activeCall = null;
-        this.markEnded();
+        session.active = null;
+        this.markEnded(session);
         break;
       default:
         break; // Connecting / RemoteHold / Disconnecting: keep what the user sees.
     }
   }
 
-  private markConnected(): void {
-    if (this.connectedSince() === null) this.connectedSince.set(Date.now());
-    this.state.set('connected');
+  private markConnected(session: CallSession): void {
+    if (session.connectedSince() === null) session.connectedSince.set(Date.now());
+    session.state.set('connected');
   }
 
-  private markEnded(): void {
-    this.state.set('ended');
-    this.scheduleReset(this.callSeq, ENDED_LINGER_MS);
+  /** The other side hung up. On the main card "The caller hung up" shows briefly; a call on hold
+   *  or waiting just disappears from its row. */
+  private markEnded(session: CallSession): void {
+    if (session !== this.focused()) {
+      this.removeSession(session);
+      return;
+    }
+    session.state.set('ended');
+    if (session.endTimer !== null) clearTimeout(session.endTimer);
+    session.endTimer = setTimeout(() => this.removeSession(session), ENDED_LINGER_MS);
   }
 
+  /** Takes a call off the popup. If it was on the main card, the next call moves up: a waiting one
+   *  first (so it can be answered), else the oldest held one (which stays on hold until Resume). */
+  private removeSession(session: CallSession): void {
+    if (session.endTimer !== null) clearTimeout(session.endTimer);
+    session.endTimer = null;
+    session.incoming = null;
+    session.active = null;
+    const rest = this.sessions().filter(s => s !== session);
+    this.sessions.set(rest);
+    if (this.focusedSeq() === session.seq) {
+      const next = rest.find(s => s.state() === 'ringing') ?? rest[0] ?? null;
+      this.focusedSeq.set(next?.seq ?? null);
+    }
+    if (rest.length === 0) this.resumeAfterCall();
+  }
+
+  /** Anything on screen counts: a re-registration would drop the calls it holds. */
   private isBusy(): boolean {
-    const s = this.state();
-    return s === 'ringing' || s === 'connecting' || s === 'connected' || s === 'held';
-  }
-
-  private scheduleReset(seq: number, delayMs: number): void {
-    this.clearResetTimer();
-    this.resetTimer = setTimeout(() => {
-      if (seq === this.callSeq) this.reset();
-    }, delayMs);
-  }
-
-  private clearResetTimer(): void {
-    if (this.resetTimer !== null) clearTimeout(this.resetTimer);
-    this.resetTimer = null;
+    return this.sessions().length > 0;
   }
 
   private clearReconnectTimer(): void {
@@ -687,18 +810,4 @@ export class IncomingCallService {
     this.reconnectTimer = null;
   }
 
-  private reset(): void {
-    this.clearResetTimer();
-    this.incomingCall = null;
-    this.activeCall = null;
-    this.callerNumber.set(null);
-    this.callerDisplayName.set(null);
-    this.matches.set([]);
-    this.matchesLoading.set(false);
-    this.chosenId.set(null);
-    this.connectedSince.set(null);
-    this.isSimulated.set(false);
-    this.state.set('idle');
-    this.resumeAfterCall();
-  }
 }
