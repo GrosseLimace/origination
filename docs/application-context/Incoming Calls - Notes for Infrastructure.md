@@ -9,7 +9,7 @@ We followed the guide. The browser acquires the ACS Teams token, the API exchang
 | Item | Status |
 |---|---|
 | API token-exchange endpoint (`POST /api/calling/token`) | **Built**, tests green |
-| Caller lookup (`GET /api/calling/match?number=`) | **Built**, tests green |
+| Caller lookup (`POST /api/calling/match`, number in the body) | **Built**, tests green |
 | Angular call agent, single-tab election, popup | **Built**, tests green |
 | CSP `connect-src` for the calling hosts (config-gated) | **Built**; to be tightened from the Dev console findings |
 | Dev config (`appsettings.Dev.json`, `environment.dev.ts`) | **Set** to the guide's reference values |
@@ -41,7 +41,7 @@ All deliberate and all on our side; nothing here changes what Infrastructure pro
 | # | Guide says | Origination does | Why |
 |---|---|---|---|
 | 1 | Endpoint route `POST /api/v1/calling/token` | `POST /api/calling/token` | This API has no `/v1` prefix anywhere; every controller is `api/[controller]`. Same contract otherwise (body `{ teamsUserAadToken }`, response `{ token, expiresOn }`). |
-| 2 | Customer lookup `GET /api/v1/customers/by-phone` | `GET /api/calling/match?number=` | The lookup already existed under the calling controller. It also returns the **added-contact name** when the number belongs to a contact an originator saved on the producer, so the popup can say *who* is calling, not just which producer. |
+| 2 | Customer lookup `GET /api/v1/customers/by-phone` | `POST /api/calling/match` (number in the body, so it never lands in App Insights' `requests.url`) | The lookup already existed under the calling controller. It also returns the **added-contact name** when the number belongs to a contact an originator saved on the producer, so the popup can say *who* is calling, not just which producer. |
 | 3 | On the exchange, `catch RequestFailedException → 502` | Same, plus **204 when calling is not configured** in the environment, and 400 when the body carries no token | 204 is how the client knows "this environment has no calling" and never downloads the SDK (QA and Production today). Error bodies use the API's standard error envelope. |
 | 4 | Locally use `new DefaultAzureCredential()` | `DefaultAzureCredential` with the managed-identity probe excluded | Same result (the developer's `az login`), but without the IMDS probe that times out on a laptop. Matches how the rest of the API already builds credentials. On App Service it is `ManagedIdentityCredential(SystemAssigned)` exactly as in the guide. |
 | 5 | Register `CommunicationIdentityClient` as a singleton | A singleton factory that caches one client per endpoint | Lets tests substitute a mock client, and lets the API start with `Acs:Endpoint` empty (no client is constructed until the first exchange). Behaviourally one client, as the guide intends. |
@@ -85,7 +85,7 @@ All deliberate and all on our side; nothing here changes what Infrastructure pro
 
 ## POC test plan — what the build captures
 
-In non-production builds the browser console logs, for every incoming call:
+In local and Dev builds (`environment.logCallerInfo`; off in QA and Production) the browser console logs, for every incoming call:
 
 ```
 [incoming-call] callerInfo {"identifier":{"kind":"phoneNumber","phoneNumber":"+1..."},"displayName":"..."} transferorInfo {...}|null

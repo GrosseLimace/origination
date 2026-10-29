@@ -62,13 +62,17 @@ public class CallingController : ControllerBase
 
     // -------------------------------------------------------------------------
     /// <summary>Producers whose phone on file matches the caller id. Always 200; an empty list is
-    /// the "unknown caller" case. The number is never logged (it is a producer's phone).</summary>
-    [HttpGet("match")]
+    /// the "unknown caller" case. The number is never logged (it is a producer's phone).
+    /// <para>POST with the number in the body, not GET with a query string: App Service
+    /// auto-instrumentation records the full request URL in Application Insights (<c>requests.url</c>),
+    /// so a query string would put every caller's number there (Infrastructure, 2026-10-29). Bodies are
+    /// not recorded.</para></summary>
+    [HttpPost("match")]
     [ProducesResponseType(typeof(List<IncomingCallMatchResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<IncomingCallMatchResponse>>> Match(
-        [FromQuery] string? number, CancellationToken cancellationToken = default)
+        [FromBody] MatchIncomingCallRequest request, CancellationToken cancellationToken = default)
     {
-        return Ok(await _matches.MatchAsync(number, cancellationToken));
+        return Ok(await _matches.MatchAsync(request?.Number, cancellationToken));
     }
 
     private ApiErrorResponse Error(string code, string message) => new()

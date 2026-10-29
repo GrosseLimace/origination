@@ -1,4 +1,4 @@
-/** A producer whose phone on file matches an incoming caller id (GET /api/calling/match). */
+/** A producer whose phone on file matches an incoming caller id (POST /api/calling/match). */
 export interface IncomingCallMatch {
   customerId: number;
   name: string;

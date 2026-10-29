@@ -1334,9 +1334,9 @@ export class ApiService {
 
   /** Producers whose phone on file matches a caller id. The number travels as a query
    *  parameter, never in the path. Errors become an empty list ("unknown caller"). */
+  /** POST, number in the body: a query string would land in App Insights (requests.url) on the API. */
   getIncomingCallMatches(number: string): Observable<IncomingCallMatch[]> {
-    const params = new HttpParams().set('number', number);
-    return this.http.get<IncomingCallMatch[]>(`${this.baseUrl}/calling/match`, { params })
+    return this.http.post<IncomingCallMatch[]>(`${this.baseUrl}/calling/match`, { number })
       .pipe(catchError(() => of<IncomingCallMatch[]>([])));
   }
 }

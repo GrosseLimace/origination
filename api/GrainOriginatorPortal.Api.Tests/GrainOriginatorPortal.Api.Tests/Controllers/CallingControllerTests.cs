@@ -102,7 +102,7 @@ public class CallingControllerTests
         _matches.Setup(m => m.MatchAsync("+14025550000", It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
 
-        var result = await Build().Match("+14025550000", CancellationToken.None);
+        var result = await Build().Match(new MatchIncomingCallRequest { Number = "+14025550000" }, CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         Assert.Empty(Assert.IsType<List<IncomingCallMatchResponse>>(ok.Value));
@@ -115,9 +115,25 @@ public class CallingControllerTests
         _matches.Setup(m => m.MatchAsync("(402) 555-4914", It.IsAny<CancellationToken>()))
             .ReturnsAsync([new IncomingCallMatchResponse { CustomerId = 1, Name = "Smith Farms" }]);
 
-        var result = await Build().Match("(402) 555-4914", CancellationToken.None);
+        var result = await Build().Match(new MatchIncomingCallRequest { Number = "(402) 555-4914" }, CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         Assert.Single(Assert.IsType<List<IncomingCallMatchResponse>>(ok.Value));
+    }
+
+    [Fact]
+    public void Match_TakesTheNumberFromTheBody_NeverTheUrl()
+    {
+        // App Insights records requests.url (query string included) but not bodies, so the caller's
+        // phone number must never become part of the URL.
+        var method = typeof(CallingController).GetMethod(nameof(CallingController.Match))!;
+
+        Assert.Single(method.GetCustomAttributes(typeof(HttpPostAttribute), false));
+        Assert.Empty(method.GetCustomAttributes(typeof(HttpGetAttribute), false));
+        Assert.All(method.GetParameters().Where(p => p.ParameterType != typeof(CancellationToken)), p =>
+        {
+            Assert.Empty(p.GetCustomAttributes(typeof(FromQueryAttribute), false));
+            Assert.Empty(p.GetCustomAttributes(typeof(FromRouteAttribute), false));
+        });
     }
 }

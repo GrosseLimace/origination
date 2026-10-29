@@ -1630,7 +1630,8 @@ consent on the SPA registration), and `POST /api/calling/token` exchanges it for
 with the Identity SDK. The user's object id is taken from the VALIDATED API token, never from the
 request body, and ACS rejects the exchange unless the Entra token was issued to that same user and to
 the configured SPA client id — so a caller can only ever mint a calling token for themselves. Tokens
-are not cached server-side and are never logged. `GET /api/calling/match` reads the same producer
+are not cached server-side and are never logged. `POST /api/calling/match` (caller id in the body, never
+the URL, which App Insights records) reads the same producer
 rows the caller can already search; cross-trade-unit producer reads are covered by AR-02, which
 already names the incoming-call popup.
 
