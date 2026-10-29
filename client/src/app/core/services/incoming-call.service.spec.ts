@@ -309,6 +309,36 @@ describe('IncomingCallService', () => {
       await vi.waitFor(() => expect(service.isListening()).toBe(true));
     });
 
+    it('keeps the agent when the SDK recovers by itself before the rebuild is due', async () => {
+      const service = create();
+      await startListening(service);
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+      // What Dev showed after every registration: a blip ~0.5 s in, then the SDK reconnects itself.
+      fake.connection('Disconnected', 'connectionIssue');
+      expect(service.isListening()).toBe(false);
+      fake.connection('Connected');
+      expect(service.isListening()).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(RECONNECT_MAX_DELAY_MS);
+      httpMock.expectNone(tokenUrl);                       // no new token, so no rebuild
+      expect(fake.agent.dispose).not.toHaveBeenCalled();
+      expect(fake.credentials[0].dispose).not.toHaveBeenCalled();
+      expect(fake.createTeamsCallAgent).toHaveBeenCalledTimes(1);
+    });
+
+    it('still rebuilds when the connection stays down', async () => {
+      const service = create();
+      await startListening(service);
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+      fake.connection('Disconnected', 'connectionIssue');
+      fake.connection('Connecting');                       // not a recovery
+      await expectRetryAfter(reconnectDelayMs(0));
+      await vi.waitFor(() => expect(service.isListening()).toBe(true));
+      expect(fake.agent.dispose).toHaveBeenCalled();
+    });
+
     it('treats invalidToken the same way: rebuilds with a fresh token after the back-off', async () => {
       const service = create();
       await startListening(service);

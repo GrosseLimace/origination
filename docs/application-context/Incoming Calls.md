@@ -100,6 +100,13 @@ flowchart LR
   a call waits for the call to end. Each retry logs `[incoming-call] … re-registering in N s`.
   *Why:* the first Dev build re-registered every ~3 s, which got the user throttled by the Teams
   registrar (`retryAfter` ~2 min) and, by retrying inside the window, kept the throttle from clearing.
+- **A blip the SDK recovers from is not a failure.** The rebuild is only scheduled: if the SDK
+  reports `Connected` again before it is due, the rebuild is cancelled and the working agent kept
+  (console `[incoming-call] connection restored by the SDK; rebuild cancelled`). *Why:* on Dev
+  (2026-10-29) the SDK reported `Disconnected (connectionIssue)` about 0.5 s after nearly every
+  registration and then reconnected by itself — a call rang and was answered on an agent already
+  marked lost. Rebuilding it anyway only started a new agent that blipped the same way, so calls got
+  through only during the long back-off waits.
 - **Sign-out** disposes the agent (header `signOut()` → `IncomingCallService.stop()`).
 - A sleeping laptop drops the connection; a background tab is throttled but keeps working.
 
