@@ -372,11 +372,22 @@ export class IncomingCallService {
    * `invalidToken` is rebuilt the same way: the SDK offers no way to hand an existing agent a new
    * credential, and the rebuild fetches a fresh token anyway. The SDK retries the registrar itself
    * while connected, so this only acts on what it reports as lost.
+   *
+   * The rebuild is only scheduled, never immediate: the SDK reports a brief Disconnected
+   * (connectionIssue) about half a second after nearly every registration and then recovers by
+   * itself (seen on Dev 2026-10-29: a call rang and was answered on an agent already marked "lost").
+   * So a Connected before the timer fires cancels the rebuild and keeps the working agent; tearing
+   * it down only starts the next one, which does the same.
    */
   private onConnectionStateChanged(newState: ConnectionState, reason?: ConnectionStateChangedReason): void {
     if (this.stopped || this.gaveUp) return;
     if (newState === 'Connected') {
       this.isListening.set(true);
+      this.reconnectAfterCall = false;
+      if (this.reconnectTimer !== null) {
+        this.clearReconnectTimer();
+        console.info('[incoming-call] connection restored by the SDK; rebuild cancelled');
+      }
       if (!this.stableTimer) this.armStableTimer();
       return;
     }
