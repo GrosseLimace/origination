@@ -38,6 +38,8 @@ export interface IncomingCallSummary {
   match: IncomingCallMatch | null;
   matchCount: number;
   matchesLoading: boolean;
+  /** Epoch ms the call first connected (null while it has only rung). */
+  connectedSince: number | null;
 }
 
 export type IncomingCallState =
