@@ -153,7 +153,9 @@ describe('IncomingCallPopupComponent', () => {
 
     const row = screen.getByTestId('incoming-call-other-2');
     expect(row.textContent).toContain('Also calling');
-    expect(row.textContent).toContain('Jones Ag (JONAG)');
+    expect(screen.getByTestId('incoming-call-other-label-2').textContent).toContain('Jones Ag');
+    expect(row.textContent).toContain('JONAG');
+    expect(row.textContent).toContain('(515) 555-0000');
 
     // Answering the waiting call: the service holds the live one; its producer page opens.
     call.answerCall.mockImplementation(async () => {
@@ -192,7 +194,8 @@ describe('IncomingCallPopupComponent', () => {
 
     const row = screen.getByTestId('incoming-call-other-2');
     expect(row.textContent).toContain('On hold');
-    expect(row.textContent).toContain('Smith Farms (SMIFAR)');
+    expect(screen.getByTestId('incoming-call-other-label-2').textContent).toContain('Smith Farms');
+    expect(row.textContent).toContain('SMIFAR · Minden, NE');
     await userEvent.click(screen.getByRole('button', { name: 'Resume' }));
     expect(call.resumeCall).toHaveBeenCalledWith(2);
     const hangUps = screen.getAllByRole('button', { name: 'Hang up' });
@@ -210,8 +213,8 @@ describe('IncomingCallPopupComponent', () => {
     ]);
     await setup();
 
-    expect(screen.getByTestId('incoming-call-other-label-2').textContent).toContain('looking up');
-    expect(screen.getByTestId('incoming-call-other-label-3').textContent).toContain('3 producers');
+    expect(screen.getByTestId('incoming-call-other-2').textContent).toContain('Looking up producer');
+    expect(screen.getByTestId('incoming-call-other-3').textContent).toContain('3 producers share this number');
     expect(screen.getByTestId('incoming-call-other-label-4').textContent).toContain('Minden Main');
   });
 

@@ -109,26 +109,42 @@ import { formatCallerId } from '@shared/utils/phone';
               }
             </div>
           </div>
-          <!-- Other calls (call waiting): waiting to be answered, or on hold. Only one call is ever live. -->
+          <!-- Other calls (call waiting): each its own small card, laid out like the main one. A waiting
+               call is tinted green with a pulsing dot so it stands out; a held call is grey. Only one
+               call is ever live. -->
           @if (call.otherCalls().length > 0) {
-            <div class="mt-3 pt-2 border-t border-gray-200 dark:border-gray-700 flex flex-col gap-2" data-testid="incoming-call-others">
+            <div class="mt-3 flex flex-col gap-2" data-testid="incoming-call-others">
               @for (o of call.otherCalls(); track o.seq) {
-                <div class="flex items-center gap-2" [attr.data-testid]="'incoming-call-other-' + o.seq">
-                  <div class="flex-1 min-w-0">
-                    <p class="text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                      {{ o.state === 'ringing' ? 'Also calling' : 'On hold' }}
-                    </p>
-                    <p class="text-sm text-gray-800 dark:text-gray-200 truncate" [attr.data-testid]="'incoming-call-other-label-' + o.seq">{{ otherLabel(o) }}</p>
+                <div class="rounded-md border px-3 py-2"
+                     [class]="o.state === 'ringing'
+                       ? 'border-scoular-green/50 bg-scoular-green/10'
+                       : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40'"
+                     [attr.data-testid]="'incoming-call-other-' + o.seq">
+                  <div class="flex items-center gap-2">
+                    @if (o.state === 'ringing') {
+                      <span class="h-2 w-2 rounded-full bg-scoular-green animate-pulse flex-shrink-0" aria-hidden="true"></span>
+                      <p class="text-xs font-semibold uppercase tracking-wide text-scoular-green-accessible dark:text-scoular-green">Also calling</p>
+                    } @else {
+                      <span class="h-2 w-2 rounded-full bg-gray-400 flex-shrink-0" aria-hidden="true"></span>
+                      <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">On hold</p>
+                    }
+                    <p class="ml-auto text-xs text-gray-500 dark:text-gray-400 tabular-nums">{{ otherNumber(o) }}</p>
                   </div>
-                  @if (o.state === 'ringing') {
-                    <button type="button" (click)="answerOther(o.seq)" class="flex-shrink-0 rounded-md bg-scoular-green-accessible hover:opacity-90 text-white text-xs font-medium px-2.5 py-1.5">
-                      {{ hasLiveCall() ? 'Hold & answer' : 'Answer' }}
-                    </button>
-                    <button type="button" (click)="call.declineCall(o.seq)" class="flex-shrink-0 rounded-md bg-scoular-red-accessible hover:opacity-90 text-white text-xs font-medium px-2.5 py-1.5">Decline</button>
-                  } @else if (o.state === 'held') {
-                    <button type="button" (click)="call.resumeCall(o.seq)" class="flex-shrink-0 rounded-md bg-scoular-green-accessible hover:opacity-90 text-white text-xs font-medium px-2.5 py-1.5">Resume</button>
-                    <button type="button" (click)="call.hangUpCall(o.seq)" class="flex-shrink-0 rounded-md bg-scoular-red-accessible hover:opacity-90 text-white text-xs font-medium px-2.5 py-1.5">Hang up</button>
+                  <p class="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100 truncate" [attr.data-testid]="'incoming-call-other-label-' + o.seq">{{ otherTitle(o) }}</p>
+                  @if (otherDetail(o); as detail) {
+                    <p class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ detail }}</p>
                   }
+                  <div class="mt-2 flex gap-2">
+                    @if (o.state === 'ringing') {
+                      <button type="button" (click)="answerOther(o.seq)" class="flex-1 rounded-md bg-scoular-green-accessible hover:opacity-90 text-white text-sm font-medium px-3 py-1.5">
+                        {{ hasLiveCall() ? 'Hold & answer' : 'Answer' }}
+                      </button>
+                      <button type="button" (click)="call.declineCall(o.seq)" class="flex-1 rounded-md bg-scoular-red-accessible hover:opacity-90 text-white text-sm font-medium px-3 py-1.5">Decline</button>
+                    } @else if (o.state === 'held') {
+                      <button type="button" (click)="call.resumeCall(o.seq)" class="flex-1 rounded-md bg-scoular-green-accessible hover:opacity-90 text-white text-sm font-medium px-3 py-1.5">Resume</button>
+                      <button type="button" (click)="call.hangUpCall(o.seq)" class="flex-1 rounded-md bg-scoular-red-accessible hover:opacity-90 text-white text-sm font-medium px-3 py-1.5">Hang up</button>
+                    }
+                  </div>
                 </div>
               }
             </div>
@@ -211,17 +227,27 @@ export class IncomingCallPopupComponent {
   /** True while the main card's call is live, so answering a waiting call means holding this one. */
   readonly hasLiveCall = computed(() => this.call.state() === 'connected');
 
-  /** One line for a waiting / held call: who it is (as on the main card), else the number. */
-  otherLabel(o: IncomingCallSummary): string {
-    const number = o.callerNumber ? formatCallerId(o.callerNumber) : (o.displayName ?? 'Unknown caller');
+  /** The other call's number (top right of its card), or the SDK's display name. */
+  otherNumber(o: IncomingCallSummary): string {
+    return o.callerNumber ? formatCallerId(o.callerNumber) : (o.displayName ?? '');
+  }
+
+  /** Who the other call is, in bold: the contact or producer name, as on the main card. */
+  otherTitle(o: IncomingCallSummary): string {
     const m = o.match;
-    if (m) {
-      const producer = m.scoularId ? `${m.name} (${m.scoularId})` : m.name;
-      return m.contactName ? `${m.contactName}, ${producer}` : producer;
-    }
-    if (o.matchesLoading) return `${number} · looking up…`;
-    if (o.matchCount > 1) return `${number} · ${o.matchCount} producers`;
-    return number;
+    if (m) return m.contactName || m.name;
+    if (!o.callerNumber && o.displayName) return o.displayName;
+    return 'Unknown caller';
+  }
+
+  /** The line under it: whose contact, customer code and location — or why there is no name yet. */
+  otherDetail(o: IncomingCallSummary): string | null {
+    const m = o.match;
+    if (m) return [m.contactName ? m.name : null, this.detailLine(m)].filter(Boolean).join(' · ') || null;
+    if (o.matchesLoading) return 'Looking up producer…';
+    if (o.matchCount > 1) return `${o.matchCount} producers share this number`;
+    if (!o.callerNumber && o.displayName) return null;
+    return 'No producer has this number on file';
   }
 
   /** Hold & answer a waiting call, then open its producer's page (like Answer on the main card). */
