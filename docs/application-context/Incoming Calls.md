@@ -64,17 +64,29 @@ flowchart LR
 4. **204 = calling is off here** (`Acs:Endpoint` / `Acs:TeamsClientId` empty). **502** = ACS refused
    (wrong client id, token for another user, identity lacks the role, no Teams licence; the status and
    error code are logged). Either way the client settles in `unavailable` and **never downloads the SDK**.
-5. Otherwise the SDK chunk is lazy-loaded (~1.2 MB compressed, never in the initial bundle), the browser
-   asks for the microphone once up front, `createTeamsCallAgent` registers the endpoint, and
-   `AzureCommunicationTokenCredential` re-runs both hops before the token expires.
+5. Otherwise the SDK chunk is lazy-loaded (~1.2 MB compressed, never in the initial bundle),
+   `createTeamsCallAgent` registers the endpoint, and `AzureCommunicationTokenCredential` re-runs both
+   hops before the token expires. **The microphone is not touched at registration**: the SDK's
+   `askDevicePermission` opens a real capture stream and holds it for seconds even when permission is
+   already granted (it kept the mic-in-use light on during the Dev POC), so it is only asked for when
+   the user clicks **Answer**.
 
 ### One endpoint per browser, kept alive
 
 - **Only one tab registers.** Every tab with a call agent is a separate Teams endpoint that rings and
   can answer, so the service takes a Web Lock (`origination.incomingCall.agent`); the tab that holds
   it is the endpoint, other tabs of the same browser wait, and when it closes the next one takes over.
-- **Reconnect.** If the SDK reports `connectionStateChanged → Disconnected` outside a call, the agent
-  is disposed and re-created with a back-off (2 s … 60 s).
+- **Reconnect.** If the SDK reports `connectionStateChanged → Disconnected` (any reason, including
+  `invalidToken`: the rebuild fetches a fresh token) or agent creation fails, the agent and its
+  credential are disposed and re-created on the same `CallClient` (one per tab, disposed on sign-out).
+  Back-off is exponential with ±20 % jitter: 5 s, 10 s, 20 s, 40 s, 80 s (cap 5 min), and never
+  shorter than a throttle's `retryAfter` (Teams registrar `429` / `42901`; 2 min if the value is
+  unreadable). The back-off only resets after a registration has stayed up for 60 s. After **6
+  consecutive failures** the tab gives up (`unavailable`, console
+  `[incoming-call] giving up after 6 failed registrations …`) until the next page load. A drop during
+  a call waits for the call to end. Each retry logs `[incoming-call] … re-registering in N s`.
+  *Why:* the first Dev build re-registered every ~3 s, which got the user throttled by the Teams
+  registrar (`retryAfter` ~2 min) and, by retrying inside the window, kept the throttle from clearing.
 - **Sign-out** disposes the agent (header `signOut()` → `IncomingCallService.stop()`).
 - A sleeping laptop drops the connection; a background tab is throttled but keeps working.
 
@@ -209,7 +221,8 @@ exercises the banner; once connected, **Simulate: caller hangs up** exercises th
 **Real call from a laptop (local):** `az login` first — the exchange runs as you, and
 `Azure - Origination App - Developer Admins` holds the ACS role. Start the API with the `http`
 profile and `ng serve`; `appsettings.Development.json` points at the Dev ACS resource. Sign in,
-allow the microphone, and call your own Teams number from a phone that is on file for a producer.
+call your own Teams number from a phone that is on file for a producer, and allow the microphone when
+you click Answer.
 
 **Real call (deployed Dev):**
 
