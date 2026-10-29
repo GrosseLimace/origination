@@ -13,7 +13,8 @@ provisioned the Azure side on 2026-10-27 (Dev only) and wrote
 [TEAMS-CALLING-GUIDE.md](./TEAMS-CALLING-GUIDE.md); the code follows it, with the differences listed in
 [Incoming Calls - Notes for Infrastructure.md](./Incoming%20Calls%20-%20Notes%20for%20Infrastructure.md).
 The popup can also be exercised without a call via **Simulate incoming call** in the profile menu
-(non-production builds only). QA and Production are not provisioned and the flag is off there.
+(non-production builds only). QA is provisioned and on from 2026-10-29 (`acs-origination-qa-eus`,
+`appsettings.QA.json` → `Acs`); Production is not provisioned and the flag is off there.
 
 ## How it works
 

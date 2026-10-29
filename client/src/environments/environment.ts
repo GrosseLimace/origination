@@ -21,14 +21,14 @@ export const environment = {
   // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite
   // admin consent on this env SPA app registration; keep false until that consent is granted.
   remindersEnabled: true,
+  // Prints each incoming call's callerInfo / transferorInfo (the caller's phone number) to the
+  // browser console, as POC evidence for Infrastructure. Local and Dev only: the number is PII.
+  logCallerInfo: true,
   // Incoming-call popup: a producer calling your Teams number pops their name + code here, with
   // Answer / Decline / Hold. Also needs Acs:Endpoint on the API (token endpoint answers 204 until
   // IT provisions the ACS resource + Teams.ManageCalls consent), so ON here is harmless: with no
   // token the calling SDK is never even downloaded. Outside production the profile menu offers
   // "Simulate incoming call" to exercise the popup without a real call.
-  // Prints each incoming call's callerInfo / transferorInfo (the caller's phone number) to the
-  // browser console, as POC evidence for Infrastructure. Local and Dev only: the number is PII.
-  logCallerInfo: true,
   incomingCallEnabled: true,
   // Azure Communication Services scopes the browser asks Entra for when the incoming-call popup
   // starts; the API exchanges that token for a calling token (POST /calling/token). Admin consent

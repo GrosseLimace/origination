@@ -25,16 +25,18 @@ export const environment = {
   // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite with
   // admin consent on the API app registration, same credential as above. Granted in QA 2026-09-18.
   remindersEnabled: true,
-  // Incoming-call popup (ACS Teams-user calling). OFF: Dev-only spike until Microsoft confirms
-  // the scenario stays supported past the 2028 ACS retirement and a pilot originator signs off.
   // Prints each incoming call's callerInfo / transferorInfo to the console. OFF: the caller's
   // number is PII, and real producers' calls ring this environment's tab too.
   logCallerInfo: false,
-  incomingCallEnabled: false,
+  // Incoming-call popup (ACS Teams-user calling). ON in QA from 2026-10-29: Infrastructure
+  // provisioned acs-origination-qa-eus, the managed-identity role, consent and the FortiGate rule
+  // (TEAMS-CALLING-GUIDE.md v2.1). The API side is appsettings.QA.json → Acs. Production stays off
+  // until a change request and Microsoft's answer on support past the 2028 ACS retirement.
+  incomingCallEnabled: true,
   // Azure Communication Services scopes the browser asks Entra for when the incoming-call popup
   // starts; the API exchanges that token for a calling token (POST /calling/token). Admin consent
-  // for them lives on THIS environment's SPA registration — granted for Dev on 2026-10-27, not yet
-  // for QA or PROD. Not added to the MSAL protected-resource map or the login request on purpose:
+  // for them lives on THIS environment's SPA registration — granted for Dev on 2026-10-27 and QA on
+  // 2026-10-29, not yet for PROD. Not added to the MSAL protected-resource map or the login request on purpose:
   // they are requested explicitly, only when the call agent starts.
   acs: {
     teamsScopes: [
