@@ -666,17 +666,148 @@ describe('IncomingCallService', () => {
     warn.mockRestore();
   });
 
-  it('does not let a second call replace one already in progress', async () => {
-    const service = create();
-    await startListening(service);
-    fake.ring();
-    flushMatches([SMITH]);
-    await service.answer();
+  // ── Several calls at once (call waiting) ──────────────────────────────────
 
-    fake.ring({ kind: 'phoneNumber', phoneNumber: '+15155550000' });
+  describe('several calls at once', () => {
+    const SECOND = { kind: 'phoneNumber', phoneNumber: '+15155550000' };
 
-    expect(service.callerNumber()).toBe('+14025554914');
-    httpMock.expectNone(r => r.url === `${BASE}/calling/match`);
+    /** On a live call with Smith Farms, then Jones Ag calls. */
+    async function onACallWhenASecondRings(service: IncomingCallService) {
+      await startListening(service);
+      const first = fake.ring();
+      flushMatches([SMITH]);
+      await service.answer();
+      const second = fake.ring(SECOND);
+      flushMatches([JONES]);
+      return { first, second, waitingSeq: service.otherCalls()[0]?.seq };
+    }
+
+    it('a second call waits under the live one instead of replacing it', async () => {
+      const service = create();
+      const { first } = await onACallWhenASecondRings(service);
+
+      expect(service.state()).toBe('connected');                 // main card: still the live call
+      expect(service.callerNumber()).toBe('+14025554914');
+      expect(first.active.hold).not.toHaveBeenCalled();
+      expect(service.otherCalls()).toEqual([expect.objectContaining({
+        state: 'ringing', callerNumber: '+15155550000', match: JONES, matchCount: 1,
+      })]);
+    });
+
+    it('Hold & answer: puts the live call on hold and connects the waiting one', async () => {
+      const service = create();
+      const { first, second, waitingSeq } = await onACallWhenASecondRings(service);
+
+      await service.answerCall(waitingSeq!);
+
+      expect(first.active.hold).toHaveBeenCalled();
+      expect(second.incoming.accept).toHaveBeenCalled();
+      expect(service.callerNumber()).toBe('+15155550000');      // the answered call takes the main card
+      expect(service.state()).toBe('connected');
+      expect(service.selectedMatch()).toEqual(JONES);
+      expect(service.otherCalls()).toEqual([expect.objectContaining({ state: 'held', match: SMITH })]);
+    });
+
+    it('switches between calls: resuming the held one puts the live one on hold', async () => {
+      const service = create();
+      const { first, second, waitingSeq } = await onACallWhenASecondRings(service);
+      await service.answerCall(waitingSeq!);
+      const heldSeq = service.otherCalls()[0].seq;
+
+      await service.resumeCall(heldSeq);
+
+      expect(second.active.hold).toHaveBeenCalled();
+      expect(first.active.resume).toHaveBeenCalled();
+      expect(service.callerNumber()).toBe('+14025554914');
+      expect(service.state()).toBe('connected');
+      expect(service.otherCalls()).toEqual([expect.objectContaining({ state: 'held', match: JONES })]);
+    });
+
+    it('a waiting call that stops ringing (caller gave up, answered in Teams) just disappears', async () => {
+      const service = create();
+      const { second } = await onACallWhenASecondRings(service);
+
+      second.end(487, 0);
+
+      expect(service.otherCalls()).toEqual([]);
+      expect(service.state()).toBe('connected');                 // the live call is untouched
+    });
+
+    it('Decline on the waiting call rejects only that call', async () => {
+      const service = create();
+      const { first, second, waitingSeq } = await onACallWhenASecondRings(service);
+
+      await service.declineCall(waitingSeq!);
+
+      expect(second.incoming.reject).toHaveBeenCalled();
+      expect(first.active.hangUp).not.toHaveBeenCalled();
+      expect(service.otherCalls()).toEqual([]);
+      expect(service.state()).toBe('connected');
+    });
+
+    it('when the main call is hung up, the waiting call moves up to the main card', async () => {
+      const service = create();
+      await onACallWhenASecondRings(service);
+
+      await service.hangUp();
+
+      expect(service.state()).toBe('ringing');
+      expect(service.callerNumber()).toBe('+15155550000');
+      expect(service.otherCalls()).toEqual([]);
+    });
+
+    it('when the live call ends, the held one moves up and stays on hold until Resume', async () => {
+      const service = create();
+      const { first, waitingSeq } = await onACallWhenASecondRings(service);
+      await service.answerCall(waitingSeq!);
+
+      await service.hangUp();                                     // hang up on Jones Ag
+
+      expect(service.state()).toBe('held');
+      expect(service.callerNumber()).toBe('+14025554914');
+      expect(first.active.resume).not.toHaveBeenCalled();
+      await service.resume();
+      expect(first.active.resume).toHaveBeenCalled();
+      expect(service.state()).toBe('connected');
+    });
+
+    it('a held call whose caller hangs up just leaves its row', async () => {
+      const service = create();
+      const { first, waitingSeq } = await onACallWhenASecondRings(service);
+      await service.answerCall(waitingSeq!);
+
+      first.setState('Disconnected');
+
+      expect(service.otherCalls()).toEqual([]);
+      expect(service.state()).toBe('connected');                 // still on the call with Jones Ag
+    });
+
+    it('Hang up on a held row ends only that call', async () => {
+      const service = create();
+      const { first, second, waitingSeq } = await onACallWhenASecondRings(service);
+      await service.answerCall(waitingSeq!);
+
+      await service.hangUpCall(service.otherCalls()[0].seq);
+
+      expect(first.active.hangUp).toHaveBeenCalled();
+      expect(second.active.hangUp).not.toHaveBeenCalled();
+      expect(service.otherCalls()).toEqual([]);
+    });
+
+    it('the simulator adds a waiting call while one is on screen', async () => {
+      const service = create(null);
+      service.simulate('4025554914');
+      flushMatches([SMITH]);
+      await service.answer();
+
+      service.simulate('5155550000');
+      flushMatches([JONES]);
+      expect(service.otherCalls()).toEqual([expect.objectContaining({ state: 'ringing', match: JONES })]);
+
+      await service.answerCall(service.otherCalls()[0].seq);
+      expect(service.selectedMatch()).toEqual(JONES);
+      expect(service.otherCalls()).toEqual([expect.objectContaining({ state: 'held', match: SMITH })]);
+    });
   });
 
   // ── Simulation ────────────────────────────────────────────────────────────

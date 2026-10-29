@@ -3,7 +3,7 @@ import { Router } from '@angular/router';
 import { CdkDrag, CdkDragEnd, CdkDragHandle } from '@angular/cdk/drag-drop';
 
 import { IncomingCallService } from '@core/services/incoming-call.service';
-import { IncomingCallMatch } from '@models';
+import { IncomingCallMatch, IncomingCallSummary } from '@models';
 import { formatCallerId } from '@shared/utils/phone';
 
 /**
@@ -11,8 +11,11 @@ import { formatCallerId } from '@shared/utils/phone';
  *
  * Ringing: who is calling (producer name + customer code, a chooser when several producers share
  * the number, or "unknown caller"), with Answer / Decline. Answering also opens the producer's page.
- * On a call: timer, Hold / Resume, Hang up, Open producer. Picked up in Teams instead: a one-line
- * banner that keeps the producer link.
+ * On a call: timer, Hold / Resume, Hang up, Open producer. Picked up in Teams instead: it goes away.
+ *
+ * Several calls at once: the main card is one call; the others are rows under it — "Also calling"
+ * (Hold & answer / Decline) or "On hold" (Resume / Hang up). Answering or resuming a row puts the
+ * live call on hold first, and that row's call takes the main card.
  *
  * Starts top-right, so it never collides with the bottom-right toasts. The user can drag it by its
  * grab bar (CDK drag, same pattern as the calculator widget) for the rest of that call. Every NEW call
@@ -106,6 +109,30 @@ import { formatCallerId } from '@shared/utils/phone';
               }
             </div>
           </div>
+          <!-- Other calls (call waiting): waiting to be answered, or on hold. Only one call is ever live. -->
+          @if (call.otherCalls().length > 0) {
+            <div class="mt-3 pt-2 border-t border-gray-200 dark:border-gray-700 flex flex-col gap-2" data-testid="incoming-call-others">
+              @for (o of call.otherCalls(); track o.seq) {
+                <div class="flex items-center gap-2" [attr.data-testid]="'incoming-call-other-' + o.seq">
+                  <div class="flex-1 min-w-0">
+                    <p class="text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      {{ o.state === 'ringing' ? 'Also calling' : 'On hold' }}
+                    </p>
+                    <p class="text-sm text-gray-800 dark:text-gray-200 truncate" [attr.data-testid]="'incoming-call-other-label-' + o.seq">{{ otherLabel(o) }}</p>
+                  </div>
+                  @if (o.state === 'ringing') {
+                    <button type="button" (click)="answerOther(o.seq)" class="flex-shrink-0 rounded-md bg-scoular-green-accessible hover:opacity-90 text-white text-xs font-medium px-2.5 py-1.5">
+                      {{ hasLiveCall() ? 'Hold & answer' : 'Answer' }}
+                    </button>
+                    <button type="button" (click)="call.declineCall(o.seq)" class="flex-shrink-0 rounded-md bg-scoular-red-accessible hover:opacity-90 text-white text-xs font-medium px-2.5 py-1.5">Decline</button>
+                  } @else if (o.state === 'held') {
+                    <button type="button" (click)="call.resumeCall(o.seq)" class="flex-shrink-0 rounded-md bg-scoular-green-accessible hover:opacity-90 text-white text-xs font-medium px-2.5 py-1.5">Resume</button>
+                    <button type="button" (click)="call.hangUpCall(o.seq)" class="flex-shrink-0 rounded-md bg-scoular-red-accessible hover:opacity-90 text-white text-xs font-medium px-2.5 py-1.5">Hang up</button>
+                  }
+                </div>
+              }
+            </div>
+          }
         </div>
       </div>
     }
@@ -179,6 +206,30 @@ export class IncomingCallPopupComponent {
     inject(DestroyRef).onDestroy(() => {
       if (handle !== null) clearInterval(handle);
     });
+  }
+
+  /** True while the main card's call is live, so answering a waiting call means holding this one. */
+  readonly hasLiveCall = computed(() => this.call.state() === 'connected');
+
+  /** One line for a waiting / held call: who it is (as on the main card), else the number. */
+  otherLabel(o: IncomingCallSummary): string {
+    const number = o.callerNumber ? formatCallerId(o.callerNumber) : (o.displayName ?? 'Unknown caller');
+    const m = o.match;
+    if (m) {
+      const producer = m.scoularId ? `${m.name} (${m.scoularId})` : m.name;
+      return m.contactName ? `${m.contactName}, ${producer}` : producer;
+    }
+    if (o.matchesLoading) return `${number} · looking up…`;
+    if (o.matchCount > 1) return `${number} · ${o.matchCount} producers`;
+    return number;
+  }
+
+  /** Hold & answer a waiting call, then open its producer's page (like Answer on the main card). */
+  async answerOther(seq: number): Promise<void> {
+    await this.call.answerCall(seq);
+    const m = this.call.selectedMatch();
+    const s = this.call.state();
+    if (m && (s === 'connected' || s === 'connecting')) this.navigateTo(m);
   }
 
   /** Answers, and opens the producer's page when we know who it is. */

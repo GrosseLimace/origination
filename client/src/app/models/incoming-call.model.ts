@@ -27,6 +27,19 @@ export interface CallingToken {
  * - `unavailable`: calling is off in this environment (token endpoint answered 204) or the SDK
  *   failed to start. Terminal for the session; the popup never shows.
  */
+/** Another call shown as a row under the main card: one waiting to be answered, or one on hold. */
+export interface IncomingCallSummary {
+  seq: number;
+  state: IncomingCallState;
+  /** E.164, or null when the caller is not a phone number (then `displayName`). */
+  callerNumber: string | null;
+  displayName: string | null;
+  /** The producer it is about (the only match, or the one picked), if known. */
+  match: IncomingCallMatch | null;
+  matchCount: number;
+  matchesLoading: boolean;
+}
+
 export type IncomingCallState =
   | 'idle'
   | 'unavailable'
