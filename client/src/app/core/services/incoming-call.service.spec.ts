@@ -15,6 +15,7 @@ import {
 } from './incoming-call.service';
 import { CallingSdkLoader } from './calling-sdk-loader.service';
 import { ToastService } from './toast.service';
+import { CallAudioPermissionService } from './call-audio-permission.service';
 import { makeMsalBroadcastMock, makeMsalServiceMock } from '@testing/msal.mocks';
 import { environment } from '@env/environment';
 import type { IncomingCallMatch } from '@models';
@@ -91,6 +92,7 @@ describe('IncomingCallService', () => {
   let fake: ReturnType<typeof makeFakeSdk>;
   let loader: { load: ReturnType<typeof vi.fn> };
   let toast: { error: ReturnType<typeof vi.fn> };
+  let audioPermission: { activate: ReturnType<typeof vi.fn>; deactivate: ReturnType<typeof vi.fn> };
 
   function create(account: any = { name: 'Caden', username: 'CEgr@scoular.com' }): IncomingCallService {
     TestBed.configureTestingModule({
@@ -101,6 +103,7 @@ describe('IncomingCallService', () => {
         { provide: MsalBroadcastService, useValue: makeMsalBroadcastMock() },
         { provide: CallingSdkLoader, useValue: loader },
         { provide: ToastService, useValue: toast },
+        { provide: CallAudioPermissionService, useValue: audioPermission },
       ],
     });
     const service = TestBed.inject(IncomingCallService);
@@ -134,6 +137,7 @@ describe('IncomingCallService', () => {
     fake = makeFakeSdk();
     loader = { load: vi.fn().mockResolvedValue(fake.sdk) };
     toast = { error: vi.fn() };
+    audioPermission = { activate: vi.fn().mockResolvedValue(undefined), deactivate: vi.fn() };
   });
 
   afterEach(() => {
@@ -202,6 +206,8 @@ describe('IncomingCallService', () => {
     expect(fake.agent.on).toHaveBeenCalledWith('connectionStateChanged', expect.any(Function));
     // askDevicePermission opens a real capture stream (the mic-in-use light), so it waits for Answer.
     expect(fake.deviceManager.askDevicePermission).not.toHaveBeenCalled();
+    // Only now (registered, leader tab) is the permission checked for the enable-audio banner.
+    expect(audioPermission.activate).toHaveBeenCalledTimes(1);
     expect(fake.credentialArgs[0].token).toBe('acs-token');
     expect(fake.credentialArgs[0].refreshProactively).toBe(true);
 
@@ -221,8 +227,18 @@ describe('IncomingCallService', () => {
     expect(fake.credentials[0].dispose).toHaveBeenCalled();
     expect(fake.clients).toHaveLength(1);
     expect(fake.clients[0].dispose).toHaveBeenCalled();
+    expect(audioPermission.deactivate).toHaveBeenCalled();
     expect(service.isListening()).toBe(false);
     expect(service.isLeader()).toBe(false);
+  });
+
+  it('never checks the microphone permission when the environment has no calling (204)', async () => {
+    const service = create();
+
+    (await expectExchange()).flush(null, { status: 204, statusText: 'No Content' });
+
+    await vi.waitFor(() => expect(service.state()).toBe('unavailable'));
+    expect(audioPermission.activate).not.toHaveBeenCalled();
   });
 
   // ── Re-registration, back-off and throttling ──────────────────────────────
@@ -361,6 +377,8 @@ describe('IncomingCallService', () => {
       expect(fake.createTeamsCallAgent).toHaveBeenCalledTimes(MAX_CONSECUTIVE_FAILURES);
       expect(service.state()).toBe('unavailable');
       expect(service.isListening()).toBe(false);
+      expect(audioPermission.activate).not.toHaveBeenCalled(); // never registered, so no banner
+      expect(audioPermission.deactivate).toHaveBeenCalled();
     });
 
     it('does not rebuild mid-call; re-registers once the call is over', async () => {

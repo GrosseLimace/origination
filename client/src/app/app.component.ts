@@ -12,6 +12,8 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
 import { IncomingCallService } from '@core/services/incoming-call.service';
 import { IncomingCallPopupComponent } from '@shared/components/incoming-call-popup/incoming-call-popup.component';
+import { CallAudioPermissionService } from '@core/services/call-audio-permission.service';
+import { CallAudioBannerComponent } from '@shared/components/call-audio-banner/call-audio-banner.component';
 import { AppInsightsService } from '@core/services/app-insights.service';
 import { HelpPanelStateService } from '@core/services/help-panel-state.service';
 import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
@@ -21,7 +23,7 @@ import { filter } from 'rxjs';
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, HeaderComponent, ToastContainerComponent, WhatsNewDialogComponent, HelpPanelComponent, IncomingCallPopupComponent],
+  imports: [RouterOutlet, HeaderComponent, ToastContainerComponent, WhatsNewDialogComponent, HelpPanelComponent, IncomingCallPopupComponent, CallAudioBannerComponent],
   templateUrl: './app.component.html',
   // The template reads signals only (isAuthenticated, showWhatsNew, whatsNew.unseenReleases), and
   // the MSAL subscription and the release-notes promise write signals. Every routed page is OnPush
@@ -40,6 +42,9 @@ export class AppComponent {
   /** Public: the template defers the popup until the first call. Injecting it here also starts it
    *  (it waits for sign-in, then registers with Teams if this environment has calling). */
   readonly incomingCall = inject(IncomingCallService);
+
+  /** Public: the template defers the "Enable call audio" / "microphone blocked" notice until there is one. */
+  readonly callAudio = inject(CallAudioPermissionService);
 
   private readonly msalService = inject(MsalService);
   private readonly broadcastService = inject(MsalBroadcastService);

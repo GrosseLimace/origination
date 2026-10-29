@@ -16,6 +16,7 @@ import type {
 import type { AzureCommunicationTokenCredential } from '@azure/communication-common';
 
 import { ApiService } from '@core/services/api.service';
+import { CallAudioPermissionService } from '@core/services/call-audio-permission.service';
 import { CallingSdk, CallingSdkLoader } from '@core/services/calling-sdk-loader.service';
 import { ToastService } from '@core/services/toast.service';
 import { CallingToken, IncomingCallMatch, IncomingCallState } from '@models';
@@ -121,7 +122,9 @@ function parseRetryAfter(value: unknown): number | null {
  * retried with exponential back-off (honouring the Teams registrar's retryAfter when throttled) and
  * abandoned after MAX_CONSECUTIVE_FAILURES until the next page load.
  *
- * The microphone is only requested when the user clicks Answer, never at registration.
+ * The microphone is never opened at registration. Once registered, CallAudioPermissionService
+ * checks the permission without touching the device and, if the browser would still ask, offers a
+ * one-time "Enable call audio" banner; answer() asks through the SDK as the fallback.
  *
  * Teams-to-Teams calls from colleagues are ignored (they still ring this endpoint silently and are
  * answered in Teams as usual). Every other caller raises the popup; phone numbers are looked up.
@@ -131,6 +134,7 @@ export class IncomingCallService {
   private readonly api = inject(ApiService);
   private readonly sdkLoader = inject(CallingSdkLoader);
   private readonly toast = inject(ToastService);
+  private readonly audioPermission = inject(CallAudioPermissionService);
   private readonly msal = inject(MsalService);
   private readonly msalBroadcast = inject(MsalBroadcastService);
   private readonly destroyRef = inject(DestroyRef);
@@ -257,6 +261,7 @@ export class IncomingCallService {
     this.callClient = null;
     this.isListening.set(false);
     this.isLeader.set(false);
+    this.audioPermission.deactivate();
     this.releaseLeadership?.();
     this.releaseLeadership = null;
     this.started = false;
@@ -271,9 +276,10 @@ export class IncomingCallService {
    * token means calling is off here and the service goes dormant; any later failure is retried with
    * back-off (see scheduleReconnect).
    *
-   * The microphone is NOT requested here. The SDK's askDevicePermission opens a real capture stream
-   * and holds it for several seconds even when permission is already granted, so asking at
-   * registration kept the mic-in-use indicator lit; it is asked for on Answer instead.
+   * The SDK's askDevicePermission is NOT called here: it opens a real capture stream and holds it
+   * for several seconds even when permission is already granted, which kept the mic-in-use light on.
+   * After registering, CallAudioPermissionService only queries the permission (no device access);
+   * answer() asks through the SDK as the fallback.
    */
   private async startAgent(isRetry: boolean): Promise<void> {
     try {
@@ -322,6 +328,8 @@ export class IncomingCallService {
       this.isListening.set(true);
       if (this.state() === 'unavailable') this.state.set('idle');
       this.armStableTimer();
+      // This tab is now the endpoint: check (never open) the mic and offer the enable banner if needed.
+      void this.audioPermission.activate();
     } catch (err) {
       // Most likely causes: registrar throttling, consent missing in this environment, CSP missing
       // a host, licence. The popup just stays away; Teams itself is unaffected.
@@ -400,6 +408,7 @@ export class IncomingCallService {
       console.warn(`[incoming-call] giving up after ${this.consecutiveFailures} failed registrations `
         + `(last: ${why}). Calls still ring in Teams; reload the page to try again.`);
       void this.teardownAgent();
+      this.audioPermission.deactivate(); // No endpoint here any more, so nothing to enable audio for.
       if (!this.isVisible()) this.state.set('unavailable');
       return;
     }
