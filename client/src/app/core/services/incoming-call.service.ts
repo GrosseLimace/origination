@@ -668,7 +668,7 @@ export class IncomingCallService {
   /** Answers in the browser: puts any live call on hold, asks for the microphone (the only place the
    *  service touches it), then accepts. The answered call takes the main card. */
   private async answerSession(session: CallSession): Promise<void> {
-    if (this.hasLiveCallOtherThan(session)) await this.holdLiveCalls(session);
+    if (this.hasLiveCallOtherThan(session) && !(await this.makeRoomFor(session))) return;
     this.focusedSeq.set(session.seq);
 
     if (session.simulated) {
@@ -719,7 +719,7 @@ export class IncomingCallService {
   }
 
   private async resumeSession(session: CallSession): Promise<void> {
-    if (this.hasLiveCallOtherThan(session)) await this.holdLiveCalls(session);
+    if (this.hasLiveCallOtherThan(session) && !(await this.makeRoomFor(session))) return;
     this.focusedSeq.set(session.seq);
     if (!session.simulated) {
       try {
@@ -744,7 +744,20 @@ export class IncomingCallService {
     return this.sessions().some(s => s !== session && s.state() === 'connected');
   }
 
-  /** Only one call is live at a time: hold whichever is, before another connects. */
+  /**
+   * Only one call is ever live. Before `session` connects, hold whichever call is live; if that hold
+   * fails, do NOT connect `session` (two people would hear the originator at once) — say so, and
+   * leave everything as it was: the live call stays live, the other keeps ringing / stays on hold.
+   */
+  private async makeRoomFor(session: CallSession): Promise<boolean> {
+    if (!this.hasLiveCallOtherThan(session)) return true;
+    await this.holdLiveCalls(session);
+    if (!this.hasLiveCallOtherThan(session)) return true;
+    this.toast.error("Couldn't put the current call on hold — try again.");
+    return false;
+  }
+
+  /** Hold whichever call is live (see makeRoomFor). */
   private async holdLiveCalls(except: CallSession): Promise<void> {
     for (const other of this.sessions()) {
       if (other !== except && other.state() === 'connected') await this.holdSession(other);

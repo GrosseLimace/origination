@@ -794,6 +794,36 @@ describe('IncomingCallService', () => {
       expect(service.otherCalls()).toEqual([]);
     });
 
+    it('never has two live calls: if the hold fails, the waiting call is not answered', async () => {
+      const service = create();
+      const { first, second, waitingSeq } = await onACallWhenASecondRings(service);
+      first.active.hold.mockRejectedValueOnce(new Error('network blip'));
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      await service.answerCall(waitingSeq!);
+
+      expect(second.incoming.accept).not.toHaveBeenCalled();
+      expect(service.state()).toBe('connected');                 // still talking to the first caller
+      expect(service.callerNumber()).toBe('+14025554914');
+      expect(service.otherCalls()).toEqual([expect.objectContaining({ state: 'ringing' })]);
+      expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('hold'));
+    });
+
+    it('never has two live calls: if the hold fails, the held call is not resumed', async () => {
+      const service = create();
+      const { first, second, waitingSeq } = await onACallWhenASecondRings(service);
+      await service.answerCall(waitingSeq!);                       // first held, second live
+      second.active.hold.mockRejectedValueOnce(new Error('network blip'));
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      await service.resumeCall(service.otherCalls()[0].seq);
+
+      expect(first.active.resume).not.toHaveBeenCalled();
+      expect(service.callerNumber()).toBe('+15155550000');      // still on the second call
+      expect(service.state()).toBe('connected');
+      expect(service.otherCalls()).toEqual([expect.objectContaining({ state: 'held' })]);
+    });
+
     it('the simulator adds a waiting call while one is on screen', async () => {
       const service = create(null);
       service.simulate('4025554914');
