@@ -64,17 +64,42 @@ flowchart LR
 4. **204 = calling is off here** (`Acs:Endpoint` / `Acs:TeamsClientId` empty). **502** = ACS refused
    (wrong client id, token for another user, identity lacks the role, no Teams licence; the status and
    error code are logged). Either way the client settles in `unavailable` and **never downloads the SDK**.
-5. Otherwise the SDK chunk is lazy-loaded (~1.2 MB compressed, never in the initial bundle), the browser
-   asks for the microphone once up front, `createTeamsCallAgent` registers the endpoint, and
-   `AzureCommunicationTokenCredential` re-runs both hops before the token expires.
+5. Otherwise the SDK chunk is lazy-loaded (~1.2 MB compressed, never in the initial bundle),
+   `createTeamsCallAgent` registers the endpoint, and `AzureCommunicationTokenCredential` re-runs both
+   hops before the token expires. **The microphone is not opened at registration**: the SDK's
+   `askDevicePermission` opens a real capture stream and holds it for ~5 s even when permission is
+   already granted (it kept the mic-in-use light on during the Dev POC).
+6. **Microphone pre-approval ("ask once, release immediately").** Once the agent has registered, the
+   elected tab's `CallAudioPermissionService` checks `navigator.permissions.query({ name: 'microphone' })`,
+   which never opens the device (a browser where the query is missing or throws is treated as `prompt`):
+
+   | Permission | What the user sees |
+   |------------|--------------------|
+   | `granted` | Nothing. No device access. |
+   | `prompt` | A one-line banner under the header: *"Enable call audio so you can answer Teams calls here"* with **Enable** / **Not now**. Enable calls `getUserMedia({ audio: true })` from the click and stops every track at once (the grant is what is wanted, not the stream). Not now hides it for the browser session (`sessionStorage` `origination.callAudio.notNow`). |
+   | `denied` | A dismissible amber hint that the microphone is blocked for this site and how to allow it (site icon → Microphone → Allow, reload). Dismissed per session (`origination.callAudio.blockedHintDismissed`). |
+
+   The `PermissionStatus` `change` event is followed, so changing the permission in site settings updates
+   the banner/hint live. Nothing shows in non-leader tabs, when calling is off (204), or after the
+   agent gives up. `answer()` still asks through the SDK as the fallback (`client/src/app/shared/components/call-audio-banner/`,
+   `client/src/app/core/services/call-audio-permission.service.ts`).
 
 ### One endpoint per browser, kept alive
 
 - **Only one tab registers.** Every tab with a call agent is a separate Teams endpoint that rings and
   can answer, so the service takes a Web Lock (`origination.incomingCall.agent`); the tab that holds
   it is the endpoint, other tabs of the same browser wait, and when it closes the next one takes over.
-- **Reconnect.** If the SDK reports `connectionStateChanged → Disconnected` outside a call, the agent
-  is disposed and re-created with a back-off (2 s … 60 s).
+- **Reconnect.** If the SDK reports `connectionStateChanged → Disconnected` (any reason, including
+  `invalidToken`: the rebuild fetches a fresh token) or agent creation fails, the agent and its
+  credential are disposed and re-created on the same `CallClient` (one per tab, disposed on sign-out).
+  Back-off is exponential with ±20 % jitter: 5 s, 10 s, 20 s, 40 s, 80 s (cap 5 min), and never
+  shorter than a throttle's `retryAfter` (Teams registrar `429` / `42901`; 2 min if the value is
+  unreadable). The back-off only resets after a registration has stayed up for 60 s. After **6
+  consecutive failures** the tab gives up (`unavailable`, console
+  `[incoming-call] giving up after 6 failed registrations …`) until the next page load. A drop during
+  a call waits for the call to end. Each retry logs `[incoming-call] … re-registering in N s`.
+  *Why:* the first Dev build re-registered every ~3 s, which got the user throttled by the Teams
+  registrar (`retryAfter` ~2 min) and, by retrying inside the window, kept the throttle from clearing.
 - **Sign-out** disposes the agent (header `signOut()` → `IncomingCallService.stop()`).
 - A sleeping laptop drops the connection; a background tab is throttled but keeps working.
 
@@ -209,7 +234,8 @@ exercises the banner; once connected, **Simulate: caller hangs up** exercises th
 **Real call from a laptop (local):** `az login` first — the exchange runs as you, and
 `Azure - Origination App - Developer Admins` holds the ACS role. Start the API with the `http`
 profile and `ng serve`; `appsettings.Development.json` points at the Dev ACS resource. Sign in,
-allow the microphone, and call your own Teams number from a phone that is on file for a producer.
+click **Enable** on the call-audio banner (or allow the microphone when you click Answer), and call your
+own Teams number from a phone that is on file for a producer.
 
 **Real call (deployed Dev):**
 
@@ -277,6 +303,7 @@ allow the microphone, and call your own Teams number from a phone that is on fil
 | API | `api/GrainOriginatorPortal.Api/Middleware/SecurityHeadersMiddleware.cs` | Config-gated calling origins in the SPA CSP |
 | Repo | `api/GrainOriginatorPortal.Infrastructure/Repositories/CustomerRepository.cs` | `FindByPhoneAsync`, shared `StripPhone`, contact-name lookup |
 | Client | `client/src/app/core/services/incoming-call.service.ts` | Token path, leader lock, SDK registration, reconnect, state machine, simulate |
+| Client | `client/src/app/core/services/call-audio-permission.service.ts` + `shared/components/call-audio-banner/` | Microphone pre-approval: permission query, Enable (getUserMedia, tracks stopped at once), Not now, blocked hint |
 | Client | `client/src/app/core/services/calling-sdk-loader.service.ts` | Lazy import of the SDK |
 | Client | `client/src/app/shared/components/incoming-call-popup/incoming-call-popup.component.ts` | The popup and banner (draggable) |
 | Client | `client/src/app/app.component.ts/.html` | Starts the service; defers the popup |

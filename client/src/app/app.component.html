@@ -1,6 +1,11 @@
 @if (isAuthenticated()) {
   <div class="h-screen flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors overflow-hidden">
     <app-header />
+    <!-- Microphone pre-approval for answering Teams calls here. Only the registered call-endpoint tab
+         ever has a notice; deferred so the banner is not in the initial bundle. -->
+    @defer (when callAudio.hasNotice()) {
+      <app-call-audio-banner />
+    }
     <!-- While the Help panel is open on desktop, the page makes room for it (400px plus the usual gutter)
          instead of being covered. -->
     <main class="max-w-[2000px] w-full mx-auto p-4 sm:p-6 lg:p-6 flex-grow overflow-y-auto"

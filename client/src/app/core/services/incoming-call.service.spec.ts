@@ -4,9 +4,18 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, TestRequest, provideHttpClientTesting } from '@angular/common/http/testing';
 import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 
-import { IncomingCallService } from './incoming-call.service';
+import {
+  IncomingCallService,
+  MAX_CONSECUTIVE_FAILURES,
+  RECONNECT_MAX_DELAY_MS,
+  STABLE_CONNECTION_MS,
+  THROTTLED_FALLBACK_MS,
+  reconnectDelayMs,
+  throttleRetryAfterMs,
+} from './incoming-call.service';
 import { CallingSdkLoader } from './calling-sdk-loader.service';
 import { ToastService } from './toast.service';
+import { CallAudioPermissionService } from './call-audio-permission.service';
 import { makeMsalBroadcastMock, makeMsalServiceMock } from '@testing/msal.mocks';
 import { environment } from '@env/environment';
 import type { IncomingCallMatch } from '@models';
@@ -27,13 +36,20 @@ function makeFakeSdk() {
   };
   const deviceManager = { askDevicePermission: vi.fn().mockResolvedValue({ audio: true }) };
   const credentialArgs: any[] = [];
+  const credentials: { dispose: ReturnType<typeof vi.fn> }[] = [];
+  const clients: CallClient[] = [];
+  /** Shared by every CallClient, so a test can make registration fail (e.g. a registrar 429). */
+  const createTeamsCallAgent = vi.fn().mockResolvedValue(agent);
 
   class CallClient {
-    createTeamsCallAgent = vi.fn().mockResolvedValue(agent);
+    createTeamsCallAgent = createTeamsCallAgent;
     getDeviceManager = vi.fn().mockResolvedValue(deviceManager);
+    dispose = vi.fn().mockResolvedValue(undefined);
+    constructor() { clients.push(this); }
   }
   class AzureCommunicationTokenCredential {
-    constructor(args: any) { credentialArgs.push(args); }
+    dispose = vi.fn();
+    constructor(args: any) { credentialArgs.push(args); credentials.push(this); }
   }
 
   /** Simulates Teams ringing this endpoint. Returns handles to drive the call afterwards. */
@@ -62,9 +78,13 @@ function makeFakeSdk() {
     };
   }
 
-  const connection = (newValue: string) => listeners['connectionStateChanged']?.({ oldValue: 'Connected', newValue });
+  const connection = (newValue: string, reason?: string) =>
+    listeners['connectionStateChanged']?.({ oldValue: 'Connected', newValue, reason });
 
-  return { sdk: { CallClient, AzureCommunicationTokenCredential } as any, agent, deviceManager, credentialArgs, ring, connection };
+  return {
+    sdk: { CallClient, AzureCommunicationTokenCredential } as any,
+    agent, deviceManager, credentialArgs, credentials, clients, createTeamsCallAgent, ring, connection,
+  };
 }
 
 describe('IncomingCallService', () => {
@@ -72,6 +92,7 @@ describe('IncomingCallService', () => {
   let fake: ReturnType<typeof makeFakeSdk>;
   let loader: { load: ReturnType<typeof vi.fn> };
   let toast: { error: ReturnType<typeof vi.fn> };
+  let audioPermission: { activate: ReturnType<typeof vi.fn>; deactivate: ReturnType<typeof vi.fn> };
 
   function create(account: any = { name: 'Caden', username: 'CEgr@scoular.com' }): IncomingCallService {
     TestBed.configureTestingModule({
@@ -82,6 +103,7 @@ describe('IncomingCallService', () => {
         { provide: MsalBroadcastService, useValue: makeMsalBroadcastMock() },
         { provide: CallingSdkLoader, useValue: loader },
         { provide: ToastService, useValue: toast },
+        { provide: CallAudioPermissionService, useValue: audioPermission },
       ],
     });
     const service = TestBed.inject(IncomingCallService);
@@ -115,6 +137,7 @@ describe('IncomingCallService', () => {
     fake = makeFakeSdk();
     loader = { load: vi.fn().mockResolvedValue(fake.sdk) };
     toast = { error: vi.fn() };
+    audioPermission = { activate: vi.fn().mockResolvedValue(undefined), deactivate: vi.fn() };
   });
 
   afterEach(() => {
@@ -174,14 +197,17 @@ describe('IncomingCallService', () => {
     warn.mockRestore();
   });
 
-  it('registers as a Teams endpoint, asks for the microphone up front, with a self-refreshing token', async () => {
+  it('registers as a Teams endpoint with a self-refreshing token, without touching the microphone', async () => {
     const service = create();
     await startListening(service);
 
     expect(service.isLeader()).toBe(true);
     expect(fake.agent.on).toHaveBeenCalledWith('incomingCall', expect.any(Function));
     expect(fake.agent.on).toHaveBeenCalledWith('connectionStateChanged', expect.any(Function));
-    expect(fake.deviceManager.askDevicePermission).toHaveBeenCalledWith({ audio: true, video: false });
+    // askDevicePermission opens a real capture stream (the mic-in-use light), so it waits for Answer.
+    expect(fake.deviceManager.askDevicePermission).not.toHaveBeenCalled();
+    // Only now (registered, leader tab) is the permission checked for the enable-audio banner.
+    expect(audioPermission.activate).toHaveBeenCalledTimes(1);
     expect(fake.credentialArgs[0].token).toBe('acs-token');
     expect(fake.credentialArgs[0].refreshProactively).toBe(true);
 
@@ -191,41 +217,238 @@ describe('IncomingCallService', () => {
     await expect(refreshed).resolves.toBe('acs-token-2');
   });
 
-  it('keeps going when the microphone prompt is refused at start-up', async () => {
-    fake.deviceManager.askDevicePermission.mockRejectedValueOnce(new Error('NotAllowedError'));
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const service = create();
-
-    await startListening(service);
-
-    expect(service.isListening()).toBe(true);
-    warn.mockRestore();
-  });
-
-  it('stop() disposes the agent and stops listening (sign-out)', async () => {
+  it('stop() disposes the agent, its credential and the CallClient, and stops listening (sign-out)', async () => {
     const service = create();
     await startListening(service);
 
     await service.stop();
 
     expect(fake.agent.dispose).toHaveBeenCalled();
+    expect(fake.credentials[0].dispose).toHaveBeenCalled();
+    expect(fake.clients).toHaveLength(1);
+    expect(fake.clients[0].dispose).toHaveBeenCalled();
+    expect(audioPermission.deactivate).toHaveBeenCalled();
     expect(service.isListening()).toBe(false);
     expect(service.isLeader()).toBe(false);
   });
 
-  it('re-registers after the SDK reports its connection lost', async () => {
+  it('never checks the microphone permission when the environment has no calling (204)', async () => {
     const service = create();
-    await startListening(service);
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 
-    fake.connection('Disconnected');
-    expect(service.isListening()).toBe(false);
+    (await expectExchange()).flush(null, { status: 204, statusText: 'No Content' });
 
-    await vi.advanceTimersByTimeAsync(2_000);     // first back-off step
-    vi.useRealTimers();
-    (await expectExchange()).flush({ token: 'acs-token-3', expiresOn: '2099-01-01T00:00:00Z' });
-    await vi.waitFor(() => expect(service.isListening()).toBe(true));
-    expect(fake.agent.dispose).toHaveBeenCalled(); // the old agent was let go
+    await vi.waitFor(() => expect(service.state()).toBe('unavailable'));
+    expect(audioPermission.activate).not.toHaveBeenCalled();
+  });
+
+  // ── Re-registration, back-off and throttling ──────────────────────────────
+
+  describe('re-registration', () => {
+    const tokenUrl = `${BASE}/calling/token`;
+
+    beforeEach(() => {
+      vi.spyOn(Math, 'random').mockReturnValue(0.5); // jitter factor exactly 1.0
+      vi.spyOn(console, 'info').mockImplementation(() => undefined);
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => vi.restoreAllMocks());
+
+    /** Lets pending promises settle WITHOUT moving the fake clock. (vi.waitFor cannot be used
+     *  between a failure and expectRetryAfter: under fake timers it advances the clock itself.) */
+    async function settle() {
+      for (let i = 0; i < 25; i++) await vi.advanceTimersByTimeAsync(0);
+    }
+
+    /** Advances to just before `delayMs` (no exchange yet), then to it, and answers the exchange. */
+    async function expectRetryAfter(delayMs: number) {
+      await vi.advanceTimersByTimeAsync(delayMs - 1);
+      httpMock.expectNone(tokenUrl);
+      await vi.advanceTimersByTimeAsync(1);
+      (await expectExchange()).flush({ token: 'acs-token-n', expiresOn: '2099-01-01T00:00:00Z' });
+    }
+
+    it('re-registers after the SDK reports its connection lost, letting the old agent and credential go', async () => {
+      const service = create();
+      await startListening(service);
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+      fake.connection('Disconnected', 'connectionIssue');
+      expect(service.isListening()).toBe(false);
+
+      await expectRetryAfter(reconnectDelayMs(0));
+      await vi.waitFor(() => expect(service.isListening()).toBe(true));
+      expect(fake.agent.dispose).toHaveBeenCalled();
+      expect(fake.credentials[0].dispose).toHaveBeenCalled();
+    });
+
+    it('backs off exponentially when registrations keep dropping before they are stable', async () => {
+      const service = create();
+      await startListening(service);
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+      for (const delay of [5_000, 10_000, 20_000]) {
+        fake.connection('Disconnected', 'connectionIssue');
+        await expectRetryAfter(delay);
+        await vi.waitFor(() => expect(service.isListening()).toBe(true));
+      }
+    });
+
+    it('resets the back-off only once a registration has stayed up for a while', async () => {
+      const service = create();
+      await startListening(service);
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+      fake.connection('Disconnected', 'connectionIssue');
+      await expectRetryAfter(5_000);
+      await vi.waitFor(() => expect(service.isListening()).toBe(true));
+
+      await vi.advanceTimersByTimeAsync(STABLE_CONNECTION_MS); // stable: failures forgiven
+      fake.connection('Disconnected', 'connectionIssue');
+      await expectRetryAfter(5_000);                           // back to the first step, not 10 s
+      await vi.waitFor(() => expect(service.isListening()).toBe(true));
+    });
+
+    it('treats invalidToken the same way: rebuilds with a fresh token after the back-off', async () => {
+      const service = create();
+      await startListening(service);
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+      fake.connection('Disconnected', 'invalidToken');
+
+      await expectRetryAfter(5_000);
+      await vi.waitFor(() => expect(service.isListening()).toBe(true));
+    });
+
+    it('waits at least the registrar retryAfter when registration is throttled (429 / 42901)', async () => {
+      fake.createTeamsCallAgent.mockRejectedValueOnce(Object.assign(
+        new Error('Registration failed: {"code":42901,"retryAfter":"00:01:54.63","message":"Request was throttled"}'),
+        { code: 429 }));
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const service = create();
+
+      (await expectExchange()).flush({ token: 'acs-token', expiresOn: '2099-01-01T00:00:00Z' });
+      await settle();
+      expect(service.state()).toBe('unavailable');
+
+      await vi.advanceTimersByTimeAsync(reconnectDelayMs(0)); // the plain back-off is not enough
+      httpMock.expectNone(tokenUrl);
+      await expectRetryAfter(114_630 - reconnectDelayMs(0));
+      await vi.waitFor(() => expect(service.isListening()).toBe(true));
+      expect(service.state()).toBe('idle');
+    });
+
+    it('reuses one CallClient across re-registrations', async () => {
+      const service = create();
+      await startListening(service);
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+      fake.connection('Disconnected', 'connectionIssue');
+      await expectRetryAfter(5_000);
+      await vi.waitFor(() => expect(service.isListening()).toBe(true));
+      fake.connection('Disconnected', 'connectionIssue');
+      await expectRetryAfter(10_000);
+      await vi.waitFor(() => expect(service.isListening()).toBe(true));
+
+      expect(fake.clients).toHaveLength(1);
+      expect(fake.createTeamsCallAgent).toHaveBeenCalledTimes(3);
+      expect(fake.credentials).toHaveLength(3);
+      expect(fake.credentials[0].dispose).toHaveBeenCalled();
+      expect(fake.credentials[1].dispose).toHaveBeenCalled();
+      expect(fake.credentials[2].dispose).not.toHaveBeenCalled(); // the live one
+    });
+
+    it(`gives up after ${MAX_CONSECUTIVE_FAILURES} consecutive failures and stays unavailable`, async () => {
+      fake.createTeamsCallAgent.mockRejectedValue(new Error('registration refused'));
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const service = create();
+
+      (await expectExchange()).flush({ token: 'acs-token', expiresOn: '2099-01-01T00:00:00Z' }); // failure 1
+      for (let failure = 1; failure < MAX_CONSECUTIVE_FAILURES; failure++) {
+        await settle();
+        expect(fake.createTeamsCallAgent).toHaveBeenCalledTimes(failure);
+        await expectRetryAfter(reconnectDelayMs(failure - 1));                                  // failure + 1
+      }
+      await settle();
+      expect(fake.createTeamsCallAgent).toHaveBeenCalledTimes(MAX_CONSECUTIVE_FAILURES);
+
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+      httpMock.expectNone(tokenUrl);
+      expect(fake.createTeamsCallAgent).toHaveBeenCalledTimes(MAX_CONSECUTIVE_FAILURES);
+      expect(service.state()).toBe('unavailable');
+      expect(service.isListening()).toBe(false);
+      expect(audioPermission.activate).not.toHaveBeenCalled(); // never registered, so no banner
+      expect(audioPermission.deactivate).toHaveBeenCalled();
+    });
+
+    it('does not rebuild mid-call; re-registers once the call is over', async () => {
+      const service = create();
+      await startListening(service);
+      const call = fake.ring();
+      flushMatches([SMITH]);
+      await service.answer();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+      fake.connection('Disconnected', 'connectionIssue');
+      await vi.advanceTimersByTimeAsync(RECONNECT_MAX_DELAY_MS);
+      httpMock.expectNone(tokenUrl);
+      expect(service.state()).toBe('connected');
+
+      await service.hangUp();
+      expect(call.active.hangUp).toHaveBeenCalled();
+      await expectRetryAfter(5_000);
+      await vi.waitFor(() => expect(service.isListening()).toBe(true));
+    });
+
+    it('ignores a late Disconnected from an agent it has already replaced', async () => {
+      const service = create();
+      await startListening(service);
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const oldAgentListener = fake.agent.on.mock.calls.filter(c => c[0] === 'connectionStateChanged')[0][1];
+      const replacement = { on: vi.fn(), dispose: vi.fn().mockResolvedValue(undefined) };
+      fake.createTeamsCallAgent.mockResolvedValueOnce(replacement);
+
+      fake.connection('Disconnected', 'connectionIssue');
+      await expectRetryAfter(5_000);
+      await vi.waitFor(() => expect(service.isListening()).toBe(true));
+      expect(replacement.on).toHaveBeenCalledWith('connectionStateChanged', expect.any(Function));
+
+      // Disposing the old agent can emit one more Disconnected; it must not touch the new registration.
+      oldAgentListener({ oldValue: 'Connected', newValue: 'Disconnected', reason: 'connectionIssue' });
+      expect(service.isListening()).toBe(true);
+      await vi.advanceTimersByTimeAsync(RECONNECT_MAX_DELAY_MS);
+      httpMock.expectNone(tokenUrl);
+    });
+  });
+
+  describe('reconnectDelayMs / throttleRetryAfterMs', () => {
+    it('doubles per attempt with +/-20 % jitter, capped', () => {
+      expect(reconnectDelayMs(0, () => 0.5)).toBe(5_000);
+      expect(reconnectDelayMs(1, () => 0.5)).toBe(10_000);
+      expect(reconnectDelayMs(3, () => 0.5)).toBe(40_000);
+      expect(reconnectDelayMs(0, () => 0)).toBe(4_000);
+      expect(reconnectDelayMs(0, () => 1)).toBe(6_000);
+      expect(reconnectDelayMs(30, () => 0.5)).toBe(RECONNECT_MAX_DELAY_MS);
+    });
+
+    it('reads retryAfter as a TimeSpan, as seconds, or from inside a message', () => {
+      expect(throttleRetryAfterMs({ retryAfter: '00:01:54.63' })).toBe(114_630);
+      expect(throttleRetryAfterMs({ retryAfter: 30 })).toBe(30_000);
+      expect(throttleRetryAfterMs(new Error('{"code":42901,"retryAfter":"00:00:10","message":"Request was throttled"}'))).toBe(10_000);
+    });
+
+    it('falls back to a fixed wait for a throttle without a readable retryAfter', () => {
+      expect(throttleRetryAfterMs({ code: 429 })).toBe(THROTTLED_FALLBACK_MS);
+      expect(throttleRetryAfterMs({ subCode: 42901 })).toBe(THROTTLED_FALLBACK_MS);
+      expect(throttleRetryAfterMs(new Error('Request was throttled'))).toBe(THROTTLED_FALLBACK_MS);
+    });
+
+    it('returns null for ordinary failures and caps absurd values', () => {
+      expect(throttleRetryAfterMs(undefined)).toBeNull();
+      expect(throttleRetryAfterMs({ reason: 'connectionIssue' })).toBeNull();
+      expect(throttleRetryAfterMs(new Error('network down'))).toBeNull();
+      expect(throttleRetryAfterMs({ retryAfter: '99:00:00' })).toBe(10 * 60 * 1000);
+    });
   });
 
   // ── A real (faked) call ───────────────────────────────────────────────────
@@ -303,6 +526,7 @@ describe('IncomingCallService', () => {
     await startListening(service);
     const call = fake.ring();
     flushMatches([SMITH]);
+    expect(fake.deviceManager.askDevicePermission).not.toHaveBeenCalled(); // ringing alone does not open the mic
 
     await service.answer();
 
