@@ -142,6 +142,36 @@ public class MobileShapingTests
     }
 
     [Fact]
+    public void AuditScope_RedactsEverythingInsideAContact_IncludingTheName_ButKeepsFlags()
+    {
+        var json = AuditScope.Redact(new
+        {
+            Name = "Producer A",
+            Contacts = new[] { new { Name = "Bob Smith", Phone = "402-555-0111", Email = "bob@example.com", IsPrimary = true } },
+        });
+
+        Assert.NotNull(json);
+        Assert.Contains("\"name\":\"Producer A\"", json);   // the producer (a business) stays readable
+        Assert.DoesNotContain("Bob Smith", json);           // a contact's name is personal data
+        Assert.DoesNotContain("402-555-0111", json);
+        Assert.DoesNotContain("bob@example.com", json);
+        Assert.Contains("\"isPrimary\":true", json);        // flags carry no personal data
+    }
+
+    [Theory]
+    [InlineData("203.0.113.7, 10.1.2.3", "203.0.113.7, 10.1.2.3")]
+    [InlineData("2001:db8::1", "2001:db8::1")]
+    [InlineData("1.2.3.4\r\nUser=admin <script>", "1.2.3.4ead c")]   // only IP characters survive: no line breaks, no markup
+    [InlineData("", "-")]
+    public void AuditFilter_ForwardedFor_KeepsOnlyIpCharacters(string header, string expected)
+    {
+        var http = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        if (header.Length > 0) http.Request.Headers["X-Forwarded-For"] = header;
+
+        Assert.Equal(expected, GrainOriginatorPortal.Mobile.Filters.MobileAuditActionFilter.ForwardedFor(http.Request));
+    }
+
+    [Fact]
     public void AuditScope_SameValue_SameFingerprint_SoChangesAreVisible()
     {
         var a = AuditScope.Redact(new { Phone = "1" });

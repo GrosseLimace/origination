@@ -42,11 +42,16 @@ public sealed class AuditScope : IAuditScope
         var node = JsonSerializer.SerializeToNode(state, SerializerOptions);
         if (node is null) return null;
 
-        RedactNode(node, parentName: null);
+        RedactNode(node, redactValues: false);
         return node.ToJsonString(SerializerOptions);
     }
 
-    private static void RedactNode(JsonNode node, string? parentName)
+    /// <summary>
+    /// Walks the JSON. Once inside a PII-named property (e.g. <c>contacts</c>), EVERY scalar beneath it is
+    /// fingerprinted — a contact's <c>name</c> is personal data too (STD-MAA-001 MAA-6.1), not just its phone
+    /// and email. True/false flags (e.g. <c>isPrimary</c>) carry no personal data and stay readable.
+    /// </summary>
+    private static void RedactNode(JsonNode node, bool redactValues)
     {
         switch (node)
         {
@@ -56,13 +61,14 @@ public sealed class AuditScope : IAuditScope
                     var child = obj[key];
                     if (child is null) continue;
 
-                    if (IsRedacted(key) && child is JsonValue)
+                    var redact = redactValues || IsRedacted(key);
+                    if (child is JsonValue value)
                     {
-                        obj[key] = Fingerprint(child.ToJsonString());
+                        if (redact && !IsBoolean(value)) obj[key] = Fingerprint(value.ToJsonString());
                     }
                     else
                     {
-                        RedactNode(child, key);
+                        RedactNode(child, redact);
                     }
                 }
                 break;
@@ -73,18 +79,21 @@ public sealed class AuditScope : IAuditScope
                     var child = array[i];
                     if (child is null) continue;
 
-                    if (parentName is not null && IsRedacted(parentName) && child is JsonValue)
+                    if (child is JsonValue value)
                     {
-                        array[i] = Fingerprint(child.ToJsonString());
+                        if (redactValues && !IsBoolean(value)) array[i] = Fingerprint(value.ToJsonString());
                     }
                     else
                     {
-                        RedactNode(child, parentName);
+                        RedactNode(child, redactValues);
                     }
                 }
                 break;
         }
     }
+
+    private static bool IsBoolean(JsonValue value)
+        => value.GetValueKind() is JsonValueKind.True or JsonValueKind.False;
 
     private static bool IsRedacted(string propertyName)
         => RedactedNameFragments.Any(f => propertyName.Contains(f, StringComparison.OrdinalIgnoreCase));
