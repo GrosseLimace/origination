@@ -200,11 +200,11 @@ Roughly 10–14 calendar weeks for a modest feature set. Platform waits dominate
 
 ### Branches (one mobile branch since 2026-10-15)
 
-All mobile work is on **`feature_MobileForMain`**: main + the `Application` extraction (`feature_MobileApplicationLayer`) + these docs + the mobile API and app. It was rebuilt on 2026-10-15 without the Dev BarChart merge that `feature_MobileSurface` carries (that merge also brought the organic certification feed, which is not ready for main).
+All mobile work is on **`feature_MobileForMain`**: main + the `Application` extraction (the business logic moved into its own project) + these docs + the mobile API and app. It was rebuilt on 2026-10-15 without the Dev BarChart merge that the old `feature_MobileSurface` carried (that merge also brought the organic certification feed, which is not ready for main).
 
-- **Into main, two PRs:** `feature_MobileApplicationLayer` first (a pure move of the business logic into its own project, no behaviour change), then `feature_MobileForMain`, whose diff is then only the mobile work. No separate docs PR.
+- **Into main, ONE PR from `feature_MobileForMain`** (decided 2026-10-29). The PR description should present it in two parts so it reviews easily: (1) the `Application` extraction — files moving from `GrainOriginatorPortal.Api` into `GrainOriginatorPortal.Application` with namespaces kept and no behaviour change; (2) the mobile API, app, contract and docs.
 - **Into Dev/QA:** merge `feature_MobileForMain` into the Dev or QA release branch, which already carries the BarChart.
-- `docs_MobileArchitecturePlan` and `feature_MobileSurface` were deleted (2026-10-15 and 2026-10-20) after checking nothing on them was missing elsewhere: every file was either on this branch, an older copy of a file that still exists, or deliberately removed in main (old Farm feature, Unshipped Bushels page). Only the commit-by-commit history of the first mobile build went with them.
+- Deleted after checking nothing on them was missing elsewhere: `docs_MobileArchitecturePlan` (2026-10-15), `feature_MobileSurface` (2026-10-20; every file was on this branch, an older copy of a file that still exists, or deliberately removed in main — only the commit-by-commit history of the first mobile build went with it) and `feature_MobileApplicationLayer` (2026-10-29; fully contained in this branch, kept only for a two-PR route that was dropped).
 
 ## 7. Risks (ranked)
 
