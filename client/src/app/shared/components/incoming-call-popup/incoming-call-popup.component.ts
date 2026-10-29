@@ -56,6 +56,12 @@ import { formatCallerId } from '@shared/utils/phone';
                   }
                   <span class="block text-xs text-gray-500 dark:text-gray-400">{{ detailLine(m) }}</span>
                 </button>
+                @if (call.matches().length > 1) {
+                  <!-- Several producers share this number: let the user go back if they picked the wrong one. -->
+                  <button type="button" (click)="call.clearChoice()" class="mt-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" data-testid="incoming-call-back-to-list">
+                    ‹ Back to all {{ call.matches().length }} producers
+                  </button>
+                }
               } @else {
                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Several producers share this number — choose one:</p>
                 <div class="mt-1.5 flex flex-col gap-1.5 max-h-48 overflow-y-auto">
@@ -129,15 +135,6 @@ export class IncomingCallPopupComponent {
     return this.call.callerDisplayName() ?? 'Unknown caller';
   });
 
-  readonly callerLabel = computed(() => {
-    const m = this.call.selectedMatch();
-    if (m) {
-      const producer = m.scoularId ? `${m.name} (${m.scoularId})` : m.name;
-      // A contact added on the producer details card: say who it is, then whose contact they are.
-      return m.contactName ? `${m.contactName}, ${producer}` : producer;
-    }
-    return this.formattedNumber();
-  });
 
   readonly statusLabel = computed(() => {
     switch (this.call.state()) {
@@ -191,8 +188,8 @@ export class IncomingCallPopupComponent {
     if (m && this.call.state() !== 'ringing') this.navigateTo(m);
   }
 
-  /** Opens the producer's page and remembers the choice (it labels the banner if the call is
-   *  then picked up in Teams). Does not touch the call itself. */
+  /** Opens the producer's page and remembers the choice (the card then shows that producer, with a
+   *  way back to the list when several share the number). Does not touch the call itself. */
   open(m: IncomingCallMatch): void {
     this.call.choose(m.customerId);
     this.navigateTo(m);
