@@ -168,7 +168,16 @@ on hold, and that call takes the main card (answering also opens its producer pa
 card's call ends, the next one moves up — a waiting call first, else the oldest held one, which stays
 on hold until Resume. A waiting call that stops ringing (caller gave up, answered in Teams, voicemail)
 and a held call whose caller hangs up just leave their row. The simulator adds a waiting call when
-used during a call, to exercise all of this without two phones.
+used during a call, to exercise all of this without two phones. Every call is its own card in a
+stack (main call on top); the stack can be collapsed to one bar, and any call that starts ringing
+opens it again.
+
+**Not built — possible follow-up: merging calls (3-way).** The Calling SDK cannot join two existing
+calls. The closest it offers is `TeamsCall.addParticipant({ phoneNumber })` from the live call: the
+held caller is dialled again from the originator's number and must answer a second ring, then their
+held leg is ended. It cannot reach withheld numbers, places an outbound browser call (Teams dial
+plans / caller-ID policies are not applied), and the SDK creates a Teams group chat for it. Parked
+2026-10-29 until originators ask for it; check outbound calling with Infrastructure first.
 
 **Position:** every call opens in the top-right corner. The user can drag it by the grab bar (or the
 icon / status line) anywhere on screen for the rest of that call; double-clicking the grab bar puts it

@@ -143,17 +143,18 @@ describe('IncomingCallPopupComponent', () => {
   // ── Several calls at once ────────────────────────────────────────────────
   const waiting = (over: Partial<IncomingCallSummary> = {}): IncomingCallSummary => ({
     seq: 2, state: 'ringing', callerNumber: '+15155550000', displayName: null,
-    match: JONES, matchCount: 1, matchesLoading: false, ...over,
+    match: JONES, matchCount: 1, matchesLoading: false, connectedSince: null, ...over,
   });
 
-  it('shows a second call as "Also calling" with Hold & answer while on a live call', async () => {
+  it('shows a second call as its own "Incoming call" card with Hold & answer while on a live call', async () => {
     call.state.set('connected');
     call.otherCalls.set([waiting()]);
     const { navigate } = await setup();
 
     const row = screen.getByTestId('incoming-call-other-2');
-    expect(row.textContent).toContain('Also calling');
-    expect(screen.getByTestId('incoming-call-other-label-2').textContent).toContain('Jones Ag');
+    expect(row.textContent).toContain('Incoming call');
+    expect(row.textContent).toContain('Jones Ag');
+    expect(screen.getByTestId('incoming-call-popup').querySelectorAll('[data-testid^="incoming-call-other-"]').length).toBe(1);
     expect(row.textContent).toContain('JONAG');
     expect(row.textContent).toContain('(515) 555-0000');
 
@@ -167,7 +168,16 @@ describe('IncomingCallPopupComponent', () => {
     expect(navigate).toHaveBeenCalledWith(['/'], { queryParams: { customerId: 7 } });
   });
 
-  it('a waiting call can be declined from its row', async () => {
+  it('a held call keeps its own timer on its card', async () => {
+    call.state.set('connected');
+    call.connectedSince.set(Date.now());
+    call.otherCalls.set([waiting({ state: 'held', match: SMITH, connectedSince: Date.now() - 125_000 })]);
+    await setup();
+
+    expect(screen.getByTestId('incoming-call-other-2').textContent).toMatch(/2:0[0-9]/);
+  });
+
+  it('a waiting call can be declined from its card', async () => {
     call.state.set('connected');
     call.otherCalls.set([waiting()]);
     await setup();
@@ -194,7 +204,7 @@ describe('IncomingCallPopupComponent', () => {
 
     const row = screen.getByTestId('incoming-call-other-2');
     expect(row.textContent).toContain('On hold');
-    expect(screen.getByTestId('incoming-call-other-label-2').textContent).toContain('Smith Farms');
+    expect(row.textContent).toContain('Smith Farms');
     expect(row.textContent).toContain('SMIFAR · Minden, NE');
     await userEvent.click(screen.getByRole('button', { name: 'Resume' }));
     expect(call.resumeCall).toHaveBeenCalledWith(2);
@@ -215,7 +225,45 @@ describe('IncomingCallPopupComponent', () => {
 
     expect(screen.getByTestId('incoming-call-other-2').textContent).toContain('Looking up producer');
     expect(screen.getByTestId('incoming-call-other-3').textContent).toContain('3 producers share this number');
-    expect(screen.getByTestId('incoming-call-other-label-4').textContent).toContain('Minden Main');
+    expect(screen.getByTestId('incoming-call-other-4').textContent).toContain('Minden Main');
+  });
+
+  // ── Collapse ─────────────────────────────────────────────────────────────
+  it('collapses to one bar with the call, its timer and the other calls, and expands again', async () => {
+    call.state.set('connected');
+    call.connectedSince.set(Date.now() - 44_000);
+    call.otherCalls.set([waiting({ state: 'held', match: SMITH })]);
+    await setup();
+
+    await userEvent.click(screen.getByTestId('incoming-call-collapse'));
+
+    expect(screen.queryByRole('button', { name: 'Hang up' })).toBeNull();     // full card hidden
+    expect(screen.getByTestId('incoming-call-collapsed-name').textContent).toContain('Smith Farms');
+    expect(screen.getByTestId('incoming-call-collapsed').textContent).toMatch(/0:4\d/);
+    expect(screen.getByTestId('incoming-call-collapsed-badge').textContent).toContain('1 on hold');
+
+    await userEvent.click(screen.getByTestId('incoming-call-expand'));
+    expect(screen.queryByTestId('incoming-call-collapsed')).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Hang up' }).length).toBeGreaterThan(0);
+  });
+
+  it('cannot be collapsed while a call is ringing', async () => {
+    await setup();                                                            // main call ringing
+    expect(screen.queryByTestId('incoming-call-collapse')).toBeNull();
+  });
+
+  it('opens up again by itself when another call starts ringing', async () => {
+    call.state.set('connected');
+    const { fixture } = await setup();
+    await userEvent.click(screen.getByTestId('incoming-call-collapse'));
+    expect(screen.getByTestId('incoming-call-collapsed')).toBeTruthy();
+
+    call.otherCalls.set([waiting()]);                                         // a second call rings
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(screen.queryByTestId('incoming-call-collapsed')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Hold & answer' })).toBeTruthy();
   });
 
   it('shows no rows when there is only one call', async () => {

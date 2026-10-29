@@ -131,6 +131,7 @@ class CallSession {
       match: this.selectedMatch(),
       matchCount: this.matches().length,
       matchesLoading: this.matchesLoading(),
+      connectedSince: this.connectedSince(),
     };
   }
 }
