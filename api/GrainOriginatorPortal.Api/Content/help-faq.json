@@ -170,7 +170,10 @@
       "faqIds": [
         "what-is-bid-sheet",
         "bid-compare",
+        "bid-reference-missing",
         "bid-share",
+        "bid-sheet-list-where",
+        "bid-share-icon-missing",
         "bid-add-location"
       ]
     },
@@ -2791,7 +2794,7 @@
       ],
       "feature": "bidsheet",
       "escalate": false,
-      "lastVerified": "2026-10-28",
+      "lastVerified": "2026-10-29",
       "id": "bid-compare",
       "question": "How do I set a comparison bid?",
       "chip": "Set a comparison bid",
@@ -2806,24 +2809,79 @@
         "bids",
         "against"
       ],
-      "answer": "Pick the location you want every other bid compared against. On one of your bid sheet's locations, open it and select **Set as Reference**. On any location in the full list, open it and select **Compare other bids to this one**. Other locations then show as **Beating** (bidding higher) or **Matching** your reference.",
+      "answer": "Click one of your bid sheet's pins on the map. That location becomes your reference straight away, with no button to press: it's tagged **ref** in the **Bids** list, and every other location shows as **Beating** (bidding higher) or **Matching** it. Click the same pin again to stop comparing. Locations that aren't on your sheet work the same way, and their details offer **Remove as comparison reference**.",
       "steps": [
-        "Click the location on the map, or in the bids list beside it.",
-        "Select **Set as Reference** (or **Compare other bids to this one** for a location that isn't on your sheet).",
-        "Read the map key: Beating means a higher bid than your reference, Matching means the same.",
-        "To stop comparing, select **Remove as comparison reference**, or set a different location as the reference."
+        "Click the location's pin on the map. It becomes the reference right away.",
+        "Or select **Bids** at the bottom-left of the map, click the location's row, then select **Set as Reference**.",
+        "Read the map **Key**: Beating means a higher bid than your reference, Matching means the same.",
+        "To stop comparing, click the pin again, or select **Remove as comparison reference** for a location that isn't on your sheet."
       ],
       "related": [
+        "bid-reference-missing",
         "bid-share",
-        "bid-add-location",
+        "bid-add-location"
+      ],
+      "uiLabels": [
+        "Set as Reference",
+        "Bids",
+        "Key",
+        "Beating",
+        "Matching",
+        "Remove as comparison reference"
+      ],
+      "actions": [
+        {
+          "kind": "spotlight",
+          "label": "Show me on screen",
+          "target": "bid-sheet-bids"
+        }
+      ]
+    },
+    {
+      "id": "bid-reference-missing",
+      "question": "Why don't I see Set as Reference when I click a location?",
+      "chip": "Don't see Set as Reference?",
+      "keywords": [
+        "reference",
+        "set",
+        "see",
+        "missing",
+        "button",
+        "click",
+        "pin",
+        "location",
+        "ref",
+        "compare"
+      ],
+      "routes": [
+        "/bid-sheet"
+      ],
+      "feature": "bidsheet",
+      "lastVerified": "2026-10-29",
+      "answer": "Clicking a pin on the map doesn't show that button, because the click has already made that location your reference. Look for the **ref** tag beside it in the **Bids** list, and **Beating** or **Matching** on the others. The **Set as Reference** button is in a location's details: select **Bids** at the bottom-left of the map, then click the location's row.",
+      "steps": [
+        "Select **Bids** at the bottom-left of the map.",
+        "Click the location's row in the list.",
+        "Select **Set as Reference** at the top of its details.",
+        "If the list says the map is showing **All locations**, pick one of your bid sheets first. The Bids list is your sheet's locations."
+      ],
+      "actions": [
+        {
+          "kind": "spotlight",
+          "label": "Show me on screen",
+          "target": "bid-sheet-bids"
+        }
+      ],
+      "related": [
+        "bid-compare",
         "what-is-bid-sheet"
       ],
       "uiLabels": [
         "Set as Reference",
-        "Compare other bids to this one",
+        "Bids",
+        "All locations",
         "Beating",
-        "Matching",
-        "Remove as comparison reference"
+        "Matching"
       ]
     },
     {
@@ -2832,7 +2890,7 @@
       ],
       "feature": "bidsheet",
       "escalate": false,
-      "lastVerified": "2026-10-28",
+      "lastVerified": "2026-10-29",
       "id": "bid-share",
       "question": "How do I share my bid sheet with others?",
       "chip": "Share a bid sheet",
@@ -2848,18 +2906,123 @@
         "bid",
         "sheet"
       ],
-      "answer": "Open the **Bid sheet** list, then select the share icon next to the sheet. In **Share**, pick from **People**, **Trade Units** or **Groups**, then **Save**. Everyone you add can edit the sheet — its locations, columns and order. Sheets shared with you are marked **shared** in your list.",
+      "answer": "Click the bid sheet name at the start of the bar across the top of the map to open your list of sheets. The small people icon beside each sheet's name is **Share**. Pick from **People**, **Trade Units** or **Groups**, then **Save**. Everyone you add can edit the sheet — its locations, columns and order. Sheets shared with you are marked **shared** in your list.",
       "related": [
-        "bid-compare",
-        "bid-add-location",
-        "what-is-bid-sheet"
+        "bid-sheet-list-where",
+        "bid-share-icon-missing",
+        "bid-compare"
       ],
       "uiLabels": [
-        "Bid sheet",
+        "Share this sheet",
         "People",
         "Trade Units",
         "Groups",
         "Everyone you add can edit this sheet"
+      ],
+      "steps": [
+        "Click the bid sheet name at the start of the bar above the map.",
+        "Select the people icon to the right of the sheet you want to share. Hovering over it shows **Share this sheet**.",
+        "Choose **People**, **Trade Units** or **Groups**, search, and add who should have it.",
+        "Select **Save**."
+      ],
+      "actions": [
+        {
+          "kind": "spotlight",
+          "label": "Show me on screen",
+          "target": "bid-sheet-picker"
+        }
+      ]
+    },
+    {
+      "id": "bid-sheet-list-where",
+      "question": "Where is my list of bid sheets?",
+      "chip": "Where is my bid sheet list?",
+      "keywords": [
+        "list",
+        "sheets",
+        "where",
+        "find",
+        "dropdown",
+        "switch",
+        "choose",
+        "pick",
+        "missing",
+        "bid",
+        "sheet"
+      ],
+      "routes": [
+        "/bid-sheet"
+      ],
+      "feature": "bidsheet",
+      "lastVerified": "2026-10-29",
+      "answer": "At the start of the bar across the top of the map. It shows the name of the sheet you're looking at (or **All locations**). Click it to see every sheet you have, including ones shared with you. Tick a sheet to show it alongside the others, or click its name to show just that one. The same list is under **Bid sheet** at the top of the **Bids** panel.",
+      "steps": [
+        "Look at the bar across the top of the map. The first box is your bid sheet.",
+        "Only see a small arrow? The bar is collapsed: select the arrow (**Expand filters**) to open it.",
+        "No sheets in the list yet? Select **Add**, then **Build a bid sheet**."
+      ],
+      "actions": [
+        {
+          "kind": "spotlight",
+          "label": "Show me on screen",
+          "target": "bid-sheet-picker"
+        }
+      ],
+      "related": [
+        "bid-share",
+        "bid-share-icon-missing"
+      ],
+      "uiLabels": [
+        "All locations",
+        "Bid sheet",
+        "Bids",
+        "Expand filters",
+        "Build a bid sheet"
+      ]
+    },
+    {
+      "id": "bid-share-icon-missing",
+      "question": "Why don't I see the share icon on my bid sheet?",
+      "chip": "Don't see the share icon?",
+      "keywords": [
+        "share",
+        "icon",
+        "button",
+        "see",
+        "missing",
+        "where",
+        "sharing",
+        "bid",
+        "sheet"
+      ],
+      "routes": [
+        "/bid-sheet"
+      ],
+      "feature": "bidsheet",
+      "lastVerified": "2026-10-29",
+      "escalate": true,
+      "answer": "It's only inside the list of sheets, not on the map. Click the bid sheet name at the start of the bar above the map; in the list that opens, the share icon is the small grey people outline to the right of each sheet's name. Hover over it to see **Share this sheet**. Anyone on a sheet can share it, not just the person who made it.",
+      "steps": [
+        "Click the bid sheet name at the start of the bar above the map.",
+        "Find your sheet in the list, then look to the right of its name for the people icon.",
+        "In **Edit Bids**, with one sheet open, the same icon sits beside the sheet name.",
+        "No sheets in the list? You don't have one yet: select **Add**, then **Build a bid sheet**."
+      ],
+      "actions": [
+        {
+          "kind": "spotlight",
+          "label": "Show me on screen",
+          "target": "bid-sheet-picker"
+        }
+      ],
+      "related": [
+        "bid-share",
+        "bid-sheet-list-where"
+      ],
+      "uiLabels": [
+        "Share this sheet",
+        "Edit Bids",
+        "Build a bid sheet"
       ]
     },
     {
@@ -2868,7 +3031,7 @@
       ],
       "feature": "bidsheet",
       "escalate": true,
-      "lastVerified": "2026-10-28",
+      "lastVerified": "2026-10-29",
       "id": "bid-add-location",
       "question": "How do I add a location that isn't getting bids from BarChart?",
       "chip": "Add a location BarChart doesn't cover",
@@ -2886,9 +3049,9 @@
         "pin",
         "new"
       ],
-      "answer": "Add it by hand. Select **Add**, then **Add a location manually**. Click the map where the location is, give it a **Location Name** (tap the ☆ if it's a Scoular facility), then **Continue to Bids** to enter its bids. Bids you type are marked **Manual**; bids fed from BarChart are marked **Feed** and refresh overnight.",
+      "answer": "Add it by hand. Select **Add** at the bottom-left of the map, then **Add a location manually**. Click the map where the location is, give it a **Location Name** (tap the ☆ if it's a Scoular facility), then **Continue to Bids** to enter its bids. Bids you type are marked **Manual**; bids fed from BarChart are marked **Feed** and refresh overnight.",
       "steps": [
-        "Select **Add**, then **Add a location manually**.",
+        "Select **Add** at the bottom-left of the map, then **Add a location manually**.",
         "Zoom in and click the map to place the pin.",
         "Enter the **Location Name**. Tap the ☆ to mark it as a Scoular facility.",
         "Select **Continue to Bids** and enter the bids in the grid."
@@ -2904,6 +3067,13 @@
         "Continue to Bids",
         "Manual",
         "Feed"
+      ],
+      "actions": [
+        {
+          "kind": "spotlight",
+          "label": "Show me on screen",
+          "target": "bid-sheet-add"
+        }
       ]
     }
   ]
