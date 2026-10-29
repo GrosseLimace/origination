@@ -5,7 +5,7 @@ import { forkJoin, of, timer } from 'rxjs';
 import { mergeProducerRows } from './merge-producer-rows';
 import { applyAdoptedCustomerId } from './adopt-assigned-customer';
 import { applyProducerDetails } from '@shared/utils/apply-producer-details';
-import { catchError, takeUntil } from 'rxjs/operators';
+import { catchError, finalize, takeUntil } from 'rxjs/operators';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
@@ -104,6 +104,8 @@ export class HomeComponent {
    *  server's own per-producer cache (Ctrm:LiveCacheSeconds, 60s): refetching sooner would usually be
    *  answered from that cache anyway, so it would cost a round trip for the same bytes. */
   private static readonly CUSTOMER_DATA_MAX_AGE_MS = 60_000;
+  /** How long a trade-unit save runs before the page says it is still working. */
+  static readonly SLOW_TRADE_UNIT_SAVE_MS = 15_000;
 
   /** How long after a FIRST load of a producer the silent convergence refresh fires.
    *
@@ -174,6 +176,14 @@ export class HomeComponent {
   readonly customerNotes = this.notes.customerNotes;
   readonly isLoadingNotes = this.notes.isLoadingNotes;
   readonly isSavingNote = this.notes.isSavingNote;
+
+  /** Producer ids whose trade-unit save (PUT .../trade-units) is still running. */
+  private readonly _tradeUnitSavesInFlight = signal<ReadonlySet<number>>(new Set());
+  /** The selected producer's trade-unit save is still running - the edit dialog keeps Save off meanwhile. */
+  readonly isSavingTradeUnits = computed(() => {
+    const sel = this.selectedCustomer();
+    return !!sel && this._tradeUnitSavesInFlight().has(sel.id);
+  });
   readonly noteSaveSucceededCounter = this.notes.noteSaveSucceededCounter;
   /** The selected producer's follow-ups and the reminder card's state (see HomeRemindersStore). */
   readonly customerReminders = this.reminders.customerReminders;
@@ -1299,7 +1309,24 @@ export class HomeComponent {
     // (onboarding a candidate, or the manual TU set actually changed). A pure details edit
     // skips it entirely, and a failed TU-load never reconciles (so manual TUs can't be wiped).
     if (data.reconcileTradeUnits) {
-      this.apiService.assignTradeUnits(data.customerId, data.tradeUnitCodes ?? [], data.scoularId).subscribe({
+      // The dialog closes at once, so a slow save looked like a dead one: nothing changed on screen, the
+      // rep saved again, and the browser eventually reported a failure for a save the server went on to
+      // finish (PROD 2026-10-28, four saves of one onboarding). Mark it busy, and say so if it runs long.
+      const savingId = data.customerId;
+      this._tradeUnitSavesInFlight.update(ids => new Set(ids).add(savingId));
+      const slowNotice = setTimeout(
+        () => this.toastService.info('Still saving trade units — this can take up to a minute. No need to save again.', 8000),
+        HomeComponent.SLOW_TRADE_UNIT_SAVE_MS);
+      this.apiService.assignTradeUnits(data.customerId, data.tradeUnitCodes ?? [], data.scoularId).pipe(
+        finalize(() => {
+          clearTimeout(slowNotice);
+          this._tradeUnitSavesInFlight.update(ids => {
+            const next = new Set(ids);
+            next.delete(savingId);
+            return next;
+          });
+        })
+      ).subscribe({
         next: (customer) => {
           // The server may have adopted an existing row for the same producer (matched by ScoularId);
           // everything below must use the id it actually wrote the trade units to.

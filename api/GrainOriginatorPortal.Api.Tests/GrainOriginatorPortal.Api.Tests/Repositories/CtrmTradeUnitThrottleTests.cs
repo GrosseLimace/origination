@@ -221,6 +221,68 @@ public class CtrmTradeUnitThrottleTests
 
         Assert.True(DateTime.UtcNow - start < TimeSpan.FromSeconds(1), "an idle app should not delay the walk");
     }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task RunAsync_CancelledWhileQueuedForASlot_LeavesTheQueue_AndTakesNoSlot()
+    {
+        // PROD 2026-10-28: three onboarding saves sat in this queue for ten minutes after the browser had given
+        // up on them. A caller that passes its token must be able to leave, and leaving must not cost a slot.
+        var config = Config(cap: 1, deferSeconds: 0);
+        var release = new TaskCompletionSource();
+        var holding = new TaskCompletionSource();
+        var holder = CtrmTradeUnitThrottle.RunAsync(config, async () =>
+        {
+            holding.SetResult();
+            await release.Task;
+            return 0;
+        });
+        await holding.Task;
+
+        using var cts = new CancellationTokenSource();
+        var ran = false;
+        var queued = CtrmTradeUnitThrottle.RunAsync(config, () =>
+        {
+            ran = true;
+            return Task.FromResult(0);
+        }, cts.Token);
+        await Task.Delay(100);
+        Assert.False(queued.IsCompleted);
+
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => queued.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.False(ran);
+
+        release.SetResult();
+        await holder;
+        // The cancelled waiter held nothing, so the single slot is free for the next caller.
+        Assert.Equal(7, await CtrmTradeUnitThrottle.RunAsync(config, () => Task.FromResult(7)).WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task RunAsync_CancelledWhileDeferringToAnInteractiveRead_StopsDeferring()
+    {
+        var config = Config(deferSeconds: 300);
+        using var cts = new CancellationTokenSource();
+
+        using (CtrmTradeUnitThrottle.Interactive())
+        {
+            var ran = false;
+            var deferred = CtrmTradeUnitThrottle.RunAsync(config, () =>
+            {
+                ran = true;
+                return Task.FromResult(0);
+            }, cts.Token);
+            await Task.Delay(300);
+            Assert.False(deferred.IsCompleted);
+
+            cts.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => deferred.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.False(ran);
+        }
+    }
+
 }
 
 /// <summary>Serialises the throttle tests - they mutate process-wide static state.</summary>
