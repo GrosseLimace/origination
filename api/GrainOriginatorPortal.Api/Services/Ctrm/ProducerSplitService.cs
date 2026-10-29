@@ -8,6 +8,9 @@ namespace GrainOriginatorPortal.Api.Services.Ctrm;
 /// <summary>A producer's CTRM splits, the fields a field plan is built from.</summary>
 public interface IProducerSplitService
 {
+    /// <summary>"manual", "sample" or "ctrm" (<c>Ctrm:SplitsSource</c>).</summary>
+    string Source { get; }
+
     Task<ProducerSplitsResponse> GetByCustomerAsync(long customerId, CancellationToken cancellationToken);
 }
 
@@ -20,8 +23,13 @@ public sealed class ProducerSplitService : IProducerSplitService
         _repository = repository;
     }
 
+    public string Source => _repository.Source;
+
     public async Task<ProducerSplitsResponse> GetByCustomerAsync(long customerId, CancellationToken cancellationToken)
     {
+        // SPLITS-GRAPHQL: no list while splits are typed by hand, and no need for the producer's CTRM code.
+        if (Source == "manual") return new ProducerSplitsResponse { Source = Source, Splits = [] };
+
         var read = await _repository.GetByCustomerAsync(customerId, cancellationToken)
             ?? throw new NotFoundException("Producer with a CTRM code", customerId);
 

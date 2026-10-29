@@ -352,6 +352,7 @@ builder.Services.AddSingleton(GrainOriginatorPortal.Api.Services.FdCic.FdCicSett
 builder.Services.AddSingleton<GrainOriginatorPortal.Api.Services.FdCic.IFdCicMethod, GrainOriginatorPortal.Api.Services.FdCic.FdCicMethodV1>();
 builder.Services.AddSingleton<GrainOriginatorPortal.Api.Services.FdCic.IFdCicService, GrainOriginatorPortal.Api.Services.FdCic.FdCicService>();
 builder.Services.AddScoped<GrainOriginatorPortal.Api.Services.Ctrm.IProducerSplitService, GrainOriginatorPortal.Api.Services.Ctrm.ProducerSplitService>();
+builder.Services.AddScoped<GrainOriginatorPortal.Api.Services.FieldPlan.IFieldTicketService, GrainOriginatorPortal.Api.Services.FieldPlan.FieldTicketService>();
 builder.Services.AddScoped<GrainOriginatorPortal.Api.Services.FieldPlan.IFieldPlanService, GrainOriginatorPortal.Api.Services.FieldPlan.FieldPlanService>();
 
 // Graph directory client (app-access spike) — singleton so the cached Graph token is shared.

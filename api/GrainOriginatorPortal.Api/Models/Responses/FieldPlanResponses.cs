@@ -28,6 +28,8 @@ public record ProducerFieldResponse
     /// <summary>"" until entered.</summary>
     public required string State { get; init; }
     public required string County { get; init; }
+    /// <summary>SPLITS-GRAPHQL: "Manual" (typed by hand until CTRM's splits query is live) or "Ctrm".</summary>
+    public required string SplitSource { get; init; }
 }
 
 public record FieldSeasonResponse
@@ -78,4 +80,42 @@ public record FieldPlanReopenResponse
 {
     public required FieldProgramRecordResponse Record { get; init; }
     public ProgramEnrollmentResponse? Enrollment { get; init; }
+}
+
+/// <summary>
+/// A field's CTRM tickets for its crop year and crop: delivered under its split ID, settled or not. Each is
+/// matched to the crop year by the contract it's applied to, or failing that by its BL date in the window.
+/// </summary>
+public record FieldTicketsResponse
+{
+    public required string SplitId { get; init; }
+    public required int CropYear { get; init; }
+    /// <summary>The crop the tickets were matched on, e.g. "corn".</summary>
+    public string? CropGroup { get; init; }
+    /// <summary>yyyy-MM-dd: the BL-date window for tickets not on a contract with a crop year.</summary>
+    public required string WindowFrom { get; init; }
+    public required string WindowTo { get; init; }
+    public required IReadOnlyList<FieldTicketResponse> Tickets { get; init; }
+}
+
+/// <summary>One delivery (a ticket's detail row for the split), as reviewed, confirmed and exported.</summary>
+public record FieldTicketResponse
+{
+    /// <summary>Stable key for the detail row (ticket prefix, number, suffix, BL date, product, sequence).</summary>
+    public required string TicketKey { get; init; }
+    public required string TicketNumber { get; init; }
+    /// <summary>yyyy-MM-dd.</summary>
+    public string? BlDate { get; init; }
+    /// <summary>Elevator, e.g. "Pratt, KS (PRA)".</summary>
+    public string? Location { get; init; }
+    public string? ProductCode { get; init; }
+    public string? ContractNumber { get; init; }
+    /// <summary>"contract" (the applied contract's crop year) or "window" (BL date in the crop year's window).</summary>
+    public required string CropYearMatch { get; init; }
+    /// <summary>Net bushels for the split's share; null when the pounds or the conversion are missing.</summary>
+    public decimal? NetBushels { get; init; }
+    public required bool Settled { get; init; }
+    /// <summary>yyyy-MM-dd.</summary>
+    public string? SettledDate { get; init; }
+    public string? Status { get; init; }
 }

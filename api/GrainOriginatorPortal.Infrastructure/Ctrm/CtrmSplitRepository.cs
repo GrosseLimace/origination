@@ -6,7 +6,7 @@ namespace GrainOriginatorPortal.Infrastructure.Ctrm;
 /// <summary>A producer's CTRM splits, by customer id.</summary>
 public interface ICtrmSplitRepository
 {
-    /// <summary>"sample" or "ctrm".</summary>
+    /// <summary>"manual", "sample" or "ctrm".</summary>
     string Source { get; }
 
     /// <summary>Null when the customer doesn't exist or has no CTRM code; otherwise the CTRM read, failed or not.</summary>

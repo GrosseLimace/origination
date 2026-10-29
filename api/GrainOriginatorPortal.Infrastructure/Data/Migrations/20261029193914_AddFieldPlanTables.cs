@@ -10,8 +10,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
        Author:      Origination engineering
        Description: Schema only. Four new tables for the field plan and sustainability programs (45Z,
                     GrainCraft): ProducerField (a producer's CTRM split), ProducerFieldSeason (a field on a
-                    crop row for a year), FieldProgramRecord (a season's program inputs and locked estimate)
-                    and ProgramEnrollment. No existing table or row is touched.
+                    crop row for a year), FieldProgramRecord (a season's program inputs, locked estimate and
+                    confirmed CI) and ProgramEnrollment. No existing table or row is touched.
+                    Regenerated 2026-10-29 (never applied anywhere) to add ProducerField.SplitSource, for
+                    split IDs typed by hand until CTRM's splits query is live.
        Rollback:    Down() drops the four tables (their data goes with them).
     */
     /// <summary>
@@ -37,6 +39,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     EffectiveDate = table.Column<DateOnly>(type: "date", nullable: true),
                     State = table.Column<string>(type: "nvarchar(2)", maxLength: 2, nullable: true),
                     County = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    SplitSource = table.Column<string>(type: "nvarchar(10)", maxLength: 10, nullable: false, defaultValue: "Manual"),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "GETUTCDATE()"),
                     CreatedBy = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
                     ModifiedAt = table.Column<DateTime>(type: "datetime2", nullable: true),

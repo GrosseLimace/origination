@@ -1252,6 +1252,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.EffectiveDate).HasColumnName("EffectiveDate").HasColumnType("date").IsRequired(false);
             entity.Property(e => e.State).HasColumnName("State").HasMaxLength(2).IsRequired(false);
             entity.Property(e => e.County).HasColumnName("County").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.SplitSource).HasColumnName("SplitSource").HasMaxLength(10).HasDefaultValue("Manual").IsRequired();
             entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
             entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);

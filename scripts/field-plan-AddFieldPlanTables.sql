@@ -1,7 +1,7 @@
 ﻿BEGIN TRANSACTION;
 IF NOT EXISTS (
     SELECT * FROM [dbo].[__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20261027115725_AddFieldPlanTables'
+    WHERE [MigrationId] = N'20261029193914_AddFieldPlanTables'
 )
 BEGIN
     CREATE TABLE [dbo].[ProducerField] (
@@ -13,6 +13,7 @@ BEGIN
         [EffectiveDate] date NULL,
         [State] nvarchar(2) NULL,
         [County] nvarchar(100) NULL,
+        [SplitSource] nvarchar(10) NOT NULL DEFAULT N'Manual',
         [CreatedAt] datetime2 NOT NULL DEFAULT (GETUTCDATE()),
         [CreatedBy] nvarchar(255) NOT NULL,
         [ModifiedAt] datetime2 NULL,
@@ -24,7 +25,7 @@ END;
 
 IF NOT EXISTS (
     SELECT * FROM [dbo].[__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20261027115725_AddFieldPlanTables'
+    WHERE [MigrationId] = N'20261029193914_AddFieldPlanTables'
 )
 BEGIN
     CREATE TABLE [dbo].[ProgramEnrollment] (
@@ -51,7 +52,7 @@ END;
 
 IF NOT EXISTS (
     SELECT * FROM [dbo].[__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20261027115725_AddFieldPlanTables'
+    WHERE [MigrationId] = N'20261029193914_AddFieldPlanTables'
 )
 BEGIN
     CREATE TABLE [dbo].[ProducerFieldSeason] (
@@ -76,7 +77,7 @@ END;
 
 IF NOT EXISTS (
     SELECT * FROM [dbo].[__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20261027115725_AddFieldPlanTables'
+    WHERE [MigrationId] = N'20261029193914_AddFieldPlanTables'
 )
 BEGIN
     CREATE TABLE [dbo].[FieldProgramRecord] (
@@ -106,7 +107,7 @@ END;
 
 IF NOT EXISTS (
     SELECT * FROM [dbo].[__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20261027115725_AddFieldPlanTables'
+    WHERE [MigrationId] = N'20261029193914_AddFieldPlanTables'
 )
 BEGIN
     EXEC(N'CREATE UNIQUE INDEX [UQ_FieldProgramRecord_Season_Program] ON [dbo].[FieldProgramRecord] ([ProducerFieldSeasonId], [ProgramKey]) WHERE [IsDeleted] = 0');
@@ -114,7 +115,7 @@ END;
 
 IF NOT EXISTS (
     SELECT * FROM [dbo].[__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20261027115725_AddFieldPlanTables'
+    WHERE [MigrationId] = N'20261029193914_AddFieldPlanTables'
 )
 BEGIN
     CREATE INDEX [IX_ProducerField_CustomerId] ON [dbo].[ProducerField] ([CustomerId]);
@@ -122,7 +123,7 @@ END;
 
 IF NOT EXISTS (
     SELECT * FROM [dbo].[__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20261027115725_AddFieldPlanTables'
+    WHERE [MigrationId] = N'20261029193914_AddFieldPlanTables'
 )
 BEGIN
     CREATE UNIQUE INDEX [UQ_ProducerField_SplitId] ON [dbo].[ProducerField] ([SplitId]);
@@ -130,7 +131,7 @@ END;
 
 IF NOT EXISTS (
     SELECT * FROM [dbo].[__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20261027115725_AddFieldPlanTables'
+    WHERE [MigrationId] = N'20261029193914_AddFieldPlanTables'
 )
 BEGIN
     CREATE INDEX [IX_ProducerFieldSeason_PlantingIntentionId] ON [dbo].[ProducerFieldSeason] ([PlantingIntentionId]);
@@ -138,7 +139,7 @@ END;
 
 IF NOT EXISTS (
     SELECT * FROM [dbo].[__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20261027115725_AddFieldPlanTables'
+    WHERE [MigrationId] = N'20261029193914_AddFieldPlanTables'
 )
 BEGIN
     CREATE INDEX [IX_ProducerFieldSeason_ProducerFieldId] ON [dbo].[ProducerFieldSeason] ([ProducerFieldId]);
@@ -146,7 +147,7 @@ END;
 
 IF NOT EXISTS (
     SELECT * FROM [dbo].[__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20261027115725_AddFieldPlanTables'
+    WHERE [MigrationId] = N'20261029193914_AddFieldPlanTables'
 )
 BEGIN
     CREATE INDEX [IX_ProgramEnrollment_Program_Year] ON [dbo].[ProgramEnrollment] ([ProgramKey], [CropYear], [Status]);
@@ -154,7 +155,7 @@ END;
 
 IF NOT EXISTS (
     SELECT * FROM [dbo].[__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20261027115725_AddFieldPlanTables'
+    WHERE [MigrationId] = N'20261029193914_AddFieldPlanTables'
 )
 BEGIN
     CREATE UNIQUE INDEX [UQ_ProgramEnrollment_EnrollmentKey] ON [dbo].[ProgramEnrollment] ([EnrollmentKey]);
@@ -162,7 +163,7 @@ END;
 
 IF NOT EXISTS (
     SELECT * FROM [dbo].[__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20261027115725_AddFieldPlanTables'
+    WHERE [MigrationId] = N'20261029193914_AddFieldPlanTables'
 )
 BEGIN
     EXEC(N'CREATE UNIQUE INDEX [UQ_ProgramEnrollment_Live] ON [dbo].[ProgramEnrollment] ([CustomerId], [ProgramKey], [CropYear]) WHERE [Status] IN (''Open'', ''Attested'')');
@@ -170,11 +171,11 @@ END;
 
 IF NOT EXISTS (
     SELECT * FROM [dbo].[__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20261027115725_AddFieldPlanTables'
+    WHERE [MigrationId] = N'20261029193914_AddFieldPlanTables'
 )
 BEGIN
     INSERT INTO [dbo].[__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N'20261027115725_AddFieldPlanTables', N'10.0.3');
+    VALUES (N'20261029193914_AddFieldPlanTables', N'10.0.3');
 END;
 
 COMMIT;

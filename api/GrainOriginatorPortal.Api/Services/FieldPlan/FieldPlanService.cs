@@ -30,6 +30,7 @@ public interface IFieldPlanService
     Task RemoveRecordAsync(int recordId, CancellationToken ct);
     Task<FieldProgramRecordResponse> LockAsync(int recordId, CancellationToken ct);
     Task<FieldPlanReopenResponse> ReopenAsync(int recordId, string reason, CancellationToken ct);
+    Task<FieldProgramRecordResponse> ConfirmAsync(int recordId, ConfirmFieldProgramRecordRequest request, CancellationToken ct);
     Task<ProgramEnrollmentResponse?> EnsureEnrollmentAsync(EnsureProgramEnrollmentRequest request, CancellationToken ct);
     Task<ProgramEnrollmentResponse> UpdateAttestationAsync(Guid key, ProgramAttestationDto attestation, CancellationToken ct);
     Task<ProgramEnrollmentResponse> AttestAsync(Guid key, IReadOnlyList<JsonElement> listed, CancellationToken ct);
@@ -46,16 +47,18 @@ public sealed class FieldPlanService : IFieldPlanService
     private readonly IFieldPlanRepository _repository;
     private readonly IProducerSplitService _splits;
     private readonly IFdCicService _fdCic;
+    private readonly IFieldTicketService _tickets;
     private readonly IRequestContextService _requestContext;
     private readonly ILogger<FieldPlanService> _logger;
     private readonly TimeProvider _clock;
 
-    public FieldPlanService(IFieldPlanRepository repository, IProducerSplitService splits, IFdCicService fdCic,
+    public FieldPlanService(IFieldPlanRepository repository, IProducerSplitService splits, IFdCicService fdCic, IFieldTicketService tickets,
         IRequestContextService requestContext, ILogger<FieldPlanService> logger, TimeProvider? clock = null)
     {
         _repository = repository;
         _splits = splits;
         _fdCic = fdCic;
+        _tickets = tickets;
         _requestContext = requestContext;
         _logger = logger;
         _clock = clock ?? TimeProvider.System;
@@ -80,48 +83,69 @@ public sealed class FieldPlanService : IFieldPlanService
     // ── Fields and seasons ───────────────────────────────────────────────────
 
     /// <summary>
-    /// A field is one of the producer's CTRM splits. Its name, split % and effective date are taken from
-    /// CTRM, never the request; a split another producer already holds is refused.
+    /// A field is one of the producer's splits; a split another producer already holds is refused. With CTRM's
+    /// splits query its name, split % and effective date come from CTRM, never the request. SPLITS-GRAPHQL: until
+    /// that query is live (any other <c>Ctrm:SplitsSource</c>) the originator types them, and the field is marked Manual.
     /// </summary>
     public async Task<ProducerFieldResponse> CreateFieldAsync(CreateProducerFieldRequest request, CancellationToken ct)
     {
         var splitId = request.SplitId.Trim().ToUpperInvariant();
+        if (!IsSplitCode(splitId))
+            throw new ValidationException("splitId", "A split ID is 1 to 7 letters or digits, as in CTRM (e.g. TATOB43).");
         var existing = await _repository.GetFieldAsync(splitId, ct);
         if (existing is not null && existing.CustomerId != request.CustomerId)
             throw new BusinessException($"Split {splitId} is another producer's field.", "FIELD_PLAN_SPLIT_TAKEN");
         if (existing is not null) return ToResponse(existing);
 
-        var splits = await _splits.GetByCustomerAsync(request.CustomerId, ct);
-        var split = splits.Splits.FirstOrDefault(s => string.Equals(s.SplitId, splitId, StringComparison.OrdinalIgnoreCase))
-            ?? throw new BusinessException($"{splitId} isn't one of this producer's CTRM splits.", "FIELD_PLAN_UNKNOWN_SPLIT", StatusCodes.Status422UnprocessableEntity);
-        if (split.Expired || split.Kind != "Field")
-            throw new BusinessException($"{splitId} is {(split.Expired ? "expired" : "a bin site, not a field")} in CTRM.", "FIELD_PLAN_SPLIT_NOT_A_FIELD", StatusCodes.Status422UnprocessableEntity);
-
         var field = new ProducerField
         {
             CustomerId = request.CustomerId,
             SplitId = splitId,
-            Name = split.FieldName,
-            SplitPercent = split.SplitPercent,
-            EffectiveDate = DateOnly.TryParseExact(split.EffectiveDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : null,
             State = Clean(request.State)?.ToUpperInvariant(),
             County = Clean(request.County),
             CreatedAt = Now,
             CreatedBy = User,
         };
+        if (_splits.Source == "ctrm")
+        {
+            var splits = await _splits.GetByCustomerAsync(request.CustomerId, ct);
+            var split = splits.Splits.FirstOrDefault(s => string.Equals(s.SplitId, splitId, StringComparison.OrdinalIgnoreCase))
+                ?? throw new BusinessException($"{splitId} isn't one of this producer's CTRM splits.", "FIELD_PLAN_UNKNOWN_SPLIT", StatusCodes.Status422UnprocessableEntity);
+            if (split.Expired || split.Kind != "Field")
+                throw new BusinessException($"{splitId} is {(split.Expired ? "expired" : "a bin site, not a field")} in CTRM.", "FIELD_PLAN_SPLIT_NOT_A_FIELD", StatusCodes.Status422UnprocessableEntity);
+            field.Name = split.FieldName;
+            field.SplitPercent = split.SplitPercent;
+            field.EffectiveDate = DateOnly.TryParseExact(split.EffectiveDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : null;
+            field.SplitSource = "Ctrm";
+        }
+        else
+        {
+            // SPLITS-GRAPHQL: typed by the originator. Sample splits (local demos) are treated the same way.
+            if (!await _repository.CustomerExistsAsync(request.CustomerId, ct))
+                throw new NotFoundException("Producer", request.CustomerId);
+            field.Name = Clean(request.Name) ?? splitId;
+            field.SplitPercent = request.SplitPercent ?? 100m;
+            field.EffectiveDate = request.EffectiveDate;
+            field.SplitSource = "Manual";
+        }
         _repository.Add(field);
         await _repository.SaveChangesAsync(ct);
         Audit("AUDIT_CREATE", "ProducerField", splitId, field.CustomerId);
         return ToResponse(field);
     }
 
-    /// <summary>Only the location changes; everything else is CTRM's.</summary>
+    /// <summary>The location; and for a split typed by hand, its name and share. A CTRM split's are CTRM's. The split ID never changes.</summary>
     public async Task<ProducerFieldResponse> UpdateFieldAsync(string splitId, UpdateProducerFieldRequest request, CancellationToken ct)
     {
         var field = await _repository.GetFieldAsync(splitId.Trim().ToUpperInvariant(), ct)
             ?? throw new NotFoundException("Field", splitId);
         field.State = Clean(request.State)?.ToUpperInvariant();
         field.County = Clean(request.County);
+        if (field.SplitSource == "Manual")
+        {
+            if (Clean(request.Name) is { } name) field.Name = name;
+            if (request.SplitPercent is { } pct) field.SplitPercent = pct;
+        }
         Touch(field);
         await _repository.SaveChangesAsync(ct);
         Audit("AUDIT_UPDATE", "ProducerField", field.SplitId, field.CustomerId);
@@ -272,10 +296,10 @@ public sealed class FieldPlanService : IFieldPlanService
         if (live is { Status: Attested } && SnapshotRecordIds(live.Snapshot).Contains(record.Id.ToString(CultureInfo.InvariantCulture)))
             throw new BusinessException("The producer's attested enrollment holds this record, so it can't be reopened.", "FIELD_PLAN_HELD");
 
-        var history = record.Reopened is null ? new JsonArray() : JsonNode.Parse(record.Reopened)!.AsArray();
-        history.Add(new JsonObject { ["reason"] = reason.Trim(), ["at"] = Now.ToString("o"), ["frozen"] = JsonNode.Parse(record.Frozen) });
-        record.Reopened = history.ToJsonString(FieldPlanPrograms.Json);
+        // A confirmed CI is unlocked with its estimate: both go to the history, and the field can be reviewed again.
+        KeepInHistory(record, reason.Trim());
         record.Frozen = null;
+        record.Official = null;
         record.LockedBy = null;
         record.LockedAt = null;
         record.Status = StatusFor(record, season);
@@ -288,6 +312,72 @@ public sealed class FieldPlanService : IFieldPlanService
         await _repository.SaveChangesAsync(ct);
         Audit("AUDIT_REOPEN", "FieldProgramRecord", recordId, customerId);
         return new FieldPlanReopenResponse { Record = ToResponse(record), Enrollment = live is null ? null : ToResponse(live) };
+    }
+
+    /// <summary>
+    /// Confirms a 45Z field after harvest, once the originator has gone over its inputs and CTRM tickets with
+    /// the producer. The tickets are read again here and only the listed keys are kept, so the bushels are
+    /// CTRM's, never the request's. The actual yield is set, the CI is rescored with the server's calculator
+    /// and the record locked (an earlier harvest lock goes to the history), and the confirmed CI with its
+    /// bushels and tickets becomes the record's official result: what the Bins' CSV is built from.
+    /// Allowed while an attested enrollment holds the record: attesting comes before harvest, confirming after.
+    /// </summary>
+    public async Task<FieldProgramRecordResponse> ConfirmAsync(int recordId, ConfirmFieldProgramRecordRequest request, CancellationToken ct)
+    {
+        var record = await RequireRecordAsync(recordId, ct);
+        if (record.ProgramKey != FieldPlanPrograms.FdCic)
+            throw new BusinessException("Only a 45Z field is confirmed with its tickets.", "FIELD_PLAN_NOT_CONFIRMABLE");
+        if (record.Official is not null)
+            throw new BusinessException("This field's CI is already confirmed; unlock it to review it again.", "FIELD_PLAN_ALREADY_CONFIRMED");
+        if (!request.ReviewedWithProducer)
+            throw new ValidationException("reviewedWithProducer", "Confirm that the inputs and tickets were reviewed with the producer after harvest.");
+        var keys = request.TicketKeys.Select(k => k.Trim()).Where(k => k.Length > 0).ToHashSet(StringComparer.Ordinal);
+        if (keys.Count == 0)
+            throw new ValidationException("ticketKeys", "Include at least one ticket.");
+
+        var season = record.Season!;
+        var field = season.Field!;
+        var found = await _tickets.ForRecordAsync(record, ct);
+        var included = found.Tickets.Where(t => keys.Contains(t.TicketKey)).ToList();
+        if (included.Count != keys.Count)
+            throw new BusinessException("Some of those tickets are no longer this field's in CTRM; reopen the review and try again.", "FIELD_PLAN_STALE_TICKETS");
+
+        var data = JsonNode.Parse(record.Data)!.AsObject();
+        data["actualYield"] = request.ActualYield;
+        record.Data = data.ToJsonString(FieldPlanPrograms.Json);
+        if (record.Frozen is not null) KeepInHistory(record, "Replaced by the confirmed CI");
+
+        var now = Now;
+        record.Frozen = FieldPlanPrograms.Freeze(record, season, field, _fdCic, User, now);
+        var frozen = JsonNode.Parse(record.Frozen)!;
+        record.Official = new JsonObject
+        {
+            ["status"] = "Documented",
+            ["score"] = frozen["score"]!.DeepClone(),
+            ["method"] = frozen["calculatorVersion"]!.DeepClone(),
+            ["actualYield"] = request.ActualYield,
+            ["bushels"] = included.Sum(t => t.NetBushels ?? 0m),
+            ["tickets"] = JsonSerializer.SerializeToNode(included, FieldPlanPrograms.Json),
+            ["documentedBy"] = User,
+            ["documentedAt"] = now.ToString("o"),
+        }.ToJsonString(FieldPlanPrograms.Json);
+        record.Status = Locked;
+        record.LockedBy = User;
+        record.LockedAt = now;
+        Touch(record);
+        await _repository.SaveChangesAsync(ct);
+        Audit("AUDIT_CONFIRM", "FieldProgramRecord", recordId, field.CustomerId);
+        return ToResponse(record);
+    }
+
+    /// <summary>Adds the record's current locked estimate (and confirmed CI, if any) to its history with a reason.</summary>
+    private void KeepInHistory(FieldProgramRecord record, string reason)
+    {
+        var history = record.Reopened is null ? new JsonArray() : JsonNode.Parse(record.Reopened)!.AsArray();
+        var entry = new JsonObject { ["reason"] = reason, ["at"] = Now.ToString("o"), ["frozen"] = JsonNode.Parse(record.Frozen!) };
+        if (record.Official is not null) entry["official"] = JsonNode.Parse(record.Official);
+        history.Add(entry);
+        record.Reopened = history.ToJsonString(FieldPlanPrograms.Json);
     }
 
     // ── Enrollments ─────────────────────────────────────────────────────────
@@ -449,6 +539,9 @@ public sealed class FieldPlanService : IFieldPlanService
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    /// <summary>CTRM customer (split) codes: 1 to 7 letters or digits (CtrmCustomerCodes.MaxLength).</summary>
+    private static bool IsSplitCode(string id) => id.Length is >= 1 and <= 7 && id.All(char.IsAsciiLetterOrDigit);
+
     private static HashSet<string> SnapshotRecordIds(string? snapshot) => SnapshotValues(snapshot, "recordId").ToHashSet();
 
     private static IEnumerable<string> SnapshotValues(string? snapshot, string property)
@@ -486,6 +579,7 @@ public sealed class FieldPlanService : IFieldPlanService
         EffectiveDate = f.EffectiveDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "",
         State = f.State ?? "",
         County = f.County ?? "",
+        SplitSource = f.SplitSource,
     };
 
     private static FieldSeasonResponse ToResponse(ProducerFieldSeason s, string splitId) => new()

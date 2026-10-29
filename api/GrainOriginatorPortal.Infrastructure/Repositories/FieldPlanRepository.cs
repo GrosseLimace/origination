@@ -69,6 +69,12 @@ public class FieldPlanRepository : IFieldPlanRepository
     public Task<bool> PlantingIntentionMatchesAsync(int plantingIntentionId, long customerId, int cropYear, CancellationToken cancellationToken) =>
         _db.PlantingIntentions.AnyAsync(p => p.Id == plantingIntentionId && p.CustomerId == customerId && p.PlantingYear == cropYear, cancellationToken);
 
+    public Task<bool> CustomerExistsAsync(long customerId, CancellationToken cancellationToken) =>
+        _db.Customers.AnyAsync(c => c.Id == customerId, cancellationToken);
+
+    public Task<string?> GetPlantingIntentionCropAsync(int plantingIntentionId, CancellationToken cancellationToken) =>
+        _db.PlantingIntentions.IgnoreQueryFilters().Where(p => p.Id == plantingIntentionId).Select(p => p.Crop).FirstOrDefaultAsync(cancellationToken);
+
     public void Add<T>(T entity) where T : class => _db.Add(entity);
 
     public Task SaveChangesAsync(CancellationToken cancellationToken) => _db.SaveChangesAsync(cancellationToken);

@@ -43,6 +43,11 @@ public interface IFieldPlanRepository
     /// <summary>Whether the planting intention exists, belongs to the producer and is for that year.</summary>
     Task<bool> PlantingIntentionMatchesAsync(int plantingIntentionId, long customerId, int cropYear, CancellationToken cancellationToken);
 
+    Task<bool> CustomerExistsAsync(long customerId, CancellationToken cancellationToken);
+
+    /// <summary>The crop row's commodity code (PlantingIntention.Crop, e.g. "YC"), deleted rows included; null when it doesn't exist.</summary>
+    Task<string?> GetPlantingIntentionCropAsync(int plantingIntentionId, CancellationToken cancellationToken);
+
     void Add<T>(T entity) where T : class;
 
     Task SaveChangesAsync(CancellationToken cancellationToken);

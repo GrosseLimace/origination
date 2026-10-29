@@ -3,14 +3,30 @@ using System.Text.Json;
 
 namespace GrainOriginatorPortal.Api.Models.Requests;
 
-/// <summary>Adds one of the producer's CTRM splits as a field. Name, split % and effective date come from CTRM, not the request.</summary>
+/// <summary>
+/// Adds one of the producer's splits as a field. With CTRM's splits query (<c>Ctrm:SplitsSource</c> = ctrm) the
+/// name, split % and effective date come from CTRM and these are ignored. SPLITS-GRAPHQL: until then they are
+/// typed by the originator (the go-live "manual" source).
+/// </summary>
 public record CreateProducerFieldRequest
 {
     [Range(1, long.MaxValue)]
     public required long CustomerId { get; init; }
 
+    /// <summary>CTRM split (customer) codes are at most 7 letters/digits; checked in the service.</summary>
     [Required, StringLength(20, MinimumLength = 1)]
     public required string SplitId { get; init; }
+
+    /// <summary>Manual splits only; defaults to the split ID.</summary>
+    [StringLength(255)]
+    public string? Name { get; init; }
+
+    /// <summary>Manual splits only: the producer's share, defaults to 100.</summary>
+    [Range(0.001, 100)]
+    public decimal? SplitPercent { get; init; }
+
+    /// <summary>Manual splits only, yyyy-MM-dd.</summary>
+    public DateOnly? EffectiveDate { get; init; }
 
     [StringLength(2)]
     public string? State { get; init; }
@@ -19,7 +35,7 @@ public record CreateProducerFieldRequest
     public string? County { get; init; }
 }
 
-/// <summary>A field's location: the only part of a field the app edits.</summary>
+/// <summary>A field's location, and for a split typed by hand its name and share (CTRM's are read-only).</summary>
 public record UpdateProducerFieldRequest
 {
     [StringLength(2)]
@@ -27,6 +43,14 @@ public record UpdateProducerFieldRequest
 
     [StringLength(100)]
     public string? County { get; init; }
+
+    /// <summary>Manual splits only; ignored for CTRM splits.</summary>
+    [StringLength(255)]
+    public string? Name { get; init; }
+
+    /// <summary>Manual splits only; ignored for CTRM splits.</summary>
+    [Range(0.001, 100)]
+    public decimal? SplitPercent { get; init; }
 }
 
 public record CreateFieldSeasonRequest
@@ -135,4 +159,19 @@ public record AttestEnrollmentRequest
 public record HarvestCompleteRequest
 {
     public required bool Complete { get; init; }
+}
+
+/// <summary>Confirms a 45Z field after harvest with the tickets reviewed with the producer.</summary>
+public record ConfirmFieldProgramRecordRequest
+{
+    /// <summary>bu/ac, prefilled on screen from the included tickets ÷ acres and editable.</summary>
+    [Range(0.01, 1000)]
+    public required double ActualYield { get; init; }
+
+    /// <summary>The included tickets' keys, from GET records/{id}/tickets.</summary>
+    [Required, MinLength(1), MaxLength(1000)]
+    public required List<string> TicketKeys { get; init; }
+
+    /// <summary>The originator's tick: reviewed with the producer after harvest.</summary>
+    public required bool ReviewedWithProducer { get; init; }
 }

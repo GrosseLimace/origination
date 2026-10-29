@@ -109,15 +109,38 @@ public class CtrmSplitTests
     }
 
     // -------------------------------------------------------------------------
+    // SPLITS-GRAPHQL: typed by hand by default until CTRM's splits query is confirmed.
     [Theory]
-    [InlineData(null)]
-    [InlineData("sample")]
-    [InlineData(" Sample ")]
-    public void Registration_UsesTheSampleSplitsByDefault(string? source)
+    [InlineData(null, typeof(ManualCtrmSplitReader))]
+    [InlineData("manual", typeof(ManualCtrmSplitReader))]
+    [InlineData("sample", typeof(SampleCtrmSplitReader))]
+    [InlineData(" Sample ", typeof(SampleCtrmSplitReader))]
+    public void Registration_IsManualByDefault_SampleOnRequest(string? source, Type expected)
     {
         var services = new ServiceCollection();
         DependencyInjection.AddCtrmSplits(services, source is null ? Config() : Config(("Ctrm:SplitsSource", source)));
-        Assert.Contains(services, d => d.ServiceType == typeof(ICtrmSplitReader) && d.ImplementationType == typeof(SampleCtrmSplitReader));
+        Assert.Contains(services, d => d.ServiceType == typeof(ICtrmSplitReader) && d.ImplementationType == expected);
+    }
+
+    [Fact]
+    public async Task ManualReader_HasNoList()
+    {
+        var reader = new ManualCtrmSplitReader();
+        var read = await reader.GetForProducerAsync("TATOBIN", CancellationToken.None);
+
+        Assert.Equal("manual", reader.Source);
+        Assert.Equal(CtrmReadStatus.Ok, read.Status);
+        Assert.Empty(read.Value!);
+    }
+
+    [Fact]
+    public void TheShippedConfiguration_IsManual()
+    {
+        var config = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: false)
+            .Build();
+
+        Assert.Equal("manual", config["Ctrm:SplitsSource"]);
     }
 
     // -------------------------------------------------------------------------

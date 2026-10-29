@@ -2304,6 +2304,14 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("decimal(7,3)")
                         .HasColumnName("SplitPercent");
 
+                    b.Property<string>("SplitSource")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasDefaultValue("Manual")
+                        .HasColumnName("SplitSource");
+
                     b.Property<string>("State")
                         .HasMaxLength(2)
                         .HasColumnType("nvarchar(2)")

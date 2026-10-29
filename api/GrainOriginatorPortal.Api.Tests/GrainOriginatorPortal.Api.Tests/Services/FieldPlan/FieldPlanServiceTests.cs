@@ -3,6 +3,7 @@ using System.Text.Json;
 
 // Microsoft namespaces
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
 // Third-party namespaces
@@ -16,8 +17,10 @@ using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Services.Ctrm;
 using GrainOriginatorPortal.Api.Services.FdCic;
 using GrainOriginatorPortal.Api.Services.FieldPlan;
+using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Repositories;
 
 namespace GrainOriginatorPortal.Api.Tests.Services.FieldPlan;
@@ -48,20 +51,26 @@ public class FieldPlanServiceTests
     {
         public required ApplicationDbContext Db { get; init; }
         public required FieldPlanService Service { get; init; }
+        public required FieldTicketService Tickets { get; init; }
+        /// <summary>What CTRM has delivered under the split, and its contracts' crop years (the fake ticket reader).</summary>
+        public List<Ticket> CtrmTickets { get; } = [];
+        public Dictionary<string, int> ContractYears { get; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
-    private static Harness New()
+    /// <summary>The CTRM splits path unless a test asks for "manual" (SPLITS-GRAPHQL: the go-live default).</summary>
+    private static Harness New(string splitSource = "ctrm")
     {
         var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase($"field-plan-{Guid.NewGuid()}").Options);
         db.Customers.Add(new Customer { Id = Tobin, Name = "T-A TOBIN FARMS LC", ScoularId = "TATOBIN" });
         db.Customers.Add(new Customer { Id = Other, Name = "Other Farm", ScoularId = "OTHER" });
-        db.PlantingIntentions.Add(new PlantingIntention { Id = CornRow, CustomerId = Tobin, TradeUnit = "2190", PlantingYear = 2026, Crop = "Irrigated Corn", Acres = 500, CreatedBy = "x" });
-        db.PlantingIntentions.Add(new PlantingIntention { Id = WheatRow, CustomerId = Tobin, TradeUnit = "2190", PlantingYear = 2026, Crop = "Wheat", Acres = 200, CreatedBy = "x" });
+        db.PlantingIntentions.Add(new PlantingIntention { Id = CornRow, CustomerId = Tobin, TradeUnit = "2190", PlantingYear = 2026, Crop = "YC", Type = "Irrigated", Acres = 500, CreatedBy = "x" });
+        db.PlantingIntentions.Add(new PlantingIntention { Id = WheatRow, CustomerId = Tobin, TradeUnit = "2190", PlantingYear = 2026, Crop = "HRWW", Acres = 200, CreatedBy = "x" });
         db.PlantingIntentions.Add(new PlantingIntention { Id = OtherRow, CustomerId = Other, TradeUnit = "2190", PlantingYear = 2026, Crop = "Corn", Acres = 100, CreatedBy = "x" });
         db.SaveChanges();
 
         var splits = new Mock<IProducerSplitService>();
+        splits.Setup(s => s.Source).Returns(splitSource);
         splits.Setup(s => s.GetByCustomerAsync(It.IsAny<long>(), It.IsAny<CancellationToken>())).ReturnsAsync((long id, CancellationToken _) => new ProducerSplitsResponse
         {
             Source = "sample",
@@ -72,12 +81,41 @@ public class FieldPlanServiceTests
         var context = new Mock<IRequestContextService>();
         context.Setup(c => c.GetCurrentUser()).Returns(User);
 
-        return new Harness
+        var repository = new FieldPlanRepository(db);
+        var reader = new Mock<IFieldTicketReader>();
+        var commodities = new Mock<ICommodityRepository>();
+        commodities.Setup(c => c.GetActiveAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        // Corn's ODS conversion; soybeans are left to the standard weight.
+        commodities.Setup(c => c.GetConversionsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new CommodityConversion { CommodityCode = "YC", LbsPerUnit = 56m }]);
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["FieldPlan:TicketWindow:soybeans:From"] = "09-15" })
+            .Build();
+        var tickets = new FieldTicketService(repository, reader.Object, commodities.Object, config);
+        var harness = new Harness
         {
             Db = db,
-            Service = new FieldPlanService(new FieldPlanRepository(db), splits.Object, FdCic.Value, context.Object, NullLogger<FieldPlanService>.Instance),
+            Tickets = tickets,
+            Service = new FieldPlanService(repository, splits.Object, FdCic.Value, tickets, context.Object, NullLogger<FieldPlanService>.Instance),
         };
+        reader.Setup(r => r.ReadAsync(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((long _, string split, CancellationToken _) => new CtrmReadResult<FieldTicketRead>
+            {
+                Status = CtrmReadStatus.Ok,
+                Value = new FieldTicketRead(harness.CtrmTickets.Where(t => t.CustomerCode == split).ToList(), harness.ContractYears),
+            });
+        return harness;
     }
+
+    private static int _nextTicket = 1;
+
+    /// <summary>A CTRM delivery under a split: net pounds for its share, on a contract or not.</summary>
+    private static Ticket Delivery(string date, long pounds, string product = "YC", string split = "TATOB43", string? contract = null, DateTime? settled = null) => new()
+    {
+        Id = 1000 + _nextTicket, TicketNumber = $"P{_nextTicket++}", CustomerCode = split, ProductCode = product, Date = date,
+        AppliedDockQuantity = pounds, CtrmContractNumber = contract, FinalSettledDate = settled,
+        TicketStatusDescription = settled is null ? "Unload" : "Final Settled", ElevatorCode = "PRA", ElevatorCity = "Pratt", ElevatorState = "KS",
+    };
 
     private static ProducerSplitResponse Split(string id, string name) => new()
     {
@@ -146,6 +184,66 @@ public class FieldPlanServiceTests
             New().Service.CreateFieldAsync(new CreateProducerFieldRequest { CustomerId = Tobin, SplitId = splitId }, default));
 
         Assert.Equal(code, ex.ErrorCode);
+    }
+
+    // SPLITS-GRAPHQL: typed by hand until CTRM's splits query is live.
+    [Fact]
+    public async Task CreateField_Manual_TakesTheTypedNameAndShare_AndMarksItManual()
+    {
+        var h = New("manual");
+
+        var field = await h.Service.CreateFieldAsync(new CreateProducerFieldRequest
+        {
+            CustomerId = Tobin, SplitId = " tatob43 ", Name = " Jarboe West ", SplitPercent = 50m, State = "ks", County = "Pratt",
+        }, default);
+
+        Assert.Equal(("TATOB43", "Jarboe West", 50m, "Manual", "KS"), (field.SplitId, field.Name, field.SplitPercent, field.SplitSource, field.State));
+    }
+
+    [Fact]
+    public async Task CreateField_Manual_DefaultsTheNameToTheIdAndTheShareTo100()
+    {
+        var field = await New("manual").Service.CreateFieldAsync(new CreateProducerFieldRequest { CustomerId = Tobin, SplitId = "NEW01" }, default);
+
+        Assert.Equal(("NEW01", 100m, ""), (field.Name, field.SplitPercent, field.EffectiveDate));
+    }
+
+    [Theory]
+    [InlineData("TATOB430")]
+    [InlineData("TA-TOB")]
+    [InlineData("TA TOB")]
+    public async Task CreateField_RefusesAnIdThatIsntACtrmCode(string splitId)
+    {
+        await Assert.ThrowsAsync<ValidationException>(() =>
+            New("manual").Service.CreateFieldAsync(new CreateProducerFieldRequest { CustomerId = Tobin, SplitId = splitId }, default));
+    }
+
+    [Fact]
+    public async Task CreateField_Manual_StillOneProducerPerSplit_AndAnUnknownProducerIsRefused()
+    {
+        var h = New("manual");
+        await h.Service.CreateFieldAsync(new CreateProducerFieldRequest { CustomerId = Tobin, SplitId = "TATOB43" }, default);
+
+        await Assert.ThrowsAsync<BusinessException>(() =>
+            h.Service.CreateFieldAsync(new CreateProducerFieldRequest { CustomerId = Other, SplitId = "TATOB43" }, default));
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            h.Service.CreateFieldAsync(new CreateProducerFieldRequest { CustomerId = 12345, SplitId = "XX01" }, default));
+    }
+
+    [Fact]
+    public async Task UpdateField_ChangesNameAndShareOnlyForManualSplits()
+    {
+        var manual = New("manual");
+        await manual.Service.CreateFieldAsync(new CreateProducerFieldRequest { CustomerId = Tobin, SplitId = "TATOB43" }, default);
+        var ctrm = New();
+        await ctrm.Service.CreateFieldAsync(new CreateProducerFieldRequest { CustomerId = Tobin, SplitId = "TATOB43" }, default);
+        var change = new UpdateProducerFieldRequest { Name = "Renamed", SplitPercent = 25m, State = "KS", County = "Pratt" };
+
+        var m = await manual.Service.UpdateFieldAsync("TATOB43", change, default);
+        var c = await ctrm.Service.UpdateFieldAsync("TATOB43", change, default);
+
+        Assert.Equal(("Renamed", 25m), (m.Name, m.SplitPercent));
+        Assert.Equal(("JARBOE WEST", 66.667m, "Pratt"), (c.Name, c.SplitPercent, c.County));
     }
 
     [Fact]
@@ -381,6 +479,167 @@ public class FieldPlanServiceTests
             SignerName = "x", SignedOn = "2026-01-01", Method = "eSign", DocumentRef = "",
             Confirmations = new() { ["somethingElse"] = true },
         }, default));
+    }
+
+    // ── Tickets for the 45Z review ──────────────────────────────────────────
+
+    [Fact]
+    public async Task Tickets_AreTheSplitsDeliveriesOfTheCrop_InTheCropYear_SettledOrNot()
+    {
+        var h = New();
+        var (_, record) = await CornField(h);
+        h.CtrmTickets.AddRange(
+        [
+            Delivery("2026-10-05", 56_000),                                       // 1,000 bu, in the window
+            Delivery("2026-11-02", 28_000, settled: new DateTime(2026, 11, 20)),   // settled: still shown
+            Delivery("2026-10-06", 56_000, split: "TATOB44"),                      // another split
+            Delivery("2026-10-07", 60_000, product: "YSB"),                        // another crop
+            Delivery("2026-07-15", 56_000),                                       // last crop year's window
+            Delivery("2027-08-01", 56_000),                                       // next crop year's window
+        ]);
+
+        var found = await h.Tickets.ForRecordAsync(int.Parse(record.Id), default);
+
+        Assert.Equal(("corn", "2026-08-01", "2027-07-31"), (found.CropGroup, found.WindowFrom, found.WindowTo));
+        Assert.Equal(new[] { "2026-10-05", "2026-11-02" }, found.Tickets.Select(t => t.BlDate));
+        Assert.Equal(new decimal?[] { 1000m, 500m }, found.Tickets.Select(t => t.NetBushels));
+        Assert.Equal(new[] { false, true }, found.Tickets.Select(t => t.Settled));
+        Assert.All(found.Tickets, t => Assert.Equal("window", t.CropYearMatch));
+        Assert.Equal("Pratt, KS (PRA)", found.Tickets[0].Location);
+    }
+
+    [Fact]
+    public async Task Tickets_OnAContract_TakeTheContractsCropYear_OverTheDate()
+    {
+        var h = New();
+        var (_, record) = await CornField(h);
+        h.ContractYears["P12345"] = 2026;
+        h.ContractYears["P99999"] = 2025;
+        h.CtrmTickets.AddRange(
+        [
+            Delivery("2027-09-10", 56_000, contract: "p12345 "),  // outside the window, but a 2026 contract
+            Delivery("2026-10-05", 56_000, contract: "P99999"),   // in the window, but a 2025 contract
+            Delivery("2026-10-06", 56_000, contract: "U555"),     // unapplied, no contract year: the window decides
+        ]);
+
+        var found = await h.Tickets.ForRecordAsync(int.Parse(record.Id), default);
+
+        Assert.Equal(new[] { ("2026-10-06", "window"), ("2027-09-10", "contract") }, found.Tickets.Select(t => (t.BlDate!, t.CropYearMatch)));
+    }
+
+    [Fact]
+    public void TicketWindow_IsConfigurablePerCrop_AndRunsIntoTheNextYear()
+    {
+        var h = New();
+
+        Assert.Equal((new DateOnly(2026, 8, 1), new DateOnly(2027, 7, 31)), h.Tickets.Window("corn", 2026));
+        Assert.Equal((new DateOnly(2026, 9, 15), new DateOnly(2027, 7, 31)), h.Tickets.Window("soybeans", 2026));
+    }
+
+    [Fact]
+    public void CropGroups_MatchTheClientsList_AndReadLabels()
+    {
+        // Must equal CROP_CODE_MAP in client/src/app/shared/utils/crop-group-match.ts for these crops.
+        var client = File.ReadAllText(Path.Combine(RepoRoot(), "client", "src", "app", "shared", "utils", "crop-group-match.ts"));
+        foreach (var (group, codes) in FieldPlanCropGroups.Codes)
+        {
+            var line = client.Split('\n').Single(l => l.TrimStart().StartsWith($"{group}:"));
+            Assert.Equal(codes, System.Text.RegularExpressions.Regex.Matches(line, "'([^']+)'").Select(m => m.Groups[1].Value));
+        }
+        Assert.Equal("corn", FieldPlanCropGroups.For("YCNG"));
+        Assert.Equal("soybeans", FieldPlanCropGroups.For("XYZ", "Soybeans"));
+        Assert.Equal("corn", FieldPlanCropGroups.ForLabel("Irrigated Corn"));
+        Assert.Equal("sorghum", FieldPlanCropGroups.ForLabel("Milo"));
+        Assert.Null(FieldPlanCropGroups.ForLabel("Popcorn"));
+    }
+
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "client"))) dir = dir.Parent;
+        return dir?.FullName ?? throw new DirectoryNotFoundException("repo root");
+    }
+
+    // ── Confirming after harvest ────────────────────────────────────────────
+
+    [Fact]
+    public async Task Confirm_RescoresWithTheGivenYield_AndKeepsCtrmsBushelsAndTickets()
+    {
+        var h = New();
+        var (_, record) = await CornField(h);
+        h.CtrmTickets.AddRange([Delivery("2026-10-05", 56_000 * 12), Delivery("2026-10-06", 56_000 * 12), Delivery("2026-10-07", 56_000)]);
+        var found = await h.Tickets.ForRecordAsync(int.Parse(record.Id), default);
+
+        var confirmed = await h.Service.ConfirmAsync(int.Parse(record.Id), new ConfirmFieldProgramRecordRequest
+        {
+            ActualYield = 200, TicketKeys = [found.Tickets[0].TicketKey, found.Tickets[1].TicketKey], ReviewedWithProducer = true,
+        }, default);
+
+        var official = confirmed.Official!.Value;
+        Assert.Equal("Locked", confirmed.Status);
+        Assert.Equal("Documented", official.GetProperty("status").GetString());
+        // Story County corn at 200 bu: the golden-case CI.
+        Assert.Equal(3070.75, official.GetProperty("score").GetProperty("value").GetDouble(), 2);
+        Assert.Equal(24_000m, official.GetProperty("bushels").GetDecimal());
+        Assert.Equal(2, official.GetProperty("tickets").GetArrayLength());
+        Assert.Equal(User, official.GetProperty("documentedBy").GetString());
+        Assert.Equal(200, confirmed.Data.GetProperty("actualYield").GetDouble());
+    }
+
+    [Fact]
+    public async Task Confirm_UsesTheYieldGiven_NotTheOneTyped()
+    {
+        var h = New();
+        var (_, record) = await CornField(h);
+        h.CtrmTickets.Add(Delivery("2026-10-05", 56_000 * 20));
+        var key = (await h.Tickets.ForRecordAsync(int.Parse(record.Id), default)).Tickets[0].TicketKey;
+
+        var confirmed = await h.Service.ConfirmAsync(int.Parse(record.Id), new ConfirmFieldProgramRecordRequest
+        {
+            ActualYield = 166.67, TicketKeys = [key], ReviewedWithProducer = true,
+        }, default);
+
+        var atTwoHundred = 3070.75;
+        Assert.NotEqual(atTwoHundred, confirmed.Official!.Value.GetProperty("score").GetProperty("value").GetDouble(), 0);
+        Assert.Equal(166.67, confirmed.Official.Value.GetProperty("actualYield").GetDouble());
+    }
+
+    [Fact]
+    public async Task Confirm_RefusesUnknownTickets_NoTickets_AnUntickedReview_AndASecondConfirm()
+    {
+        var h = New();
+        var (_, record) = await CornField(h);
+        h.CtrmTickets.Add(Delivery("2026-10-05", 56_000));
+        var key = (await h.Tickets.ForRecordAsync(int.Parse(record.Id), default)).Tickets[0].TicketKey;
+        var id = int.Parse(record.Id);
+        ConfirmFieldProgramRecordRequest Request(params string[] keys) => new() { ActualYield = 200, TicketKeys = [.. keys], ReviewedWithProducer = true };
+
+        await Assert.ThrowsAsync<BusinessException>(() => h.Service.ConfirmAsync(id, Request(key, "999999"), default));
+        await Assert.ThrowsAsync<ValidationException>(() => h.Service.ConfirmAsync(id, Request(), default));
+        await Assert.ThrowsAsync<ValidationException>(() => h.Service.ConfirmAsync(id, Request(key) with { ReviewedWithProducer = false }, default));
+        await h.Service.ConfirmAsync(id, Request(key), default);
+        var again = await Assert.ThrowsAsync<BusinessException>(() => h.Service.ConfirmAsync(id, Request(key), default));
+        Assert.Equal("FIELD_PLAN_ALREADY_CONFIRMED", again.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Confirm_ReplacesAHarvestLock_AndUnlockingKeepsTheConfirmedCiInTheHistory()
+    {
+        var h = New();
+        var (_, record) = await CornField(h);
+        var id = int.Parse(record.Id);
+        h.CtrmTickets.Add(Delivery("2026-10-05", 56_000));
+        var key = (await h.Tickets.ForRecordAsync(id, default)).Tickets[0].TicketKey;
+        await h.Service.LockAsync(id, default);
+
+        var confirmed = await h.Service.ConfirmAsync(id, new ConfirmFieldProgramRecordRequest { ActualYield = 200, TicketKeys = [key], ReviewedWithProducer = true }, default);
+        Assert.Equal("Replaced by the confirmed CI", confirmed.Reopened!.Value[0].GetProperty("reason").GetString());
+
+        var reopened = await h.Service.ReopenAsync(id, "tickets were missing", default);
+
+        Assert.Null(reopened.Record.Official);
+        var last = reopened.Record.Reopened!.Value[1];
+        Assert.Equal("Documented", last.GetProperty("official").GetProperty("status").GetString());
     }
 
     // ── Loading and soft delete ─────────────────────────────────────────────

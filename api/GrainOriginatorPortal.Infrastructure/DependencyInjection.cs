@@ -124,6 +124,7 @@ public static class DependencyInjection
         // want the same rows, so one CTRM call serves all three instead of three identical round trips.
         services.AddSingleton<CtrmContractReader>();
         services.AddSingleton<CtrmTicketReader>();
+        services.AddScoped<IFieldTicketReader, CtrmFieldTicketReader>();
         services.AddSingleton<CtrmWarmRegistry>();
         AddCtrmSplits(services, configuration);
 
@@ -190,10 +191,14 @@ public static class DependencyInjection
     /// </summary>
     public static void AddCtrmSplits(IServiceCollection services, IConfiguration configuration)
     {
-        var source = configuration["Ctrm:SplitsSource"]?.Trim().ToLowerInvariant() ?? "sample";
+        // SPLITS-GRAPHQL: 'manual' (typed by originators) is the go-live default until CTRM's splits query is ready.
+        var source = configuration["Ctrm:SplitsSource"]?.Trim().ToLowerInvariant() ?? "manual";
         switch (source)
         {
-            case "" or "sample":
+            case "" or "manual":
+                services.AddSingleton<ICtrmSplitReader, ManualCtrmSplitReader>();
+                break;
+            case "sample":
                 services.AddSingleton<ICtrmSplitReader, SampleCtrmSplitReader>();
                 break;
             case "ctrm" when CtrmQueries.SplitsQueryConfirmed:
@@ -201,9 +206,9 @@ public static class DependencyInjection
                 break;
             case "ctrm":
                 throw new InvalidOperationException(
-                    "Ctrm:SplitsSource is 'ctrm', but the CTRM splits query is still a placeholder (CtrmQueries.SplitsQueryConfirmed). Use 'sample' until it is confirmed.");
+                    "Ctrm:SplitsSource is 'ctrm', but the CTRM splits query is still a placeholder (CtrmQueries.SplitsQueryConfirmed). Use 'manual' until it is confirmed.");
             default:
-                throw new InvalidOperationException($"Ctrm:SplitsSource must be 'sample' or 'ctrm', not '{source}'.");
+                throw new InvalidOperationException($"Ctrm:SplitsSource must be 'manual', 'sample' or 'ctrm', not '{source}'.");
         }
         services.AddScoped<ICtrmSplitRepository, CtrmSplitRepository>();
     }

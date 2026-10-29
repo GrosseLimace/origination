@@ -33,7 +33,7 @@ public sealed record CtrmSplit(
 /// <summary>Reads a producer's CTRM splits.</summary>
 public interface ICtrmSplitReader
 {
-    /// <summary>"sample" or "ctrm", so the screen can say when the list isn't CTRM's.</summary>
+    /// <summary>"manual" (no list: typed by hand), "sample" or "ctrm", so the screen can say when the list isn't CTRM's.</summary>
     string Source { get; }
 
     /// <summary>Every split under the producer's primary code, including expired and bin-site ones.</summary>

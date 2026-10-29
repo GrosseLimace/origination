@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20261027115725_AddFieldPlanTables")]
+    [Migration("20261029193914_AddFieldPlanTables")]
     partial class AddFieldPlanTables
     {
         /// <inheritdoc />
@@ -2306,6 +2306,14 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.Property<decimal>("SplitPercent")
                         .HasColumnType("decimal(7,3)")
                         .HasColumnName("SplitPercent");
+
+                    b.Property<string>("SplitSource")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasDefaultValue("Manual")
+                        .HasColumnName("SplitSource");
 
                     b.Property<string>("State")
                         .HasMaxLength(2)
