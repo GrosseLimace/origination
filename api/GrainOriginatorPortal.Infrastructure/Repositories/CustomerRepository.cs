@@ -48,6 +48,13 @@ public class CustomerRepository : ICustomerRepository
         _syncRepository = syncRepository;
     }
 
+    /// <summary>SQL fragment that strips common phone punctuation — ( ) - space . — from a column so a
+    /// digits-only search fragment matches regardless of how the number is formatted in the DB.
+    /// Shared by SearchAsync (type-ahead phone tokens) and FindByPhoneAsync (incoming-call lookup).
+    /// Column names are constants supplied by this class, never user input.</summary>
+    private static string StripPhone(string col) =>
+        $"REPLACE(REPLACE(REPLACE(REPLACE(REPLACE({col},'(',''),')',''),'-',''),' ',''),'.','')";
+
     /// <summary>Strips a leading non-alphanumeric prefix from a name for sorting (so an onboarded
     /// "(YOUNG) WESLEY TOTTEN" sorts in its natural alphabetical position instead of ahead of every
     /// plain-letter name).</summary>
@@ -122,11 +129,6 @@ public class CustomerRepository : ICustomerRepository
             parameters.Add(new SqlParameter("@tradeUnits", csv));
         }
 
-        // SQL fragment that strips common phone punctuation — ( ) - space . — from a column so a
-        // digits-only search fragment matches regardless of how the number is formatted in the DB.
-        static string StripPhone(string col) =>
-            $"REPLACE(REPLACE(REPLACE(REPLACE(REPLACE({col},'(',''),')',''),'-',''),' ',''),'.','')";
-
         // Each search word must match at least one searchable field (AND across words).
         // State uses exact match to avoid false positives on short abbreviations like "CO".
         for (int i = 0; i < searchWords.Count; i++)
@@ -166,6 +168,90 @@ public class CustomerRepository : ICustomerRepository
             SELECT c.* FROM dbo.Customer c
             WHERE {where}";
         return (sql, parameters.ToArray());
+    }
+
+    public async Task<List<CustomerPhoneMatch>> FindByPhoneAsync(string digits, CancellationToken cancellationToken)
+    {
+        // Contains-match on punctuation-stripped columns (same idiom as SearchAsync) so a 10-digit
+        // caller id matches numbers stored with any formatting, a country code, or an extension
+        // suffix. ProducerDetails.PrimaryPhone mirrors the primary ProducerContact row, so a
+        // producer can satisfy two clauses; the OR still yields one row per customer.
+        var sql = $@"
+            SELECT c.* FROM dbo.Customer c
+            WHERE c.IsActive = 1 AND (
+                {StripPhone("c.MerchandisingPhone")} LIKE '%' + @digits + '%'
+                OR {StripPhone("c.ExtendedPrimaryPhone")} LIKE '%' + @digits + '%'
+                OR c.CustomerId IN (SELECT CustomerId FROM dbo.ProducerDetails WHERE {StripPhone("PrimaryPhone")} LIKE '%' + @digits + '%')
+                OR c.CustomerId IN (SELECT CustomerId FROM dbo.ProducerContact WHERE {StripPhone("Phone")} LIKE '%' + @digits + '%'))";
+
+        var customers = await _appContext.Customers
+            .FromSqlRaw(sql, new SqlParameter("@digits", digits))
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        var ordered = customers
+            .OrderBy(c => NameSortKey(c.Name), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (ordered.Count == 0)
+        {
+            _logger.LogInformation("Incoming-call phone lookup matched 0 customers");
+            return [];
+        }
+
+        await EnrichCustomersWithTradeUnitsAsync(ordered, cancellationToken);
+        var contactNames = await FindContactNamesForNumberAsync(ordered.Select(c => c.Id).ToList(), digits, cancellationToken);
+
+        // Do not log the digits — a caller's phone is PII. Count-only logging.
+        _logger.LogInformation("Incoming-call phone lookup matched {Count} customers", ordered.Count);
+        return ordered
+            .Select(c => new CustomerPhoneMatch
+            {
+                Customer = c,
+                ContactNames = contactNames.GetValueOrDefault(c.Id) ?? [],
+            })
+            .ToList();
+    }
+
+    /// <summary>For the matched producers, the user-entered contacts whose phone carries the caller's
+    /// digits, keyed by customer id (primary contact first, then display order). Also reads the legacy
+    /// ProducerDetails.PrimaryContact/PrimaryPhone pair, which predates the contacts table and is still
+    /// the only record for some producers. Compared in memory with the same strip-to-digits rule the
+    /// SQL used, over the handful of rows belonging to already-matched producers.</summary>
+    private async Task<Dictionary<long, List<string>>> FindContactNamesForNumberAsync(
+        List<long> customerIds, string digits, CancellationToken cancellationToken)
+    {
+        static bool Carries(string? phone, string digits) =>
+            !string.IsNullOrEmpty(phone) && new string(phone.Where(char.IsDigit).ToArray()).Contains(digits);
+
+        var contacts = await _appContext.ProducerContacts
+            .AsNoTracking()
+            .Where(pc => customerIds.Contains(pc.CustomerId) && pc.Phone != null)
+            .Select(pc => new { pc.CustomerId, pc.Name, pc.Phone, pc.IsPrimary, pc.SortOrder })
+            .ToListAsync(cancellationToken);
+
+        var legacyPrimary = await _appContext.ProducerDetails
+            .AsNoTracking()
+            .Where(pd => customerIds.Contains(pd.CustomerId) && pd.PrimaryPhone != null && pd.PrimaryContact != null)
+            .Select(pd => new { pd.CustomerId, pd.PrimaryContact, pd.PrimaryPhone })
+            .ToListAsync(cancellationToken);
+
+        var result = contacts
+            .Where(c => Carries(c.Phone, digits) && !string.IsNullOrWhiteSpace(c.Name))
+            .OrderByDescending(c => c.IsPrimary).ThenBy(c => c.SortOrder)
+            .GroupBy(c => c.CustomerId)
+            .ToDictionary(g => g.Key, g => g.Select(c => c.Name.Trim()).ToList());
+
+        foreach (var pd in legacyPrimary.Where(pd => Carries(pd.PrimaryPhone, digits) && !string.IsNullOrWhiteSpace(pd.PrimaryContact)))
+        {
+            if (!result.TryGetValue(pd.CustomerId, out var names))
+                result[pd.CustomerId] = names = [];
+            var name = pd.PrimaryContact!.Trim();
+            // The primary contact is dual-written into ProducerDetails, so it is usually already here.
+            if (!names.Contains(name, StringComparer.OrdinalIgnoreCase)) names.Insert(0, name);
+        }
+
+        return result;
     }
 
     /// <summary>Onboarding search: producers in base.vw_CurrentCustomers that are not already

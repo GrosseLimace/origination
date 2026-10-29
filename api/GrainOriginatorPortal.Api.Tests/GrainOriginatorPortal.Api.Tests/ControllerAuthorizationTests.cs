@@ -23,6 +23,7 @@ public class ControllerAuthorizationTests
         yield return new object[] { typeof(BarchartController) };
         yield return new object[] { typeof(BarchartIngestController) };
         yield return new object[] { typeof(BidSheetController) };
+        yield return new object[] { typeof(CallingController) };
         yield return new object[] { typeof(CommoditiesController) };
         yield return new object[] { typeof(ContractsController) };
         yield return new object[] { typeof(CustomersController) };

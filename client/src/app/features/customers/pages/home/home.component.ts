@@ -390,7 +390,20 @@ export class HomeComponent {
           this.handleSelectCustomer(c, true); // fromDeepLink=true
         }
       }, 100);
-      setTimeout(() => clearInterval(checkInterval), 5000);
+      setTimeout(() => {
+        clearInterval(checkInterval);
+        // Out-of-scope fallback: the producer is not in the selected trade units' list (e.g. an
+        // incoming call from a producer in another trade unit). Fetch them directly so the profile
+        // still opens; handleSelectCustomer works entirely off the object it is given, so only the
+        // list highlight is missing.
+        if (this.customers().some(c => c.id === customerIdNum)) return;
+        this.apiService.getCustomerById(customerIdNum)
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe({
+            next: c => this.handleSelectCustomer(c, true),
+            error: () => {} // Unknown id: leave the page as it is.
+          });
+      }, 5000);
     }
   }
 

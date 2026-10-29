@@ -356,6 +356,22 @@ builder.Services.AddScoped<IEntitlementsDirectoryService, EntitlementsDirectoryS
 builder.Services.AddSingleton(ClientTelemetrySettings.From(builder.Configuration));
 builder.Services.AddScoped<ITeamsDirectoryService, TeamsDirectoryService>();
 
+// Incoming-call popup (ACS "Communication as a Microsoft 365 user"; design per
+// docs/application-context/TEAMS-CALLING-GUIDE.md). The SPA acquires an Entra token for the ACS
+// scopes and POSTs it to /api/calling/token; the service exchanges it with the ACS Identity SDK,
+// authenticated with the same credential split as the Graph directory client below (App Service
+// managed identity when deployed, the developer's own az login locally). Whichever identity it is
+// needs its ACS role ("Communication and Email Service Owner") assigned DIRECTLY on the resource:
+// ACS does not honour roles that arrive through group membership (Infrastructure's finding,
+// 2026-10-28 — the Developer Admins group grant alone gave "401 Denied by the resource provider"
+// locally; the App Service identity is assigned directly, so deployed Dev is unaffected). Nothing
+// connects until Acs:Endpoint and
+// Acs:TeamsClientId are configured: without them the endpoint answers 204 and the client never
+// loads the calling SDK.
+builder.Services.AddSingleton<ICommunicationIdentityClientFactory, CommunicationIdentityClientFactory>();
+builder.Services.AddScoped<ICallingTokenService, CallingTokenService>();
+builder.Services.AddScoped<ICallingMatchService, CallingMatchService>();
+
 // Graph directory client (app-access spike) — singleton so the cached Graph token is shared.
 // Credential split mirrors the Key Vault bootstrap at the top of this file: managed identity
 // on App Service, the developer's own credential locally (skip the IMDS probe).

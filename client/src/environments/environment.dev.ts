@@ -26,6 +26,28 @@ export const environment = {
   // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite
   // admin consent on this env SPA app registration; keep false until that consent is granted.
   remindersEnabled: true,
+  // Prints each incoming call's callerInfo / transferorInfo (the caller's phone number) to the
+  // browser console, as POC evidence for Infrastructure. Local and Dev only: the number is PII.
+  logCallerInfo: true,
+  // Incoming-call popup: a producer calling your Teams number pops their name + code here, with
+  // Answer / Decline / Hold. Also needs Acs:Endpoint on the API (token endpoint answers 204 until
+  // IT provisions the ACS resource + Teams.ManageCalls consent), so ON here is harmless: with no
+  // token the calling SDK is never even downloaded.
+  incomingCallEnabled: true,
+  // "Simulate incoming call" in the profile menu: runs the popup without a real call. Local and Dev
+  // only — QA is used by testers and originators, where a fake-call button would only confuse.
+  incomingCallSimulatorEnabled: true,
+  // Azure Communication Services scopes the browser asks Entra for when the incoming-call popup
+  // starts; the API exchanges that token for a calling token (POST /calling/token). Admin consent
+  // for them lives on THIS environment's SPA registration — granted for Dev on 2026-10-27, not yet
+  // for QA or PROD. Not added to the MSAL protected-resource map or the login request on purpose:
+  // they are requested explicitly, only when the call agent starts.
+  acs: {
+    teamsScopes: [
+      'https://auth.msft.communication.azure.com/Teams.ManageCalls',
+      'https://auth.msft.communication.azure.com/Teams.ManageChats',
+    ],
+  },
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.
   tradeUnitPreferencesUrl: 'https://tradeunitprefs-dev.scoular.com/my-preferences',

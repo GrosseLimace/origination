@@ -11,12 +11,27 @@ public class SecurityHeadersMiddleware
     private readonly RequestDelegate _next;
     private readonly IWebHostEnvironment _env;
     private readonly string[] _spaConnectHosts;
+    private readonly string[] _spaCallingConnectHosts;
+    private readonly string? _spaCallingMediaSrc;
+    private readonly string? _spaCallingWorkerSrc;
 
     public SecurityHeadersMiddleware(RequestDelegate next, IWebHostEnvironment env, IConfiguration config)
     {
         _next = next;
         _env = env;
         _spaConnectHosts = SpaConnectHosts(config);
+
+        // The ACS Calling SDK (incoming-call popup) talks to Microsoft's signalling and media hosts
+        // straight from the browser. Those origins are only admitted when the feature is actually
+        // on in this environment (Acs:Endpoint configured); otherwise the policy is exactly what it
+        // was before the feature existed. Deliberately config-driven so a newly discovered host can
+        // be allowed with a config change rather than a code deploy.
+        var callingEnabled = !string.IsNullOrWhiteSpace(config["Acs:Endpoint"]);
+        _spaCallingConnectHosts = callingEnabled
+            ? config.GetSection("SecurityHeaders:SpaCallingConnectSrcHosts").Get<string[]>() ?? Array.Empty<string>()
+            : Array.Empty<string>();
+        _spaCallingMediaSrc = callingEnabled ? config["SecurityHeaders:SpaCallingMediaSrc"] : null;
+        _spaCallingWorkerSrc = callingEnabled ? config["SecurityHeaders:SpaCallingWorkerSrc"] : null;
     }
 
     /// <summary>The hosts the SPA may reach beyond 'self' and Microsoft login/graph:
@@ -61,7 +76,8 @@ public class SecurityHeadersMiddleware
             // directive over the legacy X-Frame-Options header above (QA scan 2026-09-30).
             headers["Content-Security-Policy"] = context.Request.Path.StartsWithSegments("/api")
                 ? "default-src 'none'; frame-ancestors 'none'"
-                : BuildSpaContentSecurityPolicy(_env.IsDevelopment(), _spaConnectHosts);
+                : BuildSpaContentSecurityPolicy(_env.IsDevelopment(), _spaConnectHosts,
+                    _spaCallingConnectHosts, _spaCallingMediaSrc, _spaCallingWorkerSrc);
 
             return Task.CompletedTask;
         });
@@ -86,21 +102,35 @@ public class SecurityHeadersMiddleware
     /// inline <c>&lt;style&gt;</c> elements at runtime; removing the keyword needs Angular's CSP nonce
     /// (<c>ngCspNonce</c>) plumbed from a per-request server value into the served <c>index.html</c>, which
     /// is a change to how the SPA is hosted, not a header tweak. Scripts are already <c>'self'</c> only, which
-    /// is the half of CSP that stops script injection; inline styles alone cannot run code.</para></summary>
-    public static string BuildSpaContentSecurityPolicy(bool isDevelopment, IEnumerable<string>? connectHosts = null)
+    /// is the half of CSP that stops script injection; inline styles alone cannot run code.</para>
+    /// <para><paramref name="callingConnectHosts"/>, <paramref name="callingMediaSrc"/> and
+    /// <paramref name="callingWorkerSrc"/> are the ACS Calling SDK's origins (incoming-call popup). The
+    /// middleware passes them only when <c>Acs:Endpoint</c> is configured, so an environment without the
+    /// feature gets the unchanged policy; <c>media-src</c> / <c>worker-src</c> are emitted only when a
+    /// value is supplied, otherwise they keep falling back to <c>default-src 'self'</c>.</para></summary>
+    public static string BuildSpaContentSecurityPolicy(
+        bool isDevelopment,
+        IEnumerable<string>? connectHosts = null,
+        IEnumerable<string>? callingConnectHosts = null,
+        string? callingMediaSrc = null,
+        string? callingWorkerSrc = null)
     {
         var devConnectSrc = isDevelopment ? " http://localhost:5000 https://localhost:*" : string.Empty;
-        var configuredHosts = connectHosts is null
+        var configuredHosts = JoinHosts(connectHosts) + JoinHosts(callingConnectHosts);
+        var mediaSrc = string.IsNullOrWhiteSpace(callingMediaSrc)
             ? string.Empty
-            : string.Concat(connectHosts
-                .Where(h => !string.IsNullOrWhiteSpace(h))
-                .Select(h => " " + h.Trim()));
+            : "media-src 'self' " + callingMediaSrc.Trim() + "; ";
+        var workerSrc = string.IsNullOrWhiteSpace(callingWorkerSrc)
+            ? string.Empty
+            : "worker-src 'self' " + callingWorkerSrc.Trim() + "; ";
         return
             "default-src 'self'; " +
             "script-src 'self'; " +
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
             "font-src 'self' https://fonts.gstatic.com data:; " +
             "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://server.arcgisonline.com; " +
+            mediaSrc +
+            workerSrc +
             "connect-src 'self' https://login.microsoftonline.com https://graph.microsoft.com" + configuredHosts + devConnectSrc + "; " +
             "frame-src 'self' https://login.microsoftonline.com; " +
             "frame-ancestors 'none'; " +
@@ -108,4 +138,11 @@ public class SecurityHeadersMiddleware
             "object-src 'none'; " +
             "base-uri 'self';";
     }
+
+    private static string JoinHosts(IEnumerable<string>? hosts) =>
+        hosts is null
+            ? string.Empty
+            : string.Concat(hosts
+                .Where(h => !string.IsNullOrWhiteSpace(h))
+                .Select(h => " " + h.Trim()));
 }

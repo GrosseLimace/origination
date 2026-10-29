@@ -4,6 +4,8 @@ import { Observable, of, throwError, shareReplay } from 'rxjs';
 import { catchError, finalize, map } from 'rxjs/operators';
 import {
   Customer,
+  CallingToken,
+  IncomingCallMatch,
   Contract,
   Ticket,
   PlantingIntention,
@@ -1314,5 +1316,27 @@ export class ApiService {
   removeUsageExcludedUser(id: number): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/usage-dashboard/excluded-users/${id}`)
       .pipe(catchError(e => this.handleError(e)));
+  }
+
+  // --- Incoming-call popup ------------------------------------------------------------------
+
+  /** Exchanges the Entra token the browser acquired for the Azure Communication Services scopes
+   *  into an ACS calling token for the signed-in user's own Teams identity. Null when calling is off
+   *  in this environment (the API answers 204) or the exchange failed (502): a dormant popup must
+   *  never surface as an error toast. The token travels in the body, never the URL. */
+  exchangeCallingToken(teamsUserAadToken: string): Observable<CallingToken | null> {
+    return this.http.post<CallingToken>(`${this.baseUrl}/calling/token`, { teamsUserAadToken }, { observe: 'response' })
+      .pipe(
+        map(r => (r.status === 204 ? null : r.body)),
+        catchError(() => of(null))
+      );
+  }
+
+  /** Producers whose phone on file matches a caller id. The number travels as a query
+   *  parameter, never in the path. Errors become an empty list ("unknown caller"). */
+  /** POST, number in the body: a query string would land in App Insights (requests.url) on the API. */
+  getIncomingCallMatches(number: string): Observable<IncomingCallMatch[]> {
+    return this.http.post<IncomingCallMatch[]>(`${this.baseUrl}/calling/match`, { number })
+      .pipe(catchError(() => of<IncomingCallMatch[]>([])));
   }
 }

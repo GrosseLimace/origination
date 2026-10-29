@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { formatPhoneDisplay, formatPhoneProgressive } from './phone';
+import { formatCallerId, formatPhoneDisplay, formatPhoneProgressive } from './phone';
 
 describe('formatPhoneProgressive', () => {
   it('formats progressively while typing', () => {
@@ -25,5 +25,22 @@ describe('formatPhoneDisplay', () => {
     expect(formatPhoneDisplay('402555123')).toBe('402555123');
     expect(formatPhoneDisplay(null)).toBe('');
     expect(formatPhoneDisplay(undefined)).toBe('');
+  });
+});
+
+describe('formatCallerId', () => {
+  it('formats the E.164 caller id the Teams calling SDK delivers', () => {
+    expect(formatCallerId('+14025551234')).toBe('(402) 555-1234');
+    expect(formatCallerId('14025551234')).toBe('(402) 555-1234');
+  });
+
+  it('formats a plain 10-digit number like the stored-number formatter', () => {
+    expect(formatCallerId('4025551234')).toBe('(402) 555-1234');
+  });
+
+  it('returns anything else unchanged (international, withheld, empty)', () => {
+    expect(formatCallerId('+442079460958')).toBe('+442079460958');
+    expect(formatCallerId('anonymous')).toBe('anonymous');
+    expect(formatCallerId(null)).toBe('');
   });
 });
