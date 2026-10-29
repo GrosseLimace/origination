@@ -36,9 +36,11 @@ export const environment = {
   // Incoming-call popup: a producer calling your Teams number pops their name + code here, with
   // Answer / Decline / Hold. Also needs Acs:Endpoint on the API (token endpoint answers 204 until
   // IT provisions the ACS resource + Teams.ManageCalls consent), so ON here is harmless: with no
-  // token the calling SDK is never even downloaded. Outside production the profile menu offers
-  // "Simulate incoming call" to exercise the popup without a real call.
+  // token the calling SDK is never even downloaded.
   incomingCallEnabled: true,
+  // "Simulate incoming call" in the profile menu: runs the popup without a real call. Local and Dev
+  // only — QA is used by testers and originators, where a fake-call button would only confuse.
+  incomingCallSimulatorEnabled: true,
   // Azure Communication Services scopes the browser asks Entra for when the incoming-call popup
   // starts; the API exchanges that token for a calling token (POST /calling/token). Admin consent
   // for them lives on THIS environment's SPA registration — granted for Dev on 2026-10-27, not yet

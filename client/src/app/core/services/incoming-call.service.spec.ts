@@ -483,6 +483,20 @@ describe('IncomingCallService', () => {
 
   // ── A real (faked) call ───────────────────────────────────────────────────
 
+  it('offers no simulator where the simulator flag is off (QA, Production)', () => {
+    const original = environment.incomingCallSimulatorEnabled;
+    (environment as { incomingCallSimulatorEnabled: boolean }).incomingCallSimulatorEnabled = false;
+    try {
+      const service = create(null);
+      expect(service.canSimulate).toBe(false);
+      service.simulate('(402) 555-4914');
+      expect(service.state()).toBe('idle');
+      httpMock.expectNone(r => r.url === `${BASE}/calling/match`);
+    } finally {
+      (environment as { incomingCallSimulatorEnabled: boolean }).incomingCallSimulatorEnabled = original;
+    }
+  });
+
   describe('caller-info console logging (the number is PII)', () => {
     const original = environment.logCallerInfo;
     afterEach(() => {
@@ -682,6 +696,7 @@ describe('IncomingCallService', () => {
 
   it('simulate runs the popup flow without the SDK', async () => {
     const service = create(null); // no sign-in needed to simulate
+    expect(service.canSimulate).toBe(true); // local / Dev
 
     service.simulate('(402) 555-4914');
     flushMatches([SMITH, JONES]);

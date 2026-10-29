@@ -17,7 +17,7 @@ these patterns; triage against the AR-IDs below before re-opening.
 | AR-08 | Person mentions require a real active user, but are not scoped to the mentioner's colleagues | High | CWE-284 | Accepted — engineering only (see *Countersignature* below) | 2026-09-01 | 2027-09-01 |
 | AR-09 | The caller's UPN (an email-shaped identifier) is written into the structured log scope of every request | Low | CWE-532 | Accepted | 2026-09-21 | 2027-09-21 |
 | AR-10 | Every Super Users member sees whole-organisation usage data and the full manager roster on the Usage Dashboard (the per-caller ViewAll scoping was retired) | Medium | CWE-284 | Accepted — engineering only (see *Countersignature* below) | 2026-10-09 | 2027-10-09 |
-| AR-11 | The incoming-call popup widens the SPA `connect-src` to Microsoft's ACS / Teams / Skype wildcard hosts (Dev only, config-gated) | Low | CWE-942 | Accepted — Dev POC | 2026-10-28 | Before any QA/PROD enablement |
+| AR-11 | The incoming-call popup widens the SPA `connect-src` to Microsoft's ACS / Teams / Skype wildcard hosts (Dev and QA, config-gated) | Low | CWE-942 | Accepted — Dev + QA | 2026-10-29 | Before PROD enablement |
 
 ---
 
@@ -1602,7 +1602,7 @@ owner's call; as of 2026-10-13 that has not been done and this entry should not 
 
 ---
 
-## AR-11 — The incoming-call popup widens the SPA connect-src (Dev only)
+## AR-11 — The incoming-call popup widens the SPA connect-src (Dev and QA)
 
 **What changed:** the incoming-call popup runs the Azure Communication Services Calling SDK in the
 browser ("Communication as a Microsoft 365 user"), which talks straight to Microsoft's signalling and
@@ -1618,8 +1618,9 @@ it dropped `*.azurewebsites.net` (that wildcard stays banned; a test pins it).
 **Accepted for the Dev spike, because:**
 
 - **It is gated twice.** The hosts are only added when `Acs:Endpoint` is configured, and only
-  `appsettings.Dev.json` and the local `appsettings.Development.json` list them. QA and Production
-  policies are byte-for-byte unchanged (pinned by `Csp_WithoutCallingConfig_IsUnchanged`).
+  `appsettings.Dev.json`, `appsettings.QA.json` and the local `appsettings.Development.json` list
+  them. The Production policy is byte-for-byte unchanged (pinned by
+  `Csp_WithoutCallingConfig_IsUnchanged`).
 - `script-src` stays `'self'`, so the widening does not make script injection easier — it only
   widens where already-injected script could reach, and every listed host is Microsoft-operated.
 - The Calling SDK cannot work without these origins; there is no narrower published list.
@@ -1635,13 +1636,21 @@ the URL, which App Insights records) reads the same producer
 rows the caller can already search; cross-trade-unit producer reads are covered by AR-02, which
 already names the incoming-call popup.
 
-**Must be re-reviewed before the feature is enabled in QA or Production:** narrow the list to what
-the Dev console actually needed (drop any host that never appeared), and route the result to IT
-Security with the ACS consent request.
+**QA (decision 2026-10-29):** enabled with the same list, following Infrastructure's
+TEAMS-CALLING-GUIDE.md v2.1 ("Security headers"): Microsoft publishes no CSP list and some hosts are
+dynamic, so a wildcard set is the practical choice until the hosts are confirmed over a longer test.
+Hosts observed on Dev: `config.teams.microsoft.com`, `go.trouter.teams.microsoft.com` (https + wss),
+`teams.microsoft.com`, `registrar.communication.microsoft.com`. QA is used by testers only.
+
+**Must be re-reviewed before the feature is enabled in Production:** narrow the list to the hosts
+Dev and QA actually used (the guide's suggestion: `*.microsoft.com` down to `*.teams.microsoft.com`
+and `*.communication.microsoft.com`), and route the result to IT Security with the Production change
+request.
 
 **Accepted by:** Origination engineering — recorded 2026-10-07 with the Dev spike
 (`spike_IncomingCallAcs`); renumbered AR-11 and token paragraph rewritten 2026-10-28 for the
-Infrastructure-provisioned design (see docs/application-context/TEAMS-CALLING-GUIDE.md).
+Infrastructure-provisioned design (see docs/application-context/TEAMS-CALLING-GUIDE.md); extended to
+QA 2026-10-29.
 
 ---
 

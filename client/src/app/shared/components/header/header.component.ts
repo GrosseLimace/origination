@@ -58,7 +58,7 @@ export class HeaderComponent {
   private readonly usageTracking = inject(UsageTrackingService);
   private readonly incomingCall = inject(IncomingCallService);
 
-  /** "Simulate incoming call" in the profile menu: outside production, with the popup enabled. */
+  /** "Simulate incoming call" in the profile menu: local and Dev only, with the popup enabled. */
   readonly canSimulateCall = this.incomingCall.canSimulate;
   /** Public: the template reads open() for the Help button's pressed state. */
   readonly helpPanel = inject(HelpPanelService);

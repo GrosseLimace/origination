@@ -41,6 +41,8 @@ export const environment = {
   // (TEAMS-CALLING-GUIDE.md v2.1). The API side is appsettings.QA.json → Acs. Production stays off
   // until a change request and Microsoft's answer on support past the 2028 ACS retirement.
   incomingCallEnabled: true,
+  // "Simulate incoming call" in the profile menu. OFF: local and Dev only.
+  incomingCallSimulatorEnabled: false,
   // Azure Communication Services scopes the browser asks Entra for when the incoming-call popup
   // starts; the API exchanges that token for a calling token (POST /calling/token). Admin consent
   // for them lives on THIS environment's SPA registration — granted for Dev on 2026-10-27 and QA on
