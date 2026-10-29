@@ -569,21 +569,8 @@ describe('IncomingCallService', () => {
     httpMock.expectNone(r => r.url === `${BASE}/calling/match`); // nothing to look up
   });
 
-  it('collapses to the "answered in Teams" banner when picked up on another endpoint (487/10003)', async () => {
-    const service = create();
-    await startListening(service);
-    const call = fake.ring();
-    flushMatches([SMITH]);
-
-    call.end(487, 10003);
-
-    expect(service.state()).toBe('answeredElsewhere');
-    expect(service.selectedMatch()).toEqual(SMITH); // the banner still knows who it is
-    service.dismiss();
-    expect(service.state()).toBe('idle');
-  });
-
   it.each([
+    [487, 10003],  // picked up in Teams desktop / mobile: no banner, the popup just goes away
     [487, 0],      // caller hung up
     [487, 10004],  // rang out
     [487, 10024],  // declined on every endpoint

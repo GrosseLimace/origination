@@ -5,9 +5,10 @@ anywhere in the Workbench showing **who is calling** — producer name, customer
 the name of a contact the originator added on the producer details card, or a chooser when several
 producers share the number, or "unknown caller". From the popup the originator can **Answer** (audio
 in the browser, and the producer's page opens), **Decline**, and once connected **Hold / Resume** and
-**Hang up**. If they pick up on the Teams app instead, the popup shrinks to a one-line banner —
-"Answered in Teams: Smith Farms (SMIFAR)" — that keeps the link to the producer. The SDK sends
-nothing when that Teams call ends, so the banner stays until dismissed (or 15 minutes).
+**Hang up**. It rings in the Workbench and in Teams at the same time; whichever one they answer on,
+the other stops — if they pick up in the Teams app, the popup simply goes away. (An "answered in
+Teams" banner was tried and dropped on 2026-10-29: the SDK sends nothing when that Teams call ends,
+so the banner could only linger after the call was over.)
 
 **Status (2026-10-28): Dev proof of concept, branch `spike_IncomingCallAcs`.** Infrastructure
 provisioned the Azure side on 2026-10-27 (Dev only) and wrote
@@ -152,9 +153,8 @@ fetching the producer by id when the list does not contain them (AR-02 already c
 | `ringing` | A call is coming in | Number (or the caller's display name when it is not a phone number, e.g. a call queue), producer card / chooser / unknown, **Answer**, **Decline** |
 | `connecting` | Answer pressed | Mic permission prompt, then accept |
 | `connected` / `held` | In the call | Timer, **Hold / Resume**, **Hang up**, producer card |
-| `answeredElsewhere` | Picked up in Teams (end reason 487 / 10003) | One-line banner with **Open** + dismiss; clears itself after 15 min |
 | `ended` | The **caller** hung up | "Call ended — the caller hung up", closes itself after 2.5 s (no button). When the **user** hangs up the popup closes immediately and never shows this |
-| `idle` / `unavailable` | Nothing ringing / calling off here | Nothing |
+| `idle` / `unavailable` | Nothing ringing / calling off here — including after it was picked up in Teams (487 / 10003), rang out, or the caller hung up before anyone answered | Nothing |
 
 Other ring endings clear the popup: caller hung up (487/0), rang out to voicemail (487/10004),
 declined on every endpoint (487/10024). Teams-to-Teams calls from colleagues are ignored (they still
@@ -245,7 +245,7 @@ heavy and has compliance implications; third-party CTI products carry a licence 
 **Without a real call (local, Dev):** profile menu → **Simulate incoming call** → type a number.
 Use a number on file for a producer to see the card (or one shared by several for the chooser), a
 made-up number for "unknown caller". In the ringing state a small **Simulate: answered in Teams** link
-exercises the banner; once connected, **Simulate: caller hangs up** exercises the auto-close.
+makes the popup go away, as a real pick-up in Teams does; once connected, **Simulate: caller hangs up** exercises the auto-close.
 
 **Real call from a laptop (local):** `az login` first — the exchange runs as you, and
 `Azure - Origination App - Developer Admins` holds the ACS role. Start the API with the `http`
