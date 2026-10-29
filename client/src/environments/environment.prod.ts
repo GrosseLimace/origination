@@ -60,6 +60,8 @@ export const environment = {
   // Incoming-call popup (ACS Teams-user calling). OFF: Dev-only spike until Microsoft confirms
   // the scenario stays supported past the 2028 ACS retirement and a pilot originator signs off.
   incomingCallEnabled: false,
+  // "Simulate incoming call" in the profile menu. OFF: local and Dev only.
+  incomingCallSimulatorEnabled: false,
   // Azure Communication Services scopes the browser asks Entra for when the incoming-call popup
   // starts; the API exchanges that token for a calling token (POST /calling/token). Admin consent
   // for them lives on THIS environment's SPA registration — granted for Dev on 2026-10-27, not yet

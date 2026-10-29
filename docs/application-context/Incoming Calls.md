@@ -13,8 +13,14 @@ provisioned the Azure side on 2026-10-27 (Dev only) and wrote
 [TEAMS-CALLING-GUIDE.md](./TEAMS-CALLING-GUIDE.md); the code follows it, with the differences listed in
 [Incoming Calls - Notes for Infrastructure.md](./Incoming%20Calls%20-%20Notes%20for%20Infrastructure.md).
 The popup can also be exercised without a call via **Simulate incoming call** in the profile menu
-(non-production builds only). QA is provisioned and on from 2026-10-29 (`acs-origination-qa-eus`,
-`appsettings.QA.json` → `Acs`); Production is not provisioned and the flag is off there.
+(local and Dev only — `environment.incomingCallSimulatorEnabled`). QA is provisioned and on from
+2026-10-29 (`acs-origination-qa-eus`, `appsettings.QA.json` → `Acs`); Production is not provisioned
+and the flag is off there.
+
+**Who gets it in QA (decision 2026-10-29):** everyone signed into the QA Workbench. Each signed-in
+QA tab becomes one more endpoint of that person's Teams phone, so their real producer calls ring and
+pop there too (Teams desktop and mobile still ring as normal). Accepted because only testers use QA;
+no per-user switch was built.
 
 ## How it works
 
@@ -316,7 +322,7 @@ own Teams number from a phone that is on file for a producer.
 | Client | `client/src/app/core/services/calling-sdk-loader.service.ts` | Lazy import of the SDK |
 | Client | `client/src/app/shared/components/incoming-call-popup/incoming-call-popup.component.ts` | The popup and banner (draggable) |
 | Client | `client/src/app/app.component.ts/.html` | Starts the service; defers the popup |
-| Client | `client/src/app/shared/components/header/header.component.*` | "Simulate incoming call" (non-production); `stop()` on sign-out |
+| Client | `client/src/app/shared/components/header/header.component.*` | "Simulate incoming call" (local and Dev only); `stop()` on sign-out |
 | Client | `client/src/app/features/customers/pages/home/home.component.ts` | Out-of-trade-unit deep-link fallback |
 | Config | `appsettings.json`, `appsettings.Dev.json`, `appsettings.Development.json`, `environment*.ts` | See *Configuration* |
 | Docs | `TEAMS-CALLING-GUIDE.md`, `Incoming Calls - Notes for Infrastructure.md` | Infrastructure's guide, and where we differ from it |

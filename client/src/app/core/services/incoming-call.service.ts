@@ -170,8 +170,8 @@ export class IncomingCallService {
     return s !== 'idle' && s !== 'unavailable';
   });
 
-  /** Simulation is offered outside production only. */
-  readonly canSimulate = environment.incomingCallEnabled && !environment.production;
+  /** Simulation is offered in local and Dev only (environment.incomingCallSimulatorEnabled). */
+  readonly canSimulate = environment.incomingCallEnabled && environment.incomingCallSimulatorEnabled;
 
   private sdk: CallingSdk | null = null;
   /** One per tab, created on the first registration and reused by every re-registration: each
@@ -624,7 +624,7 @@ export class IncomingCallService {
     if (s === 'answeredElsewhere' || s === 'ended') this.reset();
   }
 
-  // ── Simulation (non-production only) ──────────────────────────────────────
+  // ── Simulation (local and Dev only) ──────────────────────────────────────
 
   /** Runs the whole popup flow for a typed-in number, without the SDK or a real call. */
   simulate(number: string): void {
