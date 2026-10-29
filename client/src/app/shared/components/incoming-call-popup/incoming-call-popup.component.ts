@@ -33,7 +33,7 @@ import { formatCallerId } from '@shared/utils/phone';
               <div cdkDragHandle (dblclick)="resetPosition()" title="Drag to move · double-click to reset" class="flex-1 min-w-0 flex items-center gap-3 cursor-move select-none" data-testid="incoming-call-drag-handle">
                 <span class="h-2 w-2 rounded-full bg-scoular-green flex-shrink-0"></span>
                 <p class="flex-1 min-w-0 text-sm text-gray-700 dark:text-gray-200 truncate">
-                  On a call with <span class="font-semibold">{{ callerLabel() }}</span> — answered in Teams
+                  Answered in Teams: <span class="font-semibold">{{ callerLabel() }}</span>
                 </p>
               </div>
               @if (call.selectedMatch(); as m) {

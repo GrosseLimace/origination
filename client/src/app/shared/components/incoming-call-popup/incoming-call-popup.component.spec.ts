@@ -156,7 +156,8 @@ describe('IncomingCallPopupComponent', () => {
 
     const banner = screen.getByTestId('incoming-call-banner');
     expect(banner.textContent).toContain('Smith Farms (SMIFAR)');
-    expect(banner.textContent).toContain('answered in Teams');
+    expect(banner.textContent).toContain('Answered in Teams:');
+    expect(banner.textContent).not.toContain('On a call'); // it cannot know the Teams call is still going
     await userEvent.click(screen.getByRole('button', { name: 'Open' }));
     expect(navigate).toHaveBeenCalledWith(['/'], { queryParams: { customerId: 158259 } });
     await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
