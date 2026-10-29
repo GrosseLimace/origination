@@ -5,8 +5,9 @@ anywhere in the Workbench showing **who is calling** — producer name, customer
 the name of a contact the originator added on the producer details card, or a chooser when several
 producers share the number, or "unknown caller". From the popup the originator can **Answer** (audio
 in the browser, and the producer's page opens), **Decline**, and once connected **Hold / Resume** and
-**Hang up**. If they pick up on the Teams app instead, the popup shrinks to a one-line banner — "On a
-call with Smith Farms (SMIFAR), answered in Teams" — that keeps the link to the producer.
+**Hang up**. If they pick up on the Teams app instead, the popup shrinks to a one-line banner —
+"Answered in Teams: Smith Farms (SMIFAR)" — that keeps the link to the producer. The SDK sends
+nothing when that Teams call ends, so the banner stays until dismissed (or 15 minutes).
 
 **Status (2026-10-28): Dev proof of concept, branch `spike_IncomingCallAcs`.** Infrastructure
 provisioned the Azure side on 2026-10-27 (Dev only) and wrote
