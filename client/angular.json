@@ -211,7 +211,7 @@
               ],
               "optimization": false,
               "extractLicenses": false,
-              "sourceMap": true,
+              "sourceMap": false,
               "outputHashing": "all"
             },
             "qa": {
