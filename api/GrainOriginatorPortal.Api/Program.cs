@@ -107,6 +107,14 @@ builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration)
     .AddInMemoryTokenCaches();
 builder.Services.AddAuthorization(options =>
 {
+    // Deny by default (STD-MAA-001 MAA-2.6): any endpoint without its own authorization metadata requires a
+    // signed-in user, so a forgotten [Authorize] fails closed with 401 instead of being open. The only anonymous
+    // endpoints are marked .AllowAnonymous() below: the SPA shell (it performs sign-in) and the health probes
+    // (status only, no business data). Static files are served before routing and are not affected.
+    options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+
     // RequireRole honors the identity's RoleClaimType so it works whether the
     // JWT middleware surfaced the claim as `roles` (Microsoft.Identity.Web default)
     // or as `ClaimTypes.Role` (mapped). Both paths resolve to the same "Admin" check.
@@ -779,10 +787,12 @@ app.MapControllers().RequireAuthorization();
 // /health/live  — process is running (no dependency checks)
 // /health/ready — process + DB connections are ready
 // =============================================================================
+// Anonymous by design (probes carry no token); they return status only. Explicit because of the deny-by-default
+// fallback policy above.
 app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
     Predicate = _ => false  // exclude all checks — liveness only verifies the process is up
-});
+}).AllowAnonymous();
 
 app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
@@ -793,11 +803,12 @@ app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.Health
         [HealthStatus.Degraded]  = StatusCodes.Status200OK,
         [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable
     }
-});
+}).AllowAnonymous();
 
 // SPA fallback — return index.html for any route not matched by a controller
 // This enables Angular client-side routing (/dashboard, /build-list, etc.)
-app.MapFallbackToFile("index.html");
+// Anonymous by design: the shell is what signs the user in (deny-by-default would otherwise 401 it).
+app.MapFallbackToFile("index.html").AllowAnonymous();
 
 // Start the application
 app.Run();
