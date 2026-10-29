@@ -1072,4 +1072,103 @@ public class CtrmCustomerReaderTests
         Assert.Equal([CtrmCustomerQueries.CustomersProbe, CtrmCustomerQueries.CustomersBySourceCodes], client.Documents);
         Assert.Equal(["P000042"], client.Requests.Single().Codes);
     }
+
+    // -------------------------------------------------------------------------------------------------
+    // Lane: a user-facing lookup must not queue behind the background pool (PROD 2026-10-28)
+
+    /// <summary>One background slot, no deferral, and the two HC0045 budgets told apart (background 1, interactive 0).</summary>
+    private static IConfiguration LaneConfig() =>
+        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Ctrm:TradeUnitMaxConcurrentRequests"] = "1",
+            ["Ctrm:BackgroundMaxDeferSeconds"] = "0",
+            ["Ctrm:ServerTimeoutRetries"] = "1",
+            ["Ctrm:ServerTimeoutRetryDelaySeconds"] = "0",
+            ["Ctrm:InteractiveServerTimeoutRetries"] = "0"
+        }).Build();
+
+    /// <summary>Takes the only background slot and holds it - keep-warm's stand-in - until Release completes.</summary>
+    private static async Task<(TaskCompletionSource Release, Task Holder)> FillTheBackgroundPoolAsync(IConfiguration config)
+    {
+        var release = new TaskCompletionSource();
+        var holding = new TaskCompletionSource();
+        var holder = CtrmTradeUnitThrottle.RunAsync(config, async () =>
+        {
+            holding.SetResult();
+            await release.Task;
+            return 0;
+        });
+        await holding.Task;
+        return (release, holder);
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_Interactive_DoesNotQueueBehindAFullBackgroundPool()
+    {
+        var config = LaneConfig();
+        var (release, holder) = await FillTheBackgroundPoolAsync(config);
+        var client = new CustomerListClient();
+        try
+        {
+            var read = await Sut(client, config)
+                .GetBySourceCodesAsync(["LANEFRM"], CancellationToken.None, interactive: true)
+                .WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.True(read.Ok, read.Detail);
+            Assert.True(read.Value!.ByCode.ContainsKey("LANEFRM"));
+            Assert.Equal(1, client.Calls);
+        }
+        finally
+        {
+            release.SetResult();
+            await holder;
+        }
+    }
+
+    [Fact]
+    public async Task GetBySourceCodesAsync_Background_StillQueuesBehindAFullPool_AndLeavesTheQueueWhenCancelled()
+    {
+        // The nightly sync's lane is unchanged: it waits its turn. What changed is that a cancelled caller stops waiting.
+        var config = LaneConfig();
+        var (release, holder) = await FillTheBackgroundPoolAsync(config);
+        var client = new CustomerListClient();
+        using var cts = new CancellationTokenSource();
+        try
+        {
+            var read = Sut(client, config).GetBySourceCodesAsync(["LANEFRM"], cts.Token);
+            await Task.Delay(300);
+            Assert.False(read.IsCompleted);
+            Assert.Equal(0, client.Calls);
+
+            cts.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.Equal(0, client.Calls);
+        }
+        finally
+        {
+            release.SetResult();
+            await holder;
+        }
+    }
+
+    [Theory]
+    [InlineData(true, 1)]   // interactive budget: 0 HC0045 retries - a rep waiting is told at once
+    [InlineData(false, 2)]  // background budget: 1 retry, as before
+    public async Task GetBySourceCodesAsync_ServerTimeout_IsRetriedOnTheBudgetOfItsLane(bool interactive, int expectedRequests)
+    {
+        var client = new CustomerListClient
+        {
+            FailWhen = (_, _) => new()
+            {
+                Status = CtrmReadStatus.QueryError, HttpStatus = 400,
+                ErrorCode = CtrmServerTimeoutRetry.ServerTimeoutCode, Detail = "stub: HC0045"
+            }
+        };
+
+        var read = await Sut(client, LaneConfig()).GetBySourceCodesAsync(["LANEFRM"], CancellationToken.None, interactive);
+
+        Assert.False(read.Ok);
+        Assert.Equal(expectedRequests, client.Calls);
+    }
+
 }
