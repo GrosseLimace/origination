@@ -480,9 +480,10 @@ export class IncomingCallService {
     const info = call.callerInfo;
     const id = info?.identifier;
 
-    // POC evidence for Infrastructure (what a call-queue / auto-attendant call carries). Dev builds
-    // only: the caller's number is PII and must not reach production telemetry.
-    if (!environment.production) {
+    // POC evidence for Infrastructure (what a call-queue / auto-attendant call carries). Local and
+    // Dev builds only, via its own flag: QA is also production: false, and real producers' calls ring
+    // a QA tab too, so the caller's number (PII) must not be printed there.
+    if (environment.logCallerInfo) {
       console.info('[incoming-call] callerInfo', JSON.stringify(info),
         'transferorInfo', JSON.stringify((call as { transferorInfo?: unknown }).transferorInfo ?? null));
     }

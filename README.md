@@ -200,7 +200,7 @@ BarChart" picker; catalog reads are not trade-unit scoped because the catalog is
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/calling/token` | Exchanges the browser's Entra token for the ACS scopes (body `{ teamsUserAadToken }`) into a calling token for the caller's own Teams identity; **204** when calling is off in the environment, **502** when ACS refuses |
-| GET | `/calling/match?number={callerId}` | Producers whose phone on file matches a caller id (empty list = unknown caller) |
+| POST | `/calling/match` | Producers whose phone on file matches a caller id (body `{ number }`, kept out of the URL so it never reaches App Insights; empty list = unknown caller) |
 
 ## Data Sources
 

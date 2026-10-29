@@ -27,7 +27,7 @@ flowchart LR
     P[Producer dials the originator's Teams number] --> T[Microsoft Teams Phone]
     T -->|rings as usual| D[Teams desktop / mobile]
     T -->|also rings| B[Workbench tab<br/>ACS Calling SDK]
-    B -->|caller id| M["GET /api/calling/match?number="]
+    B -->|caller id| M["POST /api/calling/match"]
     M --> DB[(dbo.Customer +<br/>ProducerDetails + ProducerContact)]
     B --> POP[Incoming-call popup]
     POP -->|Answer / Open| HOME["/?customerId=&lt;id&gt;"]
@@ -198,7 +198,8 @@ the Teams app cost nothing extra.
 | 3 | Scenario 2, answered in **Teams desktop** with the tab open | Does the tab still pop the producer (banner)? |
 
 For every test call the tester records: scenario, queue name, time, the console line
-`[incoming-call] callerInfo {...} transferorInfo {...}` (non-production builds log both as JSON),
+`[incoming-call] callerInfo {...} transferorInfo {...}` (local and Dev builds log both as JSON —
+`environment.logCallerInfo`, off in QA and Production because the number is PII),
 whether the tab and Teams desktop rang together, who could answer, and audio quality on the office
 network and over VPN. Results go to Infrastructure; if scenario 2 fails their fallback is Teams Phone
 Extensibility (server-side routing for site numbers).
@@ -301,7 +302,7 @@ own Teams number from a phone that is on file for a producer.
 
 | Layer | File | Role |
 | --- | --- | --- |
-| API | `api/GrainOriginatorPortal.Api/Controllers/CallingController.cs` | `POST /api/calling/token` (200/204/400/502), `GET /api/calling/match` |
+| API | `api/GrainOriginatorPortal.Api/Controllers/CallingController.cs` | `POST /api/calling/token` (200/204/400/502), `POST /api/calling/match` (number in the body) |
 | API | `api/GrainOriginatorPortal.Api/Services/CallingTokenService.cs` | Entra-for-ACS token → ACS `GetTokenForTeamsUser`, oid from the API token; never throws, never caches |
 | API | `api/GrainOriginatorPortal.Api/Services/CommunicationIdentityClientFactory.cs` | ACS Identity client with managed identity (developer `az login` locally) |
 | API | `api/GrainOriginatorPortal.Api/Services/CallingMatchService.cs`, `PhoneDigits.cs` | Caller id → producers (+ added-contact names) |

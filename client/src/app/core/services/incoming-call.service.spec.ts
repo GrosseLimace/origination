@@ -483,6 +483,36 @@ describe('IncomingCallService', () => {
 
   // ── A real (faked) call ───────────────────────────────────────────────────
 
+  describe('caller-info console logging (the number is PII)', () => {
+    const original = environment.logCallerInfo;
+    afterEach(() => {
+      (environment as { logCallerInfo: boolean }).logCallerInfo = original;
+      vi.restoreAllMocks();
+    });
+
+    async function ringAndCollectLogs(logCallerInfo: boolean): Promise<string> {
+      (environment as { logCallerInfo: boolean }).logCallerInfo = logCallerInfo;
+      const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+      const service = create();
+      await startListening(service);
+      fake.ring();
+      httpMock.expectOne(r => r.url === `${BASE}/calling/match`).flush([]);
+      return info.mock.calls.flat().map(String).join(' ');
+    }
+
+    it('prints callerInfo where the flag is on (local, Dev)', async () => {
+      const logged = await ringAndCollectLogs(true);
+      expect(logged).toContain('[incoming-call] callerInfo');
+      expect(logged).toContain('+14025554914');
+    });
+
+    it('never prints the caller number where the flag is off (QA, Production)', async () => {
+      const logged = await ringAndCollectLogs(false);
+      expect(logged).not.toContain('callerInfo');
+      expect(logged).not.toContain('4025554914');
+    });
+  });
+
   it('rings with the matched producer when a phone number calls', async () => {
     const service = create();
     await startListening(service);
@@ -491,7 +521,10 @@ describe('IncomingCallService', () => {
     expect(service.state()).toBe('ringing');
     expect(service.callerNumber()).toBe('+14025554914');
     const req = httpMock.expectOne(r => r.url === `${BASE}/calling/match`);
-    expect(req.request.params.get('number')).toBe('+14025554914');
+    // The number travels in the body, never the URL (App Insights records request URLs).
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ number: '+14025554914' });
+    expect(req.request.urlWithParams).not.toContain('4025554914');
     req.flush([SMITH]);
 
     expect(service.selectedMatch()).toEqual(SMITH); // single match is auto-selected
