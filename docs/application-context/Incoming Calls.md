@@ -166,7 +166,8 @@ icon / status line) anywhere on screen for the rest of that call; double-clickin
 back. The next call starts in the corner again — nothing is remembered between calls.
 
 **Answer also opens the producer's page** when the producer is known (single match, or the one picked
-from the chooser). Clicking a producer card opens the page without touching the call.
+from the chooser). Clicking a producer card opens the page without touching the call. After picking from
+the chooser, **‹ Back to all N producers** returns to the list in case the wrong one was picked.
 
 ## Configuration
 

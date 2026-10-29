@@ -32,6 +32,7 @@ function makeCallStub() {
     selectedMatch: computed(() =>
       matches().length === 1 ? matches()[0] : matches().find(m => m.customerId === chosen()) ?? null),
     choose: vi.fn((id: number) => chosen.set(id)),
+    clearChoice: vi.fn(() => chosen.set(null)),
     answer: vi.fn(async () => state.set('connected')),
     decline: vi.fn(async () => state.set('idle')),
     hold: vi.fn(), resume: vi.fn(), hangUp: vi.fn(), simulateAnsweredElsewhere: vi.fn(),
@@ -115,6 +116,30 @@ describe('IncomingCallPopupComponent', () => {
 
     expect(call.choose).toHaveBeenCalledWith(7);
     expect(navigate).toHaveBeenCalledWith(['/'], { queryParams: { customerId: 7 } });
+  });
+
+  it('lets the user go back to the list after picking the wrong producer, and pick another', async () => {
+    call.matches.set([SMITH, JONES]);
+    const { navigate } = await setup();
+
+    await userEvent.click(screen.getByTestId('incoming-call-match-7'));        // Jones Ag (wrong one)
+    expect(screen.queryByText(/Several producers share this number/)).toBeNull();
+    const back = screen.getByTestId('incoming-call-back-to-list');
+    expect(back.textContent).toContain('Back to all 2 producers');
+
+    await userEvent.click(back);
+    expect(call.clearChoice).toHaveBeenCalled();
+    expect(screen.getByText(/Several producers share this number/)).toBeTruthy();
+
+    await userEvent.click(screen.getByTestId('incoming-call-match-158259'));   // Smith Farms
+    expect(navigate).toHaveBeenLastCalledWith(['/'], { queryParams: { customerId: 158259 } });
+  });
+
+  it('has no "back to list" link when only one producer has the number', async () => {
+    call.matches.set([SMITH]);
+    await setup();
+
+    expect(screen.queryByTestId('incoming-call-back-to-list')).toBeNull();
   });
 
   it('says "unknown caller" when nobody has the number on file', async () => {

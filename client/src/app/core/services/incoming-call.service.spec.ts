@@ -693,6 +693,10 @@ describe('IncomingCallService', () => {
     expect(service.selectedMatch()).toBeNull(); // two matches: the user must choose
     service.choose(JONES.customerId);
     expect(service.selectedMatch()).toEqual(JONES);
+    service.clearChoice();                       // picked the wrong one: back to the chooser
+    expect(service.selectedMatch()).toBeNull();
+    service.choose(SMITH.customerId);
+    expect(service.selectedMatch()).toEqual(SMITH);
 
     await service.answer();
     expect(service.state()).toBe('connected');

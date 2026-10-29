@@ -536,6 +536,11 @@ export class IncomingCallService {
     this.chosenId.set(customerId);
   }
 
+  /** Back to the list when several producers share the number (the user picked the wrong one). */
+  clearChoice(): void {
+    this.chosenId.set(null);
+  }
+
   /** Answers in the browser: asks for the microphone (the only place the service touches it), then
    *  accepts the call. */
   async answer(): Promise<void> {
