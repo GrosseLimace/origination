@@ -47,6 +47,13 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      # STD-MAA-001 MAA-7.2: the dependency gate runs before every external DEPLOYMENT, not just in CI. Same
+      # command and threshold as ci.yml (HIGH/CRITICAL in the production tree), so a release can never ship a
+      # package CI would have rejected. Dev-only tooling is triaged through Dependabot (docs/security).
+      - name: Dependency vulnerability scan (npm, production tree)
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: client
+
       - name: Build mobile app
         run: npx ng build origination-mobile --configuration ${{ env.NG_CONFIG }}
         working-directory: client
