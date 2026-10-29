@@ -61,11 +61,11 @@ export const environment = {
   // app but silently fails to create the Outlook event, which is worse than the feature being
   // absent: the user believes they have been reminded.
   remindersEnabled: true,
-  // Incoming-call popup (ACS Teams-user calling). OFF: Dev-only spike until Microsoft confirms
-  // the scenario stays supported past the 2028 ACS retirement and a pilot originator signs off.
   // Prints each incoming call's callerInfo / transferorInfo to the console. OFF: the caller's
   // number is PII, and real producers' calls ring this environment's tab too.
   logCallerInfo: false,
+  // Incoming-call popup (ACS Teams-user calling). OFF: Dev-only spike until Microsoft confirms
+  // the scenario stays supported past the 2028 ACS retirement and a pilot originator signs off.
   incomingCallEnabled: false,
   // Azure Communication Services scopes the browser asks Entra for when the incoming-call popup
   // starts; the API exchanges that token for a calling token (POST /calling/token). Admin consent
