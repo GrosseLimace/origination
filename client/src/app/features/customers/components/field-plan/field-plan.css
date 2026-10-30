@@ -34,3 +34,17 @@ select.ci-input option:disabled { color: #9ca3af; }
   to { opacity: 1; transform: none; }
 }
 @media (prefers-reduced-motion: reduce) { .ci-slide-in { animation: none; } }
+
+/* The 45Z review's step numbers: a small filled circle before each step's heading. */
+.ci-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fff;
+  background-color: var(--color-scoular-green-accessible, #00703c);
+}
