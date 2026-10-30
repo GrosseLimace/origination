@@ -109,7 +109,7 @@
                         @case ('empty') { no inputs yet }
                         @case ('replace') { its inputs will be replaced }
                         @case ('partial') { different crop: only the inputs that carry across crops }
-                        @case ('locked') { harvest estimate locked; unlock it first }
+                        @case ('locked') { CI confirmed; unlock it first }
                       }
                     </span>
                   </label>
@@ -162,12 +162,8 @@
 
             @if (a.record.frozen; as fz) {
               <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 px-4 py-3 text-sm text-blue-900 dark:text-blue-200">
-                @if (a.record.official?.status === 'Documented') {
-                  <span>✓ Confirmed with the producer ({{ fz.calculatorVersion }}, by {{ a.record.official?.documentedBy }})@if (fz.score; as sc) {: {{ sc.value | number:'1.0-0' }} {{ sc.unit }}}.</span>
-                } @else {
-                  <span>🔒 Harvest estimate locked ({{ fz.calculatorVersion }}, at {{ fz.lockedBy }})@if (fz.score; as sc) {: {{ sc.value | number:'1.0-0' }} {{ sc.unit }}}.@if (a.def.official; as o) { Not an official {{ o.resultName }} until it's reviewed and confirmed.}</span>
-                }
-                @if (heldBy(); as enrolled) {
+                <span>✓ Confirmed with the producer ({{ fz.calculatorVersion }}, by {{ a.record.official?.documentedBy ?? fz.lockedBy }})@if (fz.score; as sc) {: {{ sc.value | number:'1.0-0' }} {{ sc.unit }}}.</span>
+                @if (heldBy()) {
                   <span>Held by the producer's attested {{ a.def.shortLabel }} enrollment.</span>
                 } @else {
                   <button type="button" class="underline bg-transparent border-0 p-0" (click)="showReopen = true">Unlock to correct…</button>
@@ -201,12 +197,12 @@
 @if (showReopen) {
   <div class="fixed inset-0 z-[70] flex items-start justify-center bg-black/40 px-4 pt-[12vh]" (click)="showReopen = false">
     <div class="w-full max-w-md rounded-lg bg-white dark:bg-gray-800 shadow-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4" (click)="$event.stopPropagation()">
-      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Unlock this field's harvest estimate</h3>
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Unlock this field's confirmed CI</h3>
       <label class="block text-sm">
         <span class="text-gray-700 dark:text-gray-300">Why does it need correcting?</span>
         <textarea rows="3" class="ci-input" [(ngModel)]="reopenReason"></textarea>
       </label>
-      <p class="text-xs text-gray-500 dark:text-gray-400">Unlocking also reopens the enrollment's harvest. The reason and the locked estimate are kept in the field's history.</p>
+      <p class="text-xs text-gray-500 dark:text-gray-400">The reason, the confirmed CI and its tickets are kept in the field's history, and the field can be reviewed again.</p>
       <div class="flex justify-end gap-2">
         <app-button variant="outline" (onClick)="showReopen = false">Cancel</app-button>
         <app-button variant="default" [disabled]="!reopenReason.trim()" (onClick)="confirmReopen()">Unlock</app-button>

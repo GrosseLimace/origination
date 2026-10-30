@@ -14,8 +14,8 @@ import { FdCicReviewComponent } from './programs/fd-cic/fd-cic-review.component'
 /**
  * One field on one crop row: its CTRM split (ID, name, split %) and location, its acres this year, and the
  * sustainability programs it takes part in. Each program brings its own form (rendered from the
- * program registry) and shows the producer's enrollment ID for that program. Nobody locks here:
- * marking the enrollment's harvest complete does. Edits save as they are made.
+ * program registry) and shows the producer's enrollment ID for that program. A 45Z field is locked by
+ * confirming it in the review after harvest. Edits save as they are made.
  */
 @Component({
   selector: 'app-field-season-dialog',
@@ -197,7 +197,6 @@ export class FieldSeasonDialogComponent {
     }
   }
 
-  /** "not started" until a program's official result exists (requirements are being defined). */
   /** A 45Z field can be reviewed with its tickets once it has an estimated CI (or a locked one). */
   canReview(record: FieldProgramRecord): boolean {
     if (record.programKey !== FD_CIC_PROGRAM_KEY) return false;
@@ -210,7 +209,7 @@ export class FieldSeasonDialogComponent {
     return OFFICIAL_STATUS_TEXT[record.official?.status ?? 'NotStarted'];
   }
 
-  // ── Unlock a locked harvest estimate (the same for every program) ──────────
+  // ── Unlock a confirmed CI (the same for every program) ──────────
   showReopen = false;
   reopenReason = '';
 

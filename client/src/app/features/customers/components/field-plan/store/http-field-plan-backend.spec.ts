@@ -16,7 +16,7 @@ const record = {
 const enrollment = {
   key: 'e1', programKey: '45z-fdcic', customerId: 9, year: 2026, status: 'Open',
   attestation: { signerName: '', signedOn: '', method: 'eSign', documentRef: '', confirmations: { recordsAccurate: false } },
-  attestedBy: null, attestedAt: null, snapshot: null, harvestCompleteAt: null, withdrawnReason: null,
+  attestedBy: null, attestedAt: null, snapshot: null, withdrawnReason: null,
 };
 
 describe('HttpFieldPlanBackend', () => {
@@ -65,14 +65,14 @@ describe('HttpFieldPlanBackend', () => {
     await season;
   });
 
-  it('should lock with no body: the server locks as the signed-in user and rescores', async () => {
-    const locking = backend.lock('7', 'someone');
-    const req = http.expectOne(`${BASE}/records/7/lock`);
+  it('should confirm with the yield and ticket keys, and the server rescores and locks', async () => {
+    const confirming = backend.confirm('7', 205, ['P1', 'P2']);
+    const req = http.expectOne(`${BASE}/records/7/confirm`);
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toBeNull();
+    expect(req.request.body).toEqual({ actualYield: 205, ticketKeys: ['P1', 'P2'], reviewedWithProducer: true });
     req.flush({ ...record, status: 'Locked', frozen: { basis: 'Estimate' } });
 
-    const locked: FieldProgramRecord = await locking;
+    const locked: FieldProgramRecord = await confirming;
     expect(locked.status).toBe('Locked');
     expect(locked.frozen).toEqual({ basis: 'Estimate' });
   });
@@ -86,7 +86,7 @@ describe('HttpFieldPlanBackend', () => {
     expect(await ensuring).toBeUndefined();
   });
 
-  it('should send the attestation alone, and the reopen result without a null enrollment', async () => {
+  it('should send the attestation alone, and return the reopened record without nulls', async () => {
     const attestation = backend.updateAttestation(enrollment as unknown as ProgramEnrollment);
     const req = http.expectOne(`${BASE}/enrollments/e1/attestation`);
     expect(Object.keys(req.request.body)).toEqual(['attestation']);
@@ -94,18 +94,20 @@ describe('HttpFieldPlanBackend', () => {
     await attestation;
 
     const reopening = backend.reopen('7', 'wrong yield');
-    http.expectOne(`${BASE}/records/7/reopen`).flush({ record, enrollment: null });
-    expect(await reopening).toEqual({ record: { id: '7', seasonId: '3', programKey: '45z-fdcic', data: { expectedYield: 190 }, status: 'Ready' } });
+    const reopen = http.expectOne(`${BASE}/records/7/reopen`);
+    expect(reopen.request.body).toEqual({ reason: 'wrong yield' });
+    reopen.flush({ ...record, frozen: null });
+    expect(await reopening).toEqual({ id: '7', seasonId: '3', programKey: '45z-fdcic', data: { expectedYield: 190 }, status: 'Ready' });
   });
 
   it('should reject with the server\'s message, which the store shows', async () => {
-    const locking = backend.lock('7', 'x');
-    http.expectOne(`${BASE}/records/7/lock`).flush(
-      { error: { code: 'FIELD_PLAN_LOCK_INCOMPLETE', message: 'Still needed before locking: actual yield.' } },
-      { status: 422, statusText: 'Unprocessable Entity' });
+    const confirming = backend.confirm('7', 205, ['P1']);
+    http.expectOne(`${BASE}/records/7/confirm`).flush(
+      { error: { code: 'FIELD_PLAN_STALE_TICKETS', message: 'Some of those tickets are no longer this field\'s in CTRM.' } },
+      { status: 409, statusText: 'Conflict' });
 
-    const error = await locking.catch(e => e);
+    const error: unknown = await confirming.catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ApiError);
-    expect(error.message).toBe('Still needed before locking: actual yield.');
+    expect((error as ApiError).message).toBe('Some of those tickets are no longer this field\'s in CTRM.');
   });
 });

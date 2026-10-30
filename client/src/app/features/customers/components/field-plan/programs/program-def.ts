@@ -41,9 +41,7 @@ export interface SustainabilityProgramDef<TData = any> {
    * the enrollment card. Leave it out for a program that doesn't track production.
    */
   production?(data: TData, season: FieldSeason): number | null;
-  /** What still stands between the record and Locked when the enrollment's harvest is marked complete. */
-  lockMissing(data: TData, season: FieldSeason, field: ProducerField): string[];
-  /** The audit copy of inputs and outputs stored at lock. */
+  /** The audit copy of inputs and outputs stored when the record is locked (45Z: on confirming). */
   freeze(data: TData, season: FieldSeason, field: ProducerField): Omit<FrozenProgramResult, 'basis' | 'lockedBy' | 'lockedAt'>;
 
   /** A one-line roll-up for a crop row, or null to show none (45Z: "CI 2,629 g/bu"). */
@@ -77,7 +75,7 @@ export interface SustainabilityProgramDef<TData = any> {
 
   /**
    * Enrollment, for programs that have one (45Z): each field's ID for the year, derived from its split ID
-   * and the crop year, grouped per producer for harvest complete, attestation and withdrawal. A program
+   * and the crop year, grouped per producer for attestation and withdrawal. A program
    * without it records field data only.
    */
   enrollment?: {

@@ -5,7 +5,7 @@ namespace GrainOriginatorPortal.Api.Controllers;
 
 /// <summary>
 /// A producer's CTRM splits (combined customer IDs). Each is one field in the producer's field plan, and
-/// tickets are delivered under it. Sample data until the CTRM splits query is confirmed; the response's
+/// tickets are delivered under it. Empty while split IDs are typed by hand (the go-live default), sample data in local demos, until the CTRM splits query is confirmed; the response's
 /// <c>source</c> says which.
 /// </summary>
 [Authorize]

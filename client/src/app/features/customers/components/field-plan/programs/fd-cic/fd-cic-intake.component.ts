@@ -44,9 +44,12 @@ export class FdCicIntakeComponent implements ProgramIntake {
   ];
   readonly manureOptions = MANURE_OPTIONS;
 
-  /** Editable copy of the stored data; every change is written straight back. */
+  /**
+   * Editable copy of the stored data; every change is written straight back. Taken again whenever the stored
+   * data stops matching it (another record, inputs copied in, a reload after a failed save), so a keystroke
+   * never writes an old draft over newer data.
+   */
   draft: FdCicData | null = null;
-  private _draftOf: string | null = null;
 
   readonly stored = computed(() => this.record().data as FdCicData);
   /** The USDA score from the API for what's saved; it follows every edit. */
@@ -77,12 +80,8 @@ export class FdCicIntakeComponent implements ProgramIntake {
 
   constructor() {
     effect(() => {
-      const r = this.record();
-      const key = `${r.id}|${r.status}`;
-      if (key !== this._draftOf) {
-        this.draft = cloneData(r.data as FdCicData);
-        this._draftOf = key;
-      }
+      const data = this.record().data as FdCicData;
+      if (JSON.stringify(data) !== JSON.stringify(this.draft)) this.draft = cloneData(data);
     });
   }
 

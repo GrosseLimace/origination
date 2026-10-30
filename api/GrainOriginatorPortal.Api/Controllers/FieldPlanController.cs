@@ -62,7 +62,7 @@ public class FieldPlanController : ControllerBase
     public async Task<ActionResult<FieldSeasonResponse>> AddSeason([FromBody] CreateFieldSeasonRequest request, CancellationToken ct) =>
         Ok(await _service.AddSeasonAsync(request, ct));
 
-    /// <summary>Changes a field's acres on a crop row; refused once its harvest estimate is locked.</summary>
+    /// <summary>Changes a field's acres on a crop row; refused once its CI is confirmed.</summary>
     [HttpPut("seasons/{id:int}")]
     [ProducesResponseType(typeof(FieldSeasonResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
@@ -101,18 +101,11 @@ public class FieldPlanController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Locks the harvest estimate, rescored on the server. Always an estimate, never an official result.</summary>
-    [HttpPost("records/{id:int}/lock")]
-    [ProducesResponseType(typeof(FieldProgramRecordResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status422UnprocessableEntity)]
-    public async Task<ActionResult<FieldProgramRecordResponse>> Lock(int id, CancellationToken ct) =>
-        Ok(await _service.LockAsync(id, ct));
-
-    /// <summary>Unlocks a harvest estimate with a reason; refused while an attested enrollment holds it.</summary>
+    /// <summary>Unlocks a confirmed CI with a reason; refused while an attested enrollment holds it.</summary>
     [HttpPost("records/{id:int}/reopen")]
-    [ProducesResponseType(typeof(FieldPlanReopenResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(FieldProgramRecordResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<FieldPlanReopenResponse>> Reopen(int id, [FromBody] FieldPlanReasonRequest request, CancellationToken ct) =>
+    public async Task<ActionResult<FieldProgramRecordResponse>> Reopen(int id, [FromBody] FieldPlanReasonRequest request, CancellationToken ct) =>
         Ok(await _service.ReopenAsync(id, request.Reason, ct));
 
     /// <summary>
@@ -157,11 +150,6 @@ public class FieldPlanController : ControllerBase
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status422UnprocessableEntity)]
     public async Task<ActionResult<ProgramEnrollmentResponse>> Attest(Guid key, [FromBody] AttestEnrollmentRequest request, CancellationToken ct) =>
         Ok(await _service.AttestAsync(key, request.Listed, ct));
-
-    [HttpPut("enrollments/{key:guid}/harvest-complete")]
-    [ProducesResponseType(typeof(ProgramEnrollmentResponse), StatusCodes.Status200OK)]
-    public async Task<ActionResult<ProgramEnrollmentResponse>> SetHarvestComplete(Guid key, [FromBody] HarvestCompleteRequest request, CancellationToken ct) =>
-        Ok(await _service.SetHarvestCompleteAsync(key, request.Complete, ct));
 
     [HttpPost("enrollments/{key:guid}/withdraw")]
     [ProducesResponseType(typeof(ProgramEnrollmentResponse), StatusCodes.Status200OK)]

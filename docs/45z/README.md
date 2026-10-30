@@ -262,6 +262,36 @@ its macros. The tools read it as data, and the Excel check runs with macros forc
 
 For a tables-only release this should take about a day, most of it review.
 
+## Standards review (before the merge to main)
+
+On 2026-10-30 the branch was reviewed against the Scoular standards with the marketplace skills
+(`audit-dotnet`, `audit-angular`, `audit-sql`, `audit-security`, `code-review`). Fixed before the merge:
+- **Attested snapshot built on the server.** It was kept as the browser sent it; a crafted list could put
+  another producer's split in it, or a non-text split ID that broke attesting for everyone in the program and year.
+- **A field once per crop per year.** The same split on two rows of the same crop (say irrigated and dryland
+  corn) pulled the same tickets twice, so the Bins' CSV would have counted them twice.
+- **No uncounted tickets.** A ticket with no bushel figure starts left out of the review and can't be confirmed.
+- **Copying inputs onto a scored field** now refreshes the form, so the next edit no longer writes the old inputs back.
+- **Smaller fixes:** "settled" is matched exactly, the actual yield is capped at 1,000 bu/ac on screen as in the
+  API, a 02-29 ticket window is refused, and the "harvest complete" leftovers and stale comments are gone.
+
+**To do before the screens go live (`fieldPlanBackend: 'api'`):**
+1. **Concurrency:** confirm, reopen and edits can race (no concurrency token); unique-index races return 500
+   instead of the existing row (the repo's `IsUniqueViolation` pattern in `BidSheetRepository`).
+2. **Split ownership while typed by hand:** nothing checks a typed split ID belongs to the producer, and there is
+   no way to remove a wrongly claimed field. Check it against CTRM or add an admin path; ends with SPLITS-GRAPHQL.
+3. **Access:** the field-plan routes follow the app's accepted per-producer pattern (any signed-in user), but they
+   aren't in `SECURITY-REVIEWS/ACCEPTED-RISKS.md` yet; register them or gate confirm, reopen and attest.
+4. **Server feature flag:** `api/field-plan` answers in QA and PROD although the screens are off there.
+5. **Client hardening:** OnPush and signals on the 7 new components; templates out of the larger inline
+   components; accessibility (aria-pressed and aria-expanded, the unlock overlay as `<app-dialog>`, Escape on the
+   program menu); one USDA score request per keystroke; FD-CIC lookups that stay failed until reload;
+   duplicate datalist IDs from the mobile and desktop layouts; component specs for the review, dialog and card.
+6. **Server tidy-ups:** interfaces in their own files, status names as shared constants, full
+   `ProducesResponseType` lists, `cancellationToken` naming, and ticket-window settings checked at startup.
+7. **Data:** ticket product codes outside the crop lists are dropped silently; the standard-weight bushel fallback
+   goes against the repo's "no close-enough bushels" rule; one Aug 1–Jul 31 window for every crop.
+
 ## Legal
 
 Building the calculator from the workbook was cleared on the assumption that legal approves reproducing

@@ -62,15 +62,6 @@ describe('45Z program (USDA FD-CIC on the API)', () => {
     expect(program.production!(data(), season)).toBeNull();
   });
 
-  it('should need the actual yield and a finished USDA score before locking', () => {
-    expect(program.lockMissing(data(), season, field)).toEqual(['actual yield']);
-    expect(program.lockMissing(data({ actualYield: 205 }), season, field)).toEqual([]);
-    expect(createFdCicProgram(fakeFdCicApi('loading')).lockMissing(data({ actualYield: 205 }), season, field))
-      .toEqual(['the USDA score (still calculating)']);
-    expect(createFdCicProgram(fakeFdCicApi('unscorable')).lockMissing(data({ actualYield: 205 }), season, field)[0])
-      .toContain('no Corn data for Pratt County');
-  });
-
   it('should freeze the inputs, the USDA outputs and the exact USDA version', () => {
     const frozen = program.freeze(data({ actualYield: 205, tillage: 'NoTill' }), season, field);
     expect(frozen.calculatorVersion).toBe('USDA FD-CIC v1.2');
@@ -126,7 +117,7 @@ describe('45Z program (USDA FD-CIC on the API)', () => {
 
     it('should use a locked field\'s frozen score, acres and actual yield, not a new calculation', () => {
       const frozen = { inputs: { acres: 80, actualYield: 205 }, outputs: { yieldUsed: 205, nationalAverage: 6000 }, score: { value: 4800, unit: 'g CO₂e/bu', unitShort: 'g/bu' },
-        calculatorVersion: 'USDA FD-CIC v1.2', basis: 'Estimate' as const, lockedBy: 'harvest complete', lockedAt: '2026-10-01' };
+        calculatorVersion: 'USDA FD-CIC v1.2', basis: 'Estimate' as const, lockedBy: 'you', lockedAt: '2026-10-01' };
       const api = fakeFdCicApi();
       const p = createFdCicProgram(api);
       expect(p.rowSummary!([{ season, field, record: record(data(), frozen) }], { id: 1, acres: 80 })!.text).toBe('CI 4,800 g/bu · 16,400 bu');

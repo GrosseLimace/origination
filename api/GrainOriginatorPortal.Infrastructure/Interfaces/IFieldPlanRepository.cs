@@ -25,6 +25,9 @@ public interface IFieldPlanRepository
     /// <summary>A season with its field.</summary>
     Task<ProducerFieldSeason?> GetSeasonAsync(int seasonId, CancellationToken cancellationToken);
 
+    /// <summary>The field's live seasons in a crop year.</summary>
+    Task<List<ProducerFieldSeason>> GetSeasonsForFieldAsync(int producerFieldId, int cropYear, CancellationToken cancellationToken);
+
     Task<List<FieldProgramRecord>> GetRecordsForSeasonAsync(int seasonId, CancellationToken cancellationToken);
 
     /// <summary>A record with its season and field.</summary>

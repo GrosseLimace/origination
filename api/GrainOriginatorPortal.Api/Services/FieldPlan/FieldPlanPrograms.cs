@@ -98,7 +98,7 @@ public static class FieldPlanPrograms
         Missing(programKey, data, season).Count == 0 ? "Ready" : "Draft";
 
     /// <summary>
-    /// The locked harvest estimate, as JSON. 45Z is rescored here with the server's own USDA calculator;
+    /// The CI frozen when a field is confirmed, as JSON. 45Z is rescored here with the server's own USDA calculator;
     /// the client's number is never used. Always an estimate (basis "Estimate"), never an official result.
     /// </summary>
     public static string Freeze(FieldProgramRecord record, ProducerFieldSeason season, ProducerField field,
@@ -175,7 +175,7 @@ public static class FieldPlanPrograms
     }
 
     private static BusinessException StillNeeded(IEnumerable<string> missing) =>
-        new($"Still needed before locking: {string.Join(", ", missing)}.", "FIELD_PLAN_LOCK_INCOMPLETE", StatusCodes.Status422UnprocessableEntity);
+        new($"Still needed before confirming: {string.Join(", ", missing)}.", "FIELD_PLAN_LOCK_INCOMPLETE", StatusCodes.Status422UnprocessableEntity);
 
     private sealed record FdCicData(
         double? ExpectedYield, double? ActualYield, double? SyntheticN, double NiFraction,

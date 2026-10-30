@@ -3,8 +3,8 @@ using System.Text.Json.Serialization;
 namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
 
 /// <summary>
-/// A producer in one sustainability program for one crop year: the attestation, harvest complete and
-/// withdrawal. At most one live (Open or Attested) row per producer, program and year; withdrawn rows are
+/// A producer in one sustainability program for one crop year: the attestation and withdrawal
+/// (HarvestCompleteAt is unused since 2026-10-30: each field is confirmed on its own). At most one live (Open or Attested) row per producer, program and year; withdrawn rows are
 /// kept as history and re-enrolling adds a new row. Each field's enrollment ID is derived
 /// (CI-{crop year}-{split ID}), not stored.
 /// </summary>

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FdCicApiService } from '@core/services/fd-cic-api.service';
 import { FdCicData, FieldProgramRecord, FieldSeason, ProducerField } from '@models';
 import { FdCicIntakeComponent } from './fd-cic-intake.component';
@@ -16,10 +16,11 @@ const record: FieldProgramRecord<FdCicData> = { id: 'r1', seasonId: 's1', progra
 
 describe('FdCicIntakeComponent', () => {
   let component: FdCicIntakeComponent;
+  let fixture: ComponentFixture<FdCicIntakeComponent>;
 
   beforeEach(() => {
     TestBed.configureTestingModule({ providers: [{ provide: FdCicApiService, useValue: fakeFdCicApi() }] });
-    const fixture = TestBed.createComponent(FdCicIntakeComponent);
+    fixture = TestBed.createComponent(FdCicIntakeComponent);
     fixture.componentRef.setInput('record', record);
     fixture.componentRef.setInput('season', season);
     fixture.componentRef.setInput('field', field);
@@ -37,5 +38,20 @@ describe('FdCicIntakeComponent', () => {
     for (const driver of ['Tillage', 'Cover crop', 'N rate', 'Nitrification inhibitor', 'Manure']) {
       expect(component.affects(driver)).not.toContain('other chemicals');
     }
+  });
+
+  it('should take the stored inputs again when they change under it, e.g. copied in, so an edit never writes old inputs back', () => {
+    fixture.componentRef.setInput('record', { ...record, data: { ...data, syntheticN: 120, tillage: 'ReducedTill' } });
+    fixture.detectChanges();
+
+    expect(component.draft).toMatchObject({ syntheticN: 120, tillage: 'ReducedTill' });
+  });
+
+  it('should keep the same draft while the store holds what was typed, so no keystroke is lost', () => {
+    const draft = component.draft;
+    fixture.componentRef.setInput('record', { ...record, data: { ...data } });
+    fixture.detectChanges();
+
+    expect(component.draft).toBe(draft);
   });
 });

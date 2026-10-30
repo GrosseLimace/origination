@@ -258,6 +258,20 @@ public class FieldPlanServiceTests
             new CreateFieldSeasonRequest { FieldKey = "TATOB43", PlantingIntentionId = CornRow, Year = 2027, CropLabel = "Irrigated Corn" }, default));
     }
 
+    [Fact]
+    public async Task AddSeason_RefusesTheSameFieldTwiceForACrop_SoItsTicketsArentCountedTwice()
+    {
+        var h = New();
+        await CornField(h);
+
+        var sameRow = await Assert.ThrowsAsync<BusinessException>(() => h.Service.AddSeasonAsync(
+            new CreateFieldSeasonRequest { FieldKey = "TATOB43", PlantingIntentionId = CornRow, Year = 2026, CropLabel = "Irrigated Corn", Acres = 10 }, default));
+        // Double cropping is fine: wheat and corn on the same field in a year.
+        await h.Service.AddSeasonAsync(new CreateFieldSeasonRequest { FieldKey = "TATOB43", PlantingIntentionId = WheatRow, Year = 2026, CropLabel = "Wheat", Acres = 10 }, default);
+
+        Assert.Equal("FIELD_PLAN_FIELD_ON_ROW", sameRow.ErrorCode);
+    }
+
     // ── Records ─────────────────────────────────────────────────────────────
 
     [Fact]
@@ -300,20 +314,28 @@ public class FieldPlanServiceTests
             new UpdateFieldProgramRecordRequest { Data = Json("[1, 2]") }, default));
     }
 
-    // ── Locking ─────────────────────────────────────────────────────────────
+    // ── Locking (by confirming) ─────────────────────────────────────────────
+
+    /// <summary>Confirms the field at 200 bu/ac with one 1,000 bu delivery.</summary>
+    private static async Task<FieldProgramRecordResponse> Confirmed(Harness h, FieldProgramRecordResponse record)
+    {
+        var id = int.Parse(record.Id);
+        h.CtrmTickets.Add(Delivery("2026-10-05", 56_000));
+        var key = (await h.Tickets.ForRecordAsync(id, default)).Tickets[0].TicketKey;
+        return await h.Service.ConfirmAsync(id, new ConfirmFieldProgramRecordRequest { ActualYield = 200, TicketKeys = [key], ReviewedWithProducer = true }, default);
+    }
 
     [Fact]
-    public async Task Lock_RescoresWithTheServersCalculator_AndStampsTheVersionAndUser()
+    public async Task Confirm_FreezesWithTheServersCalculator_AndStampsTheVersionAndUser()
     {
         var h = New();
         var (_, record) = await CornField(h);
 
-        var locked = await h.Service.LockAsync(int.Parse(record.Id), default);
+        var locked = await Confirmed(h, record);
 
         Assert.Equal("Locked", locked.Status);
         var frozen = locked.Frozen!.Value;
         // Story County corn, 200 bu actual: the golden-case CI in FdCicServiceTests.
-        Assert.Equal(3070.75, frozen.GetProperty("score").GetProperty("value").GetDouble(), 2);
         Assert.Equal(3070.75, frozen.GetProperty("outputs").GetProperty("ciGPerBu").GetDouble(), 2);
         Assert.Equal("USDA FD-CIC v1.2", frozen.GetProperty("calculatorVersion").GetString());
         Assert.Equal(FdCicMethodV1.Fingerprint, frozen.GetProperty("outputs").GetProperty("usdaFormulaFingerprint").GetString());
@@ -326,30 +348,18 @@ public class FieldPlanServiceTests
     }
 
     [Fact]
-    public async Task Lock_WithoutAnActualYield_SaysWhatsMissing()
-    {
-        var h = New();
-        var (_, record) = await CornField(h, data: Json("""{ "expectedYield": 190, "actualYield": null, "syntheticN": 180, "niFraction": 0, "coverCrop": "None", "tillage": "NoTill", "manure": [] }"""));
-
-        var ex = await Assert.ThrowsAsync<BusinessException>(() => h.Service.LockAsync(int.Parse(record.Id), default));
-
-        Assert.Equal("FIELD_PLAN_LOCK_INCOMPLETE", ex.ErrorCode);
-        Assert.Contains("actual yield", ex.Message);
-        Assert.Equal("Ready", h.Db.FieldProgramRecords.Single().Status);
-    }
-
-    [Fact]
-    public async Task Lock_GrainCraft_FreezesTheVariety()
+    public async Task Freeze_GrainCraft_KeepsTheVariety()
     {
         var h = New();
         await h.Service.CreateFieldAsync(new CreateProducerFieldRequest { CustomerId = Tobin, SplitId = "TATOB44" }, default);
         var season = await h.Service.AddSeasonAsync(new CreateFieldSeasonRequest { FieldKey = "TATOB44", PlantingIntentionId = WheatRow, Year = 2026, CropLabel = "Wheat", Acres = 80 }, default);
-        var record = await h.Service.AddRecordAsync(new CreateFieldProgramRecordRequest { SeasonId = season.Id, ProgramKey = FieldPlanPrograms.GrainCraft, Data = Json("""{ "variety": " Zenda " }""") }, default);
+        await h.Service.AddRecordAsync(new CreateFieldProgramRecordRequest { SeasonId = season.Id, ProgramKey = FieldPlanPrograms.GrainCraft, Data = Json("""{ "variety": " Zenda " }""") }, default);
+        var entity = h.Db.FieldProgramRecords.Include(r => r.Season!).ThenInclude(s => s.Field!).Single();
 
-        var locked = await h.Service.LockAsync(int.Parse(record.Id), default);
+        var frozen = Json(FieldPlanPrograms.Freeze(entity, entity.Season!, entity.Season!.Field!, FdCic.Value, User, DateTime.UtcNow));
 
-        Assert.Equal("Zenda", locked.Frozen!.Value.GetProperty("inputs").GetProperty("variety").GetString());
-        Assert.Equal("GrainCraft field record v1", locked.Frozen.Value.GetProperty("calculatorVersion").GetString());
+        Assert.Equal("Zenda", frozen.GetProperty("inputs").GetProperty("variety").GetString());
+        Assert.Equal("GrainCraft field record v1", frozen.GetProperty("calculatorVersion").GetString());
     }
 
     [Fact]
@@ -357,7 +367,7 @@ public class FieldPlanServiceTests
     {
         var h = New();
         var (season, record) = await CornField(h);
-        await h.Service.LockAsync(int.Parse(record.Id), default);
+        await Confirmed(h, record);
         var seasonId = int.Parse(season.Id);
 
         await Assert.ThrowsAsync<BusinessException>(() => h.Service.UpdateRecordAsync(int.Parse(record.Id), new UpdateFieldProgramRecordRequest { Data = StoryCorn }, default));
@@ -371,22 +381,21 @@ public class FieldPlanServiceTests
     // ── Reopening ───────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Reopen_KeepsTheUnlockedEstimate_AndReopensTheHarvest()
+    public async Task Reopen_KeepsTheConfirmedCiAndItsEstimateInTheHistory()
     {
         var h = New();
         var (_, record) = await CornField(h);
-        var enrollment = await SignedEnrollment(h);
-        await h.Service.LockAsync(int.Parse(record.Id), default);
-        await h.Service.SetHarvestCompleteAsync(Guid.Parse(enrollment.Key), true, default);
+        await Confirmed(h, record);
 
-        var reopened = await h.Service.ReopenAsync(int.Parse(record.Id), "  wrong yield ", default);
+        var reopened = await h.Service.ReopenAsync(int.Parse(record.Id), "  tickets were missing ", default);
 
-        Assert.Equal("Ready", reopened.Record.Status);
-        Assert.Null(reopened.Record.Frozen);
-        var history = reopened.Record.Reopened!.Value;
-        Assert.Equal("wrong yield", history[0].GetProperty("reason").GetString());
-        Assert.Equal(3070.75, history[0].GetProperty("frozen").GetProperty("score").GetProperty("value").GetDouble(), 2);
-        Assert.Null(reopened.Enrollment!.HarvestCompleteAt);
+        Assert.Equal("Ready", reopened.Status);
+        Assert.Null(reopened.Frozen);
+        Assert.Null(reopened.Official);
+        var history = reopened.Reopened!.Value[0];
+        Assert.Equal("tickets were missing", history.GetProperty("reason").GetString());
+        Assert.Equal(3070.75, history.GetProperty("frozen").GetProperty("score").GetProperty("value").GetDouble(), 2);
+        Assert.Equal("Documented", history.GetProperty("official").GetProperty("status").GetString());
     }
 
     [Fact]
@@ -396,12 +405,13 @@ public class FieldPlanServiceTests
         var (_, record) = await CornField(h);
         var enrollment = await SignedEnrollment(h);
         await h.Service.AttestAsync(Guid.Parse(enrollment.Key), [Listed(record)], default);
-        await h.Service.LockAsync(int.Parse(record.Id), default);
+        await Confirmed(h, record);
 
         var ex = await Assert.ThrowsAsync<BusinessException>(() => h.Service.ReopenAsync(int.Parse(record.Id), "fix", default));
 
         Assert.Equal("FIELD_PLAN_HELD", ex.ErrorCode);
     }
+
 
     // ── Enrollments ─────────────────────────────────────────────────────────
 
@@ -431,6 +441,41 @@ public class FieldPlanServiceTests
         var ex = await Assert.ThrowsAsync<BusinessException>(() => h.Service.AttestAsync(Guid.Parse(enrollment.Key), [], default));
 
         Assert.Equal("FIELD_PLAN_STALE_LIST", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Attest_RefusesANonStringRecordId_AsAStaleList()
+    {
+        var h = New();
+        var (_, record) = await CornField(h);
+        var enrollment = await SignedEnrollment(h);
+
+        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
+            h.Service.AttestAsync(Guid.Parse(enrollment.Key), [Json($$"""{ "recordId": {{record.Id}} }""")], default));
+
+        Assert.Equal("FIELD_PLAN_STALE_LIST", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Attest_BuildsTheSnapshotFromTheDatabase_KeepingOnlyAWellFormedScoreFromTheRequest()
+    {
+        var h = New();
+        var (_, record) = await CornField(h);
+        var enrollment = await SignedEnrollment(h);
+        var crafted = Json(JsonSerializer.Serialize(new
+        {
+            recordId = record.Id, splitId = 123, fieldName = "SOMEONE ELSE", acres = 99999, status = "Locked",
+            enrollmentId = "45Z-2026-TATOB43", score = new { value = 3100.5, unit = "g CO2e/bu", unitShort = "g/bu" }, production = "lots",
+        }));
+
+        var entry = (await h.Service.AttestAsync(Guid.Parse(enrollment.Key), [crafted], default)).Snapshot!.Value[0];
+
+        Assert.Equal("TATOB43", entry.GetProperty("splitId").GetString());
+        Assert.Equal(120, entry.GetProperty("acres").GetDecimal());
+        Assert.Equal("Ready", entry.GetProperty("status").GetString());
+        Assert.NotEqual("SOMEONE ELSE", entry.GetProperty("fieldName").GetString());
+        Assert.Equal(3100.5, entry.GetProperty("score").GetProperty("value").GetDouble());
+        Assert.False(entry.TryGetProperty("production", out _));
     }
 
     [Fact]
@@ -506,6 +551,75 @@ public class FieldPlanServiceTests
         Assert.Equal(new[] { false, true }, found.Tickets.Select(t => t.Settled));
         Assert.All(found.Tickets, t => Assert.Equal("window", t.CropYearMatch));
         Assert.Equal("Pratt, KS (PRA)", found.Tickets[0].Location);
+    }
+
+    [Fact]
+    public async Task Tickets_AreSettledByTheirFinalSettledDate_OrExactlyAFinalSettledStatus()
+    {
+        var h = New();
+        var (_, record) = await CornField(h);
+        var statusOnly = Delivery("2026-10-05", 56_000);
+        statusOnly.TicketStatusDescription = "final settled ";
+        var unsettled = Delivery("2026-10-06", 56_000);
+        unsettled.TicketStatusDescription = "Unsettled";
+        var dateOnly = Delivery("2026-10-07", 56_000);
+        dateOnly.FinalSettledDate = new DateTime(2026, 11, 1);
+        h.CtrmTickets.AddRange([statusOnly, unsettled, dateOnly]);
+
+        var found = await h.Tickets.ForRecordAsync(int.Parse(record.Id), default);
+
+        Assert.Equal(new[] { true, false, true }, found.Tickets.Select(t => t.Settled));
+    }
+
+    [Fact]
+    public async Task AddSeason_ReadsTheCropFromTheRowsCommodity_NotOnlyItsLabel()
+    {
+        var h = New();
+        h.Db.PlantingIntentions.Add(new PlantingIntention { Id = 999, CustomerId = Tobin, TradeUnit = "2190", PlantingYear = 2026, Crop = "YC", Type = "Dryland", Acres = 50, CreatedBy = "x" });
+        h.Db.SaveChanges();
+        await CornField(h);
+
+        var ex = await Assert.ThrowsAsync<BusinessException>(() => h.Service.AddSeasonAsync(
+            new CreateFieldSeasonRequest { FieldKey = "TATOB43", PlantingIntentionId = 999, Year = 2026, CropLabel = "Back 40", Acres = 10 }, default));
+
+        Assert.Equal("FIELD_PLAN_FIELD_ON_ROW", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Tickets_OnTheWindowsFirstAndLastDays_AreIncluded()
+    {
+        var h = New();
+        var (_, record) = await CornField(h);
+        h.CtrmTickets.AddRange([Delivery("2026-07-31", 56_000), Delivery("2026-08-01", 56_000), Delivery("2027-07-31", 56_000), Delivery("2027-08-01", 56_000)]);
+
+        var found = await h.Tickets.ForRecordAsync(int.Parse(record.Id), default);
+
+        Assert.Equal(new[] { "2026-08-01", "2027-07-31" }, found.Tickets.Select(t => t.BlDate));
+    }
+
+    [Fact]
+    public async Task Confirm_RefusesATicketWithNoBushelFigure()
+    {
+        var h = New();
+        var (_, record) = await CornField(h);
+        var unweighed = Delivery("2026-10-05", 0);
+        unweighed.AppliedDockQuantity = null;
+        h.CtrmTickets.Add(unweighed);
+        var key = (await h.Tickets.ForRecordAsync(int.Parse(record.Id), default)).Tickets.Single().TicketKey;
+
+        var ex = await Assert.ThrowsAsync<BusinessException>(() => h.Service.ConfirmAsync(int.Parse(record.Id),
+            new ConfirmFieldProgramRecordRequest { ActualYield = 200, TicketKeys = [key], ReviewedWithProducer = true }, default));
+
+        Assert.Equal("FIELD_PLAN_TICKET_NO_BUSHELS", ex.ErrorCode);
+    }
+
+    [Fact]
+    public void TicketWindow_RefusesFebruary29()
+    {
+        var settings = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["FieldPlan:TicketWindow:corn:To"] = "02-29" }).Build();
+        var tickets = new FieldTicketService(Mock.Of<IFieldPlanRepository>(), Mock.Of<IFieldTicketReader>(), Mock.Of<ICommodityRepository>(), settings);
+
+        Assert.Throws<InvalidOperationException>(() => tickets.Window("corn", 2026));
     }
 
     [Fact]
@@ -620,26 +734,6 @@ public class FieldPlanServiceTests
         await h.Service.ConfirmAsync(id, Request(key), default);
         var again = await Assert.ThrowsAsync<BusinessException>(() => h.Service.ConfirmAsync(id, Request(key), default));
         Assert.Equal("FIELD_PLAN_ALREADY_CONFIRMED", again.ErrorCode);
-    }
-
-    [Fact]
-    public async Task Confirm_ReplacesAHarvestLock_AndUnlockingKeepsTheConfirmedCiInTheHistory()
-    {
-        var h = New();
-        var (_, record) = await CornField(h);
-        var id = int.Parse(record.Id);
-        h.CtrmTickets.Add(Delivery("2026-10-05", 56_000));
-        var key = (await h.Tickets.ForRecordAsync(id, default)).Tickets[0].TicketKey;
-        await h.Service.LockAsync(id, default);
-
-        var confirmed = await h.Service.ConfirmAsync(id, new ConfirmFieldProgramRecordRequest { ActualYield = 200, TicketKeys = [key], ReviewedWithProducer = true }, default);
-        Assert.Equal("Replaced by the confirmed CI", confirmed.Reopened!.Value[0].GetProperty("reason").GetString());
-
-        var reopened = await h.Service.ReopenAsync(id, "tickets were missing", default);
-
-        Assert.Null(reopened.Record.Official);
-        var last = reopened.Record.Reopened!.Value[1];
-        Assert.Equal("Documented", last.GetProperty("official").GetProperty("status").GetString());
     }
 
     // ── Loading and soft delete ─────────────────────────────────────────────

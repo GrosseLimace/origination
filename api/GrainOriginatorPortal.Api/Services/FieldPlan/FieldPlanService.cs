@@ -28,13 +28,11 @@ public interface IFieldPlanService
     Task<FieldProgramRecordResponse> AddRecordAsync(CreateFieldProgramRecordRequest request, CancellationToken ct);
     Task<FieldProgramRecordResponse> UpdateRecordAsync(int recordId, UpdateFieldProgramRecordRequest request, CancellationToken ct);
     Task RemoveRecordAsync(int recordId, CancellationToken ct);
-    Task<FieldProgramRecordResponse> LockAsync(int recordId, CancellationToken ct);
-    Task<FieldPlanReopenResponse> ReopenAsync(int recordId, string reason, CancellationToken ct);
+    Task<FieldProgramRecordResponse> ReopenAsync(int recordId, string reason, CancellationToken ct);
     Task<FieldProgramRecordResponse> ConfirmAsync(int recordId, ConfirmFieldProgramRecordRequest request, CancellationToken ct);
     Task<ProgramEnrollmentResponse?> EnsureEnrollmentAsync(EnsureProgramEnrollmentRequest request, CancellationToken ct);
     Task<ProgramEnrollmentResponse> UpdateAttestationAsync(Guid key, ProgramAttestationDto attestation, CancellationToken ct);
     Task<ProgramEnrollmentResponse> AttestAsync(Guid key, IReadOnlyList<JsonElement> listed, CancellationToken ct);
-    Task<ProgramEnrollmentResponse> SetHarvestCompleteAsync(Guid key, bool complete, CancellationToken ct);
     Task<ProgramEnrollmentResponse> WithdrawAsync(Guid key, string reason, CancellationToken ct);
 }
 
@@ -158,6 +156,19 @@ public sealed class FieldPlanService : IFieldPlanService
             ?? throw new NotFoundException("Field", request.FieldKey);
         if (!await _repository.PlantingIntentionMatchesAsync(request.PlantingIntentionId, field.CustomerId, request.Year, ct))
             throw new ValidationException("plantingIntentionId", "That crop row isn't this producer's for that year.");
+        // One field grows a crop once a year: a second row of the same crop would claim its tickets twice.
+        // The crop is the row's commodity code first, as the ticket lookup reads it, then its label.
+        var group = await CropGroupAsync(request.PlantingIntentionId, request.CropLabel, ct);
+        ProducerFieldSeason? sameCrop = null;
+        foreach (var s in await _repository.GetSeasonsForFieldAsync(field.Id, request.Year, ct))
+            if (s.PlantingIntentionId == request.PlantingIntentionId
+                || (group is not null && await CropGroupAsync(s.PlantingIntentionId, s.CropLabel, ct) == group))
+            {
+                sameCrop = s;
+                break;
+            }
+        if (sameCrop is not null)
+            throw new BusinessException($"{field.Name} is already on the {sameCrop.CropLabel} row for {request.Year}.", "FIELD_PLAN_FIELD_ON_ROW", StatusCodes.Status409Conflict);
 
         var season = new ProducerFieldSeason
         {
@@ -180,7 +191,7 @@ public sealed class FieldPlanService : IFieldPlanService
         var season = await RequireSeasonAsync(seasonId, ct);
         var records = await _repository.GetRecordsForSeasonAsync(seasonId, ct);
         if (records.Any(r => r.Status == Locked))
-            throw new BusinessException("This field has a locked harvest estimate, so its acres can't change.", "FIELD_PLAN_LOCKED");
+            throw new BusinessException("This field's CI is confirmed, so its acres can't change.", "FIELD_PLAN_LOCKED");
         season.Acres = request.Acres;
         Touch(season);
         // Acres decide whether a 45Z record is complete, so its Draft/Ready follows them.
@@ -196,7 +207,7 @@ public sealed class FieldPlanService : IFieldPlanService
         var season = await RequireSeasonAsync(seasonId, ct);
         var records = await _repository.GetRecordsForSeasonAsync(seasonId, ct);
         if (records.Any(r => r.Status == Locked))
-            throw new BusinessException("This field has a locked harvest estimate and can't come off the crop row.", "FIELD_PLAN_LOCKED");
+            throw new BusinessException("This field's CI is confirmed, so it can't come off the crop row.", "FIELD_PLAN_LOCKED");
         foreach (var r in records) SoftDelete(r);
         SoftDelete(season);
         await _repository.SaveChangesAsync(ct);
@@ -238,7 +249,7 @@ public sealed class FieldPlanService : IFieldPlanService
     {
         var record = await RequireRecordAsync(recordId, ct);
         if (record.Status == Locked)
-            throw new BusinessException("This harvest estimate is locked; unlock it to make changes.", "FIELD_PLAN_LOCKED");
+            throw new BusinessException("This field's CI is confirmed; unlock it to make changes.", "FIELD_PLAN_LOCKED");
         FieldPlanPrograms.ValidateData(record.ProgramKey, request.Data);
         record.Data = request.Data.GetRawText();
         record.Status = FieldPlanPrograms.StatusFor(record.ProgramKey, request.Data, record.Season!);
@@ -260,34 +271,14 @@ public sealed class FieldPlanService : IFieldPlanService
     }
 
     /// <summary>
-    /// Locks the harvest estimate: rescored here (45Z) with the server's calculator and version, never the
-    /// client's number. Locked by the signed-in user. Locking a locked record returns it unchanged.
+    /// Unlocks a confirmed CI with a reason, keeping it and its frozen estimate in the record's history.
+    /// Refused while an attested enrollment holds the record.
     /// </summary>
-    public async Task<FieldProgramRecordResponse> LockAsync(int recordId, CancellationToken ct)
-    {
-        var record = await RequireRecordAsync(recordId, ct);
-        if (record.Status == Locked) return ToResponse(record);
-        var season = record.Season!;
-        var now = Now;
-        record.Frozen = FieldPlanPrograms.Freeze(record, season, season.Field!, _fdCic, User, now);
-        record.Status = Locked;
-        record.LockedBy = User;
-        record.LockedAt = now;
-        Touch(record);
-        await _repository.SaveChangesAsync(ct);
-        Audit("AUDIT_LOCK", "FieldProgramRecord", recordId, season.Field!.CustomerId);
-        return ToResponse(record);
-    }
-
-    /// <summary>
-    /// Unlocks a harvest estimate with a reason, keeping the unlocked estimate in the record's history.
-    /// Refused while an attested enrollment holds the record. Reopens the enrollment's harvest.
-    /// </summary>
-    public async Task<FieldPlanReopenResponse> ReopenAsync(int recordId, string reason, CancellationToken ct)
+    public async Task<FieldProgramRecordResponse> ReopenAsync(int recordId, string reason, CancellationToken ct)
     {
         var record = await RequireRecordAsync(recordId, ct);
         if (record.Status != Locked || record.Frozen is null)
-            throw new BusinessException("Only a locked harvest estimate can be unlocked.", "FIELD_PLAN_NOT_LOCKED");
+            throw new BusinessException("Only a confirmed CI can be unlocked.", "FIELD_PLAN_NOT_LOCKED");
         if (string.IsNullOrWhiteSpace(reason))
             throw new ValidationException("reason", "Give a reason for reopening.");
         var season = record.Season!;
@@ -304,21 +295,16 @@ public sealed class FieldPlanService : IFieldPlanService
         record.LockedAt = null;
         record.Status = StatusFor(record, season);
         Touch(record);
-        if (live is not null)
-        {
-            live.HarvestCompleteAt = null;
-            Touch(live);
-        }
         await _repository.SaveChangesAsync(ct);
         Audit("AUDIT_REOPEN", "FieldProgramRecord", recordId, customerId);
-        return new FieldPlanReopenResponse { Record = ToResponse(record), Enrollment = live is null ? null : ToResponse(live) };
+        return ToResponse(record);
     }
 
     /// <summary>
     /// Confirms a 45Z field after harvest, once the originator has gone over its inputs and CTRM tickets with
     /// the producer. The tickets are read again here and only the listed keys are kept, so the bushels are
     /// CTRM's, never the request's. The actual yield is set, the CI is rescored with the server's calculator
-    /// and the record locked (an earlier harvest lock goes to the history), and the confirmed CI with its
+    /// and the record locked, and the confirmed CI with its
     /// bushels and tickets becomes the record's official result: what the Bins' CSV is built from.
     /// Allowed while an attested enrollment holds the record: attesting comes before harvest, confirming after.
     /// </summary>
@@ -327,7 +313,8 @@ public sealed class FieldPlanService : IFieldPlanService
         var record = await RequireRecordAsync(recordId, ct);
         if (record.ProgramKey != FieldPlanPrograms.FdCic)
             throw new BusinessException("Only a 45Z field is confirmed with its tickets.", "FIELD_PLAN_NOT_CONFIRMABLE");
-        if (record.Official is not null)
+        // Locked without an official result is a row from the removed harvest lock: unlocking keeps its estimate.
+        if (record.Official is not null || record.Status == Locked)
             throw new BusinessException("This field's CI is already confirmed; unlock it to review it again.", "FIELD_PLAN_ALREADY_CONFIRMED");
         if (!request.ReviewedWithProducer)
             throw new ValidationException("reviewedWithProducer", "Confirm that the inputs and tickets were reviewed with the producer after harvest.");
@@ -341,11 +328,13 @@ public sealed class FieldPlanService : IFieldPlanService
         var included = found.Tickets.Where(t => keys.Contains(t.TicketKey)).ToList();
         if (included.Count != keys.Count)
             throw new BusinessException("Some of those tickets are no longer this field's in CTRM; reopen the review and try again.", "FIELD_PLAN_STALE_TICKETS");
+        if (included.FirstOrDefault(t => t.NetBushels is null) is { } unconverted)
+            throw new BusinessException($"Ticket {unconverted.TicketNumber} has no bushel figure, so it can't be counted; leave it out or ask for its product's conversion.",
+                "FIELD_PLAN_TICKET_NO_BUSHELS", StatusCodes.Status422UnprocessableEntity);
 
         var data = JsonNode.Parse(record.Data)!.AsObject();
         data["actualYield"] = request.ActualYield;
         record.Data = data.ToJsonString(FieldPlanPrograms.Json);
-        if (record.Frozen is not null) KeepInHistory(record, "Replaced by the confirmed CI");
 
         var now = Now;
         record.Frozen = FieldPlanPrograms.Freeze(record, season, field, _fdCic, User, now);
@@ -356,7 +345,7 @@ public sealed class FieldPlanService : IFieldPlanService
             ["score"] = frozen["score"]!.DeepClone(),
             ["method"] = frozen["calculatorVersion"]!.DeepClone(),
             ["actualYield"] = request.ActualYield,
-            ["bushels"] = included.Sum(t => t.NetBushels ?? 0m),
+            ["bushels"] = included.Sum(t => t.NetBushels!.Value),
             ["tickets"] = JsonSerializer.SerializeToNode(included, FieldPlanPrograms.Json),
             ["documentedBy"] = User,
             ["documentedAt"] = now.ToString("o"),
@@ -431,7 +420,8 @@ public sealed class FieldPlanService : IFieldPlanService
     /// <summary>
     /// Attests an open enrollment. The listed records must be exactly the producer's records in the program
     /// that year, none still Draft (checked against the database, not the request), the attestation complete,
-    /// and no field already in another producer's attested enrollment. The list is kept as the snapshot.
+    /// and no field already in another producer's attested enrollment. The snapshot kept is built from the
+    /// database, with the browser's projected scores.
     /// </summary>
     public async Task<ProgramEnrollmentResponse> AttestAsync(Guid key, IReadOnlyList<JsonElement> listed, CancellationToken ct)
     {
@@ -446,7 +436,8 @@ public sealed class FieldPlanService : IFieldPlanService
             .Where(r => r.ProgramKey == enrollment.ProgramKey && seasons.ContainsKey(r.ProducerFieldSeasonId))
             .ToDictionary(r => r.Id.ToString(CultureInfo.InvariantCulture));
 
-        var listedIds = listed.Select(l => l.ValueKind == JsonValueKind.Object && l.TryGetProperty("recordId", out var id) ? id.GetString() : null).ToList();
+        var listedIds = listed.Select(l => l.ValueKind == JsonValueKind.Object && l.TryGetProperty("recordId", out var id)
+            && id.ValueKind == JsonValueKind.String ? id.GetString() : null).ToList();
         if (listedIds.Any(id => id is null) || !listedIds.ToHashSet().SetEquals(records.Keys) || listedIds.Count != records.Count)
             throw new BusinessException("The fields listed don't match this producer's fields in the program; reload and try again.", "FIELD_PLAN_STALE_LIST");
 
@@ -479,24 +470,56 @@ public sealed class FieldPlanService : IFieldPlanService
         enrollment.Status = Attested;
         enrollment.AttestedBy = User;
         enrollment.AttestedAt = Now;
-        enrollment.Snapshot = JsonSerializer.Serialize(listed, FieldPlanPrograms.Json);
+        enrollment.Snapshot = Snapshot(listed, records, seasons, fields).ToJsonString(FieldPlanPrograms.Json);
         Touch(enrollment);
         await _repository.SaveChangesAsync(ct);
         Audit("AUDIT_ATTEST", "ProgramEnrollment", key, enrollment.CustomerId);
         return ToResponse(enrollment);
     }
 
-    public async Task<ProgramEnrollmentResponse> SetHarvestCompleteAsync(Guid key, bool complete, CancellationToken ct)
+    /// <summary>
+    /// The attested snapshot, one entry per listed record. What the database knows (the field, split, crop, acres
+    /// and status) comes from the database; only the projected score the browser showed comes from the request,
+    /// and only when it has the expected shape. Other producers' attestations read <c>splitId</c> from here, so
+    /// it must never be the client's.
+    /// </summary>
+    private static JsonArray Snapshot(IReadOnlyList<JsonElement> listed, Dictionary<string, FieldProgramRecord> records,
+        Dictionary<int, ProducerFieldSeason> seasons, Dictionary<int, ProducerField> fields)
     {
-        var enrollment = await RequireEnrollmentAsync(key, ct);
-        if (enrollment.Status == Withdrawn)
-            throw new BusinessException("This enrollment was withdrawn.", "FIELD_PLAN_ENROLLMENT_WITHDRAWN");
-        enrollment.HarvestCompleteAt = complete ? Now : null;
-        Touch(enrollment);
-        await _repository.SaveChangesAsync(ct);
-        Audit("AUDIT_UPDATE", "ProgramEnrollment", key, enrollment.CustomerId);
-        return ToResponse(enrollment);
+        var snapshot = new JsonArray();
+        foreach (var item in listed)
+        {
+            var record = records[item.GetProperty("recordId").GetString()!];
+            var season = seasons[record.ProducerFieldSeasonId];
+            var field = fields[season.ProducerFieldId];
+            var entry = new JsonObject
+            {
+                ["recordId"] = record.Id.ToString(CultureInfo.InvariantCulture),
+                ["seasonId"] = season.Id.ToString(CultureInfo.InvariantCulture),
+                ["fieldKey"] = field.SplitId,
+                ["fieldName"] = field.Name,
+                ["splitId"] = field.SplitId,
+                ["cropLabel"] = season.CropLabel,
+                ["year"] = season.CropYear,
+                ["acres"] = season.Acres,
+                ["status"] = record.Status,
+            };
+            if (ShortString(item, "enrollmentId", 40) is { } enrollmentId) entry["enrollmentId"] = enrollmentId;
+            if (item.TryGetProperty("score", out var score) && score.ValueKind == JsonValueKind.Object
+                && score.TryGetProperty("value", out var value) && value.ValueKind == JsonValueKind.Number
+                && ShortString(score, "unit", 40) is { } unit && ShortString(score, "unitShort", 20) is { } unitShort)
+                entry["score"] = new JsonObject { ["value"] = value.GetDouble(), ["unit"] = unit, ["unitShort"] = unitShort };
+            if (ShortString(item, "scoreNote", 200) is { } note) entry["scoreNote"] = note;
+            if (item.TryGetProperty("production", out var production) && production.ValueKind == JsonValueKind.Number)
+                entry["production"] = production.GetDouble();
+            snapshot.Add(entry);
+        }
+        return snapshot;
     }
+
+    private static string? ShortString(JsonElement item, string property, int maxLength) =>
+        item.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
+        && value.GetString() is { Length: > 0 } text && text.Length <= maxLength ? text : null;
 
     /// <summary>Withdraws the enrollment, keeping it and its reason. Re-enrolling adds a new enrollment.</summary>
     public async Task<ProgramEnrollmentResponse> WithdrawAsync(Guid key, string reason, CancellationToken ct)
@@ -532,6 +555,9 @@ public sealed class FieldPlanService : IFieldPlanService
         return FieldPlanPrograms.StatusFor(record.ProgramKey, doc.RootElement, season);
     }
 
+    private async Task<string?> CropGroupAsync(int plantingIntentionId, string cropLabel, CancellationToken ct) =>
+        FieldPlanCropGroups.For(await _repository.GetPlantingIntentionCropAsync(plantingIntentionId, ct)) ?? FieldPlanCropGroups.ForLabel(cropLabel);
+
     private static int ParseId(string id, string name) =>
         int.TryParse(id, NumberStyles.None, CultureInfo.InvariantCulture, out var value)
             ? value
@@ -547,8 +573,9 @@ public sealed class FieldPlanService : IFieldPlanService
     private static IEnumerable<string> SnapshotValues(string? snapshot, string property)
     {
         if (snapshot is null) yield break;
-        foreach (var item in JsonNode.Parse(snapshot)?.AsArray() ?? [])
-            if (item?[property]?.GetValue<string>() is { } value) yield return value;
+        // Read defensively: a snapshot saved before they were built on the server came from the browser.
+        foreach (var item in JsonNode.Parse(snapshot) as JsonArray ?? [])
+            if (item is JsonObject entry && entry[property] is JsonValue v && v.TryGetValue<string>(out var value)) yield return value;
     }
 
     private void Touch(ProducerField e) { e.ModifiedAt = Now; e.ModifiedBy = User; }
@@ -566,7 +593,11 @@ public sealed class FieldPlanService : IFieldPlanService
 
     // ── Mapping ─────────────────────────────────────────────────────────────
 
-    private static JsonElement Element(string json) => JsonDocument.Parse(json).RootElement.Clone();
+    private static JsonElement Element(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        return doc.RootElement.Clone();
+    }
     private static JsonElement? ElementOrNull(string? json) => json is null ? null : Element(json);
 
     private static ProducerFieldResponse ToResponse(ProducerField f) => new()
@@ -617,7 +648,6 @@ public sealed class FieldPlanService : IFieldPlanService
         AttestedBy = e.AttestedBy,
         AttestedAt = e.AttestedAt,
         Snapshot = ElementOrNull(e.Snapshot),
-        HarvestCompleteAt = e.HarvestCompleteAt,
         WithdrawnReason = e.WithdrawnReason,
     };
 }

@@ -88,17 +88,6 @@ export function createFdCicProgram(api: FdCicApiService): SustainabilityProgramD
     /** The field's production: acres × actual yield. */
     production: (data, season) => (data.actualYield && season.acres ? data.actualYield * season.acres : null),
 
-    lockMissing(data, season, field) {
-      const missing = missingInputs(data, season);
-      if (!data.actualYield || data.actualYield <= 0) missing.push('actual yield');
-      if (missing.length > 0) return missing;
-      const state = fdCicScoreState(api, data, season, field);
-      if (state?.status === 'loading') return ['the USDA score (still calculating)'];
-      if (state?.status === 'error') return [`a USDA score (${state.message})`];
-      if (state?.status === 'done' && !state.score.scorable) return [`a USDA score (${state.score.unscorableReason})`];
-      return [];
-    },
-
     freeze(data: FdCicData, season: FieldSeason, field: ProducerField) {
       const score = scored(data, season, field);
       if (!score) throw new Error('A 45Z record can only be frozen once the USDA calculator has scored it.');

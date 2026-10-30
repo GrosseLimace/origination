@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DialogComponent, DialogContentComponent, DialogDescriptionComponent, DialogFooterComponent, DialogHeaderComponent, DialogTitleComponent } from '@shared/components/dialog/dialog.component';
@@ -18,6 +18,8 @@ export function yieldFromTickets(bushels: number, acres: number | null): number 
 }
 
 const TICK_REASON = 'Tick that you reviewed this with the producer after harvest.';
+/** The API's limit on the actual yield (ConfirmFieldProgramRecordRequest). */
+const MAX_YIELD = 1000;
 
 /**
  * The 45Z review: once a field has an estimated CI, the originator goes over its inputs and its CTRM tickets
@@ -182,7 +184,7 @@ const TICK_REASON = 'Tick that you reviewed this with the producer after harvest
         <div class="mt-2 flex flex-wrap items-start gap-x-8 gap-y-3 text-sm">
           <label class="block">
             <span class="text-gray-700 dark:text-gray-300">Actual yield (bu/ac)</span>
-            <input type="number" min="0" step="0.1" class="ci-input ci-compact mt-1 !w-28 text-right" [ngModel]="actualYield()" (ngModelChange)="yieldTyped.set($event)" />
+            <input type="number" min="0" max="1000" step="0.1" class="ci-input ci-compact mt-1 !w-28 text-right" [ngModel]="actualYield()" (ngModelChange)="yieldTyped.set($event)" />
             <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">
               @if (suggestedYield() !== null) { Tickets ÷ acres: {{ suggestedYield() | number:'1.0-1' }} }
               @if (yieldTyped() !== null && suggestedYield() !== null) {
@@ -213,7 +215,7 @@ const TICK_REASON = 'Tick that you reviewed this with the producer after harvest
 }
 `,
 })
-export class FdCicReviewComponent {
+export class FdCicReviewComponent implements OnInit {
   private readonly store = inject(FieldPlanStore);
   private readonly fdCic = inject(FdCicApiService);
   private readonly toast = inject(ToastService);
@@ -233,12 +235,14 @@ export class FdCicReviewComponent {
   readonly tickets = signal<TicketsState>({ status: 'loading' });
   readonly ticketData = computed(() => { const t = this.tickets(); return t.status === 'done' ? t.data : null; });
   readonly ticketsError = computed(() => { const t = this.tickets(); return t.status === 'error' ? t.message : ''; });
-  /** Tickets the originator left out. Everything starts included. */
+  /** Tickets left out. Every ticket with a bushel figure starts included; one without can't be counted. */
   readonly excluded = signal(new Set<string>());
   readonly included = computed(() => (this.ticketData()?.tickets ?? []).filter(t => !this.excluded().has(t.ticketKey)));
   readonly includedBushels = computed(() => this.included().reduce((sum, t) => sum + (t.netBushels ?? 0), 0));
-  readonly allIncluded = computed(() => (this.ticketData()?.tickets.length ?? 0) > 0 && this.excluded().size === 0);
-  readonly someIncluded = computed(() => this.excluded().size > 0 && this.included().length > 0);
+  /** The tickets the header box ticks: those with a bushel figure. */
+  private readonly countable = computed(() => (this.ticketData()?.tickets ?? []).filter(t => t.netBushels !== null));
+  readonly allIncluded = computed(() => this.countable().length > 0 && this.countable().every(t => !this.excluded().has(t.ticketKey)));
+  readonly someIncluded = computed(() => !this.allIncluded() && this.included().length > 0);
 
   /** What the originator typed; null follows the tickets. */
   readonly yieldTyped = signal<number | null>(null);
@@ -247,15 +251,18 @@ export class FdCicReviewComponent {
   readonly reviewed = signal(false);
   readonly saving = signal(false);
 
-  constructor() {
-    queueMicrotask(() => this.loadTickets());
+  ngOnInit(): void {
+    void this.loadTickets();
   }
 
   async loadTickets(): Promise<void> {
     if (this.confirmed()) return;
     this.tickets.set({ status: 'loading' });
     try {
-      this.tickets.set({ status: 'done', data: await this.store.fieldTickets(this.recordId()) });
+      const data = await this.store.fieldTickets(this.recordId());
+      // A ticket with no bushel figure can't be counted, so it starts left out.
+      this.excluded.set(new Set(data.tickets.filter(t => t.netBushels === null).map(t => t.ticketKey)));
+      this.tickets.set({ status: 'done', data });
     } catch (e) {
       this.tickets.set({ status: 'error', message: e instanceof Error ? e.message : 'The tickets couldn\'t be read from CTRM.' });
     }
@@ -269,10 +276,11 @@ export class FdCicReviewComponent {
     });
   }
 
-  /** The header box: include every ticket, or (when all are in) none. */
+  /** The header box: include every ticket with a bushel figure, or (when they're all in) none. */
   toggleAll(): void {
     const all = this.ticketData()?.tickets ?? [];
-    this.excluded.set(this.allIncluded() ? new Set(all.map(t => t.ticketKey)) : new Set());
+    const leaveOut = this.allIncluded() ? all : all.filter(t => t.netBushels === null);
+    this.excluded.set(new Set(leaveOut.map(t => t.ticketKey)));
   }
 
   sumBushels(rows: readonly { netBushels: number | null }[]): number {
@@ -344,8 +352,11 @@ export class FdCicReviewComponent {
   readonly blocker = computed((): string | null => {
     if (this.tickets().status !== 'done') return 'Waiting for the tickets.';
     if (!this.included().length) return 'Include at least one ticket.';
+    const unweighed = this.included().find(t => t.netBushels === null);
+    if (unweighed) return `Ticket ${unweighed.ticketNumber} has no bushel figure; leave it out.`;
     const y = this.actualYield();
     if (!y || y <= 0) return 'Enter the actual yield.';
+    if (y > MAX_YIELD) return `An actual yield over ${MAX_YIELD} bu/ac can't be right; check it.`;
     const st = this.rescore();
     if (st?.status !== 'done' || !st.score.scorable) return 'Waiting for the CI at this yield.';
     if (!this.reviewed()) return TICK_REASON;

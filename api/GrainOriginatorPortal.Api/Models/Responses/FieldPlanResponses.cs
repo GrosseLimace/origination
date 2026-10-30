@@ -52,9 +52,9 @@ public record FieldProgramRecordResponse
     public required string Status { get; init; }
     public int? CopiedFromYear { get; init; }
     public string? CopiedFromField { get; init; }
-    /// <summary>The locked harvest estimate (always basis "Estimate"); null unless Locked.</summary>
+    /// <summary>The CI frozen when the field was confirmed; null unless Locked.</summary>
     public JsonElement? Frozen { get; init; }
-    /// <summary>Placeholder for an official result; nothing writes it yet.</summary>
+    /// <summary>The confirmed CI with its bushels and tickets; null until the field is confirmed.</summary>
     public JsonElement? Official { get; init; }
     public JsonElement? Reopened { get; init; }
 }
@@ -71,15 +71,7 @@ public record ProgramEnrollmentResponse
     public string? AttestedBy { get; init; }
     public DateTime? AttestedAt { get; init; }
     public JsonElement? Snapshot { get; init; }
-    public DateTime? HarvestCompleteAt { get; init; }
     public string? WithdrawnReason { get; init; }
-}
-
-/// <summary>An unlocked record, and its enrollment when unlocking reopened the enrollment's harvest.</summary>
-public record FieldPlanReopenResponse
-{
-    public required FieldProgramRecordResponse Record { get; init; }
-    public ProgramEnrollmentResponse? Enrollment { get; init; }
 }
 
 /// <summary>

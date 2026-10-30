@@ -95,7 +95,7 @@ public sealed class FieldTicketService : IFieldTicketService
                 ContractNumber = t.CtrmContractNumber,
                 CropYearMatch = match,
                 NetBushels = Bushels(t, lbsPerUnit, GroupOf(t.ProductCode)),
-                Settled = t.FinalSettledDate is not null || (t.TicketStatusDescription?.Contains("settled", StringComparison.OrdinalIgnoreCase) ?? false),
+                Settled = t.FinalSettledDate is not null || string.Equals(t.TicketStatusDescription?.Trim(), "Final Settled", StringComparison.OrdinalIgnoreCase),
                 SettledDate = t.FinalSettledDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 Status = t.TicketStatusDescription,
             });
@@ -127,7 +127,8 @@ public sealed class FieldTicketService : IFieldTicketService
     private static (int Month, int Day) MonthDay(string? value, string fallback)
     {
         var text = string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
-        return DateOnly.TryParseExact($"2000-{text}", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)
+        // Parsed against 2001, not a leap year, so 02-29 is refused: it has no date in most crop years.
+        return DateOnly.TryParseExact($"2001-{text}", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)
             ? (d.Month, d.Day)
             : throw new InvalidOperationException($"FieldPlan:TicketWindow values are MM-dd, not '{text}'.");
     }

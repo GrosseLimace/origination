@@ -21,8 +21,8 @@ export const environment = {
   // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite
   // admin consent on this env SPA app registration; keep false until that consent is granted.
   remindersEnabled: true,
-  // 45Z field data + carbon intensity. PROTOTYPE: in-memory mock data and an illustrative score,
-  // for originator walkthroughs only. Must stay false in QA and PROD until the real API ships.
+  // 45Z field data + carbon intensity. Scores come from the USDA FD-CIC API (api/fd-cic);
+  // on locally and in DEV only. Must stay false in QA and PROD until go-live.
   carbonIntensityEnabled: true,
   // Plan by field: durable producer fields roll up into planting intentions. PROTOTYPE: in-memory
   // mock data; the roll-up is simulated and never writes an intention. False in QA and PROD.

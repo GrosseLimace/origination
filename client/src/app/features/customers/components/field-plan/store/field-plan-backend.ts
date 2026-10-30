@@ -12,12 +12,6 @@ export interface FieldPlanSnapshot {
   enrollments: ProgramEnrollment[];
 }
 
-/** A locked record reopened, and the enrollment whose harvest reopened with it. */
-export interface ReopenResult {
-  record: FieldProgramRecord;
-  enrollment?: ProgramEnrollment;
-}
-
 /**
  * Where the field plan is kept: the shape of the field-plan API. Each method is one request, and the
  * comment names the endpoint it maps to. `HttpFieldPlanBackend` calls it; `InMemoryFieldPlanBackend` plays the
@@ -26,7 +20,7 @@ export interface ReopenResult {
  *
  * Rules that must hold across users belong to the backend, not the store: refusing duplicate claims at
  * attestation, refusing to reopen a field an attested
- * enrollment holds, and locking (the server rescores with its own FD-CIC calculator, so the
+ * enrollment holds, and confirming (the server rescores with its own FD-CIC calculator, so the
  * client never supplies the score of record). Methods reject (throw) when a rule refuses the change.
  */
 export interface FieldPlanBackend {
@@ -54,10 +48,8 @@ export interface FieldPlanBackend {
   updateRecord(id: string, data: unknown, status: ProgramRecordStatus, copiedFromField?: string): Promise<FieldProgramRecord>;
   /** DELETE api/field-plan/records/{id}: a Locked record is kept. */
   removeRecord(id: string): Promise<void>;
-  /** POST api/field-plan/records/{id}/lock: freezes the harvest estimate (inputs, outputs, calculator version). Never an official result. */
-  lock(id: string, by: string): Promise<FieldProgramRecord>;
-  /** POST api/field-plan/records/{id}/reopen: refused while an attested enrollment holds the record. */
-  reopen(id: string, reason: string): Promise<ReopenResult>;
+  /** POST api/field-plan/records/{id}/reopen: unlocks a confirmed CI; refused while an attested enrollment holds the record. */
+  reopen(id: string, reason: string): Promise<FieldProgramRecord>;
   /**
    * GET api/field-plan/records/{id}/tickets: the field's CTRM tickets for its crop and crop year, settled or
    * not (delivered under its split ID; the applied contract's crop year, else the BL date in the window).
@@ -84,8 +76,6 @@ export interface FieldPlanBackend {
   updateAttestation(enrollment: ProgramEnrollment): Promise<ProgramEnrollment>;
   /** POST api/field-plan/enrollments/{key}/attest: refused while anything is outstanding. */
   attest(key: string, listed: readonly EnrollableRecord[]): Promise<ProgramEnrollment>;
-  /** PUT api/field-plan/enrollments/{key}/harvest-complete */
-  setHarvestComplete(key: string, complete: boolean): Promise<ProgramEnrollment>;
   /** POST api/field-plan/enrollments/{key}/withdraw: kept with its reason; re-enrolling uses the same derived field IDs. */
   withdraw(key: string, reason: string): Promise<ProgramEnrollment>;
 }

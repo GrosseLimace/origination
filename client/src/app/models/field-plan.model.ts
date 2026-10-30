@@ -74,8 +74,8 @@ export interface ProgramScore {
 }
 
 /**
- * Draft: inputs still missing. Ready: scored. Locked: the harvest estimate frozen for the audit trail
- * (harvest complete). Every status is a planning estimate; an official result is `official`, apart.
+ * Draft: inputs still missing. Ready: scored. Locked: confirmed after harvest, with the CI frozen for the
+ * audit trail (`frozen`) and the confirmed CI kept as the official result (`official`).
  */
 export type ProgramRecordStatus = 'Draft' | 'Ready' | 'Locked';
 
@@ -206,8 +206,7 @@ export interface EnrollableRecord {
 }
 
 /**
- * One producer's enrollment in one program for one year: what harvest complete, attestation and
- * withdrawal apply to. Created when the producer's first field enters the program, before harvest; every
+ * One producer's enrollment in one program for one year: what attestation and withdrawal apply to. Created when the producer's first field enters the program, before harvest; every
  * record the producer has in the program that year belongs to it. It has no ID of its own: each field in
  * it has one, derived from its split ID and the crop year (enrollmentIdFor), which is what downstream
  * records (45Z: delivery lots in the CI ledger) point back to and what a ticket resolves to.
@@ -223,7 +222,5 @@ export interface ProgramEnrollment {
   attestedAt?: string;
   /** The producer's records as they stood when attested (projected scores before harvest). */
   snapshot?: EnrollableRecord[];
-  /** Set when harvest is marked complete for the enrollment: every complete field is locked. */
-  harvestCompleteAt?: string;
   withdrawnReason?: string;
 }

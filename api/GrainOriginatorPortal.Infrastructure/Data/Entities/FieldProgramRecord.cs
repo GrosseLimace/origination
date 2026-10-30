@@ -4,8 +4,8 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
 
 /// <summary>
 /// One field season's inputs for one sustainability program (45Z, GrainCraft). Program inputs differ by
-/// program and by USDA version, so they are JSON (<see cref="Data"/>), like Note.Mentions. Locking freezes
-/// a harvest ESTIMATE (<see cref="Frozen"/>); <see cref="Official"/> is a separate, still-empty placeholder.
+/// program and by USDA version, so they are JSON (<see cref="Data"/>), like Note.Mentions. Confirming a 45Z
+/// field after harvest locks it: the CI is frozen (<see cref="Frozen"/>) and the confirmed CI is the <see cref="Official"/> result.
 /// A locked record is never changed or removed until it is unlocked with a reason (kept in <see cref="Reopened"/>).
 /// </summary>
 public class FieldProgramRecord
@@ -23,9 +23,9 @@ public class FieldProgramRecord
     public string? Frozen { get; set; }
     public string? LockedBy { get; set; }
     public DateTime? LockedAt { get; set; }
-    /// <summary>JSON array: each unlock's reason, time and the estimate it unlocked.</summary>
+    /// <summary>JSON array: each unlock's reason, time, and the frozen CI and confirmed result it unlocked.</summary>
     public string? Reopened { get; set; }
-    /// <summary>JSON: an official/documented result. Nothing writes it yet; its requirements are being defined.</summary>
+    /// <summary>JSON: the confirmed CI (status Documented) with its bushels, tickets and who confirmed it; written by confirming.</summary>
     public string? Official { get; set; }
     public DateTime CreatedAt { get; set; }
     public string CreatedBy { get; set; } = string.Empty;

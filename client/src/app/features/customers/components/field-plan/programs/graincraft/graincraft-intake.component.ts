@@ -38,17 +38,13 @@ export class GrainCraftIntakeComponent implements ProgramIntake {
   readonly disabled = input(false);
 
   readonly varieties = SUGGESTED_VARIETIES;
+  /** Taken again whenever the stored variety stops matching it (another record, inputs copied in, a reload). */
   variety = '';
-  private _draftOf: string | null = null;
 
   constructor() {
     effect(() => {
-      const r = this.record();
-      const key = `${r.id}|${r.status}`;
-      if (key !== this._draftOf) {
-        this.variety = (r.data as GrainCraftData).variety;
-        this._draftOf = key;
-      }
+      const stored = (this.record().data as GrainCraftData).variety;
+      if (stored !== this.variety) this.variety = stored;
     });
   }
 

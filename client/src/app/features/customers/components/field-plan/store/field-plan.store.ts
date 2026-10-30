@@ -42,14 +42,14 @@ type LoadState = 'loading' | 'loaded' | 'error';
  * Writes come in two kinds:
  * - edits while typing (`updateRecord`, `updateField`, `updateSeason`) apply at once, so scores and chips
  *   move, and are saved after a pause, latest value wins, one save in flight per item;
- * - structural changes (add, remove, lock, reopen, harvest complete, withdraw, enroll) wait for
+ * - structural changes (add, remove, confirm, reopen, withdraw, enroll) wait for
  *   the backend, after any pending edits are saved, and return a Promise.
  * A failed save shows an error and reloads the producer from the backend, so the screen never shows
  * something that wasn't kept.
  *
- * The program lifecycle: added (the producer's enrollment starts with it; the field's ID is derived) → Draft → Ready (scored) → actual yield entered → the enrollment's harvest marked complete →
- * Locked (the harvest estimate frozen; never an official result), unlockable with a reason unless the producer's attested enrollment holds it.
- * Originators never lock field by field.
+ * The program lifecycle: added (the producer's enrollment starts with it; the field's ID is derived) → Draft → Ready (scored)
+ * → after harvest, reviewed with its CTRM tickets and confirmed (45Z) → Locked, with the confirmed CI as the official result.
+ * A confirmed field is unlocked with a reason, unless the producer's attested enrollment holds it.
  */
 @Injectable({ providedIn: 'root' })
 export class FieldPlanStore {
@@ -361,44 +361,15 @@ export class FieldPlanStore {
   }
 
   /**
-   * Harvest is complete for the enrollment: locks every record in it that has nothing missing.
-   * Returns the ones left open, with what they still need (45Z: usually the actual yield).
-   */
-  async completeHarvest(enrollment: ProgramEnrollment): Promise<{ recordId: string; missing: string[] }[]> {
-    await this.flush();
-    const leftOpen: { recordId: string; missing: string[] }[] = [];
-    const marked = await this.write('mark harvest complete', async () => {
-      this.putEnrollment(await this.backend.setHarvestComplete(enrollment.key, true));
-      return true;
-    });
-    if (!marked) return leftOpen;
-    for (const r of this.forEnrollment(enrollment).filter(x => x.status !== 'Locked')) {
-      const def = this.registry.get(r.programKey)!;
-      const season = this.season(r.seasonId)!;
-      const field = this.field(season.fieldKey)!;
-      const missing = def.lockMissing(r.data, season, field);
-      if (missing.length) {
-        leftOpen.push({ recordId: r.id, missing });
-        continue;
-      }
-      const locked = await this.write('lock a field', () => this.backend.lock(r.id, 'harvest complete'));
-      if (locked) this.putRecord(locked);
-      else leftOpen.push({ recordId: r.id, missing: ['to be saved (try again)'] });
-    }
-    return leftOpen;
-  }
-
-  /**
-   * Reopens a locked record for correction, with the reason kept in its history, and its enrollment's
-   * harvest with it. Refused while the producer's attested enrollment holds it.
+   * Unlocks a confirmed CI for correction, with the reason kept in its history.
+   * Refused while the producer's attested enrollment holds it.
    */
   async reopen(id: string, reason: string): Promise<boolean> {
     const current = this.record(id);
     if (!current || current.status !== 'Locked' || !reason.trim() || this.heldBy(id)) return false;
-    const result = await this.write('reopen the field', () => this.backend.reopen(id, reason));
-    if (!result) return false;
-    this.putRecord(result.record);
-    if (result.enrollment) this.putEnrollment(result.enrollment);
+    const record = await this.write('reopen the field', () => this.backend.reopen(id, reason));
+    if (!record) return false;
+    this.putRecord(record);
     return true;
   }
 

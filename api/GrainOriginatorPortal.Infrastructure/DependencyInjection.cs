@@ -185,8 +185,8 @@ public static class DependencyInjection
     }
 
     /// <summary>
-    /// A producer's CTRM splits (field-plan fields) come from <c>Ctrm:SplitsSource</c>: <c>sample</c> (the
-    /// default) until the CTRM splits query is confirmed, then <c>ctrm</c>. Asking for <c>ctrm</c> before
+    /// A producer's CTRM splits (field-plan fields) come from <c>Ctrm:SplitsSource</c>: <c>manual</c> (the
+    /// go-live default: typed by hand, no list) or <c>sample</c> (local demos) until the CTRM splits query is confirmed, then <c>ctrm</c>. Asking for <c>ctrm</c> before
     /// <see cref="CtrmQueries.SplitsQueryConfirmed"/> stops startup, so a guessed query is never sent.
     /// </summary>
     public static void AddCtrmSplits(IServiceCollection services, IConfiguration configuration)

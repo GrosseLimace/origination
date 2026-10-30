@@ -1,22 +1,27 @@
 # Field Plan & Sustainability Programs — Database Plan
 
-**Status:** APPROVED 2026-10-27 (H. Collins). The tables, API and migration are built on the branch, and nothing has been applied to any shared database yet.
+**Status:** APPROVED 2026-10-27 (H. Collins). Ready to merge 2026-10-30; nothing has been applied to any shared database yet (see below for how each environment gets the tables).
 **Date:** 2026-10-27 · **Owner:** H. Collins · **Branch:** `feature_FieldSustainabilityPrograms`
 
-> **Release hold.** The tables ship as one EF Core migration, and every deploy workflow runs
-> `dotnet ef database update` before releasing new code. Merging to `main` would therefore create the tables,
-> and expose `api/field-plan`, in QA and PROD on their next deploys, even though the screens stay hidden there.
-> So the branch stays off `main` until the feature is ready for QA and PROD.
->
-> Two ways to get the tables onto DEV before then:
-> - a `release_DEV_<date>` branch (`main` plus this branch) deployed to DEV;
-> - a DBA running [scripts/field-plan-AddFieldPlanTables.sql](../../scripts/field-plan-AddFieldPlanTables.sql). It records the migration, so a later deploy skips it.
+> **Ready to merge (2026-10-30).** The release hold is lifted. The tables ship as one EF Core migration, and
+> every deploy workflow (DEV, QA, PROD, all run by hand) runs `dotnet ef database update` before releasing new
+> code. **How the tables get built:**
+> 1. **DEV first.** The next `release_DEV_*` branch cut from `main` after the merge creates them on its DEV deploy
+>    (the "Apply EF Core migrations (Dev)" step logs `Applying migration '20261029193914_AddFieldPlanTables'`).
+>    A follow-up change then sets `fieldPlanBackend: 'api'` in `environment.dev.ts` so DEV saves to them.
+> 2. **QA and PROD.** Their next routine deploys create the empty tables. `api/field-plan` is live there but
+>    the screens stay hidden (`fieldPlanningEnabled` / `carbonIntensityEnabled` off) until a separate go-live
+>    release turns them on with `fieldPlanBackend: 'api'`.
+> 3. **DBA option.** If the DBA would rather apply QA or PROD by hand, [scripts/field-plan-AddFieldPlanTables.sql](../../scripts/field-plan-AddFieldPlanTables.sql)
+>    creates the tables and records the migration, so the deploy skips it. Run it with `sqlcmd -b` (or `SET XACT_ABORT ON` first) so a failed statement stops it before the migration is recorded.
 
 > **As-built notes (after approval).** Two changes on 2026-10-29 for go-live (H. Collins with the business). Neither touches an existing table:
 > 1. **Split IDs typed by hand.** CTRM's splits query may not be ready for go-live, so `ProducerField` gained `SplitSource` (`Manual` or `Ctrm`). The migration had never been applied anywhere, so it was regenerated as `20261029193914_AddFieldPlanTables` rather than adding a second one, and the review SQL was regenerated with it.
 > 2. **The confirmed CI.** `FieldProgramRecord.Official` is no longer an empty placeholder. It holds the CI the originator confirms after harvest, having reviewed the inputs and the field's CTRM tickets with the producer: the bushels, the tickets, and who confirmed it. This needed no schema change; the column already existed.
 >
 > Two endpoints were added: `GET records/{id}/tickets` and `POST records/{id}/confirm`.
+>
+> 3. **Harvest complete removed (2026-10-30).** Confirming each field replaced the enrollment-wide "Mark harvest complete", so `records/{id}/lock` and `enrollments/{key}/harvest-complete` were removed; a record is now locked only by confirming it. `ProgramEnrollment.HarvestCompleteAt` stays in the approved schema as a nullable column nothing writes, rather than reopening the migration.
 
 ## What this is
 
@@ -45,7 +50,7 @@ dbo.Customer (existing)
    │                 └── ③ FieldProgramRecord ── that season's inputs for one program (45Z, GrainCraft)
    │
    └── ④ ProgramEnrollment ─────── the producer in one program for one crop year
-                                      (attestation, harvest complete, withdrawal)
+                                      (attestation, withdrawal)
 ```
 
 **Conventions** (the same as planting intentions and bin sites):
@@ -93,7 +98,7 @@ dbo.Customer (existing)
 | Audit + soft delete | | |
 
 - A field can sit on more than one crop row in a year (double-cropping), so there is no unique rule here.
-- **A season with a locked harvest estimate can't be removed or have its acres changed.**
+- **A season with a confirmed (locked) field can't be removed or have its acres changed.**
 
 ### ③ `dbo.FieldProgramRecord`: a season's inputs for one program
 
@@ -106,7 +111,7 @@ dbo.Customer (existing)
 | `Data` | `nvarchar(max)` JSON | The program's inputs (for 45Z: yields, N rate, tillage, cover crop, manure…) |
 | `CopiedFromYear` | `int` NULL | Inputs were prefilled from this field's previous year |
 | `CopiedFromField` | `nvarchar(255)` NULL | Inputs were copied from this field this year |
-| `Frozen` | `nvarchar(max)` JSON NULL | The locked harvest estimate: inputs, outputs, CI, and the USDA calculator version that produced it |
+| `Frozen` | `nvarchar(max)` JSON NULL | The CI frozen when the field is confirmed: inputs, outputs, CI, and the USDA calculator version that produced it |
 | `LockedBy`, `LockedAt` | NULL | Who locked it, and when |
 | `Reopened` | `nvarchar(max)` JSON NULL | Each unlock: the reason, when it happened, and the estimate that was unlocked. Kept forever. |
 | `Official` | `nvarchar(max)` JSON NULL | The **confirmed CI** (45Z): written when the originator confirms the field after harvest with the producer. It holds the CI rescored at the confirmed actual yield, the USDA version, the bushels and the CTRM tickets, and who confirmed it and when. Null until then. |
@@ -129,7 +134,7 @@ dbo.Customer (existing)
 | `Attestation` | `nvarchar(max)` JSON | Signer, date, eSign/paper, document reference, confirmations |
 | `AttestedBy`, `AttestedAt` | NULL | |
 | `Snapshot` | `nvarchar(max)` JSON NULL | The fields listed when the producer attested |
-| `HarvestCompleteAt` | `datetime2` NULL | |
+| `HarvestCompleteAt` | `datetime2` NULL | Unused since 2026-10-30 (see as-built note 3) |
 | `WithdrawnReason` | `nvarchar(500)` NULL | |
 | Audit | | |
 
@@ -150,7 +155,7 @@ The browser applies these today. Once the tables exist, the API owns them:
    - A locked estimate is never rescored under a later USDA version.
 4. **A locked record can't be edited.** It must be unlocked with a reason first.
 5. **No unlocking a field an attested enrollment holds.**
-6. **Every CI is an estimate.** The frozen result is stamped `basis: Estimate`; the `Official` column is separate and stays empty.
+6. **A CI is an estimate until it is confirmed.** The frozen result is stamped `basis: Estimate`; only confirming a field after harvest, with the producer and its CTRM tickets, writes `Official` (the confirmed CI).
 
 ## Access and auditing
 
@@ -170,11 +175,11 @@ One controller, `api/field-plan`, matching the client contract in `field-plan-ba
 | POST / PUT | `fields`, `fields/{splitId}` | Add a split as a field; set its state/county |
 | POST / PUT / DELETE | `seasons`, `seasons/{id}` | Put a field on a crop row; change acres; take it off |
 | POST / PUT / DELETE | `records`, `records/{id}` | Add a program to a field; save inputs; remove |
-| POST | `records/{id}/lock`, `records/{id}/reopen` | Lock the harvest estimate (server rescore); unlock with a reason |
+| POST | `records/{id}/reopen` | Unlock a confirmed CI with a reason; both stay in the history |
 | GET | `records/{id}/tickets` | The field's CTRM tickets for its crop and crop year, settled or not |
 | POST | `records/{id}/confirm` | Confirm the CI after harvest with the producer: actual yield and tickets kept |
 | POST | `enrollments` | Open (or return) the producer's enrollment |
-| PUT / POST | `enrollments/{key}/attestation`, `/attest`, `/harvest-complete`, `/withdraw` | Enrollment lifecycle |
+| PUT / POST | `enrollments/{key}/attestation`, `/attest`, `/withdraw` | Enrollment lifecycle |
 
 The planned `GET api/field-plan/enrollment?programKey&splitId&cropYear` lets tickets and analytics resolve an enrollment without anyone typing an ID. It is documented now and built when analytics needs it.
 

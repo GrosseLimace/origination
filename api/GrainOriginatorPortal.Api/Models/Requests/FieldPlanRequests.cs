@@ -156,11 +156,6 @@ public record AttestEnrollmentRequest
     public required List<JsonElement> Listed { get; init; }
 }
 
-public record HarvestCompleteRequest
-{
-    public required bool Complete { get; init; }
-}
-
 /// <summary>Confirms a 45Z field after harvest with the tickets reviewed with the producer.</summary>
 public record ConfirmFieldProgramRecordRequest
 {

@@ -4,7 +4,7 @@ import { Observable, firstValueFrom } from 'rxjs';
 import { ApiError } from '@core/errors/api-error';
 import { environment } from '@env/environment';
 import { EnrollableRecord, FieldProgramRecord, FieldSeason, FieldTickets, ProducerField, ProgramEnrollment, ProgramRecordStatus } from '@models';
-import type { FieldPlanBackend, FieldPlanSnapshot, ReopenResult } from './field-plan-backend';
+import type { FieldPlanBackend, FieldPlanSnapshot } from './field-plan-backend';
 
 /**
  * Drops null properties, so optional fields read as absent, as they do from the in-memory backend
@@ -84,15 +84,8 @@ export class HttpFieldPlanBackend implements FieldPlanBackend {
     await this.send(this.http.delete<void>(`${this.base}/records/${id}`));
   }
 
-  /** Locked by the signed-in user on the server, so `by` isn't sent. */
-  async lock(id: string, _by: string): Promise<FieldProgramRecord> {
-    return withoutNulls(await this.send(this.http.post<FieldProgramRecord>(`${this.base}/records/${id}/lock`, null)));
-  }
-
-  async reopen(id: string, reason: string): Promise<ReopenResult> {
-    const r = await this.send(this.http.post<{ record: FieldProgramRecord; enrollment: ProgramEnrollment | null }>(
-      `${this.base}/records/${id}/reopen`, { reason }));
-    return { record: withoutNulls(r.record), ...(r.enrollment ? { enrollment: withoutNulls(r.enrollment) } : {}) };
+  async reopen(id: string, reason: string): Promise<FieldProgramRecord> {
+    return withoutNulls(await this.send(this.http.post<FieldProgramRecord>(`${this.base}/records/${id}/reopen`, { reason })));
   }
 
   fieldTickets(id: string): Promise<FieldTickets> {
@@ -121,10 +114,6 @@ export class HttpFieldPlanBackend implements FieldPlanBackend {
 
   async attest(key: string, listed: readonly EnrollableRecord[]): Promise<ProgramEnrollment> {
     return withoutNulls(await this.send(this.http.post<ProgramEnrollment>(`${this.base}/enrollments/${key}/attest`, { listed })));
-  }
-
-  async setHarvestComplete(key: string, complete: boolean): Promise<ProgramEnrollment> {
-    return withoutNulls(await this.send(this.http.put<ProgramEnrollment>(`${this.base}/enrollments/${key}/harvest-complete`, { complete })));
   }
 
   async withdraw(key: string, reason: string): Promise<ProgramEnrollment> {

@@ -2,7 +2,21 @@ import { Injectable, inject } from '@angular/core';
 import { EnrollableRecord, FieldProgramRecord, FieldSeason, FieldTicket, FieldTickets, ProducerField, ProgramEnrollment, ProgramRecordStatus } from '@models';
 import { ProgramRegistry } from '../programs/program-registry';
 import { blankAttestation, enrollmentBlockers } from '../programs/program-enrollment';
-import type { FieldPlanBackend, FieldPlanSnapshot, ReopenResult } from './field-plan-backend';
+import type { FieldPlanBackend, FieldPlanSnapshot } from './field-plan-backend';
+import { CROP_GROUP_BY_TOKEN } from '../../../../../shared/utils/crop-group-match';
+import { FD_CIC_PROGRAM_KEY } from '../programs/fd-cic/fd-cic.program';
+
+/** The server's crop groups (FieldPlanCropGroups.Codes); CROP_GROUP_BY_TOKEN also knows crops it doesn't. */
+const SERVER_CROP_GROUPS = new Set(['wheat', 'corn', 'soybeans', 'sorghum', 'canola']);
+
+/** As the server's FieldPlanCropGroups.ForLabel: the crop group named by any word of a crop row label. */
+function cropGroupOfLabel(label: string): string | null {
+  for (const word of label.toLowerCase().split(/[\s\-/()]+/).filter(Boolean)) {
+    const group = CROP_GROUP_BY_TOKEN.get(word) ?? CROP_GROUP_BY_TOKEN.get(word.replace(/s$/, ''));
+    if (group && SERVER_CROP_GROUPS.has(group)) return group;
+  }
+  return null;
+}
 
 /** A deep copy, as a JSON round trip, the way data comes back from the API (undefined fields drop out). */
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
@@ -63,7 +77,12 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
   }
 
   async addSeason(season: Omit<FieldSeason, 'id'>): Promise<FieldSeason> {
-    this.indexOf(this.fields, f => f.fieldKey === season.fieldKey, 'field');
+    const field = this.fields[this.indexOf(this.fields, f => f.fieldKey === season.fieldKey, 'field')];
+    // As the server: one field grows a crop once a year, so its tickets are never claimed twice.
+    const group = cropGroupOfLabel(season.cropLabel);
+    const sameCrop = this.seasons.find(s => s.fieldKey === season.fieldKey && s.year === season.year
+      && (s.plantingIntentionId === season.plantingIntentionId || (group !== null && cropGroupOfLabel(s.cropLabel) === group)));
+    if (sameCrop) throw new Error(`${field.name} is already on the ${sameCrop.cropLabel} row for ${season.year}.`);
     const created: FieldSeason = { ...copy(season), id: `s${this.nextSeasonId++}` };
     this.seasons.push(created);
     return copy(created);
@@ -72,7 +91,7 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
   async updateSeason(season: FieldSeason): Promise<FieldSeason> {
     const i = this.indexOf(this.seasons, s => s.id === season.id, 'season');
     if (this.records.some(r => r.seasonId === season.id && r.status === 'Locked')) {
-      throw new Error('This field has a locked harvest estimate, so its acres can\'t change.');
+      throw new Error('This field\'s CI is confirmed, so its acres can\'t change.');
     }
     this.seasons[i] = copy(season);
     return copy(season);
@@ -80,7 +99,7 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
 
   async removeSeason(seasonId: string): Promise<void> {
     if (this.records.some(r => r.seasonId === seasonId && r.status === 'Locked')) {
-      throw new Error('This field has a locked harvest estimate and can\'t come off the crop row.');
+      throw new Error('This field\'s CI is confirmed, so it can\'t come off the crop row.');
     }
     this.records = this.records.filter(r => r.seasonId !== seasonId);
     this.seasons = this.seasons.filter(s => s.id !== seasonId);
@@ -99,8 +118,8 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
 
   async updateRecord(id: string, data: unknown, status: ProgramRecordStatus, copiedFromField?: string): Promise<FieldProgramRecord> {
     const i = this.indexOf(this.records, r => r.id === id, 'program record');
-    if (this.records[i].status === 'Locked') throw new Error('This harvest estimate is locked; unlock it to make changes.');
-    if (status === 'Locked') throw new Error('Harvest estimates are locked by harvest complete, not by saving.');
+    if (this.records[i].status === 'Locked') throw new Error('This field\'s CI is confirmed; unlock it to make changes.');
+    if (status === 'Locked') throw new Error('A field is locked by confirming it after harvest, not by saving.');
     this.records[i] = { ...this.records[i], data: copy(data), status, ...(copiedFromField ? { copiedFromField } : {}) };
     return copy(this.records[i]);
   }
@@ -109,27 +128,10 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
     this.records = this.records.filter(r => r.id !== id || r.status === 'Locked');
   }
 
-  async lock(id: string, by: string): Promise<FieldProgramRecord> {
+  async reopen(id: string, reason: string): Promise<FieldProgramRecord> {
     const i = this.indexOf(this.records, r => r.id === id, 'program record');
     const current = this.records[i];
-    if (current.status === 'Locked') return copy(current);
-    const season = this.seasons.find(s => s.id === current.seasonId)!;
-    const field = this.fields.find(f => f.fieldKey === season.fieldKey)!;
-    const def = this.registry.get(current.programKey);
-    if (!def) throw new Error(`Unknown program ${current.programKey}.`);
-    const missing = def.lockMissing(current.data, season, field);
-    if (missing.length > 0) throw new Error(`Still needed before locking: ${missing.join(', ')}.`);
-    // The real server rescores here with its own calculator rather than trusting the client.
-    // Always a planning estimate: an official result is a separate thing (see FieldProgramRecord.official).
-    const frozen = { ...def.freeze(current.data, season, field), basis: 'Estimate' as const, lockedBy: by, lockedAt: new Date().toISOString() };
-    this.records[i] = { ...current, status: 'Locked', frozen };
-    return copy(this.records[i]);
-  }
-
-  async reopen(id: string, reason: string): Promise<ReopenResult> {
-    const i = this.indexOf(this.records, r => r.id === id, 'program record');
-    const current = this.records[i];
-    if (current.status !== 'Locked' || !current.frozen) throw new Error('Only a locked harvest estimate can be unlocked.');
+    if (current.status !== 'Locked' || !current.frozen) throw new Error('Only a confirmed CI can be unlocked.');
     if (!reason.trim()) throw new Error('Give a reason for reopening.');
     if (this.heldBy(id)) throw new Error('The producer\'s attested enrollment holds this record, so it can\'t be reopened.');
 
@@ -146,13 +148,7 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
       }],
     };
     this.records[i] = reopened;
-
-    // Reopening a field reopens its enrollment's harvest.
-    const field = this.fields.find(f => f.fieldKey === season.fieldKey)!;
-    const e = this.enrollments.findIndex(x => x.programKey === current.programKey && x.customerId === field.customerId
-      && x.year === season.year && x.status !== 'Withdrawn');
-    if (e >= 0) this.enrollments[e] = { ...this.enrollments[e], harvestCompleteAt: undefined };
-    return copy({ record: reopened, enrollment: e >= 0 ? this.enrollments[e] : undefined });
+    return copy(reopened);
   }
 
   /**
@@ -179,19 +175,22 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
   async confirm(id: string, actualYield: number, ticketKeys: readonly string[]): Promise<FieldProgramRecord> {
     const i = this.indexOf(this.records, r => r.id === id, 'program record');
     const current = this.records[i];
+    if (current.programKey !== FD_CIC_PROGRAM_KEY) throw new Error('Only a 45Z field is confirmed with its tickets.');
     if (current.official) throw new Error('This field\'s CI is already confirmed; unlock it to review it again.');
-    if (!ticketKeys.length) throw new Error('Include at least one ticket.');
-    const included = (await this.fieldTickets(id)).tickets.filter(t => ticketKeys.includes(t.ticketKey));
-    if (included.length !== ticketKeys.length) throw new Error('Some of those tickets are no longer this field\'s; reopen the review and try again.');
+    const keys = new Set(ticketKeys.map(k => k.trim()).filter(Boolean));
+    if (!keys.size) throw new Error('Include at least one ticket.');
+    const included = (await this.fieldTickets(id)).tickets.filter(t => keys.has(t.ticketKey));
+    if (included.length !== keys.size) throw new Error('Some of those tickets are no longer this field\'s; reopen the review and try again.');
+    const unweighed = included.find(t => t.netBushels === null);
+    if (unweighed) throw new Error(`Ticket ${unweighed.ticketNumber} has no bushel figure, so it can't be counted; leave it out.`);
     const season = this.seasons.find(s => s.id === current.seasonId)!;
     const field = this.fields.find(f => f.fieldKey === season.fieldKey)!;
     const def = this.registry.get(current.programKey)!;
     const data = { ...(current.data as object), actualYield };
     const at = new Date().toISOString();
     const frozen = { ...def.freeze(data, season, field), basis: 'Estimate' as const, lockedBy: 'you', lockedAt: at };
-    const history = current.frozen ? [...(current.reopened ?? []), { reason: 'Replaced by the confirmed CI', at, frozen: current.frozen }] : current.reopened;
     this.records[i] = {
-      ...current, data, status: 'Locked', frozen, ...(history ? { reopened: history } : {}),
+      ...current, data, status: 'Locked', frozen,
       official: {
         status: 'Documented', score: frozen.score, method: frozen.calculatorVersion, actualYield,
         bushels: included.reduce((sum, t) => sum + (t.netBushels ?? 0), 0), tickets: included, documentedBy: 'you', documentedAt: at,
@@ -230,12 +229,6 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
     const blockers = enrollmentBlockers(e, listed, this.enrollments, statements);
     if (blockers.length > 0) throw new Error(`Before attesting: ${blockers.join('; ')}.`);
     this.enrollments[i] = { ...e, status: 'Attested', attestedBy: 'you', attestedAt: new Date().toISOString(), snapshot: copy([...listed]) };
-    return copy(this.enrollments[i]);
-  }
-
-  async setHarvestComplete(key: string, complete: boolean): Promise<ProgramEnrollment> {
-    const i = this.indexOf(this.enrollments, e => e.key === key, 'enrollment');
-    this.enrollments[i] = { ...this.enrollments[i], harvestCompleteAt: complete ? new Date().toISOString() : undefined };
     return copy(this.enrollments[i]);
   }
 
