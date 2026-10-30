@@ -10,7 +10,7 @@ namespace GrainOriginatorPortal.Api.Controllers;
 
 /// <summary>
 /// The field plan: producers' fields (CTRM splits), their crop-row seasons, sustainability program records
-/// (45Z, GrainCraft) and program enrollments. One route per method of the client's FieldPlanBackend
+/// (45Z) and program enrollments. One route per method of the client's FieldPlanBackend
 /// (client/.../field-plan/store/field-plan-backend.ts). Rules live in <see cref="FieldPlanService"/>; every
 /// write is audit-logged there.
 ///

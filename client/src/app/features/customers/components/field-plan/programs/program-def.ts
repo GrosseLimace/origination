@@ -54,7 +54,7 @@ export interface SustainabilityProgramDef<TData = any> {
   fieldResults?(items: { season: FieldSeason; record: FieldProgramRecord<TData>; field: ProducerField }[]): FieldResult[];
   /**
    * The short text on the field's program chip when the program has no score to show, e.g.
-   * GrainCraft's variety. Programs with a score (45Z) leave it out and the chip shows the score.
+   * a variety for a program that records one. Programs with a score (45Z) leave it out and the chip shows the score.
    */
   chipText?(data: TData): string | null;
 

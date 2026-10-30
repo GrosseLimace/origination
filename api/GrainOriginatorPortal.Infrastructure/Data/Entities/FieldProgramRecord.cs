@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
 
 /// <summary>
-/// One field season's inputs for one sustainability program (45Z, GrainCraft). Program inputs differ by
+/// One field season's inputs for one sustainability program (45Z today). Program inputs differ by
 /// program and by USDA version, so they are JSON (<see cref="Data"/>), like Note.Mentions. Confirming a 45Z
 /// field after harvest locks it: the CI is frozen (<see cref="Frozen"/>) and the confirmed CI is the <see cref="Official"/> result.
 /// A locked record is never changed or removed until it is unlocked with a reason (kept in <see cref="Reopened"/>).
@@ -12,7 +12,7 @@ public class FieldProgramRecord
 {
     public int Id { get; set; }
     public int ProducerFieldSeasonId { get; set; }
-    /// <summary>"45z-fdcic" or "graincraft".</summary>
+    /// <summary>"45z-fdcic" (45Z, the only approved program).</summary>
     public string ProgramKey { get; set; } = string.Empty;
     /// <summary>Draft, Ready or Locked.</summary>
     public string Status { get; set; } = "Draft";

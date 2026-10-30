@@ -3,7 +3,7 @@ namespace GrainOriginatorPortal.Api.Services.FieldPlan;
 /// <summary>
 /// Which crop a commodity code is, so a field's crop row (planting intention code, e.g. "YC") can be matched
 /// to the product code on its tickets (e.g. "YCNG"). A port of the 45Z crops in the client's CROP_CODE_MAP
-/// (client/src/app/shared/utils/crop-group-match.ts), plus wheat for GrainCraft; a test keeps the two lists
+/// (client/src/app/shared/utils/crop-group-match.ts), plus wheat (so a field on a wheat row is recognised); a test keeps the two lists
 /// in step. A code not listed falls back to its dbo.Commodities category.
 /// </summary>
 public static class FieldPlanCropGroups

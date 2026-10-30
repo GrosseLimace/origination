@@ -27,7 +27,7 @@
 
 Originators can now plan a producer's crop year field by field and enroll those fields in sustainability programs:
 - **45Z:** a carbon-intensity (CI) estimate from USDA's FD-CIC calculator.
-- **GrainCraft:** wheat.
+- **Later programs:** the tables are program-neutral (a program key plus its own JSON), so another program needs no schema change. 45Z is the only approved program; GrainCraft was prototyped and removed on 2026-10-30.
 
 Today all of it lives in the browser and disappears on reload. These tables keep it.
 
@@ -47,7 +47,7 @@ dbo.Customer (existing)
    │        │
    │        └── ② ProducerFieldSeason ── that field on one crop row (planting intention) for a year
    │                 │                      └── dbo.ProducerPlantingIntentions (existing)
-   │                 └── ③ FieldProgramRecord ── that season's inputs for one program (45Z, GrainCraft)
+   │                 └── ③ FieldProgramRecord ── that season's inputs for one program (45Z)
    │
    └── ④ ProgramEnrollment ─────── the producer in one program for one crop year
                                       (attestation, withdrawal)
@@ -106,7 +106,7 @@ dbo.Customer (existing)
 |---|---|---|
 | `Id` (PK) | `int` identity | |
 | `ProducerFieldSeasonId` | `int` → ② | |
-| `ProgramKey` | `nvarchar(30)` | `45z-fdcic` (45Z) or `graincraft` |
+| `ProgramKey` | `nvarchar(30)` | `45z-fdcic` (45Z, the only approved program) |
 | `Status` | `nvarchar(10)` | `Draft`, `Ready` or `Locked` |
 | `Data` | `nvarchar(max)` JSON | The program's inputs (for 45Z: yields, N rate, tillage, cover crop, manure…) |
 | `CopiedFromYear` | `int` NULL | Inputs were prefilled from this field's previous year |

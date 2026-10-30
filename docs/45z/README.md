@@ -280,8 +280,8 @@ On 2026-10-30 the branch was reviewed against the Scoular standards with the mar
    instead of the existing row (the repo's `IsUniqueViolation` pattern in `BidSheetRepository`).
 2. **Split ownership while typed by hand:** nothing checks a typed split ID belongs to the producer, and there is
    no way to remove a wrongly claimed field. Check it against CTRM or add an admin path; ends with SPLITS-GRAPHQL.
-3. **Access:** the field-plan routes follow the app's accepted per-producer pattern (any signed-in user), but they
-   aren't in `SECURITY-REVIEWS/ACCEPTED-RISKS.md` yet; register them or gate confirm, reopen and attest.
+3. ~~Access~~: any originator can open and change any producer's field plan, by design (decided 2026-10-30);
+   recorded under AR-01 and AR-02 in `SECURITY-REVIEWS/ACCEPTED-RISKS.md`.
 4. **Server feature flag:** `api/field-plan` answers in QA and PROD although the screens are off there.
 5. **Client hardening:** OnPush and signals on the 7 new components; templates out of the larger inline
    components; accessibility (aria-pressed and aria-expanded, the unlock overlay as `<app-dialog>`, Escape on the

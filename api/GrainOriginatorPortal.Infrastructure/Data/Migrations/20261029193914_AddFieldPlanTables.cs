@@ -8,8 +8,8 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
     /*
        Migration:   AddFieldPlanTables
        Author:      Origination engineering
-       Description: Schema only. Four new tables for the field plan and sustainability programs (45Z,
-                    GrainCraft): ProducerField (a producer's CTRM split), ProducerFieldSeason (a field on a
+       Description: Schema only. Four new tables for the field plan and sustainability programs (45Z
+                    first): ProducerField (a producer's CTRM split), ProducerFieldSeason (a field on a
                     crop row for a year), FieldProgramRecord (a season's program inputs, locked estimate and
                     confirmed CI) and ProgramEnrollment. No existing table or row is touched.
                     Regenerated 2026-10-29 (never applied anywhere) to add ProducerField.SplitSource, for

@@ -296,10 +296,14 @@ public class FieldPlanServiceTests
         var again = await h.Service.AddRecordAsync(new CreateFieldProgramRecordRequest { SeasonId = season.Id, ProgramKey = FieldPlanPrograms.FdCic, Data = StoryCorn }, default);
 
         Assert.Equal(record.Id, again.Id);
+        await h.Service.CreateFieldAsync(new CreateProducerFieldRequest { CustomerId = Tobin, SplitId = "TATOB44" }, default);
+        var wheat = await h.Service.AddSeasonAsync(new CreateFieldSeasonRequest { FieldKey = "TATOB44", PlantingIntentionId = WheatRow, Year = 2026, CropLabel = "Wheat", Acres = 80 }, default);
         await Assert.ThrowsAsync<ValidationException>(() => h.Service.AddRecordAsync(
-            new CreateFieldProgramRecordRequest { SeasonId = season.Id, ProgramKey = FieldPlanPrograms.GrainCraft, Data = Json("""{ "variety": "Zenda" }""") }, default));
-        await Assert.ThrowsAsync<ValidationException>(() => h.Service.AddRecordAsync(
-            new CreateFieldProgramRecordRequest { SeasonId = season.Id, ProgramKey = "made-up", Data = StoryCorn }, default));
+            new CreateFieldProgramRecordRequest { SeasonId = wheat.Id, ProgramKey = FieldPlanPrograms.FdCic, Data = StoryCorn }, default));
+        // 45Z is the only program: GrainCraft was never released and is refused like any unknown key.
+        foreach (var key in new[] { "graincraft", "made-up" })
+            await Assert.ThrowsAsync<ValidationException>(() => h.Service.AddRecordAsync(
+                new CreateFieldProgramRecordRequest { SeasonId = season.Id, ProgramKey = key, Data = StoryCorn }, default));
     }
 
     [Fact]
@@ -345,21 +349,6 @@ public class FieldPlanServiceTests
         Assert.Equal(50, frozen.GetProperty("inputs").GetProperty("niPercent").GetDouble());
         Assert.Equal(7, frozen.GetProperty("outputs").GetProperty("breakdown").GetArrayLength());
         Assert.Equal(User, h.Db.FieldProgramRecords.Single().LockedBy);
-    }
-
-    [Fact]
-    public async Task Freeze_GrainCraft_KeepsTheVariety()
-    {
-        var h = New();
-        await h.Service.CreateFieldAsync(new CreateProducerFieldRequest { CustomerId = Tobin, SplitId = "TATOB44" }, default);
-        var season = await h.Service.AddSeasonAsync(new CreateFieldSeasonRequest { FieldKey = "TATOB44", PlantingIntentionId = WheatRow, Year = 2026, CropLabel = "Wheat", Acres = 80 }, default);
-        await h.Service.AddRecordAsync(new CreateFieldProgramRecordRequest { SeasonId = season.Id, ProgramKey = FieldPlanPrograms.GrainCraft, Data = Json("""{ "variety": " Zenda " }""") }, default);
-        var entity = h.Db.FieldProgramRecords.Include(r => r.Season!).ThenInclude(s => s.Field!).Single();
-
-        var frozen = Json(FieldPlanPrograms.Freeze(entity, entity.Season!, entity.Season!.Field!, FdCic.Value, User, DateTime.UtcNow));
-
-        Assert.Equal("Zenda", frozen.GetProperty("inputs").GetProperty("variety").GetString());
-        Assert.Equal("GrainCraft field record v1", frozen.GetProperty("calculatorVersion").GetString());
     }
 
     [Fact]
@@ -510,7 +499,7 @@ public class FieldPlanServiceTests
 
         Assert.Equal(first!.Key, second!.Key);
         Assert.False(first.Attestation.GetProperty("confirmations").GetProperty("recordsAccurate").GetBoolean());
-        Assert.Null(await h.Service.EnsureEnrollmentAsync(request with { ProgramKey = FieldPlanPrograms.GrainCraft }, default));
+        await Assert.ThrowsAsync<ValidationException>(() => h.Service.EnsureEnrollmentAsync(request with { ProgramKey = "graincraft" }, default));
     }
 
     [Fact]

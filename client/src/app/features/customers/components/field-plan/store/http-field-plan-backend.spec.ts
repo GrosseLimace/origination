@@ -78,9 +78,9 @@ describe('HttpFieldPlanBackend', () => {
   });
 
   it('should return undefined for a program without enrollment (204)', async () => {
-    const ensuring = backend.ensureEnrollment('graincraft', 9, 2026);
+    const ensuring = backend.ensureEnrollment('no-enrollment-program', 9, 2026);
     const req = http.expectOne(`${BASE}/enrollments`);
-    expect(req.request.body).toEqual({ programKey: 'graincraft', customerId: 9, year: 2026 });
+    expect(req.request.body).toEqual({ programKey: 'no-enrollment-program', customerId: 9, year: 2026 });
     req.flush(null, { status: 204, statusText: 'No Content' });
 
     expect(await ensuring).toBeUndefined();

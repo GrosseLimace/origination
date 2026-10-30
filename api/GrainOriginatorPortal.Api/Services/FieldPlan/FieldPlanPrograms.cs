@@ -14,12 +14,12 @@ namespace GrainOriginatorPortal.Api.Services.FieldPlan;
 /// </summary>
 public static class FieldPlanPrograms
 {
+    /// <summary>45Z, the only approved program. Another program adds its key, rules and freeze here.</summary>
     public const string FdCic = "45z-fdcic";
-    public const string GrainCraft = "graincraft";
 
     internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    /// <summary>45Z's attestation statements (keys as in fd-cic.program.ts); GrainCraft has no enrollment.</summary>
+    /// <summary>45Z's attestation statements (keys as in fd-cic.program.ts).</summary>
     private static readonly Dictionary<string, (string Key, string Short)[]> Statements = new()
     {
         [FdCic] =
@@ -41,12 +41,11 @@ public static class FieldPlanPrograms
         ["CoverCrop"] = "Cover crop", ["CoverCropGrazed"] = "Cover crop with grazing", ["None"] = "No cover crop",
     };
 
-    public static bool IsKnown(string programKey) => programKey is FdCic or GrainCraft;
+    public static bool IsKnown(string programKey) => programKey is FdCic;
 
     public static bool AppliesTo(string programKey, string cropLabel) => programKey switch
     {
         FdCic => FdCicCropFor(cropLabel) is not null,
-        GrainCraft => cropLabel.Contains("wheat", StringComparison.OrdinalIgnoreCase),
         _ => false,
     };
 
@@ -77,15 +76,12 @@ public static class FieldPlanPrograms
             throw new ValidationException("data", "Program data must be an object.");
         if (data.GetRawText().Length > 20_000)
             throw new ValidationException("data", "Program data is too large.");
-        if (programKey == FdCic) ReadFdCic(data);
-        else ReadGrainCraft(data);
+        ReadFdCic(data);
     }
 
     /// <summary>What a record still needs before it's Ready (the client's program.missing()).</summary>
     public static IReadOnlyList<string> Missing(string programKey, JsonElement data, ProducerFieldSeason season)
     {
-        if (programKey == GrainCraft)
-            return string.IsNullOrWhiteSpace(ReadGrainCraft(data).Variety) ? ["wheat variety"] : [];
         var d = ReadFdCic(data);
         var missing = new List<string>();
         if (season.Acres is not > 0) missing.Add("acres");
@@ -105,9 +101,7 @@ public static class FieldPlanPrograms
         IFdCicService fdCic, string lockedBy, DateTime lockedAt)
     {
         using var doc = JsonDocument.Parse(record.Data);
-        var frozen = record.ProgramKey == FdCic
-            ? FreezeFdCic(doc.RootElement, season, field, fdCic)
-            : FreezeGrainCraft(doc.RootElement, season, field);
+        var frozen = FreezeFdCic(doc.RootElement, season, field, fdCic);
         frozen["basis"] = "Estimate";
         frozen["lockedBy"] = lockedBy;
         frozen["lockedAt"] = lockedAt.ToString("o");
@@ -157,23 +151,6 @@ public static class FieldPlanPrograms
         };
     }
 
-    private static JsonObject FreezeGrainCraft(JsonElement data, ProducerFieldSeason season, ProducerField field)
-    {
-        var variety = ReadGrainCraft(data).Variety?.Trim();
-        if (string.IsNullOrEmpty(variety)) throw StillNeeded(["wheat variety"]);
-        // The same shape as graincraft.program.ts freeze().
-        return new JsonObject
-        {
-            ["inputs"] = new JsonObject
-            {
-                ["crop"] = season.CropLabel, ["cropYear"] = season.CropYear, ["field"] = field.Name, ["acres"] = season.Acres,
-                ["splitId"] = field.SplitId, ["splitPercent"] = field.SplitPercent, ["variety"] = variety,
-            },
-            ["outputs"] = new JsonObject(),
-            ["calculatorVersion"] = "GrainCraft field record v1",
-        };
-    }
-
     private static BusinessException StillNeeded(IEnumerable<string> missing) =>
         new($"Still needed before confirming: {string.Join(", ", missing)}.", "FIELD_PLAN_LOCK_INCOMPLETE", StatusCodes.Status422UnprocessableEntity);
 
@@ -182,8 +159,6 @@ public static class FieldPlanPrograms
         string CoverCrop, string Tillage, IReadOnlyList<ManureData> Manure);
 
     private sealed record ManureData(string? Type, string? Form, double? Amount, double? NContent);
-
-    private sealed record GrainCraftData(string? Variety);
 
     private static FdCicData ReadFdCic(JsonElement data)
     {
@@ -194,11 +169,5 @@ public static class FieldPlanPrograms
             || d.NiFraction is < 0 or > 1 || d.Manure is null || d.Manure.Count > FdCicInputRules.MaxManureEntries)
             throw new ValidationException("data", "These aren't 45Z inputs.");
         return d;
-    }
-
-    private static GrainCraftData ReadGrainCraft(JsonElement data)
-    {
-        try { return data.Deserialize<GrainCraftData>(Json) ?? throw new JsonException(); }
-        catch (JsonException) { throw new ValidationException("data", "These aren't GrainCraft inputs."); }
     }
 }

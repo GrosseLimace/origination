@@ -102,7 +102,7 @@ export class CropFieldsPanelComponent {
     return [f.splitId, `${f.county}, ${f.state}`, f.splitPercent < 100 ? `${+f.splitPercent.toFixed(3)}%` : ''].filter(Boolean).join(' · ');
   }
 
-  /** The field's programs as chips: short label, then its score (45Z) or its own short text (GrainCraft), and status. */
+  /** The field's programs as chips: short label, then its score (45Z) or a program's own short text, and status. */
   chips(s: FieldSeason) {
     const field = this.store.field(s.fieldKey);
     return this.store.forSeason(s.id).flatMap(record => {
