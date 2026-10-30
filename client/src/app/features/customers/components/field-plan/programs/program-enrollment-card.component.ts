@@ -96,9 +96,20 @@ type CardField = EnrollableRecord & { result: FieldResult; official: string; con
                   </thead>
                   <tbody>
                     @for (row of g.ladder; track row.item.recordId) {
-                      <tr class="border-t border-gray-100 dark:border-gray-700" [class]="withinTarget(g.group, row.value) ? 'bg-gray-100 dark:bg-gray-700/50' : ''">
+                      <tr class="border-t border-gray-100 dark:border-gray-700">
                         <td class="py-1 pr-4 text-right tabular-nums">
-                          <div class="font-semibold text-gray-900 dark:text-white">{{ row.value | number:'1.0-0' }}</div>
+                          <!-- Against the typed target only: green at or below it, red above. No target, no colour. -->
+                          @switch (targetSide(g.group, row.value)) {
+                            @case ('at-or-below') {
+                              <div class="font-semibold text-green-700 dark:text-green-400" [title]="'At or below the ' + (targets()[g.group] | number) + ' target'">{{ row.value | number:'1.0-0' }}</div>
+                            }
+                            @case ('above') {
+                              <div class="font-semibold text-red-700 dark:text-red-400" [title]="'Above the ' + (targets()[g.group] | number) + ' target'">{{ row.value | number:'1.0-0' }}</div>
+                            }
+                            @default {
+                              <div class="font-semibold text-gray-900 dark:text-white">{{ row.value | number:'1.0-0' }}</div>
+                            }
+                          }
                           <!-- Confirmed after the review; otherwise locked, or actual or projected by the yield the score used. -->
                           <div class="whitespace-nowrap text-xs text-gray-500">{{ row.item.confirmed ? 'confirmed' : 'estimate · ' + (row.item.status === 'Locked' ? 'locked' : row.item.result.projected ? 'projected' : 'actual') }}</div>
                         </td>
@@ -247,9 +258,11 @@ export class ProgramEnrollmentCardComponent {
     return target ? atOrBelowTarget(g.ladder, target) : null;
   }
 
-  withinTarget(group: string, value: number): boolean {
+  /** Where a field's CI sits against the group's typed target; null while there's no target. */
+  targetSide(group: string, value: number): 'at-or-below' | 'above' | null {
     const target = this.targets()[group];
-    return !!target && value <= target;
+    if (!target) return null;
+    return value <= target ? 'at-or-below' : 'above';
   }
 
   readonly enrollment = computed(() => this.store.current(this.programKey(), this.customerId(), this.year()));
