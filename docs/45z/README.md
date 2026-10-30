@@ -58,7 +58,7 @@ Endpoints (signed-in users; nothing is stored):
 | `POST api/fd-cic/{year}/score` | The CI and its components, the national average and change, plus the version label, workbook hash and formula fingerprint. Leave out the actual yield for a projected score. Places USDA has no data for come back with `scorable: false` and the reason. `effects` explains the score: each of the field's choices against the workbook default (not a USDA output) |
 
 In the app, the 45Z form asks this endpoint for the score as the originator types (the
-client caches each set of inputs). Field chips and the crop row's roll-up use the same scores. At harvest complete, the
+client caches each set of inputs). Field chips and the crop row's roll-up use the same scores. When a field is confirmed after harvest, the
 field's inputs, the USDA outputs, the version label, the workbook hash and the formula fingerprint are
 frozen together.
 
@@ -122,7 +122,7 @@ particular the scale or ticket-entry user never keys an extra ID: a ticket carri
 is known, and `FieldPlanStore.resolveEnrollment(program, splitId, cropYear)` finds the field, its record and
 the producer's enrollment. The server will offer the same as `GET api/field-plan/enrollment?programKey&splitId&cropYear`.
 
-- The producer's enrollment (producer + program + year) still groups the fields for harvest complete,
+- The producer's enrollment (producer + program + year) still groups the fields for
   attestation and withdrawal, but has no display ID of its own.
 - Withdrawal is kept with its reason. Re-enrolling makes the producer live again under the **same** field
   IDs, since they derive from split and year.
@@ -139,7 +139,7 @@ result.
 
 - **Estimates:**
   - Before harvest the estimate is projected from the expected yield; after harvest it uses the actual yield.
-  - Marking the enrollment's harvest complete **locks** each field's estimate (`basis: Estimate`).
+  - After harvest each field is confirmed on its own in the Review, which locks it with the confirmed CI. The enrollment-level "Mark harvest complete" button was removed on 2026-10-30: it locked estimates that confirming then replaced.
   - A locked estimate can be unlocked with a reason, which is kept.
   - Screens say "estimate · projected / actual / locked".
 - **Confirmed CI:** see [Review with tickets and the Bins' CSV](#review-with-tickets-and-the-bins-csv). The record's `official` result holds:

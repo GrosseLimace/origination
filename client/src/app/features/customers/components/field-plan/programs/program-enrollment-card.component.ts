@@ -20,8 +20,10 @@ type CardField = EnrollableRecord & { result: FieldResult; official: string; con
  * - "bushels by CI": per crop, the scored fields lowest CI first with their bushels and a running total,
  *   and a target box ("at or below 3,000 g/bu → 69,000 bu"). Never one producer-wide average:
  *   downstream opportunities set different CI targets, so field-level CI and bushels are what matter;
- * - the fields not scored yet;
- * - "harvest complete", which locks the harvest estimate of every field that has its actual yield.
+ * - the fields not scored yet.
+ *
+ * There's no producer-level "harvest complete": after harvest each field is reviewed with its CTRM tickets
+ * and confirmed on its own (the field dialog's Review), which locks it with the confirmed CI.
  *
  * Every CI here is a planning estimate until the field is reviewed with the producer and its CTRM tickets after
  * harvest and confirmed; then the confirmed CI and its ticket bushels show, and the card downloads the
@@ -45,7 +47,7 @@ type CardField = EnrollableRecord & { result: FieldResult; official: string; con
         <span class="font-semibold text-gray-900 dark:text-white">🌱 {{ p.shortLabel }} · {{ year() }}</span>
         @if (e) {
           <span class="text-xs text-gray-600 dark:text-gray-300">{{ records().length }} field{{ records().length === 1 ? '' : 's' }}</span>
-          @if (e.harvestCompleteAt) { <span class="text-xs text-gray-500 dark:text-gray-400" title="Harvest marked complete">✓ harvest</span> }
+          @if (confirmedCount()) { <span class="text-xs text-gray-500 dark:text-gray-400">{{ confirmedCount() }} of {{ records().length }} confirmed</span> }
         } @else {
           <span class="text-amber-700 dark:text-amber-400">{{ records().length ? 'Withdrawn' : 'Not enrolled yet' }}</span>
         }
@@ -97,7 +99,7 @@ type CardField = EnrollableRecord & { result: FieldResult; official: string; con
                       <tr class="border-t border-gray-100 dark:border-gray-700" [class]="withinTarget(g.group, row.value) ? 'bg-gray-100 dark:bg-gray-700/50' : ''">
                         <td class="py-1 pr-4 text-right tabular-nums">
                           <div class="font-semibold text-gray-900 dark:text-white">{{ row.value | number:'1.0-0' }}</div>
-                          <!-- Locked once harvest is complete; otherwise actual or projected by the yield the score used. -->
+                          <!-- Confirmed after the review; otherwise locked, or actual or projected by the yield the score used. -->
                           <div class="whitespace-nowrap text-xs text-gray-500">{{ row.item.confirmed ? 'confirmed' : 'estimate · ' + (row.item.status === 'Locked' ? 'locked' : row.item.result.projected ? 'projected' : 'actual') }}</div>
                         </td>
                         <td class="text-gray-900 dark:text-white">{{ row.item.fieldName }}</td>
@@ -129,19 +131,6 @@ type CardField = EnrollableRecord & { result: FieldResult; official: string; con
               </div>
             }
             <!-- Producer attestation: to be designed; the service still supports it (attest, statements). -->
-
-            <!-- Harvest complete locks the estimate of every field that has its actual yield -->
-            <div class="space-y-2">
-              @if (e.harvestCompleteAt) {
-                <div class="text-gray-700 dark:text-gray-300">Harvest marked complete {{ e.harvestCompleteAt | date:'MM/dd/yy' }}.</div>
-              } @else {
-                <button type="button" class="h-8 rounded-md px-3 font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green border-0"
-                        (click)="completeHarvest()">Mark harvest complete</button>
-              }
-              @for (o of harvestLeftOpen(); track o.fieldName) {
-                <div class="text-amber-800 dark:text-amber-300">{{ o.fieldName }} couldn't be locked: still needs {{ o.missing.join(', ') }}.</div>
-              }
-            </div>
 
             @if (showWithdraw) {
               <div class="space-y-2">
@@ -269,17 +258,6 @@ export class ProgramEnrollmentCardComponent {
   open = false;
   showWithdraw = false;
   withdrawReason = '';
-  /** Set after the save, so a signal: this card sits under an OnPush table. */
-  readonly harvestLeftOpen = signal<{ fieldName: string; missing: string[] }[]>([]);
-
-  async completeHarvest(): Promise<void> {
-    const e = this.enrollment();
-    if (!e) return;
-    const names = new Map(this.records().map(r => [r.recordId, r.fieldName]));
-    const leftOpen = await this.store.completeHarvest(e);
-    this.harvestLeftOpen.set(leftOpen.map(o => ({ fieldName: names.get(o.recordId) ?? 'A field', missing: o.missing })));
-  }
-
   async withdraw(): Promise<void> {
     const e = this.enrollment();
     if (!e || !this.withdrawReason.trim()) return;

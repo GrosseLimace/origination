@@ -146,7 +146,7 @@ The browser applies these today. Once the tables exist, the API owns them:
 1. **A split is one producer's field.** Adding a split that another producer already holds is refused.
 2. **No duplicate claims.** A field can't be in two live enrollments of one program and year. Rule 1 and table ④'s unique index make this structural, and the API checks it again at attestation.
 3. **Locking rescores on the server.**
-   - "Harvest complete" locks each field's estimate. For 45Z, the API recomputes the CI with its own USDA calculator. It stores that result together with the calculator version, workbook hash and formula fingerprint, and never uses the browser's number.
+   - Confirming a field after harvest locks it. For 45Z, the API recomputes the CI with its own USDA calculator. It stores that result together with the calculator version, workbook hash and formula fingerprint, and never uses the browser's number.
    - A locked estimate is never rescored under a later USDA version.
 4. **A locked record can't be edited.** It must be unlocked with a reason first.
 5. **No unlocking a field an attested enrollment holds.**
