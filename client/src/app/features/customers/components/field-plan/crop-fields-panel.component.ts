@@ -31,7 +31,7 @@ export function splitIdFromText(text: string): string | undefined {
 /**
  * The fields under one crop row. A field is one of the producer's CTRM split IDs, because tickets are
  * delivered under the split. SPLITS-GRAPHQL: until CTRM's splits query is live the ID, field name and
- * share are typed by hand (the API's "manual" source); with it they're looked up. Its location is asked
+ * name are typed by hand (the share is taken as 100%) (the API's "manual" source); with it they're looked up. Its location is asked
  * for the first time it's used. The row's acres stay the total (what the
  * dashboard counts); fields break it down. Adding a field pre-fills the acres not yet in a field, so a crop on one field needs
  * no extra typing. When the fields add up to more than the total, the row offers to update it — the
@@ -144,9 +144,8 @@ export class CropFieldsPanelComponent {
 
   // ── Add a field: one of the producer's split IDs, looked up or (for now) typed ──
   newSplit = '';
-  /** SPLITS-GRAPHQL: the field name and share typed for a split entered by hand. */
+  /** SPLITS-GRAPHQL: the field name typed for a split entered by hand (its share is taken as 100%). */
   newName = '';
-  newPercent: number | null = 100;
   newState = 'KS';
   newCounty = '';
   newAcres: number | null = null;
@@ -163,7 +162,7 @@ export class CropFieldsPanelComponent {
     return s.status === 'done' && s.source === 'sample';
   });
   /**
-   * SPLITS-GRAPHQL: a split not in a CTRM list can be typed by hand, with its field name and share. True
+   * SPLITS-GRAPHQL: a split not in a CTRM list can be typed by hand, with its field name. True
    * unless the list really is CTRM's (then the server refuses anything not in it).
    */
   readonly manualAllowed = computed(() => {
@@ -208,13 +207,13 @@ export class CropFieldsPanelComponent {
     return sp ? (sp.kind === 'Field' ? sp.splitId : undefined) : this.typedSplitId;
   }
 
-  /** A split this producer hasn't used as a field yet: its location (and, typed by hand, name and share) is asked for once. */
+  /** A split this producer hasn't used as a field yet: its location (and, typed by hand, its name) is asked for once. */
   get isNewField(): boolean {
     const id = this.entrySplitId;
     return !!id && !this.store.field(id);
   }
 
-  /** A new field typed by hand: ask for its name and share too. */
+  /** A new field typed by hand: ask for its name too. */
   get isNewManualField(): boolean {
     return this.isNewField && !this.pickedSplit;
   }
@@ -244,7 +243,6 @@ export class CropFieldsPanelComponent {
     this.newCounty = '';
     this.newSplit = '';
     this.newName = '';
-    this.newPercent = 100;
     this.newAcres = this.remaining() > 0 ? this.remaining() : null;
   }
 
@@ -258,9 +256,7 @@ export class CropFieldsPanelComponent {
   }
 
   get canAdd(): boolean {
-    const share = this.newPercent ?? 0;
-    return !!this.entrySplitId && (this.newAcres ?? 0) > 0 && (!this.isNewField || !!this.newCounty)
-      && (!this.isNewManualField || (share > 0 && share <= 100));
+    return !!this.entrySplitId && (this.newAcres ?? 0) > 0 && (!this.isNewField || !!this.newCounty);
   }
 
   /** An add is being saved: the form stays open and its button waits. */
@@ -281,7 +277,7 @@ export class CropFieldsPanelComponent {
         : {
           // SPLITS-GRAPHQL: typed by hand until CTRM's splits query is live.
           splitId: id, customerId: this.customer().id, name: this.newName.trim() || id,
-          splitPercent: this.newPercent ?? 100, effectiveDate: '', state: this.newState, county: this.newCounty,
+          splitPercent: 100, effectiveDate: '', state: this.newState, county: this.newCounty,
           splitSource: 'Manual',
         });
       if (!field) return; // the store has shown why; the form keeps what was typed

@@ -26,9 +26,6 @@
             <div><div class="text-gray-500 dark:text-gray-400">CTRM split ID</div><div class="font-medium text-gray-900 dark:text-white">{{ draftField.splitId }}</div></div>
             <label class="block"><span class="text-gray-700 dark:text-gray-300">Field name</span>
               <input class="ci-input" maxlength="255" [disabled]="seasonLocked()" [(ngModel)]="draftField.name" (change)="saveField()" /></label>
-            <label class="block"><span class="text-gray-700 dark:text-gray-300">Producer's split %</span>
-              <input type="number" min="0.001" max="100" step="any" class="ci-input" [disabled]="seasonLocked()"
-                     [(ngModel)]="draftField.splitPercent" (change)="saveField()" /></label>
           </div>
           <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">Entered by hand: the split ID is how this field's CTRM tickets are found, so check it against CTRM.</div>
         }

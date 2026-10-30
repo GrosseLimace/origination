@@ -138,10 +138,6 @@
               <label class="block text-xs text-gray-600 dark:text-gray-300">Field name
                 <input class="ci-input ci-compact !w-44" [placeholder]="typedSplitId ?? ''" [(ngModel)]="newName" maxlength="255" />
               </label>
-              <label class="block text-xs text-gray-600 dark:text-gray-300">Split %
-                <input type="number" min="0.001" max="100" step="any" class="ci-input ci-compact !w-20 text-right"
-                       [class.ci-missing]="!newPercent || newPercent <= 0 || newPercent > 100" [(ngModel)]="newPercent" />
-              </label>
             }
             @if (isNewField) {
               <label class="block text-xs text-gray-600 dark:text-gray-300">State
@@ -170,7 +166,7 @@
             </div>
           } @else if (typedSplitId; as id) {
             <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              @if (store.field(id); as f) { {{ f.name }} · {{ +f.splitPercent.toFixed(3) }}% · entered by hand }
+              @if (store.field(id); as f) { {{ f.name }} · entered by hand }
               @else { Entered by hand: check the split ID against CTRM. It's how the field's tickets are found. }
             </div>
           } @else if (newSplit.trim()) {
