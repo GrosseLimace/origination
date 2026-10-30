@@ -47,6 +47,11 @@ public class FieldPlanRepository : IFieldPlanRepository
     public Task<List<ProducerFieldSeason>> GetSeasonsForFieldAsync(int producerFieldId, int cropYear, CancellationToken cancellationToken) =>
         _db.ProducerFieldSeasons.Where(s => s.ProducerFieldId == producerFieldId && s.CropYear == cropYear).ToListAsync(cancellationToken);
 
+    public Task<List<FieldProgramRecord>> GetConfirmedRecordsForFieldAsync(int producerFieldId, CancellationToken cancellationToken) =>
+        _db.FieldProgramRecords.Include(r => r.Season)
+            .Where(r => r.Season!.ProducerFieldId == producerFieldId && r.Official != null)
+            .ToListAsync(cancellationToken);
+
     public Task<List<FieldProgramRecord>> GetRecordsForSeasonAsync(int seasonId, CancellationToken cancellationToken) =>
         _db.FieldProgramRecords.Where(r => r.ProducerFieldSeasonId == seasonId).ToListAsync(cancellationToken);
 

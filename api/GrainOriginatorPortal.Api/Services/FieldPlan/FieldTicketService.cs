@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Infrastructure.Ctrm;
@@ -12,7 +13,9 @@ namespace GrainOriginatorPortal.Api.Services.FieldPlan;
 /// crop year, settled or not. CTRM tickets carry no crop year, so (user decision 2026-10-29) a ticket on a
 /// contract takes the contract's crop year, and any other ticket counts when its BL date falls in the crop
 /// year's window: <c>FieldPlan:TicketWindow:{crop}</c> From/To as MM-dd, default 08-01 to 07-31 of the next
-/// year. The originator can still leave any ticket out when confirming.
+/// year. The originator can still leave any ticket out when confirming, or add one of the split's other
+/// tickets for the crop (<see cref="FieldTicketsResponse.Others"/>, decision 2026-10-30) when the crop year
+/// rule missed it. A ticket another of the field's confirmed CIs already counts is marked and can't be added.
 /// </summary>
 public interface IFieldTicketService
 {
@@ -64,7 +67,16 @@ public sealed class FieldTicketService : IFieldTicketService
             .GroupBy(c => c.CommodityCode.Trim(), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First().LbsPerUnit, StringComparer.OrdinalIgnoreCase);
 
+        // Tickets the field's other confirmed CIs already count (any year), so none is counted twice. Matched
+        // on the key and on the ticket number: the key includes the BL date and product, which CTRM can correct.
+        var confirmedFor = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var other in await _repository.GetConfirmedRecordsForFieldAsync(field.Id, ct))
+            if (other.Id != record.Id)
+                foreach (var id in ConfirmedTicketIds(other.Official))
+                    confirmedFor.TryAdd(id, other.Season!.CropYear);
+
         var tickets = new List<FieldTicketResponse>();
+        var others = new List<FieldTicketResponse>();
         foreach (var t in read.Value!.Tickets)
         {
             // The crop: the same group as the crop row, or the same code when the crop isn't one we know.
@@ -75,26 +87,36 @@ public sealed class FieldTicketService : IFieldTicketService
 
             var bl = DateOnly.TryParseExact(t.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : (DateOnly?)null;
             string match;
+            string? note = null;
             if (t.CtrmContractNumber?.Trim().ToUpperInvariant() is { Length: > 0 } number && read.Value.ContractCropYears.TryGetValue(number, out var contractYear))
             {
-                if (contractYear != season.CropYear) continue;
-                match = "contract";
+                match = contractYear == season.CropYear ? "contract" : "other";
+                if (match == "other") note = $"On a {contractYear} contract";
             }
             else if (bl is { } date && date >= from && date <= to)
                 match = "window";
             else
-                continue;
-
-            tickets.Add(new FieldTicketResponse
             {
-                TicketKey = t.Id.ToString(CultureInfo.InvariantCulture),
-                TicketNumber = (t.ShipmentTicketNumber ?? $"{t.TicketPrefix}{t.TicketNumber}{t.TicketSuffix}").Trim(),
+                match = "other";
+                note = bl is null ? "No BL date" : $"BL date outside {from:M/d/yy}–{to:M/d/yy}";
+            }
+
+            var key = t.Id.ToString(CultureInfo.InvariantCulture);
+            var ticketNumber = (t.ShipmentTicketNumber ?? $"{t.TicketPrefix}{t.TicketNumber}{t.TicketSuffix}").Trim();
+            int? countedIn = confirmedFor.TryGetValue(key, out var byKey) ? byKey
+                : confirmedFor.TryGetValue(NumberId(ticketNumber), out var byNumber) ? byNumber : null;
+            (match == "other" ? others : tickets).Add(new FieldTicketResponse
+            {
+                TicketKey = key,
+                TicketNumber = ticketNumber,
                 BlDate = bl?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 Location = Location(t),
                 ProductCode = t.ProductCode,
                 ContractNumber = t.CtrmContractNumber,
                 CropYearMatch = match,
-                NetBushels = Bushels(t, lbsPerUnit, GroupOf(t.ProductCode)),
+                Note = note,
+                ConfirmedFor = countedIn,
+                NetBushels = Bushels(t, lbsPerUnit),
                 Settled = t.FinalSettledDate is not null || string.Equals(t.TicketStatusDescription?.Trim(), "Final Settled", StringComparison.OrdinalIgnoreCase),
                 SettledDate = t.FinalSettledDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 Status = t.TicketStatusDescription,
@@ -109,8 +131,25 @@ public sealed class FieldTicketService : IFieldTicketService
             WindowFrom = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             WindowTo = to.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             Tickets = tickets.OrderBy(t => t.BlDate).ThenBy(t => t.TicketNumber, StringComparer.Ordinal).ToList(),
+            Others = others.OrderByDescending(t => t.BlDate).ThenBy(t => t.TicketNumber, StringComparer.Ordinal).ToList(),
         };
     }
+
+    /// <summary>A confirmed result's tickets, each as its key and as its ticket number (see <see cref="NumberId"/>).</summary>
+    private static IEnumerable<string> ConfirmedTicketIds(string? official)
+    {
+        if (official is null) yield break;
+        using var doc = JsonDocument.Parse(official);
+        if (!doc.RootElement.TryGetProperty("tickets", out var list) || list.ValueKind != JsonValueKind.Array) yield break;
+        foreach (var t in list.EnumerateArray())
+        {
+            if (t.TryGetProperty("ticketKey", out var key) && key.ValueKind == JsonValueKind.String) yield return key.GetString()!;
+            if (t.TryGetProperty("ticketNumber", out var number) && number.ValueKind == JsonValueKind.String) yield return NumberId(number.GetString()!);
+        }
+    }
+
+    /// <summary>A ticket number, prefixed so it never collides with a key.</summary>
+    private static string NumberId(string ticketNumber) => "#" + ticketNumber.Trim();
 
     /// <summary>The crop year's BL-date window: From in the crop year, To in the next year when it falls earlier in the calendar.</summary>
     internal (DateOnly From, DateOnly To) Window(string? group, int cropYear)
@@ -133,15 +172,15 @@ public sealed class FieldTicketService : IFieldTicketService
             : throw new InvalidOperationException($"FieldPlan:TicketWindow values are MM-dd, not '{text}'.");
     }
 
-    /// <summary>The split's net pounds in bushels: ODS's conversion for the code, else the crop's standard weight.</summary>
-    private static decimal? Bushels(Ticket t, IReadOnlyDictionary<string, decimal> lbsPerUnit, string? group)
-    {
-        if (t.AppliedDockQuantity is not { } pounds) return null;
-        var factor = t.ProductCode is { } code && lbsPerUnit.TryGetValue(code.Trim(), out var f) ? f
-            : group is not null && FieldPlanCropGroups.StandardLbsPerBushel.TryGetValue(group, out var s) ? s
-            : 0m;
-        return factor > 0 ? Math.Round(pounds / factor, 2) : null;
-    }
+    /// <summary>
+    /// The split's net pounds in bushels, by ODS's conversion for the product code. No conversion, no figure:
+    /// as everywhere in the portal (DpBushelConversion), a bushel number is never guessed. Such a ticket shows
+    /// "?" in the review and can't be confirmed.
+    /// </summary>
+    private static decimal? Bushels(Ticket t, IReadOnlyDictionary<string, decimal> lbsPerUnit) =>
+        t.AppliedDockQuantity is { } pounds && t.ProductCode is { } code && lbsPerUnit.TryGetValue(code.Trim(), out var factor) && factor > 0
+            ? Math.Round(pounds / factor, 2)
+            : null;
 
     private static string? Location(Ticket t)
     {

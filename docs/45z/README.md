@@ -162,15 +162,15 @@ result.
    - its product code is the crop row's crop (`FieldPlanCropGroups`, ported from the client's `CROP_CODE_MAP`, with a test that keeps them in step);
    - it's in the crop year. CTRM tickets carry no crop year, so:
      - a ticket on one of the producer's or the split's contracts takes **that contract's crop year**;
-     - any other ticket counts when its **BL date** is in the crop year's window: `FieldPlan:TicketWindow:{crop}:From/To` (MM-dd), default `08-01` to `07-31` of the next year.
-   - Net bushels are the split's net pounds ÷ the ODS conversion for the product code, or the crop's standard weight when ODS has none.
-3. The originator and the producer go over the inputs and the tickets. Any ticket that isn't the field's can be unticked. The actual yield is suggested as included bushels ÷ acres and can be edited. The CI at that yield shows live.
+     - any other ticket counts when its **BL date** is in the crop year's window: `FieldPlan:TicketWindow:{crop}:From/To` (MM-dd), default `08-01` to `07-31` of the next year. **Canola** runs `06-01` to `05-31` (appsettings.json), so a June–July winter canola harvest counts in its own crop year.
+   - Net bushels are the split's net pounds ÷ the ODS conversion for the product code. With no conversion there is no figure ("?"), as everywhere in the portal: the ticket starts left out and can't be confirmed. (The standard-weight fallback was removed 2026-10-30.)
+3. The originator and the producer go over the inputs and the tickets. Any ticket that isn't the field's can be unticked. **Adding a ticket** (2026-10-30): "+ Add a ticket from outside the crop year" lists the split's other tickets for the crop (on another year's contract, or BL-dated outside the window), newest first, with the reason each is outside. An added ticket joins the table tagged *added* and is kept as `cropYearMatch: "added"` in the confirmed CI and as "Added in review" in the CSV. Only the split's own tickets for the crop can be added, and a ticket another of the field's confirmed CIs already counts (another crop year) is marked and can't be added or confirmed, so no ticket is counted twice. The actual yield is suggested as included bushels ÷ acres and can be edited. The CI at that yield shows live.
 4. After harvest, with "Reviewed these inputs and tickets with the producer after harvest" ticked, **Confirm CI** (`POST .../records/{id}/confirm`):
    - reads the tickets again on the server and keeps only the ones listed, so the bushels are CTRM's;
    - sets the actual yield, rescores, locks, and writes the confirmed CI.
    - Confirming is allowed while an attested enrollment holds the record, because attesting comes before harvest and confirming after.
 5. **CSV for the Bins' mass balance ledger:** "Download confirmed CI (CSV)" appears on the enrollment card for the producer and year, and in a confirmed review.
-   - One row per confirmed ticket: producer code and name, split ID, field, enrollment ID, crop year, commodity, ticket #, product code, BL date, location, contract #, net bushels, settled (Y/N), settled date, CI (g CO2e/bu), USDA version, confirmed by and at.
+   - One row per confirmed ticket: producer code and name, split ID, field, enrollment ID, crop year, commodity, ticket #, product code, BL date, location, contract #, crop year by (contract year, BL date window or added in review), net bushels, settled (Y/N), settled date, CI (g CO2e/bu), USDA version, confirmed by and at.
    - Built in the browser (`programs/fd-cic/confirmed-ci-export.ts`), with spreadsheet formula injection guarded (`shared/utils/csv.ts`).
    - File name: `45Z-confirmed-CI_{producer}_{year}_{yyyymmdd}.csv`.
 
@@ -277,7 +277,9 @@ On 2026-10-30 the branch was reviewed against the Scoular standards with the mar
 
 **To do before the screens go live (`fieldPlanBackend: 'api'`):**
 1. **Concurrency:** confirm, reopen and edits can race (no concurrency token); unique-index races return 500
-   instead of the existing row (the repo's `IsUniqueViolation` pattern in `BidSheetRepository`).
+   instead of the existing row (the repo's `IsUniqueViolation` pattern in `BidSheetRepository`). Two originators
+   confirming two crop years of the same field at the same moment could both count one ticket (the already-counted
+   check is read-then-write).
 2. **Split ownership while typed by hand:** nothing checks a typed split ID belongs to the producer, and there is
    no way to remove a wrongly claimed field. Check it against CTRM or add an admin path; ends with SPLITS-GRAPHQL.
 3. ~~Access~~: any originator can open and change any producer's field plan, by design (decided 2026-10-30);
@@ -289,8 +291,8 @@ On 2026-10-30 the branch was reviewed against the Scoular standards with the mar
    duplicate datalist IDs from the mobile and desktop layouts; component specs for the review, dialog and card.
 6. **Server tidy-ups:** interfaces in their own files, status names as shared constants, full
    `ProducesResponseType` lists, `cancellationToken` naming, and ticket-window settings checked at startup.
-7. **Data:** ticket product codes outside the crop lists are dropped silently; the standard-weight bushel fallback
-   goes against the repo's "no close-enough bushels" rule; one Aug 1–Jul 31 window for every crop.
+7. **Data:** ticket product codes outside the crop lists are dropped silently. (Done 2026-10-30: the standard-weight
+   fallback was removed, canola has its own window, and the originator can add a ticket the crop year rule missed.)
 
 ## Legal
 

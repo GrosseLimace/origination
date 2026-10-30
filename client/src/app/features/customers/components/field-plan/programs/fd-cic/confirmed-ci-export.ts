@@ -17,9 +17,14 @@ export interface ConfirmedCiField {
  */
 export const CONFIRMED_CI_HEADERS = [
   'Producer code', 'Producer name', 'Split ID', 'Field', 'Enrollment ID', 'Crop year', 'Commodity',
-  'Ticket #', 'Product code', 'BL date', 'Location', 'Contract #', 'Net bushels', 'Settled', 'Settled date',
+  'Ticket #', 'Product code', 'BL date', 'Location', 'Contract #', 'Crop year by', 'Net bushels', 'Settled', 'Settled date',
   'CI (g CO2e/bu)', 'USDA version', 'Confirmed by', 'Confirmed at',
 ] as const;
+
+/** How each ticket was put in the crop year, for the ledger's audit trail. */
+const CROP_YEAR_BY: Readonly<Record<string, string>> = {
+  contract: 'Contract year', window: 'BL date window', added: 'Added in review',
+};
 
 export function confirmedCiRows(producer: { code: string; name: string }, fields: readonly ConfirmedCiField[]): CsvCell[][] {
   const rows: CsvCell[][] = [];
@@ -31,7 +36,7 @@ export function confirmedCiRows(producer: { code: string; name: string }, fields
       rows.push([
         producer.code, producer.name, field.splitId, field.name, enrollmentId ?? '', season.year,
         fdCicCropFor(season.cropLabel) ?? season.cropLabel,
-        t.ticketNumber, t.productCode, t.blDate, t.location, t.contractNumber, t.netBushels, t.settled, t.settledDate,
+        t.ticketNumber, t.productCode, t.blDate, t.location, t.contractNumber, CROP_YEAR_BY[t.cropYearMatch] ?? t.cropYearMatch, t.netBushels, t.settled, t.settledDate,
         ci, official.method, official.documentedBy, official.documentedAt,
       ]);
     }

@@ -88,6 +88,11 @@ public record FieldTicketsResponse
     public required string WindowFrom { get; init; }
     public required string WindowTo { get; init; }
     public required IReadOnlyList<FieldTicketResponse> Tickets { get; init; }
+    /// <summary>
+    /// The split's other tickets for the crop, outside the crop year (another contract year, or a BL date
+    /// outside the window). Not counted unless the originator adds one in the review.
+    /// </summary>
+    public IReadOnlyList<FieldTicketResponse> Others { get; init; } = [];
 }
 
 /// <summary>One delivery (a ticket's detail row for the split), as reviewed, confirmed and exported.</summary>
@@ -102,8 +107,15 @@ public record FieldTicketResponse
     public string? Location { get; init; }
     public string? ProductCode { get; init; }
     public string? ContractNumber { get; init; }
-    /// <summary>"contract" (the applied contract's crop year) or "window" (BL date in the crop year's window).</summary>
+    /// <summary>
+    /// "contract" (the applied contract's crop year), "window" (BL date in the crop year's window), "other"
+    /// (outside the crop year, offered to add) or, once confirmed, "added" (an "other" the originator added).
+    /// </summary>
     public required string CropYearMatch { get; init; }
+    /// <summary>Why an "other" ticket is outside the crop year, e.g. "On a 2025 contract".</summary>
+    public string? Note { get; init; }
+    /// <summary>The crop year whose confirmed CI already counts this ticket; it can't be counted twice.</summary>
+    public int? ConfirmedFor { get; init; }
     /// <summary>Net bushels for the split's share; null when the pounds or the conversion are missing.</summary>
     public decimal? NetBushels { get; init; }
     public required bool Settled { get; init; }

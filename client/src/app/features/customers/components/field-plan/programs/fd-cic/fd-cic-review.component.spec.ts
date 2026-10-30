@@ -36,6 +36,10 @@ describe('FdCicReviewComponent', () => {
       { ticketKey: 'P2', ticketNumber: 'P2', blDate: '2026-10-06', location: null, productCode: 'YC', contractNumber: null, cropYearMatch: 'window', netBushels: 12_000, settled: true, settledDate: '2026-11-01', status: 'Final Settled' },
       { ticketKey: 'P3', ticketNumber: 'P3', blDate: '2026-10-07', location: null, productCode: 'XX', contractNumber: null, cropYearMatch: 'window', netBushels: null, settled: false, settledDate: null, status: 'Unload' },
     ],
+    others: [
+      { ticketKey: 'E1', ticketNumber: 'E1', blDate: '2026-07-28', location: null, productCode: 'YC', contractNumber: null, cropYearMatch: 'other', note: 'BL date outside 8/1/26–7/31/27', netBushels: 6_000, settled: false, settledDate: null, status: 'Unload' },
+      { ticketKey: 'E2', ticketNumber: 'E2', blDate: '2026-07-20', location: null, productCode: 'YC', contractNumber: null, cropYearMatch: 'other', confirmedFor: 2025, netBushels: 5_000, settled: true, settledDate: null, status: 'Final Settled' },
+    ],
   });
 
   beforeEach(async () => {
@@ -78,6 +82,44 @@ describe('FdCicReviewComponent', () => {
     review.toggle('P3');
     review.yieldTyped.set(2000);
     expect(review.blocker()).toContain('over 1000 bu/ac');
+  });
+
+  it('should add a ticket from outside the crop year, count it, and take it back out', () => {
+    expect(review.addable().map(t => t.ticketKey)).toEqual(['E1', 'E2']);
+    expect(review.canAdd(review.addable()[1])).toBe(false);
+    expect(review.addNote(review.addable()[1])).toBe('Already in the 2025 confirmed CI');
+
+    review.addTicket('E1');
+    expect(review.included().map(t => t.ticketKey)).toEqual(['P1', 'P2', 'E1']);
+    expect(review.suggestedYield()).toBe(250);
+    expect(review.matchLabel(review.rows()[3])).toBe('added');
+
+    review.removeAdded('E1');
+    expect(review.included().map(t => t.ticketKey)).toEqual(['P1', 'P2']);
+    expect(review.addable().map(t => t.ticketKey)).toEqual(['E1', 'E2']);
+  });
+
+  it('should confirm an added ticket as added', async () => {
+    review.addTicket('E1');
+    review.reviewed.set(true);
+    await vi.waitFor(() => expect(review.blocker()).toBeNull());
+
+    await review.confirm();
+
+    expect(review.confirmed()?.tickets?.map(t => [t.ticketKey, t.cropYearMatch])).toEqual([['P1', 'window'], ['P2', 'window'], ['E1', 'added']]);
+  });
+
+  it('should read a null confirmedFor and note from the API as "not counted elsewhere"', async () => {
+    const fromApi = tickets();
+    fromApi.tickets = fromApi.tickets.map(t => ({ ...t, confirmedFor: null, note: null }));
+    fromApi.others = fromApi.others!.map(t => ({ ...t, confirmedFor: t.confirmedFor ?? null }));
+    vi.spyOn(TestBed.inject(InMemoryFieldPlanBackend), 'fieldTickets').mockResolvedValue(fromApi);
+    await review.loadTickets();
+
+    expect(review.included().map(t => t.ticketKey)).toEqual(['P1', 'P2']);
+    expect(review.canAdd(review.addable()[0])).toBe(true);
+    review.reviewed.set(true);
+    expect(review.blocker() ?? '').not.toContain('confirmed CI');
   });
 
   it('should go back to the suggested yield when what was typed is cleared', () => {

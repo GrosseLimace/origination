@@ -325,9 +325,15 @@ public sealed class FieldPlanService : IFieldPlanService
         var season = record.Season!;
         var field = season.Field!;
         var found = await _tickets.ForRecordAsync(record, ct);
-        var included = found.Tickets.Where(t => keys.Contains(t.TicketKey)).ToList();
+        // The crop year's tickets, plus any of the split's other tickets for the crop the originator added.
+        var included = found.Tickets.Where(t => keys.Contains(t.TicketKey))
+            .Concat(found.Others.Where(t => keys.Contains(t.TicketKey)).Select(t => t with { CropYearMatch = "added" }))
+            .ToList();
         if (included.Count != keys.Count)
             throw new BusinessException("Some of those tickets are no longer this field's in CTRM; reopen the review and try again.", "FIELD_PLAN_STALE_TICKETS");
+        if (included.FirstOrDefault(t => t.ConfirmedFor is not null) is { } counted)
+            throw new BusinessException($"Ticket {counted.TicketNumber} is already counted in this field's {counted.ConfirmedFor} confirmed CI; leave it out.",
+                "FIELD_PLAN_TICKET_ALREADY_COUNTED", StatusCodes.Status409Conflict);
         if (included.FirstOrDefault(t => t.NetBushels is null) is { } unconverted)
             throw new BusinessException($"Ticket {unconverted.TicketNumber} has no bushel figure, so it can't be counted; leave it out or ask for its product's conversion.",
                 "FIELD_PLAN_TICKET_NO_BUSHELS", StatusCodes.Status422UnprocessableEntity);

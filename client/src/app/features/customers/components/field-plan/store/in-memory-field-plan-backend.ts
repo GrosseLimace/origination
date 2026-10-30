@@ -153,7 +153,8 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
 
   /**
    * PROTOTYPE ONLY: made-up deliveries for a demo without CTRM. Four tickets under the split in the crop
-   * year's harvest, adding up to about the field's expected production; the second is settled.
+   * year's harvest, adding up to about the field's expected production; the second is settled. One more,
+   * delivered in July before the window opens, is offered to add.
    */
   async fieldTickets(id: string): Promise<FieldTickets> {
     const record = this.records[this.indexOf(this.records, r => r.id === id, 'program record')];
@@ -168,7 +169,13 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
       cropYearMatch: i === 1 ? 'contract' : 'window', netBushels: each + i * 7,
       settled: i === 1, settledDate: i === 1 ? day(28) : null, status: i === 1 ? 'Final Settled' : 'Unload',
     }));
-    return copy({ splitId: field.splitId, cropYear: season.year, cropGroup: null, windowFrom: `${season.year}-08-01`, windowTo: `${season.year + 1}-07-31`, tickets });
+    const others: FieldTicket[] = [{
+      ticketKey: `${field.splitId}-${season.year}-early`, ticketNumber: `S${season.year % 100}${field.splitId.slice(-2)}0`,
+      blDate: `${season.year}-07-28`, location: 'Sample elevator', productCode: null, contractNumber: null,
+      cropYearMatch: 'other', note: `BL date outside 8/1/${season.year % 100}–7/31/${(season.year + 1) % 100}`,
+      netBushels: Math.round(each / 3), settled: false, settledDate: null, status: 'Unload',
+    }];
+    return copy({ splitId: field.splitId, cropYear: season.year, cropGroup: null, windowFrom: `${season.year}-08-01`, windowTo: `${season.year + 1}-07-31`, tickets, others });
   }
 
   /** As the server: the actual yield set, rescored (here: the program's freeze) and locked, the confirmed CI kept as the official result. */
@@ -179,8 +186,14 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
     if (current.official) throw new Error('This field\'s CI is already confirmed; unlock it to review it again.');
     const keys = new Set(ticketKeys.map(k => k.trim()).filter(Boolean));
     if (!keys.size) throw new Error('Include at least one ticket.');
-    const included = (await this.fieldTickets(id)).tickets.filter(t => keys.has(t.ticketKey));
+    const found = await this.fieldTickets(id);
+    const included = [
+      ...found.tickets.filter(t => keys.has(t.ticketKey)),
+      ...(found.others ?? []).filter(t => keys.has(t.ticketKey)).map(t => ({ ...t, cropYearMatch: 'added' as const })),
+    ];
     if (included.length !== keys.size) throw new Error('Some of those tickets are no longer this field\'s; reopen the review and try again.');
+    const counted = included.find(t => t.confirmedFor != null);
+    if (counted) throw new Error(`Ticket ${counted.ticketNumber} is already counted in this field's ${counted.confirmedFor} confirmed CI; leave it out.`);
     const unweighed = included.find(t => t.netBushels === null);
     if (unweighed) throw new Error(`Ticket ${unweighed.ticketNumber} has no bushel figure, so it can't be counted; leave it out.`);
     const season = this.seasons.find(s => s.id === current.seasonId)!;

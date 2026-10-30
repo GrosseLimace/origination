@@ -28,6 +28,9 @@ public interface IFieldPlanRepository
     /// <summary>The field's live seasons in a crop year.</summary>
     Task<List<ProducerFieldSeason>> GetSeasonsForFieldAsync(int producerFieldId, int cropYear, CancellationToken cancellationToken);
 
+    /// <summary>The field's records, any year, that hold a confirmed CI (Official), with their seasons.</summary>
+    Task<List<FieldProgramRecord>> GetConfirmedRecordsForFieldAsync(int producerFieldId, CancellationToken cancellationToken);
+
     Task<List<FieldProgramRecord>> GetRecordsForSeasonAsync(int seasonId, CancellationToken cancellationToken);
 
     /// <summary>A record with its season and field.</summary>

@@ -38,7 +38,7 @@ public class FieldPlanServiceTests
     private const string User = "tester@scoular.com";
 
     private static readonly Lazy<FdCicService> FdCic = new(() => new FdCicService(
-        new FdCicSettings(new Dictionary<int, string> { [2026] = "1.2" }), [new FdCicMethodV1()], NullLogger<FdCicService>.Instance));
+        new FdCicSettings(new Dictionary<int, string> { [2025] = "1.2", [2026] = "1.2" }), [new FdCicMethodV1()], NullLogger<FdCicService>.Instance));
 
     private static readonly JsonElement StoryCorn = Json("""
         { "expectedYield": 190, "actualYield": 200, "syntheticN": 180, "niFraction": 0.5,
@@ -572,6 +572,96 @@ public class FieldPlanServiceTests
             new CreateFieldSeasonRequest { FieldKey = "TATOB43", PlantingIntentionId = 999, Year = 2026, CropLabel = "Back 40", Acres = 10 }, default));
 
         Assert.Equal("FIELD_PLAN_FIELD_ON_ROW", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Tickets_OutsideTheCropYear_AreOfferedToAdd_AndConfirmKeepsThemAsAdded()
+    {
+        var h = New();
+        var (_, record) = await CornField(h);
+        h.CtrmTickets.AddRange([Delivery("2026-10-05", 56_000), Delivery("2026-07-15", 112_000), Delivery("2026-10-06", 60_000, product: "YSB")]);
+
+        var found = await h.Tickets.ForRecordAsync(int.Parse(record.Id), default);
+        var early = Assert.Single(found.Others);
+        Assert.Equal(("other", "BL date outside 8/1/26–7/31/27"), (early.CropYearMatch, early.Note));
+
+        var confirmed = await h.Service.ConfirmAsync(int.Parse(record.Id), new ConfirmFieldProgramRecordRequest
+        {
+            ActualYield = 200, TicketKeys = [found.Tickets[0].TicketKey, early.TicketKey], ReviewedWithProducer = true,
+        }, default);
+
+        var tickets = confirmed.Official!.Value.GetProperty("tickets");
+        Assert.Equal(new[] { "window", "added" }, tickets.EnumerateArray().Select(t => t.GetProperty("cropYearMatch").GetString()));
+        Assert.Equal(3000m, confirmed.Official.Value.GetProperty("bushels").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Tickets_AlreadyInAnotherYearsConfirmedCi_AreMarked_AndCantBeCountedAgain()
+    {
+        var h = New();
+        h.Db.PlantingIntentions.Add(new PlantingIntention { Id = 998, CustomerId = Tobin, TradeUnit = "2190", PlantingYear = 2025, Crop = "YC", Acres = 100, CreatedBy = "x" });
+        h.Db.SaveChanges();
+        var (_, record) = await CornField(h);
+        var lastYear = await h.Service.AddSeasonAsync(new CreateFieldSeasonRequest { FieldKey = "TATOB43", PlantingIntentionId = 998, Year = 2025, CropLabel = "Corn", Acres = 120 }, default);
+        var lastYearRecord = await h.Service.AddRecordAsync(new CreateFieldProgramRecordRequest { SeasonId = lastYear.Id, ProgramKey = FieldPlanPrograms.FdCic, Data = StoryCorn }, default);
+        h.CtrmTickets.Add(Delivery("2026-07-15", 56_000)); // in 2025's window
+        var lastYearKey = (await h.Tickets.ForRecordAsync(int.Parse(lastYearRecord.Id), default)).Tickets.Single().TicketKey;
+        await h.Service.ConfirmAsync(int.Parse(lastYearRecord.Id), new ConfirmFieldProgramRecordRequest { ActualYield = 200, TicketKeys = [lastYearKey], ReviewedWithProducer = true }, default);
+
+        var other = Assert.Single((await h.Tickets.ForRecordAsync(int.Parse(record.Id), default)).Others);
+        var ex = await Assert.ThrowsAsync<BusinessException>(() => h.Service.ConfirmAsync(int.Parse(record.Id),
+            new ConfirmFieldProgramRecordRequest { ActualYield = 200, TicketKeys = [other.TicketKey], ReviewedWithProducer = true }, default));
+
+        Assert.Equal(2025, other.ConfirmedFor);
+        Assert.Equal("FIELD_PLAN_TICKET_ALREADY_COUNTED", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task ACountedTicket_StaysCounted_WhenCtrmCorrectsItsBlDate_AndIsFreedByUnlocking()
+    {
+        var h = New();
+        h.Db.PlantingIntentions.Add(new PlantingIntention { Id = 998, CustomerId = Tobin, TradeUnit = "2190", PlantingYear = 2025, Crop = "YC", Acres = 100, CreatedBy = "x" });
+        h.Db.SaveChanges();
+        var (_, record) = await CornField(h);
+        var lastYear = await h.Service.AddSeasonAsync(new CreateFieldSeasonRequest { FieldKey = "TATOB43", PlantingIntentionId = 998, Year = 2025, CropLabel = "Corn", Acres = 120 }, default);
+        var lastYearRecord = await h.Service.AddRecordAsync(new CreateFieldProgramRecordRequest { SeasonId = lastYear.Id, ProgramKey = FieldPlanPrograms.FdCic, Data = StoryCorn }, default);
+        var delivered = Delivery("2026-07-15", 56_000);
+        h.CtrmTickets.Add(delivered);
+        var key = (await h.Tickets.ForRecordAsync(int.Parse(lastYearRecord.Id), default)).Tickets.Single().TicketKey;
+        await h.Service.ConfirmAsync(int.Parse(lastYearRecord.Id), new ConfirmFieldProgramRecordRequest { ActualYield = 200, TicketKeys = [key], ReviewedWithProducer = true }, default);
+
+        // CTRM corrects the BL date into 2026's window: a new key, the same ticket number.
+        var corrected = Delivery("2026-08-03", 56_000);
+        corrected.TicketNumber = delivered.TicketNumber;
+        h.CtrmTickets.Clear();
+        h.CtrmTickets.Add(corrected);
+        Assert.Equal(2025, (await h.Tickets.ForRecordAsync(int.Parse(record.Id), default)).Tickets.Single().ConfirmedFor);
+
+        await h.Service.ReopenAsync(int.Parse(lastYearRecord.Id), "ticket belongs to 2026", default);
+        Assert.Null((await h.Tickets.ForRecordAsync(int.Parse(record.Id), default)).Tickets.Single().ConfirmedFor);
+    }
+
+    [Fact]
+    public async Task Tickets_WithoutAConversion_HaveNoBushelFigure_NeverAStandardWeight()
+    {
+        var h = New();
+        var (_, record) = await CornField(h);
+        h.CtrmTickets.Add(Delivery("2026-10-05", 56_000, product: "YCO")); // corn, but ODS has no conversion for it
+
+        var ticket = (await h.Tickets.ForRecordAsync(int.Parse(record.Id), default)).Tickets.Single();
+
+        Assert.Null(ticket.NetBushels);
+    }
+
+    [Fact]
+    public void TheShippedTicketWindow_StartsCanolaInJune()
+    {
+        var settings = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(RepoRoot(), "api", "GrainOriginatorPortal.Api", "appsettings.json")).Build();
+        var tickets = new FieldTicketService(Mock.Of<IFieldPlanRepository>(), Mock.Of<IFieldTicketReader>(), Mock.Of<ICommodityRepository>(), settings);
+
+        Assert.Equal((new DateOnly(2026, 6, 1), new DateOnly(2027, 5, 31)), tickets.Window("canola", 2026));
+        Assert.Equal((new DateOnly(2026, 8, 1), new DateOnly(2027, 7, 31)), tickets.Window("corn", 2026));
     }
 
     [Fact]

@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { DialogComponent, DialogContentComponent, DialogDescriptionComponent, DialogFooterComponent, DialogHeaderComponent, DialogTitleComponent } from '@shared/components/dialog/dialog.component';
 import { FdCicApiService } from '@core/services/fd-cic-api.service';
 import { ToastService } from '@core/services/toast.service';
-import { FdCicData, FieldTickets } from '@models';
+import { FdCicData, FieldTicket, FieldTickets } from '@models';
 import { downloadCsv } from '@shared/utils/csv';
 import { FieldPlanStore } from '../../store/field-plan.store';
 import { COVER_LABELS, TILLAGE_LABELS, fdCicRequest } from './fd-cic.data';
@@ -98,13 +98,43 @@ const MAX_YIELD = 1000;
             @default {
               @if (ticketData(); as t) {
                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400"
-                   [title]="'Delivered under ' + t.splitId + ', on a ' + t.cropYear + ' contract or BL-dated ' + (t.windowFrom | date:'MM/dd/yy') + ' to ' + (t.windowTo | date:'MM/dd/yy') + '. Untick any that are not this field\\'s.'">
+                   [title]="'Delivered under ' + t.splitId + ', on a ' + t.cropYear + ' contract or BL-dated ' + (t.windowFrom | date:'MM/dd/yy') + ' to ' + (t.windowTo | date:'MM/dd/yy') + '. Untick any that are not this field\\'s, or add one from outside the crop year below.'">
                   Under {{ t.splitId }} · {{ t.cropYear }} crop year · settled included <span class="cursor-help underline decoration-dotted">how?</span>
                 </p>
-                @if (t.tickets.length) {
-                  <ng-container *ngTemplateOutlet="ticketTable; context: { $implicit: t.tickets, pick: true }" />
+                @if (rows().length) {
+                  <ng-container *ngTemplateOutlet="ticketTable; context: { $implicit: rows(), pick: true }" />
                 } @else {
                   <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">No tickets under {{ t.splitId }} for this crop year yet.</p>
+                }
+                @if (addable().length) {
+                  <div class="mt-3">
+                    <button type="button" class="text-sm text-scoular-green-accessible dark:text-scoular-green underline bg-transparent border-0 p-0"
+                            [attr.aria-expanded]="showOthers()" (click)="showOthers.set(!showOthers())">
+                      {{ showOthers() ? 'Hide' : '+ Add a ticket from outside the crop year' }} ({{ addable().length }})
+                    </button>
+                    @if (showOthers()) {
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {{ t.splitId }}'s other {{ t.cropGroup ?? '' }} tickets, newest first: on another year's contract, or BL-dated outside the window. Add one only if it's this crop year's.
+                      </p>
+                      <table class="mt-1 min-w-full text-sm">
+                        <tbody>
+                          @for (tk of addable(); track tk.ticketKey) {
+                            <tr class="border-t border-gray-100 dark:border-gray-800">
+                              <td class="py-1.5 pr-3 font-medium text-gray-900 dark:text-white">{{ tk.ticketNumber }}</td>
+                              <td class="py-1.5 pr-3 whitespace-nowrap">{{ tk.blDate | date:'MM/dd/yy' }}</td>
+                              <td class="py-1.5 pr-3 whitespace-nowrap">{{ tk.contractNumber ?? '—' }}</td>
+                              <td class="py-1.5 pr-3 text-right tabular-nums">{{ tk.netBushels !== null ? (tk.netBushels | number:'1.0-0') : '?' }}</td>
+                              <td class="py-1.5 pr-3 text-xs text-gray-500 dark:text-gray-400">{{ addNote(tk) }}</td>
+                              <td class="py-1.5 text-right">
+                                <button type="button" class="rounded border border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs bg-transparent hover:border-scoular-green-accessible disabled:opacity-40"
+                                        [disabled]="!canAdd(tk)" (click)="addTicket(tk.ticketKey)" [attr.aria-label]="'Add ticket ' + tk.ticketNumber">Add</button>
+                              </td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    }
+                  </div>
                 }
               }
             }
@@ -140,9 +170,13 @@ const MAX_YIELD = 1000;
                 <td class="py-1.5 pr-3">{{ tk.location ?? '—' }}</td>
                 <td class="py-1.5 pr-3 whitespace-nowrap">
                   {{ tk.contractNumber ?? '—' }}
-                  <span class="ml-1 rounded px-1.5 py-0.5 text-[11px] bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
-                        [title]="tk.cropYearMatch === 'contract' ? 'Matched by the contract\\'s crop year' : 'Matched by its BL date in the crop year window'">
-                    {{ tk.cropYearMatch === 'contract' ? 'contract yr' : 'date' }}</span>
+                  <span class="ml-1 rounded px-1.5 py-0.5 text-[11px]" [title]="matchTitle(tk)"
+                        [class]="isAdded(tk) ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'">
+                    {{ matchLabel(tk) }}</span>
+                  @if (pick && tk.cropYearMatch === 'other') {
+                    <button type="button" class="ml-1 text-xs underline bg-transparent border-0 p-0 text-gray-500 dark:text-gray-400"
+                            (click)="removeAdded(tk.ticketKey)" [attr.aria-label]="'Remove added ticket ' + tk.ticketNumber">remove</button>
+                  }
                 </td>
                 <td class="py-1.5 pr-3 text-right tabular-nums">{{ tk.netBushels !== null ? (tk.netBushels | number:'1.0-0') : '?' }}</td>
                 <td class="py-1.5 whitespace-nowrap">
@@ -235,12 +269,25 @@ export class FdCicReviewComponent implements OnInit {
   readonly tickets = signal<TicketsState>({ status: 'loading' });
   readonly ticketData = computed(() => { const t = this.tickets(); return t.status === 'done' ? t.data : null; });
   readonly ticketsError = computed(() => { const t = this.tickets(); return t.status === 'error' ? t.message : ''; });
-  /** Tickets left out. Every ticket with a bushel figure starts included; one without can't be counted. */
+  /** The split's other tickets for the crop the originator added from outside the crop year. */
+  readonly added = signal(new Set<string>());
+  readonly showOthers = signal(false);
+  /** The table: the crop year's tickets, then the added ones. */
+  readonly rows = computed(() => {
+    const t = this.ticketData();
+    return t ? [...t.tickets, ...(t.others ?? []).filter(o => this.added().has(o.ticketKey))] : [];
+  });
+  /** Other tickets not added yet, offered under the table. */
+  readonly addable = computed(() => (this.ticketData()?.others ?? []).filter(o => !this.added().has(o.ticketKey)));
+  /**
+   * Tickets left out. Every countable ticket starts included; one with no bushel figure, or already in
+   * another year's confirmed CI, starts out and can't be confirmed.
+   */
   readonly excluded = signal(new Set<string>());
-  readonly included = computed(() => (this.ticketData()?.tickets ?? []).filter(t => !this.excluded().has(t.ticketKey)));
+  readonly included = computed(() => this.rows().filter(t => !this.excluded().has(t.ticketKey)));
   readonly includedBushels = computed(() => this.included().reduce((sum, t) => sum + (t.netBushels ?? 0), 0));
-  /** The tickets the header box ticks: those with a bushel figure. */
-  private readonly countable = computed(() => (this.ticketData()?.tickets ?? []).filter(t => t.netBushels !== null));
+  /** The tickets the header box ticks: those that can be counted. */
+  private readonly countable = computed(() => this.rows().filter(t => this.canCount(t)));
   readonly allIncluded = computed(() => this.countable().length > 0 && this.countable().every(t => !this.excluded().has(t.ticketKey)));
   readonly someIncluded = computed(() => !this.allIncluded() && this.included().length > 0);
 
@@ -260,8 +307,8 @@ export class FdCicReviewComponent implements OnInit {
     this.tickets.set({ status: 'loading' });
     try {
       const data = await this.store.fieldTickets(this.recordId());
-      // A ticket with no bushel figure can't be counted, so it starts left out.
-      this.excluded.set(new Set(data.tickets.filter(t => t.netBushels === null).map(t => t.ticketKey)));
+      this.excluded.set(new Set(data.tickets.filter(t => !this.canCount(t)).map(t => t.ticketKey)));
+      this.added.set(new Set());
       this.tickets.set({ status: 'done', data });
     } catch (e) {
       this.tickets.set({ status: 'error', message: e instanceof Error ? e.message : 'The tickets couldn\'t be read from CTRM.' });
@@ -276,11 +323,51 @@ export class FdCicReviewComponent implements OnInit {
     });
   }
 
-  /** The header box: include every ticket with a bushel figure, or (when they're all in) none. */
+  /** The header box: include every countable ticket, or (when they're all in) none. */
   toggleAll(): void {
-    const all = this.ticketData()?.tickets ?? [];
-    const leaveOut = this.allIncluded() ? all : all.filter(t => t.netBushels === null);
+    const all = this.rows();
+    const leaveOut = this.allIncluded() ? all : all.filter(t => !this.canCount(t));
     this.excluded.set(new Set(leaveOut.map(t => t.ticketKey)));
+  }
+
+  /** A ticket can be counted when it has a bushel figure and no other confirmed CI counts it. */
+  canCount(t: FieldTicket): boolean {
+    return t.netBushels !== null && t.confirmedFor == null;
+  }
+
+  canAdd(t: FieldTicket): boolean {
+    return this.canCount(t);
+  }
+
+  /** Adds one of the split's other tickets to this crop year's, included. */
+  addTicket(key: string): void {
+    this.added.update(s => new Set(s).add(key));
+    this.excluded.update(s => { const next = new Set(s); next.delete(key); return next; });
+  }
+
+  removeAdded(key: string): void {
+    this.added.update(s => { const next = new Set(s); next.delete(key); return next; });
+    this.excluded.update(s => { const next = new Set(s); next.delete(key); return next; });
+  }
+
+  isAdded(t: FieldTicket): boolean {
+    return t.cropYearMatch === 'other' || t.cropYearMatch === 'added';
+  }
+
+  matchLabel(t: FieldTicket): string {
+    return this.isAdded(t) ? 'added' : t.cropYearMatch === 'contract' ? 'contract yr' : 'date';
+  }
+
+  matchTitle(t: FieldTicket): string {
+    if (this.isAdded(t)) return `Added by the originator${t.note ? ': ' + t.note.toLowerCase() : ''}`;
+    return t.cropYearMatch === 'contract' ? 'Matched by the contract\'s crop year' : 'Matched by its BL date in the crop year window';
+  }
+
+  /** Why an other ticket is outside the crop year, and why it can't be added when it can't. */
+  addNote(t: FieldTicket): string {
+    if (t.confirmedFor != null) return `Already in the ${t.confirmedFor} confirmed CI`;
+    if (t.netBushels === null) return 'No bushel figure';
+    return t.note ?? '';
   }
 
   sumBushels(rows: readonly { netBushels: number | null }[]): number {
@@ -354,6 +441,8 @@ export class FdCicReviewComponent implements OnInit {
     if (!this.included().length) return 'Include at least one ticket.';
     const unweighed = this.included().find(t => t.netBushels === null);
     if (unweighed) return `Ticket ${unweighed.ticketNumber} has no bushel figure; leave it out.`;
+    const counted = this.included().find(t => t.confirmedFor != null);
+    if (counted) return `Ticket ${counted.ticketNumber} is already in the ${counted.confirmedFor} confirmed CI; leave it out.`;
     const y = this.actualYield();
     if (!y || y <= 0) return 'Enter the actual yield.';
     if (y > MAX_YIELD) return `An actual yield over ${MAX_YIELD} bu/ac can't be right; check it.`;

@@ -134,8 +134,15 @@ export interface FieldTicket {
   location: string | null;
   productCode: string | null;
   contractNumber: string | null;
-  /** How the ticket was matched to the crop year: the applied contract's year, or its BL date in the window. */
-  cropYearMatch: 'contract' | 'window';
+  /**
+   * How the ticket was matched to the crop year: the applied contract's year, or its BL date in the window.
+   * 'other' is outside the crop year (offered to add); once confirmed, an added one is 'added'.
+   */
+  cropYearMatch: 'contract' | 'window' | 'other' | 'added';
+  /** Why an 'other' ticket is outside the crop year, e.g. "On a 2025 contract". */
+  note?: string | null;
+  /** The crop year whose confirmed CI already counts this ticket; it can't be counted twice. */
+  confirmedFor?: number | null;
   /** The split's net bushels; null when CTRM's pounds or the conversion are missing. */
   netBushels: number | null;
   settled: boolean;
@@ -152,6 +159,8 @@ export interface FieldTickets {
   windowFrom: string;
   windowTo: string;
   tickets: FieldTicket[];
+  /** The split's other tickets for the crop, outside the crop year; counted only when the originator adds one. */
+  others?: FieldTicket[];
 }
 
 /** One sustainability program on one field season. `data` is the program's own shape. */

@@ -18,12 +18,6 @@ public static class FieldPlanCropGroups
         ["canola"] = ["canola", "canp", "casm"],
     };
 
-    /// <summary>Pounds per bushel, used only when ODS has no conversion for a code.</summary>
-    public static readonly IReadOnlyDictionary<string, decimal> StandardLbsPerBushel = new Dictionary<string, decimal>
-    {
-        ["wheat"] = 60m, ["corn"] = 56m, ["soybeans"] = 60m, ["sorghum"] = 56m, ["canola"] = 50m,
-    };
-
     private static readonly Dictionary<string, string> ByToken = Codes
         .SelectMany(g => g.Value.Select(t => (Token: t, Group: g.Key)).Append((Token: g.Key, Group: g.Key)))
         .GroupBy(x => x.Token)
