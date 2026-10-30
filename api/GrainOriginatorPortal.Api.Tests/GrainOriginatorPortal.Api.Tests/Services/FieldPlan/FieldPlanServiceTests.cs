@@ -654,14 +654,15 @@ public class FieldPlanServiceTests
     }
 
     [Fact]
-    public void TheShippedTicketWindow_StartsCanolaInJune()
+    public void TheShippedTicketWindow_IsAug1ToJul31_ForEveryCrop()
     {
+        // Decided 2026-10-30: one window for every crop, canola included; a ticket outside it is added in the review.
         var settings = new ConfigurationBuilder()
             .AddJsonFile(Path.Combine(RepoRoot(), "api", "GrainOriginatorPortal.Api", "appsettings.json")).Build();
         var tickets = new FieldTicketService(Mock.Of<IFieldPlanRepository>(), Mock.Of<IFieldTicketReader>(), Mock.Of<ICommodityRepository>(), settings);
 
-        Assert.Equal((new DateOnly(2026, 6, 1), new DateOnly(2027, 5, 31)), tickets.Window("canola", 2026));
-        Assert.Equal((new DateOnly(2026, 8, 1), new DateOnly(2027, 7, 31)), tickets.Window("corn", 2026));
+        foreach (var crop in FieldPlanCropGroups.Codes.Keys)
+            Assert.Equal((new DateOnly(2026, 8, 1), new DateOnly(2027, 7, 31)), tickets.Window(crop, 2026));
     }
 
     [Fact]

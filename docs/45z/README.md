@@ -162,7 +162,7 @@ result.
    - its product code is the crop row's crop (`FieldPlanCropGroups`, ported from the client's `CROP_CODE_MAP`, with a test that keeps them in step);
    - it's in the crop year. CTRM tickets carry no crop year, so:
      - a ticket on one of the producer's or the split's contracts takes **that contract's crop year**;
-     - any other ticket counts when its **BL date** is in the crop year's window: `FieldPlan:TicketWindow:{crop}:From/To` (MM-dd), default `08-01` to `07-31` of the next year. **Canola** runs `06-01` to `05-31` (appsettings.json), so a June–July winter canola harvest counts in its own crop year.
+     - any other ticket counts when its **BL date** is in the crop year's window: `FieldPlan:TicketWindow:{crop}:From/To` (MM-dd), default `08-01` to `07-31` of the next year. The same window applies to every crop, canola included; a ticket outside it (an early canola harvest, say) is added in the review.
    - Net bushels are the split's net pounds ÷ the ODS conversion for the product code. With no conversion there is no figure ("?"), as everywhere in the portal: the ticket starts left out and can't be confirmed. (The standard-weight fallback was removed 2026-10-30.)
 3. The originator and the producer go over the inputs and the tickets. Any ticket that isn't the field's can be unticked. **Adding a ticket** (2026-10-30): "+ Add a ticket from outside the crop year" lists the split's other tickets for the crop (on another year's contract, or BL-dated outside the window), newest first, with the reason each is outside. An added ticket joins the table tagged *added* and is kept as `cropYearMatch: "added"` in the confirmed CI and as "Added in review" in the CSV. Only the split's own tickets for the crop can be added, and a ticket another of the field's confirmed CIs already counts (another crop year) is marked and can't be added or confirmed, so no ticket is counted twice. The actual yield is suggested as included bushels ÷ acres and can be edited. The CI at that yield shows live.
 4. After harvest, with "Reviewed these inputs and tickets with the producer after harvest" ticked, **Confirm CI** (`POST .../records/{id}/confirm`):
@@ -292,7 +292,7 @@ On 2026-10-30 the branch was reviewed against the Scoular standards with the mar
 6. **Server tidy-ups:** interfaces in their own files, status names as shared constants, full
    `ProducesResponseType` lists, `cancellationToken` naming, and ticket-window settings checked at startup.
 7. **Data:** ticket product codes outside the crop lists are dropped silently. (Done 2026-10-30: the standard-weight
-   fallback was removed, canola has its own window, and the originator can add a ticket the crop year rule missed.)
+   fallback was removed, and the originator can add a ticket the crop year rule missed, so one window serves every crop.)
 
 ## Legal
 
