@@ -109,7 +109,13 @@ describe('matchHelpQuestion against the shipped content', () => {
     ['print a producer report', 'print-producer-report'],
     ['contract is missing', 'contract-missing'],
     ['ticket not showing up', 'ticket-missing'],
-    ['I changed the address in master data and it is not updated', 'data-change-not-showing']
+    ['I changed the address in master data and it is not updated', 'data-change-not-showing'],
+    ['how do I set a comparison bid', 'bid-compare'],
+    ['how do I share my bid sheet with others', 'bid-share'],
+    ['add a location that is not getting bids from barchart', 'bid-add-location'],
+    ["I don't see set as reference when I click a location", 'bid-reference-missing'],
+    ['where is my bid sheet list', 'bid-sheet-list-where'],
+    ["I don't see a share icon", 'bid-share-icon-missing']
   ])('"%s" answers with %s', (question, expected) => {
     expect(answer(question)).toEqual({ kind: 'answer', id: expected });
   });

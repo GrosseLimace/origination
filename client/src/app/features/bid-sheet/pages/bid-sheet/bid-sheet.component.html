@@ -42,7 +42,7 @@
                  and it was previously only visible with the side panel open. The panel's own sheet bar
                  keeps the full menu (share / rename / delete) -- this is switch-and-see. -->
             @if (sheets().length > 0) {
-              <app-sheet-multi-select
+              <app-sheet-multi-select data-help-anchor="bid-sheet-picker"
                 [sheets]="sheets()" [selectedIds]="selectedSheetIds()"
                 [showAllOption]="true" [showingAll]="mapScope() === 'all'" [compact]="true"
                 [showRowActions]="true"
@@ -120,7 +120,7 @@
 
           <!-- Floating action buttons (bottom-left) -->
           <div class="absolute bottom-4 left-4 z-[1000] flex items-center gap-2">
-            <button
+            <button data-help-anchor="bid-sheet-add"
               (click)="startAddLocation('map')"
               class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg shadow-lg transition-colors"
             >
@@ -149,7 +149,7 @@
                 Map
               }
             </button>
-            <button
+            <button data-help-anchor="bid-sheet-bids"
               (click)="togglePanel()"
               class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg shadow-lg transition-colors"
               [ngClass]="showPanel() ? 'text-white bg-scoular-blue hover:bg-scoular-blue-dark' : 'text-white bg-gray-700 hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500'"

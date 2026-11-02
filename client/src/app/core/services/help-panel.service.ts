@@ -39,7 +39,10 @@ const ANCHOR_HOME: Record<string, string> = {
   'trade-unit-selector': '/',
   'query-library': '/build-list',
   'set-season-targets': '/dashboard',
-  'producer-search': '/'
+  'producer-search': '/',
+  'bid-sheet-picker': '/bid-sheet',
+  'bid-sheet-bids': '/bid-sheet',
+  'bid-sheet-add': '/bid-sheet'
 };
 
 /**
