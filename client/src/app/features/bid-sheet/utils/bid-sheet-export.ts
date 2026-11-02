@@ -1,4 +1,5 @@
 import type * as ExcelJSNamespace from 'exceljs';
+import { downloadBlob } from '@shared/utils/download';
 
 /**
  * Export of one bid sheet to an Excel workbook: the Edit Bids grid, as displayed.
@@ -213,15 +214,5 @@ export async function writeBidSheetWorkbook(model: BidSheetExportModel, ExcelJS:
 
 /** Hands the bytes to the browser as a download. */
 export function downloadWorkbook(bytes: ArrayBuffer, fileName: string): void {
-  const blob = new Blob([bytes], { type: XLSX_MIME });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  a.rel = 'noopener';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  // Revoked on a tick, not immediately: some browsers start the download after click() returns.
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadBlob(new Blob([bytes], { type: XLSX_MIME }), fileName);
 }

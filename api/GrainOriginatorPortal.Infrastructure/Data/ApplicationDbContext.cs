@@ -75,6 +75,12 @@ public class ApplicationDbContext : DbContext
     /// <summary>Read model over dbo.vw_BarchartLocation — one row per elevator listing, for the picker.</summary>
     public DbSet<BarchartLocationSummary> BarchartLocationSummaries => Set<BarchartLocationSummary>();
 
+    // Field plan & sustainability programs; see docs/application-context/Field Plan - Database Plan.md.
+    public DbSet<ProducerField> ProducerFields => Set<ProducerField>();
+    public DbSet<ProducerFieldSeason> ProducerFieldSeasons => Set<ProducerFieldSeason>();
+    public DbSet<FieldProgramRecord> FieldProgramRecords => Set<FieldProgramRecord>();
+    public DbSet<ProgramEnrollment> ProgramEnrollments => Set<ProgramEnrollment>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -1378,6 +1384,153 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ChangedByUser).HasMaxLength(128).IsRequired(false);
             entity.Property(e => e.ChangeStamp).IsRequired(false);
             entity.HasIndex(e => e.LocationId).IsUnique().HasDatabaseName("IX_MbpLocationSynonym_LocationId");
+        });
+
+        // ── Field plan & sustainability programs ──────────────────────────────────
+        // See docs/application-context/Field Plan - Database Plan.md. Fields are CTRM splits; program
+        // inputs and frozen estimates are JSON because they differ by program and by USDA version.
+
+        modelBuilder.Entity<ProducerField>(entity =>
+        {
+            entity.ToTable("ProducerField", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
+            entity.Property(e => e.SplitId).HasColumnName("SplitId").HasMaxLength(20).IsRequired();
+            entity.Property(e => e.Name).HasColumnName("Name").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.SplitPercent).HasColumnName("SplitPercent").HasColumnType("decimal(7,3)").IsRequired();
+            entity.Property(e => e.EffectiveDate).HasColumnName("EffectiveDate").HasColumnType("date").IsRequired(false);
+            entity.Property(e => e.State).HasColumnName("State").HasMaxLength(2).IsRequired(false);
+            entity.Property(e => e.County).HasColumnName("County").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.SplitSource).HasColumnName("SplitSource").HasMaxLength(10).HasDefaultValue("Manual").IsRequired();
+            entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
+            entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
+
+            entity.HasOne(e => e.Customer)
+                  .WithMany()
+                  .HasForeignKey(e => e.CustomerId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_ProducerField_Customer_CustomerId");
+
+            // A split is one producer's field, so it can be claimed once across all producers.
+            entity.HasIndex(e => e.SplitId).IsUnique().HasDatabaseName("UQ_ProducerField_SplitId");
+            entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_ProducerField_CustomerId");
+        });
+
+        modelBuilder.Entity<ProducerFieldSeason>(entity =>
+        {
+            entity.ToTable("ProducerFieldSeason", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.ProducerFieldId).HasColumnName("ProducerFieldId").IsRequired();
+            entity.Property(e => e.PlantingIntentionId).HasColumnName("PlantingIntentionId").IsRequired();
+            entity.Property(e => e.CropYear).HasColumnName("CropYear").IsRequired();
+            entity.Property(e => e.CropLabel).HasColumnName("CropLabel").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Acres).HasColumnName("Acres").HasColumnType("decimal(10,2)").IsRequired(false);
+            entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
+            entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.IsDeleted).HasColumnName("IsDeleted").HasDefaultValue(false).IsRequired();
+            entity.Property(e => e.DeletedAt).HasColumnName("DeletedAt").IsRequired(false);
+            entity.Property(e => e.DeletedBy).HasColumnName("DeletedBy").HasMaxLength(255).IsRequired(false);
+
+            // Soft delete once, on the model, as for planting intentions (see the comment there).
+            entity.HasQueryFilter(e => !e.IsDeleted);
+
+            entity.HasOne(e => e.Field)
+                  .WithMany()
+                  .HasForeignKey(e => e.ProducerFieldId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_ProducerFieldSeason_ProducerField_ProducerFieldId");
+            // No navigation: the crop row is read through the planting-intentions API, and its soft-delete
+            // filter shouldn't hide a field's history.
+            entity.HasOne<PlantingIntention>()
+                  .WithMany()
+                  .HasForeignKey(e => e.PlantingIntentionId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_ProducerFieldSeason_ProducerPlantingIntentions_PlantingIntentionId");
+
+            entity.HasIndex(e => e.ProducerFieldId).HasDatabaseName("IX_ProducerFieldSeason_ProducerFieldId");
+            entity.HasIndex(e => e.PlantingIntentionId).HasDatabaseName("IX_ProducerFieldSeason_PlantingIntentionId");
+        });
+
+        modelBuilder.Entity<FieldProgramRecord>(entity =>
+        {
+            entity.ToTable("FieldProgramRecord", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.ProducerFieldSeasonId).HasColumnName("ProducerFieldSeasonId").IsRequired();
+            entity.Property(e => e.ProgramKey).HasColumnName("ProgramKey").HasMaxLength(30).IsRequired();
+            entity.Property(e => e.Status).HasColumnName("Status").HasMaxLength(10).IsRequired();
+            entity.Property(e => e.Data).HasColumnName("Data").IsRequired();
+            entity.Property(e => e.CopiedFromYear).HasColumnName("CopiedFromYear").IsRequired(false);
+            entity.Property(e => e.CopiedFromField).HasColumnName("CopiedFromField").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.Frozen).HasColumnName("Frozen").IsRequired(false);
+            entity.Property(e => e.LockedBy).HasColumnName("LockedBy").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.LockedAt).HasColumnName("LockedAt").IsRequired(false);
+            entity.Property(e => e.Reopened).HasColumnName("Reopened").IsRequired(false);
+            entity.Property(e => e.Official).HasColumnName("Official").IsRequired(false);
+            entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
+            entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.IsDeleted).HasColumnName("IsDeleted").HasDefaultValue(false).IsRequired();
+            entity.Property(e => e.DeletedAt).HasColumnName("DeletedAt").IsRequired(false);
+            entity.Property(e => e.DeletedBy).HasColumnName("DeletedBy").HasMaxLength(255).IsRequired(false);
+
+            entity.HasQueryFilter(e => !e.IsDeleted);
+
+            entity.HasOne(e => e.Season)
+                  .WithMany()
+                  .HasForeignKey(e => e.ProducerFieldSeasonId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_FieldProgramRecord_ProducerFieldSeason_ProducerFieldSeasonId");
+
+            // One record per program per season; removed rows don't count.
+            entity.HasIndex(e => new { e.ProducerFieldSeasonId, e.ProgramKey })
+                  .IsUnique()
+                  .HasFilter("[IsDeleted] = 0")
+                  .HasDatabaseName("UQ_FieldProgramRecord_Season_Program");
+        });
+
+        modelBuilder.Entity<ProgramEnrollment>(entity =>
+        {
+            entity.ToTable("ProgramEnrollment", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            // NEWID() is a backstop; the service always sets the key.
+            entity.Property(e => e.EnrollmentKey).HasColumnName("EnrollmentKey").HasDefaultValueSql("NEWID()").IsRequired();
+            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
+            entity.Property(e => e.ProgramKey).HasColumnName("ProgramKey").HasMaxLength(30).IsRequired();
+            entity.Property(e => e.CropYear).HasColumnName("CropYear").IsRequired();
+            entity.Property(e => e.Status).HasColumnName("Status").HasMaxLength(10).IsRequired();
+            entity.Property(e => e.Attestation).HasColumnName("Attestation").IsRequired();
+            entity.Property(e => e.AttestedBy).HasColumnName("AttestedBy").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.AttestedAt).HasColumnName("AttestedAt").IsRequired(false);
+            entity.Property(e => e.Snapshot).HasColumnName("Snapshot").IsRequired(false);
+            entity.Property(e => e.HarvestCompleteAt).HasColumnName("HarvestCompleteAt").IsRequired(false);
+            entity.Property(e => e.WithdrawnReason).HasColumnName("WithdrawnReason").HasMaxLength(500).IsRequired(false);
+            entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
+            entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
+
+            entity.HasOne(e => e.Customer)
+                  .WithMany()
+                  .HasForeignKey(e => e.CustomerId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_ProgramEnrollment_Customer_CustomerId");
+
+            entity.HasIndex(e => e.EnrollmentKey).IsUnique().HasDatabaseName("UQ_ProgramEnrollment_EnrollmentKey");
+            // At most one live enrollment per producer, program and year; withdrawn rows are history.
+            entity.HasIndex(e => new { e.CustomerId, e.ProgramKey, e.CropYear })
+                  .IsUnique()
+                  .HasFilter("[Status] IN ('Open', 'Attested')")
+                  .HasDatabaseName("UQ_ProgramEnrollment_Live");
+            entity.HasIndex(e => new { e.ProgramKey, e.CropYear, e.Status }).HasDatabaseName("IX_ProgramEnrollment_Program_Year");
         });
     }
 }

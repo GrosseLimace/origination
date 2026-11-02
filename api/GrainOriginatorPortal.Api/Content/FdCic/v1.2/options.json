@@ -1,0 +1,15 @@
+{
+  "crops": ["Corn","Sorghum","Soybean","Canola"],
+  "coverCrops": ["Cover crop","Cover crop with grazing","No cover crop"],
+  "tillage": ["Reduced till","No till","None of the above"],
+  "manureTypes": [
+    {"label":"Beef cattle manure: Solid (tons/acre)","unit":"tons/ac","likelyMaxNPerUnit":40},
+    {"label":"Beef cattle manure: Liquid (1000 gal/acre)","unit":"1000 gal/ac","likelyMaxNPerUnit":96},
+    {"label":"Dairy manure: Solid (tons/acre)","unit":"tons/ac","likelyMaxNPerUnit":21},
+    {"label":"Dairy manure: Liquid (1000 gal/acre)","unit":"1000 gal/ac","likelyMaxNPerUnit":32},
+    {"label":"Swine manure: Solid (tons/acre)","unit":"tons/ac","likelyMaxNPerUnit":20},
+    {"label":"Swine manure: Liquid (1000 gal/acre)","unit":"1000 gal/ac","likelyMaxNPerUnit":69},
+    {"label":"Poultry manure: Solid (tons/acre)","unit":"tons/ac","likelyMaxNPerUnit":94},
+    {"label":"Poultry manure: Liquid(1000 gal/acre)","unit":"1000 gal/ac","likelyMaxNPerUnit":115}
+  ]
+}

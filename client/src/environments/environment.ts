@@ -51,6 +51,17 @@ export const environment = {
       'https://auth.msft.communication.azure.com/Teams.ManageChats',
     ],
   },
+  // 45Z field data + carbon intensity. Scores come from the USDA FD-CIC API (api/fd-cic);
+  // on locally and in DEV only. Must stay false in QA and PROD until go-live.
+  carbonIntensityEnabled: true,
+  // Plan by field: durable producer fields roll up into planting intentions. PROTOTYPE: in-memory
+  // mock data; the roll-up is simulated and never writes an intention. False in QA and PROD.
+  fieldPlanningEnabled: true,
+  // Where the field plan is kept: 'memory' (in the browser; a reload starts over) or 'api' (api/field-plan,
+  // the database). 'memory' until this environment's deploy has created the field-plan tables, then 'api'.
+  // Split IDs are typed by hand until CTRM's splits query is live (SPLITS-GRAPHQL). See docs/application-context/Field Plan - Database Plan.md.
+  // Stays 'memory' locally: the local API uses the shared DEV database.
+  fieldPlanBackend: 'memory' as 'memory' | 'api',
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.
   tradeUnitPreferencesUrl: 'https://tradeunitprefs-dev.scoular.com/my-preferences',
