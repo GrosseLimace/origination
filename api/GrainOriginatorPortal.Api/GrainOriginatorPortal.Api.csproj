@@ -25,6 +25,18 @@
     <EmbeddedResource Include="Content\help-faq.json" />
   </ItemGroup>
 
+  <!--
+    USDA FD-CIC (45Z) data packs, one folder per USDA workbook version, produced by
+    tools/fdcic-extract (see docs/45z/README.md). Embedded for the same reason as above, and named
+    "FdCic/<version>/<file>" (the default name would mangle "v1.2" into "v1._2"). RecursiveDir
+    ends in "\" on Windows and "/" elsewhere, so readers should normalise the separator.
+  -->
+  <ItemGroup>
+    <Content Remove="Content\FdCic\**" />
+    <None Remove="Content\FdCic\**" />
+    <EmbeddedResource Include="Content\FdCic\**\*.json" LogicalName="FdCic/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Azure.Communication.Identity" Version="1.3.1" />
     <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.5.0" />

@@ -1,0 +1,78 @@
+{
+  "gPerLb": 453.592,
+  "n2oNToN2o": 1.5714285714285714,
+  "gwpN2o": 265,
+  "yieldLowerBound": 0.8,
+  "yieldUpperBound": 1.2,
+  "fixedPractice": {"timing":"None of the above","inhibitor":"None used"},
+  "crops": {
+    "Corn": {
+      "defaultNui": 0.8370259607089464,
+      "nuiThreshold": 0.9774,
+      "residueNGPerBu": 141.6,
+      "nFixationGN2oPerBu": 0,
+      "national": {
+        "nFertilizer": 1274.9292130846738,
+        "directN2o": 2170.7100499231956,
+        "indirectN2o": 746.9826443855608,
+        "onFarmFuel": 543.3560537925744,
+        "onFarmOther": 272.09345291457123,
+        "otherChemicals": 474.5549737095992,
+        "urea": 234.40641477456228,
+        "lime": 302.5160388369112,
+        "total": 6019.548841421648
+      }
+    },
+    "Sorghum": {
+      "defaultNui": 0.9912944908391355,
+      "nuiThreshold": 1.1585,
+      "residueNGPerBu": 149,
+      "nFixationGN2oPerBu": 0,
+      "national": {
+        "nFertilizer": 1509.9057430312787,
+        "directN2o": 2492.9215367965367,
+        "indirectN2o": 864.100011904762,
+        "onFarmFuel": 684.5409842036343,
+        "onFarmOther": 5.047862047830901,
+        "otherChemicals": 595.142624632374,
+        "urea": 277.60881799480524,
+        "lime": 0,
+        "total": 6429.267580611222
+      }
+    },
+    "Soybean": {
+      "defaultNui": 0.11009798211057682,
+      "nuiThreshold": 0.0988,
+      "residueNGPerBu": 557,
+      "nFixationGN2oPerBu": 7.3,
+      "national": {
+        "nFertilizer": 167.69746732294857,
+        "directN2o": 4461.96975538982,
+        "indirectN2o": 690.1279028015074,
+        "onFarmFuel": 1030.3585205371432,
+        "onFarmOther": 236.3981242751144,
+        "otherChemicals": 1064.7645108419968,
+        "urea": 30.832584019969406,
+        "lime": 0,
+        "total": 7682.1488651885
+      }
+    },
+    "Canola": {
+      "defaultNui": 2.581882440332494,
+      "nuiThreshold": 2.8424,
+      "residueNGPerBu": 503.8549405197,
+      "nFixationGN2oPerBu": 0,
+      "national": {
+        "nFertilizer": 3086.8833917715287,
+        "directN2o": 6975.079296502032,
+        "indirectN2o": 2377.8781044951284,
+        "onFarmFuel": 899.508772898417,
+        "onFarmOther": 40.430058953029054,
+        "otherChemicals": 1036.3889150680043,
+        "urea": 1114.1369832292273,
+        "lime": 0,
+        "total": 15530.305522917366
+      }
+    }
+  }
+}
