@@ -1,5 +1,5 @@
 /*
- * SPIKE: the Contract Workspace (CWS) 0.3.0 mounted whole under /cws.
+ * SPIKE: the Contract Workspace (CWS) 0.2.3 mounted whole under /cws (CWS renumbered on 2026-10-29; 0.2.3 is newer than the old 0.3.0).
  *
  * provideCwsWorkspace(CWS_SPIKE_CONFIG) is the real contract. Passing a tokenProvider makes CWS use
  * Origination's own MSAL session for the Contracts API token (cws-host-token-provider.ts) instead of

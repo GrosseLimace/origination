@@ -27,6 +27,7 @@ import type {
   MarketMonthConfigRow,
   NotifyTraderAnswer,
   PricingSource,
+  SavedContractTemplate,
   PricingWriteResult,
   TradeUnitValuesSource,
   UnapprovedPrices,
@@ -343,11 +344,11 @@ export class HostContractTemplateSource implements ContractTemplateSource {
     return of(remoteLoaded([]));
   }
 
-  save(): Observable<ContractTemplate> {
+  save(): Observable<SavedContractTemplate> {
     return throwError(() => new Error(NOTHING_WRITTEN));
   }
 
-  rename(): Observable<ContractTemplate> {
+  rename(): Observable<SavedContractTemplate> {
     return throwError(() => new Error(NOTHING_WRITTEN));
   }
 
