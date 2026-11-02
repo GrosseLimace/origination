@@ -396,8 +396,8 @@
       },
       "System.Security.Cryptography.Pkcs": {
         "type": "Transitive",
-        "resolved": "9.0.11",
-        "contentHash": "YS2YqtN6fFjlTDIQI+ucjbbrEvwMn796r+VLTQRr/5Oy6g+i+m7nIou83KnJCnAcKna2I+5eVJRks6SoHSpetQ=="
+        "resolved": "10.0.13",
+        "contentHash": "a+EovgC1fBnwdlQ6cn3j4JFBfKqiFaFvoAhjisOoSvazLAcIznaBzPQP0oYnvccmeXfqUH1KebVZOxSeH6rMaw=="
       },
       "System.Security.Cryptography.ProtectedData": {
         "type": "Transitive",
@@ -411,7 +411,8 @@
           "GrainOriginatorPortal.Infrastructure": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[6.1.4, )",
           "Microsoft.Extensions.Http.Resilience": "[10.3.0, )",
-          "Microsoft.Identity.Web": "[3.8.4, )"
+          "Microsoft.Identity.Web": "[3.8.4, )",
+          "System.Security.Cryptography.Pkcs": "[10.0.13, )"
         }
       },
       "grainoriginatorportal.infrastructure": {
