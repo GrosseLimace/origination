@@ -28,8 +28,8 @@ export const environment = {
   // mock data; the roll-up is simulated and never writes an intention. False in QA and PROD.
   fieldPlanningEnabled: true,
   // Where the field plan is kept: 'memory' (in the browser; a reload starts over) or 'api' (api/field-plan,
-  // the database). 'memory' until the field-plan tables are approved and applied, and CTRM's splits query is
-  // live, so no sample split IDs reach a shared database. See docs/application-context/Field Plan - Database Plan.md.
+  // the database). 'memory' until this environment's deploy has created the field-plan tables, then 'api'.
+  // Split IDs are typed by hand until CTRM's splits query is live (SPLITS-GRAPHQL). See docs/application-context/Field Plan - Database Plan.md.
   fieldPlanBackend: 'memory' as 'memory' | 'api',
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.
