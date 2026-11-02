@@ -51,6 +51,15 @@ public static class FeatureNameMapper
             return ("customers", "dp-contracts");
         if (p.StartsWith("/api/producerdetails"))
             return ("customers", "producer-details");
+        // A producer's CTRM splits: the fields their field plan is built from.
+        if (p.StartsWith("/api/ctrm-splits"))
+            return ("customers", "ctrm-splits");
+        // The 45Z carbon-intensity calculator, used from a producer's field plan.
+        if (p.StartsWith("/api/fd-cic"))
+            return ("customers", "fd-cic-45z");
+        // A producer's field plan: fields (CTRM splits), seasons, program records and enrollments.
+        if (p.StartsWith("/api/field-plan"))
+            return ("customers", "field-plan");
 
         // ---- Planting Intentions dashboard ----
         if (p.StartsWith("/api/dashboardplantingestimates"))

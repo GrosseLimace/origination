@@ -346,6 +346,14 @@ builder.Services.AddScoped<IEntitlementsDirectoryService, EntitlementsDirectoryS
 // Read once: the connection string and the switch are app settings, which restart the app when changed.
 builder.Services.AddSingleton(ClientTelemetrySettings.From(builder.Configuration));
 builder.Services.AddScoped<ITeamsDirectoryService, TeamsDirectoryService>();
+// 45Z FD-CIC calculator. Singleton: the embedded USDA packs are loaded and checked against their
+// Excel test cases once, at startup (see below). Each method handles one set of USDA workbook formulas.
+builder.Services.AddSingleton(GrainOriginatorPortal.Api.Services.FdCic.FdCicSettings.From(builder.Configuration));
+builder.Services.AddSingleton<GrainOriginatorPortal.Api.Services.FdCic.IFdCicMethod, GrainOriginatorPortal.Api.Services.FdCic.FdCicMethodV1>();
+builder.Services.AddSingleton<GrainOriginatorPortal.Api.Services.FdCic.IFdCicService, GrainOriginatorPortal.Api.Services.FdCic.FdCicService>();
+builder.Services.AddScoped<GrainOriginatorPortal.Api.Services.Ctrm.IProducerSplitService, GrainOriginatorPortal.Api.Services.Ctrm.ProducerSplitService>();
+builder.Services.AddScoped<GrainOriginatorPortal.Api.Services.FieldPlan.IFieldTicketService, GrainOriginatorPortal.Api.Services.FieldPlan.FieldTicketService>();
+builder.Services.AddScoped<GrainOriginatorPortal.Api.Services.FieldPlan.IFieldPlanService, GrainOriginatorPortal.Api.Services.FieldPlan.FieldPlanService>();
 
 // Graph directory client (app-access spike) — singleton so the cached Graph token is shared.
 // Credential split mirrors the Key Vault bootstrap at the top of this file: managed identity
@@ -657,6 +665,10 @@ app.Logger.LogInformation(
     BuildInfo.CommitSha,
     BuildInfo.BuildNumber,
     app.Environment.EnvironmentName);
+
+// Load and gate the 45Z FD-CIC packs now, so a version that fails its Excel test cases is logged at
+// deploy time instead of on the first scoring request. A failing version doesn't stop the app.
+app.Services.GetRequiredService<GrainOriginatorPortal.Api.Services.FdCic.IFdCicService>();
 
 // =============================================================================
 // Development: Warm up all three DB connections in parallel at startup.

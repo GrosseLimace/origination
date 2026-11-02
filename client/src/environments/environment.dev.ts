@@ -21,6 +21,16 @@ export const environment = {
   // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite
   // admin consent on this env SPA app registration; keep false until that consent is granted.
   remindersEnabled: true,
+  // 45Z field data + carbon intensity. Scores come from the USDA FD-CIC API (api/fd-cic);
+  // on locally and in DEV only. Must stay false in QA and PROD until go-live.
+  carbonIntensityEnabled: true,
+  // Plan by field: durable producer fields roll up into planting intentions. PROTOTYPE: in-memory
+  // mock data; the roll-up is simulated and never writes an intention. False in QA and PROD.
+  fieldPlanningEnabled: true,
+  // Where the field plan is kept: 'memory' (in the browser; a reload starts over) or 'api' (api/field-plan,
+  // the database). 'memory' until this environment's deploy has created the field-plan tables, then 'api'.
+  // Split IDs are typed by hand until CTRM's splits query is live (SPLITS-GRAPHQL). See docs/application-context/Field Plan - Database Plan.md.
+  fieldPlanBackend: 'memory' as 'memory' | 'api',
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.
   tradeUnitPreferencesUrl: 'https://tradeunitprefs-dev.scoular.com/my-preferences',

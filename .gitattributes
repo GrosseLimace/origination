@@ -1,0 +1,3 @@
+# FD-CIC data packs: manifest.json holds a SHA-256 of each file's exact bytes, so keep them LF on
+# every checkout (core.autocrlf would otherwise convert them and break the hashes).
+api/GrainOriginatorPortal.Api/Content/FdCic/** text eol=lf
