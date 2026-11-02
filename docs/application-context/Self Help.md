@@ -101,6 +101,9 @@ So **renaming a button that the help mentions breaks the build until the help is
 | `producer-search` | the Search producers input, `customer-list.component.html` |
 | `query-library` | the Query Library header, `build-list.component.html` |
 | `set-season-targets` | the Set Season Targets button, `dashboard.component.html` |
+| `bid-sheet-picker` | the bid sheet dropdown at the start of the map's filter bar (its rows hold Share), `bid-sheet.component.html` |
+| `bid-sheet-bids` | the Bids button bottom-left of the map, which opens the locations list, `bid-sheet.component.html` |
+| `bid-sheet-add` | the Add button bottom-left of the map, `bid-sheet.component.html` |
 
 To add one: put the attribute on the element, add a tooltip to `HELP_ANCHOR_TIPS` (`help-spotlight.component.ts`), and, if it lives on one screen, its route to `ANCHOR_HOME` (`help-panel.service.ts`) so the spotlight can navigate there first.
 
