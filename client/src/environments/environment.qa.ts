@@ -20,6 +20,9 @@ export const environment = {
   // so this is on. Without them the lookup returns nothing and the picker section looks broken.
   teamsChannelMentionsEnabled: true,
   calculatorEnabled: true,
+  // Contract Workspace (CWS) at /cws, for QA user testing on CWS 0.3.0. The `cws` block below lists
+  // what must be in place outside this repo before testers start.
+  contractWorkspaceEnabled: true,
   // CTRM read-ahead: the 350ms hover prefetch on the producer list and the 4s post-click
   // convergence re-read. Both exist to hide CTRM GraphQL latency behind a warm trade-unit cache,
   // and both cost an extra read per hovered row and per click. Worth it when the backend is
@@ -74,5 +77,18 @@ export const environment = {
   apiConfig: {
     scopes: ['api://f3fcab2b-98c8-4622-86bd-c874d281b22a/Origination.Application.QA'],
     uri: '/api/*'
+  },
+  // Contract Workspace (/cws): the Contracts API it calls, and the scope our own sign-in requests for
+  // it. Public identifiers, not secrets, from the CWS team's QA app registrations. Its host is in
+  // appsettings.QA.json SecurityHeaders:SpaConnectSrcHosts. Outside this repo, before testers start:
+  // the delegated permission and admin consent for this scope on this SPA registration; CWS QA
+  // promoted to a build that allows this origin (CORS) — confirm with the CWS team; and each tester
+  // holding a Contracts User or Admin role (without one, /cws opens its access page).
+  cws: {
+    apiUrl: 'https://cms-qa.scoular.com/api/v1',
+    scopes: ['api://ade19bf4-acd7-4369-9d1d-957ec752140a/ContractManagementSystem.Application.QA'],
+    environmentName: 'qa',
+    // Local only: sample data instead of the API. Never true in a deployed environment.
+    sampleData: false
   }
 };

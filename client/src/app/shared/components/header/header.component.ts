@@ -65,6 +65,8 @@ export class HeaderComponent {
 
   readonly envName = environment.envName;
   readonly bidSheetEnabled = environment.bidSheetEnabled;
+  // The Contract Workspace at /cws.
+  readonly contractWorkspaceEnabled = environment.contractWorkspaceEnabled;
   // Groups (daily recap + @-mentionable in notes). On in every environment — see
   // environment.dailyDigestEnabled, which still carries the original Daily Digest name.
   readonly dailyDigestEnabled = environment.dailyDigestEnabled;
@@ -240,6 +242,16 @@ export class HeaderComponent {
   isActive(path: string): boolean {
     const url = this.currentUrl();
     return url === path || url.startsWith(path + '?');
+  }
+
+  // CWS owns everything under /cws (its grid, contracts, approvals...), so any of it counts as "in".
+  inCws(): boolean {
+    const url = this.currentUrl();
+    return url === '/cws' || url.startsWith('/cws/') || url.startsWith('/cws?');
+  }
+
+  toggleCws(): void {
+    this.router.navigate([this.inCws() ? '/' : '/cws']);
   }
 
   navigate(path: string): void {

@@ -273,11 +273,29 @@ Last Updated: 2026-11-02
 | @angular/animations | 21.2.25 | MIT | Animation support |
 | @angular/cdk | 21.2.14 | MIT | Component primitives — drag-and-drop (bid sheet column/row reorder), scrolling, and Overlay (the Add-column picker, which must escape a clipping scroll container) |
 | @azure/msal-angular | 5.1.1 | MIT | Azure AD authentication (Angular) |
+| @azure/msal-browser | 5.23.0 | MIT | MSAL browser runtime (raised from 5.4.0 because `@cws/core-auth` peers on ^5.23.0) |
 | @azure/msal-browser | 5.4.0 | MIT | MSAL browser runtime |
 | @azure/communication-calling | 2.0.0 | Microsoft Software License Terms for the ACS SDK (proprietary, not MIT) | Incoming-call popup: registers the tab as the user's Teams Phone endpoint. Lazy-loaded only when a calling token exists. ⚠ ACS standalone retires 2028-09-30; the Calling SDK continues only with Teams-aligned scenarios — support for this one is being confirmed. Verified 2026-10-07 |
 | @azure/communication-common | 2.5.0 | MIT | ACS token credential used by the calling SDK. Verified 2026-10-07 |
 | @microsoft/applicationinsights-web | 3.4.5 | MIT | Browser error telemetry to Application Insights (pinned exact; loaded lazily, only when the server returns a connection string). Brings 10 transitive packages, all MIT, none with install scripts: the @microsoft/applicationinsights-* family at 3.4.5, applicationinsights-shims 3.0.1, dynamicproto-js 2.0.5, @nevware21/ts-async 0.5.5, @nevware21/ts-utils 0.16.0 |
 | @it/design-system | 0.1.1 | Internal | Scoular IT design system components |
+| @cws/workspace | 0.2.3 | Internal | SPIKE (CWS renumbered 2026-10-29: 0.2.3 is newer than the old 0.3.0): Contract Workspace shell, routes and provider bundle, mounted at `/cws` (gated by `contractWorkspaceEnabled`; on locally only). Vendored from `client/vendor/cws/`; the 16 `@cws/*` packages are released together at one version |
+| @cws/features-home | 0.2.3 | Internal | SPIKE: CWS contract grid |
+| @cws/features-approvals | 0.2.3 | Internal | SPIKE: CWS approval queues |
+| @cws/features-pricing | 0.2.3 | Internal | SPIKE: CWS pricing and pricing approvals |
+| @cws/features-admin | 0.2.3 | Internal | SPIKE: CWS admin screen |
+| @cws/features-contract-summary | 0.2.3 | Internal | SPIKE: CWS contract record |
+| @cws/features-contract-entry | 0.2.3 | Internal | SPIKE: CWS contract entry form |
+| @cws/domain-contracts | 0.2.3 | Internal | SPIKE: CWS data sources and models |
+| @cws/core-auth | 0.2.3 | Internal | SPIKE: CWS sign-in contract; the spike supplies the token from our own MSAL session (`cws-host-token-provider.ts`, Mode B) |
+| @cws/core-host-context | 0.2.3 | Internal | SPIKE: CWS host contract (navigation, identity, theme) |
+| @cws/core-http | 0.2.3 | Internal | SPIKE: CWS HTTP error mapping |
+| @cws/core-state | 0.2.3 | Internal | SPIKE: CWS trade-unit and permission state |
+| @cws/core-telemetry | 0.2.3 | Internal | SPIKE: CWS telemetry (not configured in the spike) |
+| @cws/shared-ui | 0.2.3 | Internal | SPIKE: CWS UI components |
+| @cws/shared-form-engine | 0.2.3 | Internal | SPIKE: CWS form engine |
+| @cws/shared-utils | 0.2.3 | Internal | SPIKE: CWS utilities |
+| @microsoft/applicationinsights-angularplugin-js | 15.4.2 | MIT | SPIKE: required peer of `@cws/core-telemetry` (CWS telemetry is not enabled in the spike; its other peer, `@microsoft/applicationinsights-web`, is the app's own 3.4.5 above) |
 | leaflet | 1.9.4 | BSD-2-Clause | Interactive map rendering |
 | leaflet.markercluster | ~1.5.3 | MIT | Leaflet marker clustering |
 | rxjs | 7.8.2 | Apache-2.0 | Reactive programming (Observables) |

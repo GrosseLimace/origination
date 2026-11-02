@@ -56,6 +56,14 @@
 --   Updated 2026-09-23: 20260923124207_RenameGrainOnFarmGroupToCommodityCode renamed
 --   ProducerGrainOnFarm.CommodityGroup -> CommodityCode and its unique index
 --   UQ_ProducerGrainOnFarm_Customer_Group -> UQ_ProducerGrainOnFarm_Customer_Commodity.
+--   Updated 2026-09-23 (bid-sheet branch): 20260923132920_AddSelectedColumnsToBidSheet
+--   Preference adds dbo.BidSheetPreferences.SelectedColumns, nvarchar(max) NULL. The four
+--   superseded columns beside it (CropOrder, HiddenCrops, SelectedMonths, SelectedYears) are
+--   deliberately NOT dropped -- they are read once to migrate a user forward, and they are the
+--   rollback. Merging release_2026-09-29 conflicted here: that branch re-listed ProducerContact,
+--   ProducerDetails and ProducerGrainOnFarm wholesale because one of their rows was renamed.
+--   Taking both sides would have duplicated 23 rows and kept the pre-rename CommodityGroup, so
+--   only the renamed row was taken.
 --   Updated 2026-10-08 (BarChart feed, backend only): 20260811142608_AddBarchartFeed, carried over
 --   unchanged from the Bid Sheet branch so that branch finds it already applied. Adds the five
 --   dbo.Barchart* tables (67 columns) plus BidSheetLocations.BarchartLocationKey and
@@ -90,6 +98,22 @@
 --   Updated 2026-10-07: 20261007133856_AddCustomerPaymentMethod adds dbo.Customer.PaymentMethod
 --   nvarchar(10) NULL (the CTRM payment method code behind the ACH badge on the ctrm customer-sync
 --   source), so Columns grew to 372 and Migrations to 57.
+--   Updated 2026-10-13 (spike_CwsWorkspaceEmbed = featureflag_GraphQLBarChart + main): main brought
+--   ProducerBinSite and the bin-site columns, and dropped UsageDashboardViewAllUsers and
+--   ProducerDetails.BinCapacity; the branch keeps its remodel shapes (BidSheetLocations.TradeUnitCode
+--   NULL, UQ_BidSheetLocations_BarchartKey, the basis/coverage bid columns, BidSheetLocationOrders
+--   retired) and the organic tables. Cross-checked against the merged model snapshot: 51 tables,
+--   529 columns and 94 migrations, all matching.
+--   Updated 2026-10-20 (main 5ed04040 merged in): main now carries the Bid Sheet remodel and BarChart
+--   (#726) and 20261013163045_RestrictCustomerTradeUnitDeleteAndValidateCustomerFks; this branch adds
+--   only the organic certification tables on top. Totals re-checked against the merged snapshot.
+--   Updated 2026-10-22 (main 3f688806 merged in): main brought the CustomerIdSequence, Customer.PaymentMethod,
+--   ConvertYearlyBidsToFuturesMonth and ExcludeNotesWithoutTradeUnitFromRecap migrations; this branch still
+--   adds only the organic certification tables. Merged lists
+--   = main's rows + the 56 organic rows: 51 tables, 530 columns, 26 unique indexes, 99 migrations.
+--   Updated 2026-11-02 (QA_JobTitle_InboundCalling_CwsEmbed): 20261027163005_AddUserJobTitle created
+--   dbo.UserJobTitle (UserId nvarchar(256) PK, JobTitle nvarchar(256) NULL, RecordedAt datetime2). The
+--   job-title branches never listed it here; added with the totals re-checked against the snapshot.
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -142,7 +166,7 @@ DECLARE @Findings TABLE (
 );
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Tables (51)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Tables (52)
 -- -----------------------------------------------------------------------------
 INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'BarchartApiCallAudit'),
@@ -192,13 +216,14 @@ INSERT INTO @Tables (SchemaName, TableName) VALUES
 ('dbo', 'UserActivityDaily'),
 ('dbo', 'UserClickEvent'),
 ('dbo', 'UserFeatureUsageDaily'),
+('dbo', 'UserJobTitle'),
 ('dbo', 'UserPreferences'),
 ('dbo', 'UserSession'),
 ('dbo', 'UserTradeUnitSnapshot'),
 ('dbo', 'WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (530)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Columns (533)
 -- Format: (schema, table, column, sql_type, is_nullable)
 -- sql_type format must match what this script reconstructs from sys.columns:
 --   int, bigint, bit, datetime2, datetime2(N), date, float, uniqueidentifier
@@ -756,6 +781,10 @@ INSERT INTO @Columns (SchemaName, TableName, ColumnName, SqlType, IsNullable) VA
 ('dbo', 'UserFeatureUsageDaily', 'ScreenMinutes',    'float',         0),
 ('dbo', 'UserFeatureUsageDaily', 'SubFeatureCode',   'nvarchar(50)',  0),
 ('dbo', 'UserFeatureUsageDaily', 'UserId',           'nvarchar(256)', 0),
+-- UserJobTitle (UserJobTitle entity; 20261027163005_AddUserJobTitle)
+('dbo', 'UserJobTitle', 'UserId',     'nvarchar(256)', 0),
+('dbo', 'UserJobTitle', 'JobTitle',   'nvarchar(256)', 1),
+('dbo', 'UserJobTitle', 'RecordedAt', 'datetime2',     0),
 -- UserPreferences (UserPreference entity)
 ('dbo', 'UserPreferences', 'Id',                 'int',            0),
 ('dbo', 'UserPreferences', 'SelectedGroupNames', 'nvarchar(2000)', 0),
@@ -825,7 +854,7 @@ INSERT INTO @UniqueIndexes (SchemaName, TableName, IndexName) VALUES
 ('dbo', 'WeeklyLoginAggregate',        'UQ_WeeklyLoginAggregate');
 
 -- -----------------------------------------------------------------------------
--- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (99)
+-- ### UPDATE WHEN SCHEMA CHANGES ### — Migrations (101)
 -- Every migration id in api/GrainOriginatorPortal.Infrastructure/Data/Migrations,
 -- in timestamp order.
 -- -----------------------------------------------------------------------------
@@ -929,7 +958,8 @@ INSERT INTO @Migrations (MigrationId) VALUES
 ('20261009201700_DropProducerDetailsBinCapacity'),
 ('20261013163045_RestrictCustomerTradeUnitDeleteAndValidateCustomerFks'),
 ('20261020171105_ConvertYearlyBidsToFuturesMonth'),
-('20261022142931_ExcludeNotesWithoutTradeUnitFromRecap');
+('20261022142931_ExcludeNotesWithoutTradeUnitFromRecap'),
+('20261027163005_AddUserJobTitle');
 
 -- =============================================================================
 -- Collect every discrepancy into @Findings.

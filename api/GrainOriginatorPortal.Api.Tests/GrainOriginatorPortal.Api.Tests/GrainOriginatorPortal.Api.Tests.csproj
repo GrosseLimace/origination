@@ -51,6 +51,8 @@
            Repositories/TicketRepositoryTests.cs
            Repositories/UsageRepositoryTests.cs
            Repositories/UserPreferenceRepositoryTests.cs
+           Services/OrganicCertificationIngestServiceTests.cs
+           Services/OrganicCertificationServiceTests.cs
            CustomerAchTests.cs
            Repositories/CustomerRepositoryCtrmOnboardingTests.cs
            Repositories/CustomerRepositoryOnboardingTests.cs
