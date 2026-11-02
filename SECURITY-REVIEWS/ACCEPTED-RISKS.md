@@ -1658,6 +1658,52 @@ only, with the vulnerable paths unreachable from untrusted input. Do **not** dis
 
 ---
 
+## Dependabot #167 (2026-11-02) — accepted: CANNOT BE CLOSED BY AN UPGRADE
+
+### #167 — `minimatch` < 11.0.1, globParts amplification in `firstPhasePreProcess()` (GHSA-g3hv-75wg-m249)
+
+**Fixed only in minimatch 11.0.1** — a major release with breaking API changes (`makeRe()`, `#regexp`,
+`matchOne()` and the `AST` class removed). No 3.x/5.x/9.x/10.x backport exists, and as of 2026-11-02 no
+release of any package that depends on minimatch here has moved to 11.
+
+**Why no override can close it.** The alert covers *every* minimatch below 11.0.1 in
+`client/package-lock.json`, and two of the copies cannot take 11:
+
+| Copy | Reached via | Tree | Contains the flawed code? | Can move to 11? |
+|------|-------------|------|---------------------------|-----------------|
+| 3.1.5 | `glob` 7.2.3 ← `archiver-utils` / `rimraf` ← `archiver` / `fstream` | production | **No** — predates `firstPhasePreProcess` / `optimizationLevel` | **No** — glob 7 relies on minimatch 3 internals |
+| 5.1.9 | `readdir-glob` ← `archiver` | production | **No** — same | **No** — written against the 5.x API |
+| 9.0.9 | `@ts-morph/common` ← `ts-morph` ← `@analogjs/vite-plugin-angular` | dev | Yes | Only by a cross-major override |
+| 10.2.4 | `ignore-walk` ← `npm-packlist` ← `pacote` | dev | Yes | Only by a cross-major override |
+| 10.2.5 | `@tufjs/models` ← `tuf-js` ← `sigstore` | dev | Yes | Only by a cross-major override |
+
+(The two glob 13 → minimatch 10.2.4 copies under `cacache` and `@npmcli/package-json` moved to glob 14 /
+minimatch 11.0.4 with the #166 fix on `fix_DependabotHonoGlob110226`.) "Contains the flawed code" was
+checked by grepping the published tarballs for `firstPhasePreProcess`.
+
+**Unreachable even where the code exists.** The amplification only runs at `optimizationLevel >= 2`
+(`if (optimizationLevel >= 2) { … this.firstPhasePreProcess(globParts) }` in 9.0.9 and 10.2.5), and
+minimatch's default is **1**. None of the three dev callers raises it: `ignore-walk` passes
+`{ matchBase, dot, flipNegate, nocase }`, while `@tufjs/models` and `@ts-morph/common` call
+`minimatch(path, pattern)` with no options. glob *does* default to level 2 — which is why its copies
+were moved to 14/11 rather than left. The patterns these callers see come from our own config,
+packed packages' ignore files and signed TUF metadata, never from a user.
+
+Moving the three dev copies to 11 with scoped overrides was considered and **not done**: it would
+remove the unreachable code but the alert would stay open on the two production-tree copies, so it
+adds cross-major risk without closing anything.
+
+**Re-check when** `archiver` (and whatever pulls it into the production tree) drops glob 7 /
+readdir-glob, or when `ignore-walk`, `@tufjs/models` and `@ts-morph/common` publish on minimatch 11.
+
+### Dismissal wording for Dependabot
+
+**"Risk is tolerable to this project."** The flaw is absent from the production-tree copies and
+unreachable (default `optimizationLevel`, no untrusted patterns) in the dev ones. Do **not** dismiss it
+as "a fix has already been started" — no upgrade closes it.
+
+---
+
 ## Resolved findings — already remediated (not accepted risks; do not re-open)
 
 Findings a scanner may re-surface that are **already fixed in code**. Listed here so triage

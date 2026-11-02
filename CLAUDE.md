@@ -6,7 +6,7 @@ notes live in [docs/application-context/](docs/application-context/), operations
 [agents-docs/audits/AUDIT-TRACKING.json](agents-docs/audits/AUDIT-TRACKING.json).
 
 ## Software Bill of Materials (SBOM)
-Last Updated: 2026-10-26
+Last Updated: 2026-11-02
 
 Direct dependencies plus the transitive packages pinned for security. This is the compact copy
 company policy asks for here; [README.md](README.md#software-bill-of-materials-sbom) has the same
@@ -37,8 +37,10 @@ rows with the security notes behind each pin. Update BOTH in the same commit as 
 | @angular/router | 21.2.25 | MIT | Client-side routing |
 | @angular/forms | 21.2.25 | MIT | Reactive forms |
 | @angular/animations | 21.2.25 | MIT | Animation support |
+| @angular/service-worker | 21.2.25 | MIT | Service worker for the mobile PWA (origination-mobile) |
 | @azure/msal-angular | 5.1.1 | MIT | Azure AD authentication |
 | @azure/msal-browser | 5.4.0 | MIT | MSAL browser runtime |
+| openapi-typescript | 7.13.0 | MIT | Dev only — generates the mobile app's API types from openapi/mobile/specification.yaml |
 | @microsoft/applicationinsights-web | 3.4.5 | MIT | Browser error telemetry to Application Insights |
 | @it/design-system | 0.1.1 | Internal | Scoular IT design system components |
 | leaflet | 1.9.4 | BSD-2-Clause | Interactive map rendering |
@@ -62,16 +64,17 @@ rows with the security notes behind each pin. Update BOTH in the same commit as 
 | brace-expansion | ≥5.0.12 | MIT | Brace pattern expansion |
 | postcss | 8.5.23 | MIT | CSS processor |
 | body-parser | ≥2.4.0 <3 | MIT | HTTP body parsing |
-| qs | ≥6.16.0 <7 | BSD-3-Clause | Query-string parser |
+| qs | ≥6.16.1 <7 | BSD-3-Clause | Query-string parser |
 | immutable | ≥5.1.8 | MIT | Immutable collections |
 | fast-uri | ≥3.1.9 <4 | BSD-3-Clause | URI parser |
-| hono | ≥4.13.5 <5 | MIT | Web framework |
+| hono | ≥4.13.11 <5 | MIT | Web framework |
 | undici | ≥7.30.1 <8 | MIT | HTTP/1.1 client |
 | proxy-addr | ≥2.0.8 <3 | MIT | Trusted-proxy / X-Forwarded-For resolution |
 | source-map-js | ≥1.2.2 <2 | BSD-3-Clause | Source map parsing/generation |
 | @modelcontextprotocol/sdk | ≥1.31.0 <2 | MIT | Model Context Protocol SDK |
 | zod | ≥4.6.6 <5 | MIT | Schema validation (ng mcp) |
 | ip-address | ≥10.7.4 <11 | MIT | IP address parser |
-| @hono/node-server | ≥2.0.5 | MIT | Node adapter for hono |
+| @hono/node-server | ≥2.1.3 <3 | MIT | Node adapter for hono |
+| glob (under cacache, @npmcli/package-json) | ≥14.0.2 <15 | BlueOak-1.0.0 | File globbing (npm internals) |
 | dompurify | ≥3.4.17 <4 | (MIT OR Apache-2.0) | HTML sanitizer |
 | piscina | ≥5.3.2 <6 | MIT | Worker-thread pool |

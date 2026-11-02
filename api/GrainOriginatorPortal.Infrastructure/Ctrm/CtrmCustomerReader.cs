@@ -144,8 +144,15 @@ public sealed class CtrmCustomerReader
     /// <c>Customers.Read.All</c> permission, a projection field or argument the API does not have (HTTP 400),
     /// or a sourceCodes filter the API says is too long (lower <c>CustomerSync:SourceCodesMaxFilterChars</c>).</para>
     /// </remarks>
+    /// <param name="interactive">True when a user is waiting on the answer (onboarding a producer by code from
+    /// the edit dialog). The read then takes the interactive lane, like <see cref="SearchAsync"/>: it skips the
+    /// background pool the nightly sync and keep-warm share, holds the interactive marker so background work
+    /// stands aside, and uses the short interactive server-timeout budget. False (the sync) keeps the
+    /// background lane. Before this flag the onboarding save shared the background queue, and on 2026-10-28
+    /// a rep's save in PROD sat behind a keep-warm cycle for ten minutes while the search seconds earlier
+    /// took one.</param>
     public async Task<CtrmReadResult<CtrmCustomerLookup>> GetBySourceCodesAsync(
-        IReadOnlyCollection<string> sourceCodes, CancellationToken cancellationToken)
+        IReadOnlyCollection<string> sourceCodes, CancellationToken cancellationToken, bool interactive = false)
     {
         // The 7-character limit is a customerIds defect, not a sourceCode one - keep every code.
         var codes = CtrmCustomerCodes.NormalizeKeepingAll(sourceCodes);
@@ -166,7 +173,7 @@ public sealed class CtrmCustomerReader
             var aliasCount = Math.Clamp(CtrmConfig.ReadInt(_configuration, AliasCountKey, 20), 1, 50);
             chunks = [.. codes.Chunk(aliasCount).Select(c => (IReadOnlyList<string>)c.ToList())];
             shape = $"aliased, up to {aliasCount} alias(es) per request";
-            readChunk = (index, chunk, countRequest, token) => ReadAliasedChunkAsync(index, chunk, sourceSystem, extended, countRequest, token);
+            readChunk = (index, chunk, countRequest, token) => ReadAliasedChunkAsync(index, chunk, sourceSystem, extended, interactive, countRequest, token);
         }
         else
         {
@@ -174,9 +181,10 @@ public sealed class CtrmCustomerReader
             var maxPerRequest = Math.Clamp(CtrmConfig.ReadInt(_configuration, SourceCodesMaxPerRequestKey, 400), 1, 1000);
             chunks = ChunkBySourceCodeFilterLength(codes, maxFilterChars, maxPerRequest);
             shape = $"sourceCodes, filter budget {maxFilterChars} chars and at most {maxPerRequest} code(s) per chunk";
-            readChunk = (index, chunk, countRequest, token) => ReadSourceCodesChunkAsync(index, chunk, sourceSystem, extended, countRequest, token);
+            readChunk = (index, chunk, countRequest, token) => ReadSourceCodesChunkAsync(index, chunk, sourceSystem, extended, interactive, countRequest, token);
         }
         if (extended) shape += "; extended fields";
+        if (interactive) shape += "; interactive";
 
         var stopwatch = Stopwatch.StartNew();
         var (results, failed, requests) = await ReadChunksAsync(chunks, concurrency, readChunk, cancellationToken);
@@ -306,13 +314,13 @@ public sealed class CtrmCustomerReader
 
     /// <summary>The aliased fallback: one request per chunk, alias <c>c{i}</c> = <c>chunk[i]</c>. Deleted in plan E7b.</summary>
     private async Task<ChunkOutcome> ReadAliasedChunkAsync(
-        int index, IReadOnlyList<string> chunk, string? sourceSystem, bool extended, Action countRequest, CancellationToken token)
+        int index, IReadOnlyList<string> chunk, string? sourceSystem, bool extended, bool interactive, Action countRequest, CancellationToken token)
     {
         countRequest();
         var document = CtrmCustomerQueries.CustomersBySourceCodesAliased(chunk, sourceSystem, extended);
-        var read = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => CtrmServerTimeoutRetry.RunAsync(
+        var read = await ReadInLaneAsync(
             () => _client.QueryAsync<Dictionary<string, CtrmPage<CtrmCustomerDto>>>(document, null, token),
-            _configuration, _logger, $"customers chunk {index}"));
+            $"customers chunk {index}", interactive, token);
         var (rows, failure) = MapChunk(read, chunk);
         return new ChunkOutcome(rows, failure);
     }
@@ -322,7 +330,7 @@ public sealed class CtrmCustomerReader
     /// <c>hasNextPage</c> is false. Every page - and every HC0045 re-send - is counted as a request.
     /// </summary>
     private async Task<ChunkOutcome> ReadSourceCodesChunkAsync(
-        int index, IReadOnlyList<string> chunk, string? sourceSystem, bool extended, Action countRequest, CancellationToken token)
+        int index, IReadOnlyList<string> chunk, string? sourceSystem, bool extended, bool interactive, Action countRequest, CancellationToken token)
     {
         var document = CtrmCustomerQueries.CustomersBySourceCodesDocument(extended);
 
@@ -346,13 +354,13 @@ public sealed class CtrmCustomerReader
             object variables = sourceSystem is null
                 ? new { codes = chunk, skip, take = SourceCodesPageSize }
                 : new { codes = chunk, sourceSystem, skip, take = SourceCodesPageSize };
-            var read = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => CtrmServerTimeoutRetry.RunAsync(
+            var read = await ReadInLaneAsync(
                 () =>
                 {
                     countRequest();
                     return _client.QueryAsync<Dictionary<string, CtrmPage<CtrmCustomerDto>>>(document, variables, token);
                 },
-                _configuration, _logger, $"customers sourceCodes chunk {index} page {page}"));
+                $"customers sourceCodes chunk {index} page {page}", interactive, token);
 
             if (read.Status == CtrmReadStatus.PartialSuccess)
                 return new ChunkOutcome(null, read with { Status = CtrmReadStatus.QueryError, Value = null, Detail = "partial answer (data plus errors): " + read.Detail });
@@ -396,6 +404,25 @@ public sealed class CtrmCustomerReader
                     });
                 return new ChunkOutcome([.. chunk.Select(code => (code, byCode[code]))], null);
             }
+        }
+    }
+
+    /// <summary>
+    /// One request in the lane the caller asked for. Background: behind <see cref="CtrmTradeUnitThrottle"/>'s
+    /// shared pool with the background HC0045 budget, leaving the queue if <paramref name="token"/> is
+    /// cancelled. Interactive: no pool, the interactive marker held for the request, and the interactive
+    /// budget - the same lane <see cref="SearchAsync"/> uses.
+    /// </summary>
+    private async Task<CtrmReadResult<Dictionary<string, CtrmPage<CtrmCustomerDto>>>> ReadInLaneAsync(
+        Func<Task<CtrmReadResult<Dictionary<string, CtrmPage<CtrmCustomerDto>>>>> attempt, string what, bool interactive, CancellationToken token)
+    {
+        if (!interactive)
+            return await CtrmTradeUnitThrottle.RunAsync(_configuration,
+                () => CtrmServerTimeoutRetry.RunAsync(attempt, _configuration, _logger, what), token);
+
+        using (CtrmTradeUnitThrottle.Interactive())
+        {
+            return await CtrmServerTimeoutRetry.RunAsync(attempt, _configuration, _logger, what, interactive: true);
         }
     }
 
