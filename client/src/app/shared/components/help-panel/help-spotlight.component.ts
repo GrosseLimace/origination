@@ -11,7 +11,10 @@ export const HELP_ANCHOR_TIPS: Record<string, string> = {
   'trade-unit-selector': 'Choose your trade group and trade units here. The producer list, Build a List, Actionable Insights and the dashboard all follow this selection.',
   'query-library': 'Pick a query here to start a list, then narrow it with Refine Filters.',
   'set-season-targets': 'Set the expected yield and market share for each crop here.',
-  'producer-search': 'Search here. In All Producers mode, a result marked Not added can be opened and added to a trade unit with Edit.'
+  'producer-search': 'Search here. In All Producers mode, a result marked Not added can be opened and added to a trade unit with Edit.',
+  'bid-sheet-picker': 'Your bid sheets. Click here to see the list, then click a sheet\'s name to show it. The people icon beside each name is Share.',
+  'bid-sheet-bids': 'Bids opens the list of your sheet\'s locations. Click a location\'s row to see its details, including Set as Reference.',
+  'bid-sheet-add': 'Add a location manually, or build a new bid sheet, from here.'
 };
 
 /** How long to wait for an anchor to appear after navigating to its screen. */
