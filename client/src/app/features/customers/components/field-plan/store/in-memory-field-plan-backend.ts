@@ -1,7 +1,6 @@
 import { Injectable, inject } from '@angular/core';
-import { EnrollableRecord, FdCicData, FieldProgramRecord, FieldSeason, FieldTicket, FieldTickets, OfficialResult, ProducerField, ProgramEnrollment, ProgramRecordStatus } from '@models';
+import { FdCicData, FieldProgramRecord, FieldSeason, FieldTicket, FieldTickets, OfficialResult, ProducerField, ProgramRecordStatus } from '@models';
 import { ProgramRegistry } from '../programs/program-registry';
-import { blankAttestation, enrollmentBlockers } from '../programs/program-enrollment';
 import type { ConfirmReview, FieldPlanBackend, FieldPlanSnapshot } from './field-plan-backend';
 import { CROP_GROUP_BY_TOKEN } from '../../../../../shared/utils/crop-group-match';
 import { FD_CIC_PROGRAM_KEY } from '../programs/fd-cic/fd-cic.program';
@@ -27,8 +26,8 @@ const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 /**
  * PROTOTYPE ONLY: plays the field-plan server in the browser until the database is approved. It holds
- * every producer's fields, seasons, program records and enrollments in memory (a reload starts over)
- * and enforces the rules the real server will own: duplicate claims refused at attestation, no reopening a field an attested enrollment holds, and locking.
+ * every producer's fields, seasons and program records in memory (a reload starts over)
+ * and enforces the rules the real server will own, such as locking.
  * Everything handed out is a copy, as if it had come over the wire.
  */
 @Injectable({ providedIn: 'root' })
@@ -46,7 +45,6 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
   private fields: ProducerField[] = [];
   private seasons: FieldSeason[] = [];
   private records: FieldProgramRecord[] = [];
-  private enrollments: ProgramEnrollment[] = [];
   private nextSeasonId = 1;
   private nextRecordId = 1;
 
@@ -59,7 +57,6 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
       fields,
       seasons,
       records: this.records.filter(r => seasonIds.has(r.seasonId)),
-      enrollments: this.enrollments.filter(e => e.customerId === customerId),
     });
   }
 
@@ -145,7 +142,6 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
     const current = this.records[i];
     if (current.status !== 'Locked' || !current.frozen) throw new Error('Only a confirmed CI can be unlocked.');
     if (!reason.trim()) throw new Error('Give a reason for reopening.');
-    if (this.heldBy(id)) throw new Error('The producer\'s attested enrollment holds this record, so it can\'t be reopened.');
 
     const season = this.seasons.find(s => s.id === current.seasonId)!;
     const def = this.registry.get(current.programKey);
@@ -245,54 +241,6 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
       },
     };
     return copy(this.records[i]);
-  }
-
-  // ── Enrollments ─────────────────────────────────────────────────────────
-
-  async ensureEnrollment(programKey: string, customerId: number, year: number): Promise<ProgramEnrollment | undefined> {
-    const existing = this.enrollments.find(e => e.programKey === programKey && e.customerId === customerId && e.year === year && e.status !== 'Withdrawn');
-    const config = this.registry.get(programKey)?.enrollment;
-    if (existing || !config) return existing && copy(existing);
-    const created: ProgramEnrollment = {
-      key: crypto.randomUUID(), programKey,
-      customerId, year, status: 'Open', attestation: blankAttestation(config.statements),
-    };
-    this.enrollments.push(created);
-    return copy(created);
-  }
-
-  async updateAttestation(enrollment: ProgramEnrollment): Promise<ProgramEnrollment> {
-    const i = this.indexOf(this.enrollments, e => e.key === enrollment.key, 'enrollment');
-    if (this.enrollments[i].status !== 'Open') throw new Error('Only an open enrollment\'s attestation can change.');
-    this.enrollments[i] = { ...this.enrollments[i], attestation: copy(enrollment.attestation) };
-    return copy(this.enrollments[i]);
-  }
-
-  async attest(key: string, listed: readonly EnrollableRecord[]): Promise<ProgramEnrollment> {
-    const i = this.indexOf(this.enrollments, e => e.key === key, 'enrollment');
-    const e = this.enrollments[i];
-    if (e.status !== 'Open') throw new Error('Only an open enrollment can be attested.');
-    const statements = this.registry.get(e.programKey)?.enrollment?.statements ?? [];
-    // Checked against every producer's enrollments: a field can't be claimed twice.
-    const blockers = enrollmentBlockers(e, listed, this.enrollments, statements);
-    if (blockers.length > 0) throw new Error(`Before attesting: ${blockers.join('; ')}.`);
-    this.enrollments[i] = { ...e, status: 'Attested', attestedBy: 'you', attestedAt: new Date().toISOString(), snapshot: copy([...listed]) };
-    return copy(this.enrollments[i]);
-  }
-
-  async withdraw(key: string, reason: string): Promise<ProgramEnrollment> {
-    const i = this.indexOf(this.enrollments, e => e.key === key, 'enrollment');
-    if (!reason.trim()) throw new Error('Give a reason for withdrawing.');
-    if (this.enrollments[i].status !== 'Withdrawn') {
-      this.enrollments[i] = { ...this.enrollments[i], status: 'Withdrawn', withdrawnReason: reason.trim() };
-    }
-    return copy(this.enrollments[i]);
-  }
-
-  // ── Helpers ─────────────────────────────────────────────────────────────
-
-  private heldBy(recordId: string): ProgramEnrollment | undefined {
-    return this.enrollments.find(e => e.status === 'Attested' && (e.snapshot ?? []).some(r => r.recordId === recordId));
   }
 
   private indexOf<T>(items: T[], match: (item: T) => boolean, what: string): number {

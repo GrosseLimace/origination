@@ -2404,6 +2404,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.HasIndex("ProducerFieldId")
                         .HasDatabaseName("IX_ProducerFieldSeason_ProducerFieldId");
 
+                    b.HasIndex("ProducerFieldId", "PlantingIntentionId")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_ProducerFieldSeason_Field_PlantingIntention")
+                        .HasFilter("[IsDeleted] = 0");
+
                     b.ToTable("ProducerFieldSeason", "dbo");
                 });
 
@@ -2532,106 +2537,6 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasDatabaseName("IX_ProducerReminders_CustomerId_CreatedBy_IsCompleted");
 
                     b.ToTable("ProducerReminders", "dbo");
-                });
-
-            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.ProgramEnrollment", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasColumnName("Id");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Attestation")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)")
-                        .HasColumnName("Attestation");
-
-                    b.Property<DateTime?>("AttestedAt")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("AttestedAt");
-
-                    b.Property<string>("AttestedBy")
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)")
-                        .HasColumnName("AttestedBy");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasColumnName("CreatedAt")
-                        .HasDefaultValueSql("GETUTCDATE()");
-
-                    b.Property<string>("CreatedBy")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)")
-                        .HasColumnName("CreatedBy");
-
-                    b.Property<int>("CropYear")
-                        .HasColumnType("int")
-                        .HasColumnName("CropYear");
-
-                    b.Property<long>("CustomerId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("CustomerId");
-
-                    b.Property<Guid>("EnrollmentKey")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("EnrollmentKey")
-                        .HasDefaultValueSql("NEWID()");
-
-                    b.Property<DateTime?>("HarvestCompleteAt")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("HarvestCompleteAt");
-
-                    b.Property<DateTime?>("ModifiedAt")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("ModifiedAt");
-
-                    b.Property<string>("ModifiedBy")
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)")
-                        .HasColumnName("ModifiedBy");
-
-                    b.Property<string>("ProgramKey")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)")
-                        .HasColumnName("ProgramKey");
-
-                    b.Property<string>("Snapshot")
-                        .HasColumnType("nvarchar(max)")
-                        .HasColumnName("Snapshot");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("nvarchar(10)")
-                        .HasColumnName("Status");
-
-                    b.Property<string>("WithdrawnReason")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)")
-                        .HasColumnName("WithdrawnReason");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("EnrollmentKey")
-                        .IsUnique()
-                        .HasDatabaseName("UQ_ProgramEnrollment_EnrollmentKey");
-
-                    b.HasIndex("CustomerId", "ProgramKey", "CropYear")
-                        .IsUnique()
-                        .HasDatabaseName("UQ_ProgramEnrollment_Live")
-                        .HasFilter("[Status] IN ('Open', 'Attested')");
-
-                    b.HasIndex("ProgramKey", "CropYear", "Status")
-                        .HasDatabaseName("IX_ProgramEnrollment_Program_Year");
-
-                    b.ToTable("ProgramEnrollment", "dbo");
                 });
 
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.QueryLibraryItem", b =>
@@ -3551,18 +3456,6 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired()
                         .HasConstraintName("FK_ProducerReminders_Customer_CustomerId");
-
-                    b.Navigation("Customer");
-                });
-
-            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.ProgramEnrollment", b =>
-                {
-                    b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.Customer", "Customer")
-                        .WithMany()
-                        .HasForeignKey("CustomerId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired()
-                        .HasConstraintName("FK_ProgramEnrollment_Customer_CustomerId");
 
                     b.Navigation("Customer");
                 });

@@ -8,7 +8,7 @@ namespace GrainOriginatorPortal.Api.Services.FieldPlan;
 
 /// <summary>
 /// What the server knows about each sustainability program: which crops it applies to, what a record still
-/// needs, the enrollment statements, and how a locked estimate is built. The client's program definitions
+/// needs, and how a locked estimate is built. The client's program definitions
 /// (client/.../field-plan/programs) hold the same rules for the screen; these are the ones that count.
 /// Keep the two in step: the frozen shapes here must match each program's client-side freeze().
 /// </summary>
@@ -18,18 +18,6 @@ public static class FieldPlanPrograms
     public const string FdCic = "45z-fdcic";
 
     internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
-
-    /// <summary>45Z's attestation statements (keys as in fd-cic.program.ts).</summary>
-    private static readonly Dictionary<string, (string Key, string Short)[]> Statements = new()
-    {
-        [FdCic] =
-        [
-            ("notEnrolledElsewhere", "\"not enrolled elsewhere\" confirmation"),
-            ("recordsAccurate", "\"records are accurate\" confirmation"),
-            ("consentToThirdPartyAudit", "consent to third-party audit"),
-            ("firstPointOfAggregationAck", "first-point-of-aggregation acknowledgment"),
-        ],
-    };
 
     private static readonly Dictionary<string, string> TillageLabels = new()
     {
@@ -55,11 +43,6 @@ public static class FieldPlanPrograms
         FdCic => FdCicCropFor(cropLabel) is not null,
         _ => false,
     };
-
-    public static bool HasEnrollment(string programKey) => Statements.ContainsKey(programKey);
-
-    public static IReadOnlyList<(string Key, string Short)> StatementsFor(string programKey) =>
-        Statements.TryGetValue(programKey, out var s) ? s : [];
 
     /// <summary>A planting row's crop label to an FD-CIC crop, as fdCicCropFor in fd-cic.data.ts.</summary>
     public static string? FdCicCropFor(string cropLabel)

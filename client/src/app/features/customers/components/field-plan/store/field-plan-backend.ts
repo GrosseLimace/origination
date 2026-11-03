@@ -1,5 +1,5 @@
 import { InjectionToken, inject } from '@angular/core';
-import { EnrollableRecord, FieldProgramRecord, FieldSeason, FieldTickets, ProducerField, ProgramEnrollment, ProgramRecordStatus, TDiscPass } from '@models';
+import { FieldProgramRecord, FieldSeason, FieldTickets, ProducerField, ProgramRecordStatus, TDiscPass } from '@models';
 import { environment } from '@env/environment';
 import { InMemoryFieldPlanBackend } from './in-memory-field-plan-backend';
 import { HttpFieldPlanBackend } from './http-field-plan-backend';
@@ -9,7 +9,6 @@ export interface FieldPlanSnapshot {
   fields: ProducerField[];
   seasons: FieldSeason[];
   records: FieldProgramRecord[];
-  enrollments: ProgramEnrollment[];
 }
 
 /**
@@ -18,10 +17,9 @@ export interface FieldPlanSnapshot {
  * server in the browser until the database is approved (`environment.fieldPlanBackend` picks one for
  * FIELD_PLAN_BACKEND; nothing else changes).
  *
- * Rules that must hold across users belong to the backend, not the store: refusing duplicate claims at
- * attestation, refusing to reopen a field an attested
- * enrollment holds, and confirming (the server rescores with its own FD-CIC calculator, so the
- * client never supplies the score of record). Methods reject (throw) when a rule refuses the change.
+ * Rules that must hold across users belong to the backend, not the store: confirming (the server rescores
+ * with its own FD-CIC calculator, so the client never supplies the score of record). Methods reject (throw)
+ * when a rule refuses the change.
  */
 export interface FieldPlanBackend {
   /** GET api/field-plan/customer/{customerId} */
@@ -48,7 +46,7 @@ export interface FieldPlanBackend {
   updateRecord(id: string, data: unknown, status: ProgramRecordStatus, copiedFromField?: string): Promise<FieldProgramRecord>;
   /** DELETE api/field-plan/records/{id}: a Locked record is kept. */
   removeRecord(id: string): Promise<void>;
-  /** POST api/field-plan/records/{id}/reopen: unlocks a confirmed CI; refused while an attested enrollment holds the record. */
+  /** POST api/field-plan/records/{id}/reopen: unlocks a confirmed CI for correction, with the reason kept. */
   reopen(id: string, reason: string): Promise<FieldProgramRecord>;
   /**
    * GET api/field-plan/records/{id}/tickets: the field's CTRM tickets for its crop and crop year, settled or
@@ -62,23 +60,6 @@ export interface FieldPlanBackend {
    * locks, and records the confirmed CI with its bushels and tickets as the record's official result.
    */
   confirm(id: string, actualYield: number, ticketKeys: readonly string[], review: ConfirmReview): Promise<FieldProgramRecord>;
-
-  /**
-   * POST api/field-plan/enrollments: the producer's live enrollment in the program for the year, or a new
-   * one (e.g. re-enrolling after a withdrawal). No ID is issued: each field's is derived from its split ID
-   * and the crop year. Undefined for a program without enrollment.
-   *
-   * Future, for tickets and analytics: GET api/field-plan/enrollment?programKey&splitId&cropYear resolves
-   * a split and crop year to its field, record and enrollment (FieldPlanStore.resolveEnrollment), so a
-   * scale user never types an enrollment ID.
-   */
-  ensureEnrollment(programKey: string, customerId: number, year: number): Promise<ProgramEnrollment | undefined>;
-  /** PUT api/field-plan/enrollments/{key}/attestation: only while Open. */
-  updateAttestation(enrollment: ProgramEnrollment): Promise<ProgramEnrollment>;
-  /** POST api/field-plan/enrollments/{key}/attest: refused while anything is outstanding. */
-  attest(key: string, listed: readonly EnrollableRecord[]): Promise<ProgramEnrollment>;
-  /** POST api/field-plan/enrollments/{key}/withdraw: kept with its reason; re-enrolling uses the same derived field IDs. */
-  withdraw(key: string, reason: string): Promise<ProgramEnrollment>;
 }
 
 /** In memory or the API, per environment (`fieldPlanBackend`); see the environment files for why. */

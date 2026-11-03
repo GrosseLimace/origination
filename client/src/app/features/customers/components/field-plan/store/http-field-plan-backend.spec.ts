@@ -4,7 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { environment } from '@env/environment';
 import { ApiError } from '@core/errors/api-error';
-import type { FieldProgramRecord, ProgramEnrollment } from '@models';
+import type { FieldProgramRecord } from '@models';
 import { HttpFieldPlanBackend } from './http-field-plan-backend';
 
 const BASE = `${environment.apiBaseUrl}/field-plan`;
@@ -12,11 +12,6 @@ const BASE = `${environment.apiBaseUrl}/field-plan`;
 const record = {
   id: '7', seasonId: '3', programKey: '45z-fdcic', data: { expectedYield: 190 }, status: 'Ready',
   copiedFromYear: null, copiedFromField: null, frozen: null, official: null, reopened: null,
-};
-const enrollment = {
-  key: 'e1', programKey: '45z-fdcic', customerId: 9, year: 2026, status: 'Open',
-  attestation: { signerName: '', signedOn: '', method: 'eSign', documentRef: '', confirmations: { recordsAccurate: false } },
-  attestedBy: null, attestedAt: null, snapshot: null, withdrawnReason: null,
 };
 
 describe('HttpFieldPlanBackend', () => {
@@ -33,12 +28,11 @@ describe('HttpFieldPlanBackend', () => {
 
   it('should load a producer and drop nulls, so optional parts read as absent', async () => {
     const loading = backend.load(9);
-    http.expectOne(`${BASE}/customer/9`).flush({ fields: [], seasons: [], records: [record], enrollments: [enrollment] });
+    http.expectOne(`${BASE}/customer/9`).flush({ fields: [], seasons: [], records: [record] });
     const snapshot = await loading;
 
     expect(snapshot.records[0]).toEqual({ id: '7', seasonId: '3', programKey: '45z-fdcic', data: { expectedYield: 190 }, status: 'Ready' });
     expect('frozen' in snapshot.records[0]).toBe(false);
-    expect('snapshot' in snapshot.enrollments[0]).toBe(false);
   });
 
   it('should send only what the API declares (it refuses unknown properties)', async () => {
@@ -77,22 +71,7 @@ describe('HttpFieldPlanBackend', () => {
     expect(locked.frozen).toEqual({ basis: 'Estimate' });
   });
 
-  it('should return undefined for a program without enrollment (204)', async () => {
-    const ensuring = backend.ensureEnrollment('no-enrollment-program', 9, 2026);
-    const req = http.expectOne(`${BASE}/enrollments`);
-    expect(req.request.body).toEqual({ programKey: 'no-enrollment-program', customerId: 9, year: 2026 });
-    req.flush(null, { status: 204, statusText: 'No Content' });
-
-    expect(await ensuring).toBeUndefined();
-  });
-
-  it('should send the attestation alone, and return the reopened record without nulls', async () => {
-    const attestation = backend.updateAttestation(enrollment as unknown as ProgramEnrollment);
-    const req = http.expectOne(`${BASE}/enrollments/e1/attestation`);
-    expect(Object.keys(req.request.body)).toEqual(['attestation']);
-    req.flush(enrollment);
-    await attestation;
-
+  it('should reopen with the reason, and return the reopened record without nulls', async () => {
     const reopening = backend.reopen('7', 'wrong yield');
     const reopen = http.expectOne(`${BASE}/records/7/reopen`);
     expect(reopen.request.body).toEqual({ reason: 'wrong yield' });

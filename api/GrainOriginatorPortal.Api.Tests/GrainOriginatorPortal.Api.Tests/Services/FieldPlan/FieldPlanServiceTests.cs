@@ -29,7 +29,7 @@ namespace GrainOriginatorPortal.Api.Tests.Services.FieldPlan;
 /// <summary>
 /// The rules the field-plan server owns (docs/application-context/Field Plan - Database Plan.md): a split is
 /// one producer's field and its CTRM details come from CTRM, locking rescores 45Z on the server, locked
-/// records can't change, held records can't be reopened, and attesting checks the database, not the request.
+/// records can't change until they're unlocked with a reason, and confirming re-reads CTRM and rates T-DISC itself.
 /// Runs against EF InMemory through the real repository, so soft-delete filters are exercised too.
 /// </summary>
 public class FieldPlanServiceTests
@@ -145,20 +145,6 @@ public class FieldPlanServiceTests
         var record = await h.Service.AddRecordAsync(new CreateFieldProgramRecordRequest { SeasonId = season.Id, ProgramKey = FieldPlanPrograms.FdCic, Data = data ?? StoryCorn }, default);
         return (season, record);
     }
-
-    private static async Task<ProgramEnrollmentResponse> SignedEnrollment(Harness h)
-    {
-        var e = (await h.Service.EnsureEnrollmentAsync(new EnsureProgramEnrollmentRequest { ProgramKey = FieldPlanPrograms.FdCic, CustomerId = Tobin, Year = 2026 }, default))!;
-        return await h.Service.UpdateAttestationAsync(Guid.Parse(e.Key), new ProgramAttestationDto
-        {
-            SignerName = "Tom Tobin", SignedOn = "2026-04-01", Method = "eSign", DocumentRef = "",
-            Confirmations = FieldPlanPrograms.StatementsFor(FieldPlanPrograms.FdCic).ToDictionary(s => s.Key, _ => true),
-        }, default);
-    }
-
-    /// <summary>One EnrollableRecord as the client sends it (only the parts the server reads matter).</summary>
-    private static JsonElement Listed(FieldProgramRecordResponse record) =>
-        Json(JsonSerializer.Serialize(new { recordId = record.Id, splitId = "TATOB43", fieldName = "JARBOE WEST", status = record.Status }));
 
     // ── Fields ──────────────────────────────────────────────────────────────
 
@@ -402,131 +388,17 @@ public class FieldPlanServiceTests
     }
 
     [Fact]
-    public async Task Reopen_IsRefusedWhileAnAttestedEnrollmentHoldsTheRecord()
+    public async Task Reopen_NeedsAReason_AndOnlyAConfirmedCiCanBeReopened()
     {
         var h = New();
         var (_, record) = await CornField(h);
-        var enrollment = await SignedEnrollment(h);
-        await h.Service.AttestAsync(Guid.Parse(enrollment.Key), [Listed(record)], default);
+
+        var notConfirmed = await Assert.ThrowsAsync<BusinessException>(() => h.Service.ReopenAsync(int.Parse(record.Id), "fix", default));
+        Assert.Equal("FIELD_PLAN_NOT_LOCKED", notConfirmed.ErrorCode);
+
         await Confirmed(h, record);
-
-        var ex = await Assert.ThrowsAsync<BusinessException>(() => h.Service.ReopenAsync(int.Parse(record.Id), "fix", default));
-
-        Assert.Equal("FIELD_PLAN_HELD", ex.ErrorCode);
-    }
-
-
-    // ── Enrollments ─────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task Attest_ChecksTheAttestationAndTheDatabasesStatus()
-    {
-        var h = New();
-        var (_, record) = await CornField(h, data: Json("""{ "expectedYield": null, "actualYield": null, "syntheticN": null, "niFraction": 0, "coverCrop": "None", "tillage": "NoneOfTheAbove", "manure": [] }"""));
-        var e = (await h.Service.EnsureEnrollmentAsync(new EnsureProgramEnrollmentRequest { ProgramKey = FieldPlanPrograms.FdCic, CustomerId = Tobin, Year = 2026 }, default))!;
-        // The client claims Ready; the database says Draft.
-        var listed = Listed(record with { Status = "Ready" });
-
-        var ex = await Assert.ThrowsAsync<BusinessException>(() => h.Service.AttestAsync(Guid.Parse(e.Key), [listed], default));
-
-        Assert.Contains("finish the inputs for JARBOE WEST", ex.Message);
-        Assert.Contains("who signed", ex.Message);
-        Assert.Contains("consent to third-party audit", ex.Message);
-    }
-
-    [Fact]
-    public async Task Attest_RefusesAListThatDoesntMatchTheProducersRecords()
-    {
-        var h = New();
-        await CornField(h);
-        var enrollment = await SignedEnrollment(h);
-
-        var ex = await Assert.ThrowsAsync<BusinessException>(() => h.Service.AttestAsync(Guid.Parse(enrollment.Key), [], default));
-
-        Assert.Equal("FIELD_PLAN_STALE_LIST", ex.ErrorCode);
-    }
-
-    [Fact]
-    public async Task Attest_RefusesANonStringRecordId_AsAStaleList()
-    {
-        var h = New();
-        var (_, record) = await CornField(h);
-        var enrollment = await SignedEnrollment(h);
-
-        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
-            h.Service.AttestAsync(Guid.Parse(enrollment.Key), [Json($$"""{ "recordId": {{record.Id}} }""")], default));
-
-        Assert.Equal("FIELD_PLAN_STALE_LIST", ex.ErrorCode);
-    }
-
-    [Fact]
-    public async Task Attest_BuildsTheSnapshotFromTheDatabase_KeepingOnlyAWellFormedScoreFromTheRequest()
-    {
-        var h = New();
-        var (_, record) = await CornField(h);
-        var enrollment = await SignedEnrollment(h);
-        var crafted = Json(JsonSerializer.Serialize(new
-        {
-            recordId = record.Id, splitId = 123, fieldName = "SOMEONE ELSE", acres = 99999, status = "Locked",
-            enrollmentId = "45Z-2026-TATOB43", score = new { value = 3100.5, unit = "g CO2e/bu", unitShort = "g/bu" }, production = "lots",
-        }));
-
-        var entry = (await h.Service.AttestAsync(Guid.Parse(enrollment.Key), [crafted], default)).Snapshot!.Value[0];
-
-        Assert.Equal("TATOB43", entry.GetProperty("splitId").GetString());
-        Assert.Equal(120, entry.GetProperty("acres").GetDecimal());
-        Assert.Equal("Ready", entry.GetProperty("status").GetString());
-        Assert.NotEqual("SOMEONE ELSE", entry.GetProperty("fieldName").GetString());
-        Assert.Equal(3100.5, entry.GetProperty("score").GetProperty("value").GetDouble());
-        Assert.False(entry.TryGetProperty("production", out _));
-    }
-
-    [Fact]
-    public async Task Attest_KeepsTheSnapshotAndWhoAttested_ThenWithdrawAndReEnrollStartsANewEnrollment()
-    {
-        var h = New();
-        var (_, record) = await CornField(h);
-        var enrollment = await SignedEnrollment(h);
-        var key = Guid.Parse(enrollment.Key);
-
-        var attested = await h.Service.AttestAsync(key, [Listed(record)], default);
-        Assert.Equal(("Attested", User), (attested.Status, attested.AttestedBy));
-        Assert.Equal(record.Id, attested.Snapshot!.Value[0].GetProperty("recordId").GetString());
-
-        var withdrawn = await h.Service.WithdrawAsync(key, "producer changed buyers", default);
-        var again = await h.Service.EnsureEnrollmentAsync(new EnsureProgramEnrollmentRequest { ProgramKey = FieldPlanPrograms.FdCic, CustomerId = Tobin, Year = 2026 }, default);
-
-        Assert.Equal(("Withdrawn", "producer changed buyers"), (withdrawn.Status, withdrawn.WithdrawnReason));
-        Assert.NotEqual(enrollment.Key, again!.Key);
-        Assert.Equal("Open", again.Status);
-        Assert.Equal(2, (await h.Service.LoadAsync(Tobin, default)).Enrollments.Count);
-    }
-
-    [Fact]
-    public async Task EnsureEnrollment_IsNullForAProgramWithoutEnrollment_AndReturnsTheLiveOne()
-    {
-        var h = New();
-        var request = new EnsureProgramEnrollmentRequest { ProgramKey = FieldPlanPrograms.FdCic, CustomerId = Tobin, Year = 2026 };
-
-        var first = await h.Service.EnsureEnrollmentAsync(request, default);
-        var second = await h.Service.EnsureEnrollmentAsync(request, default);
-
-        Assert.Equal(first!.Key, second!.Key);
-        Assert.False(first.Attestation.GetProperty("confirmations").GetProperty("recordsAccurate").GetBoolean());
-        await Assert.ThrowsAsync<ValidationException>(() => h.Service.EnsureEnrollmentAsync(request with { ProgramKey = "graincraft" }, default));
-    }
-
-    [Fact]
-    public async Task UpdateAttestation_RefusesStatementsTheProgramDoesntHave()
-    {
-        var h = New();
-        var e = (await h.Service.EnsureEnrollmentAsync(new EnsureProgramEnrollmentRequest { ProgramKey = FieldPlanPrograms.FdCic, CustomerId = Tobin, Year = 2026 }, default))!;
-
-        await Assert.ThrowsAsync<ValidationException>(() => h.Service.UpdateAttestationAsync(Guid.Parse(e.Key), new ProgramAttestationDto
-        {
-            SignerName = "x", SignedOn = "2026-01-01", Method = "eSign", DocumentRef = "",
-            Confirmations = new() { ["somethingElse"] = true },
-        }, default));
+        await Assert.ThrowsAsync<ValidationException>(() => h.Service.ReopenAsync(int.Parse(record.Id), "  ", default));
+        Assert.Equal("Ready", (await h.Service.ReopenAsync(int.Parse(record.Id), "fix", default)).Status);
     }
 
     // ── Tickets for the 45Z review ──────────────────────────────────────────

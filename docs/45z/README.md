@@ -78,7 +78,7 @@ keep their version either way.
 
 ## Where field-plan data is kept
 
-The client keeps fields, field seasons, program records and enrollments in `FieldPlanStore`
+The client keeps fields, field seasons and program records in `FieldPlanStore`
 (`client/src/app/features/customers/components/field-plan/store/`). It loads one producer at a time and
 saves through `FIELD_PLAN_BACKEND`. That interface is the shape of the field-plan API: each method names its
 endpoint.
@@ -86,7 +86,7 @@ endpoint.
 **Today:** `InMemoryFieldPlanBackend` stands in for the server, so nothing survives a reload.
 
 The API side is built and approved (2026-10-27), and held off `main` until the feature is ready for QA and PROD:
-- the four tables, migration `AddFieldPlanTables`;
+- the tables, migration `AddFieldPlanTables` (its `ProgramEnrollment` table was dropped on 2026-11-03 by `DropProgramEnrollment`);
 - `api/field-plan`;
 - the client's `HttpFieldPlanBackend`.
 
@@ -97,8 +97,8 @@ The proposed tables, rules and endpoints are written up for approval in
 
 **Once the database is approved:**
 - An API-backed implementation replaces it as the single provider.
-- The API adds four tables in `ApplicationDbContext`: `ProducerField`, `ProducerFieldSeason`,
-  `FieldProgramRecord` and `ProgramEnrollment`.
+- The API adds three tables in `ApplicationDbContext`: `ProducerField`, `ProducerFieldSeason` and
+  `FieldProgramRecord`. A field is in 45Z when it has a 45Z record; no enrollment or producer attestation is kept.
 - `ProducerField` is keyed by the CTRM `SplitId` (unique), with `SplitPercent`, `EffectiveDate`, the split's
   name as CTRM had it, and the `State` and `County` entered for 45Z (see [CTRM splits](#ctrm-splits-the-fields)).
 - They follow the producer-table conventions:
@@ -110,8 +110,8 @@ The proposed tables, rules and endpoints are written up for approval in
   - `FieldProgramRecord.Official` (JSON, nullable): the official result, kept apart from the estimate (see
     [Estimate vs confirmed (official) CI](#estimate-vs-confirmed-official-ci)). It may become its own table once its shape is known.
 - Access is the same as planting intentions: any signed-in user (accepted risks AR-01 to AR-03).
-- The server owns two rules:
-  - refusing duplicate claims at attestation (a split ID in two enrollments of one program and year);
+- The server owns these rules:
+  - a split is one producer's field (a split another producer holds is refused);
   - locking the harvest estimate, which rescores with `FdCicService` rather than trusting the client's number.
 
 ## Enrollment identifier
@@ -119,13 +119,11 @@ The proposed tables, rules and endpoints are written up for approval in
 Each field in a program has an enrollment ID **derived** from identifiers the system already has, not issued
 from a counter: `{program prefix}-{crop year}-{split ID}`, e.g. `CI-2026-TATOB43`. Nobody types it, and in
 particular the scale or ticket-entry user never keys an extra ID: a ticket carries the split ID, its crop year
-is known, and `FieldPlanStore.resolveEnrollment(program, splitId, cropYear)` finds the field, its record and
-the producer's enrollment. The server will offer the same as `GET api/field-plan/enrollment?programKey&splitId&cropYear`.
+is known, so the split ID and crop year find the field and its record. The server stores no enrollment ID and
+offers no lookup for it (none is built yet).
 
-- The producer's enrollment (producer + program + year) still groups the fields for
-  attestation and withdrawal, but has no display ID of its own.
-- Withdrawal is kept with its reason. Re-enrolling makes the producer live again under the **same** field
-  IDs, since they derive from split and year.
+- There is no producer-level enrollment, attestation or withdrawal (dropped 2026-11-03): a field is in 45Z when it has a
+  45Z record, and a confirmed CI changes only by unlocking it with a reason.
 - The format lives in one function, `enrollmentIdFor` (`client/.../field-plan/programs/program-enrollment.ts`).
 - **Open (technical design):** the final format; where the crop year comes from (ticket date, contract or
   CTRM crop year); a split growing two crops in one program year (the crop would need to be in the key);
@@ -202,7 +200,6 @@ Once a 45Z field has an estimated CI, its tab shows **Confirm CI Score**. The re
    - reads the tickets again on the server and keeps only the ones listed, so the bushels are CTRM's;
    - refuses a no-till or reduced-till field without passes (`FIELD_PLAN_TDISC_REQUIRED`, 422) or with a pass T-DISC doesn't allow; rates them with `TDiscService`, ignoring any rating in the saved data, and sets the tillage the rating supports;
    - sets the actual yield, rescores, locks, and writes the confirmed CI.
-   - Confirming is allowed while an attested enrollment holds the record, because attesting comes before harvest and confirming after.
 
    Once confirmed, step 5 (and the field's tab, beside "View review") offers the report and the ledger.
 
@@ -216,7 +213,7 @@ Once a 45Z field has an estimated CI, its tab shows **Confirm CI Score**. The re
 
 Built in the browser: content in `programs/fd-cic/feedstock-report.ts` (tested), drawn by `feedstock-report.service.ts` with jsPDF, as the calculators' reports are. File name: `45Z-Biofuel-Feedstock-Report_{producer}_{enrollmentId}_{yyyymmdd}.pdf`.
 
-**Mass Balance Ledger** (CSV for the Bins, one row per confirmed field, not per ticket): "Download Mass Balance Ledger" on the enrollment card for the producer and year, and in a confirmed review.
+**Mass Balance Ledger** (CSV for the Bins, one row per confirmed field, not per ticket): "Download Mass Balance Ledger" on the 45Z card above the planting table for the producer and year, and in a confirmed review.
 - Columns: producer code and name, split ID, field, enrollment ID, crop year, commodity, acres, confirmed bushels, tickets (count), CI (g CO2e/bu), tillage, USDA version, confirmed by (the originator's name; their sign-in on a field confirmed before names were kept) and at.
 - Built in the browser (`programs/fd-cic/mass-balance-ledger.ts`), with spreadsheet formula injection guarded (`shared/utils/csv.ts`).
 - File name: `45Z-Mass-Balance-Ledger_{producer}_{year}_{yyyymmdd}.csv`.
@@ -228,7 +225,7 @@ Built in the browser: content in `programs/fd-cic/feedstock-report.ts` (tested),
 The business doesn't plan on one producer-wide average CI. Downstream opportunities may each need a
 different CI target, so the question is **how many bushels sit at or below a given CI**, by crop.
 
-- The enrollment card shows a "bushels by CI" ladder per crop: fields lowest CI first, each with its
+- The 45Z card shows a "bushels by CI" ladder per crop: fields lowest CI first, each with its
   bushels and a running total, and a target box ("at or below 3,000 g/bu → 69,000 bu from 2 fields").
   Crop rows show the range of CIs and the bushels, never an average.
 - Bushels are acres × actual yield once it's in, otherwise acres × expected yield, marked projected. A
@@ -313,8 +310,6 @@ For a tables-only release this should take about a day, most of it review.
 
 On 2026-10-30 the branch was reviewed against the Scoular standards with the marketplace skills
 (`audit-dotnet`, `audit-angular`, `audit-sql`, `audit-security`, `code-review`). Fixed before the merge:
-- **Attested snapshot built on the server.** It was kept as the browser sent it; a crafted list could put
-  another producer's split in it, or a non-text split ID that broke attesting for everyone in the program and year.
 - **A field once per crop per year.** The same split on two rows of the same crop (say irrigated and dryland
   corn) pulled the same tickets twice, so the Bins' ledger would have counted them twice.
 - **No uncounted tickets.** A ticket with no bushel figure starts left out of the review and can't be confirmed.

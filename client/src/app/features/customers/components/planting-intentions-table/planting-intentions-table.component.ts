@@ -305,7 +305,7 @@ export class PlantingIntentionsTableComponent {
   private readonly _loadFieldPlan = effect(() => {
     if (this.fieldPlanningEnabled) this.fieldPlan.ensureLoaded(this.customer().id);
   });
-  /** One enrollment card per program; each shows only once the producer has a field in it. */
+  /** One summary card per program; each shows only once the producer has a field in it. */
   readonly programs = inject(ProgramRegistry).all.filter(p => !!p.enrollment);
 
   /** The crop row whose fields are open: softly highlighted so it's clear which crop is being worked on. */

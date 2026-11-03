@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace GrainOriginatorPortal.Api.Models.Responses;
 
 // The shapes match client/src/app/models/field-plan.model.ts exactly, so the client's FieldPlanStore takes
-// them as they come. Program data, frozen estimates, attestations and snapshots are passed through as JSON.
+// them as they come. Program data and frozen estimates are passed through as JSON.
 
 /// <summary>Everything one producer has in the field plan, across all years.</summary>
 public record FieldPlanSnapshotResponse
@@ -11,7 +11,6 @@ public record FieldPlanSnapshotResponse
     public required IReadOnlyList<ProducerFieldResponse> Fields { get; init; }
     public required IReadOnlyList<FieldSeasonResponse> Seasons { get; init; }
     public required IReadOnlyList<FieldProgramRecordResponse> Records { get; init; }
-    public required IReadOnlyList<ProgramEnrollmentResponse> Enrollments { get; init; }
 }
 
 /// <summary>A producer's field: one CTRM split.</summary>
@@ -57,21 +56,6 @@ public record FieldProgramRecordResponse
     /// <summary>The confirmed CI with its bushels and tickets; null until the field is confirmed.</summary>
     public JsonElement? Official { get; init; }
     public JsonElement? Reopened { get; init; }
-}
-
-public record ProgramEnrollmentResponse
-{
-    public required string Key { get; init; }
-    public required string ProgramKey { get; init; }
-    public required long CustomerId { get; init; }
-    public required int Year { get; init; }
-    /// <summary>Open, Attested or Withdrawn.</summary>
-    public required string Status { get; init; }
-    public required JsonElement Attestation { get; init; }
-    public string? AttestedBy { get; init; }
-    public DateTime? AttestedAt { get; init; }
-    public JsonElement? Snapshot { get; init; }
-    public string? WithdrawnReason { get; init; }
 }
 
 /// <summary>

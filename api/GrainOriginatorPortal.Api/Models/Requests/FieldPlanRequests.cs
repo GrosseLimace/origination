@@ -109,53 +109,6 @@ public record FieldPlanReasonRequest
     public required string Reason { get; init; }
 }
 
-public record EnsureProgramEnrollmentRequest
-{
-    [Required, StringLength(30, MinimumLength = 1)]
-    public required string ProgramKey { get; init; }
-
-    [Range(1, long.MaxValue)]
-    public required long CustomerId { get; init; }
-
-    [Range(2000, 2100)]
-    public required int Year { get; init; }
-}
-
-/// <summary>The producer's signed attestation, as the client's ProgramAttestation.</summary>
-public record ProgramAttestationDto
-{
-    [StringLength(200)]
-    public required string SignerName { get; init; }
-
-    /// <summary>yyyy-MM-dd, or "" until signed.</summary>
-    [StringLength(10)]
-    public required string SignedOn { get; init; }
-
-    [RegularExpression("^(eSign|Paper)$")]
-    public required string Method { get; init; }
-
-    [StringLength(200)]
-    public required string DocumentRef { get; init; }
-
-    public required Dictionary<string, bool> Confirmations { get; init; }
-}
-
-public record UpdateAttestationRequest
-{
-    [Required]
-    public required ProgramAttestationDto Attestation { get; init; }
-}
-
-/// <summary>
-/// Attests an enrollment. <see cref="Listed"/> is the client's list of the producer's records in the program
-/// that year (EnrollableRecord, kept as the snapshot); the server checks it against its own records.
-/// </summary>
-public record AttestEnrollmentRequest
-{
-    [Required, MaxLength(500)]
-    public required List<JsonElement> Listed { get; init; }
-}
-
 /// <summary>Confirms a 45Z field after harvest with the tickets reviewed with the producer.</summary>
 public record ConfirmFieldProgramRecordRequest
 {

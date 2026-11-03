@@ -64,7 +64,7 @@ export class FdCicReviewComponent implements OnInit {
   private readonly tDiscApi = inject(TDiscApiService);
 
   readonly recordId = input.required<string>();
-  /** The producer's CTRM code and name, for the report and ledger. Without it they're on the enrollment card only. */
+  /** The producer's CTRM code and name, for the report and ledger. Without it they are on the program card only. */
   readonly producer = input<{ code: string; name: string; primaryContact?: string | null } | null>(null);
   readonly close = output<void>();
 
