@@ -138,6 +138,15 @@ export function openWorkbook(path) {
     return { sheet: m[1], cell: m[2] + m[3] };
   }
 
+  /** A defined name that refers to a rectangle, e.g. Planting → 'Implement List'!$Y$2:$Y$90. */
+  function rangeRef(name) {
+    const ref = names.get(name.toLowerCase());
+    if (!ref) throw new Error(`Defined name not found: ${name}`);
+    const m = ref.match(/^'?([^'!]+)'?!\$?([A-Z]+)\$?(\d+):\$?([A-Z]+)\$?(\d+)$/);
+    if (!m) throw new Error(`Defined name ${name} is not a range: ${ref}`);
+    return { sheet: m[1], from: [colNum(m[2]), +m[3]], to: [colNum(m[4]), +m[5]] };
+  }
+
   function table(tableName) {
     for (const part of zip.names().filter(n => /^xl\/tables\/table\d+\.xml$/.test(n))) {
       const xml = zip.text(part);
@@ -158,6 +167,7 @@ export function openWorkbook(path) {
     sheet,
     name: n => { const r = resolveName(n); return sheet(r.sheet).get(r.cell); },
     nameRef: resolveName,
+    rangeRef,
     table,
     coreProps: () => {
       const xml = zip.has('docProps/core.xml') ? zip.text('docProps/core.xml') : '';

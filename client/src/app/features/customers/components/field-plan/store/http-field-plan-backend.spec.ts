@@ -65,11 +65,11 @@ describe('HttpFieldPlanBackend', () => {
     await season;
   });
 
-  it('should confirm with the yield and ticket keys, and the server rescores and locks', async () => {
-    const confirming = backend.confirm('7', 205, ['P1', 'P2']);
+  it('should confirm with the yield, ticket keys, T-DISC passes and recordkeeping tick, and the server rescores and locks', async () => {
+    const confirming = backend.confirm('7', 205, ['P1', 'P2'], { tDiscPasses: [{ window: 'Harvest', implement: 'HARVEST, GRAIN' }], recordkeepingReviewed: true });
     const req = http.expectOne(`${BASE}/records/7/confirm`);
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({ actualYield: 205, ticketKeys: ['P1', 'P2'], reviewedWithProducer: true });
+    expect(req.request.body).toEqual({ actualYield: 205, ticketKeys: ['P1', 'P2'], reviewedWithProducer: true, tDiscPasses: [{ window: 'Harvest', implement: 'HARVEST, GRAIN' }] });
     req.flush({ ...record, status: 'Locked', frozen: { basis: 'Estimate' } });
 
     const locked: FieldProgramRecord = await confirming;
@@ -101,7 +101,7 @@ describe('HttpFieldPlanBackend', () => {
   });
 
   it('should reject with the server\'s message, which the store shows', async () => {
-    const confirming = backend.confirm('7', 205, ['P1']);
+    const confirming = backend.confirm('7', 205, ['P1'], { tDiscPasses: null, recordkeepingReviewed: true });
     http.expectOne(`${BASE}/records/7/confirm`).flush(
       { error: { code: 'FIELD_PLAN_STALE_TICKETS', message: 'Some of those tickets are no longer this field\'s in CTRM.' } },
       { status: 409, statusText: 'Conflict' });

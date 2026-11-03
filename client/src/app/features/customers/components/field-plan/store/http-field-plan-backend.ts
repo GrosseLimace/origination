@@ -4,7 +4,7 @@ import { Observable, firstValueFrom } from 'rxjs';
 import { ApiError } from '@core/errors/api-error';
 import { environment } from '@env/environment';
 import { EnrollableRecord, FieldProgramRecord, FieldSeason, FieldTickets, ProducerField, ProgramEnrollment, ProgramRecordStatus } from '@models';
-import type { FieldPlanBackend, FieldPlanSnapshot } from './field-plan-backend';
+import type { ConfirmReview, FieldPlanBackend, FieldPlanSnapshot } from './field-plan-backend';
 
 /**
  * Drops null properties, so optional fields read as absent, as they do from the in-memory backend
@@ -93,9 +93,9 @@ export class HttpFieldPlanBackend implements FieldPlanBackend {
   }
 
   /** The server reads the tickets again and uses its own bushels; it only needs which ones were kept. */
-  async confirm(id: string, actualYield: number, ticketKeys: readonly string[]): Promise<FieldProgramRecord> {
+  async confirm(id: string, actualYield: number, ticketKeys: readonly string[], review: ConfirmReview): Promise<FieldProgramRecord> {
     return withoutNulls(await this.send(this.http.post<FieldProgramRecord>(`${this.base}/records/${id}/confirm`, {
-      actualYield, ticketKeys, reviewedWithProducer: true,
+      actualYield, ticketKeys, reviewedWithProducer: review.recordkeepingReviewed, tDiscPasses: review.tDiscPasses,
     })));
   }
 

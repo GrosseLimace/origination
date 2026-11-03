@@ -166,7 +166,7 @@ describe('FieldPlanStore', () => {
         tickets: [{ ...tickets[0], netBushels: null }],
       });
 
-      expect(await store.confirm(z.id, 205, [tickets[0].ticketKey])).toBeUndefined();
+      expect(await store.confirm(z.id, 205, [tickets[0].ticketKey], { tDiscPasses: null, recordkeepingReviewed: true })).toBeUndefined();
       expect(store.record(z.id)?.status).toBe('Ready');
     });
 
@@ -180,7 +180,7 @@ describe('FieldPlanStore', () => {
   describe('confirm and reopen', () => {
     /** Confirms a 45Z field with every ticket the review offers, as the originator would. */
     const confirmAll = async (id: string, actualYield: number) =>
-      store.confirm(id, actualYield, (await store.fieldTickets(id)).tickets.map(t => t.ticketKey));
+      store.confirm(id, actualYield, (await store.fieldTickets(id)).tickets.map(t => t.ticketKey), { tDiscPasses: null, recordkeepingReviewed: true });
 
     it('should lock a confirmed field with the latest typed values and the confirmed CI as its official result', async () => {
       const z = (await store.addRecord(corn.id, FD_CIC_PROGRAM.key))!;
@@ -275,7 +275,7 @@ describe('FieldPlanStore', () => {
       const second = (await store.addSeason((await newField('PENKA #2', 'TATOB29')).fieldKey, 1, 2026, 'Corn', 120))!;
       const z2 = (await store.addRecord(second.id, FD_CIC_PROGRAM.key))!;
       store.updateRecord(z2.id, scored(z2, 210));
-      await store.confirm(z2.id, 210, (await store.fieldTickets(z2.id)).tickets.map(t => t.ticketKey));
+      await store.confirm(z2.id, 210, (await store.fieldTickets(z2.id)).tickets.map(t => t.ticketKey), { tDiscPasses: null, recordkeepingReviewed: true });
       expect(store.record(z2.id)?.status).toBe('Locked');
 
       expect(store.copyTargets(z1.id)).toEqual([{ seasonId: second.id, fieldName: 'PENKA #2', cropLabel: 'Corn', effect: 'locked' }]);
@@ -301,7 +301,7 @@ describe('FieldPlanStore', () => {
     it('should not save a locked record\'s edits, and refuse them on the backend too', async () => {
       const z = (await store.addRecord(corn.id, FD_CIC_PROGRAM.key))!;
       store.updateRecord(z.id, scored(z));
-      await store.confirm(z.id, 205, (await store.fieldTickets(z.id)).tickets.map(t => t.ticketKey));
+      await store.confirm(z.id, 205, (await store.fieldTickets(z.id)).tickets.map(t => t.ticketKey), { tDiscPasses: null, recordkeepingReviewed: true });
       const kept = store.record(z.id)?.data;
       store.updateRecord(z.id, scored(z, 1));
       expect(store.record(z.id)?.data).toEqual(kept);

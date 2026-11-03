@@ -38,8 +38,8 @@ export class FdCicIntakeComponent implements ProgramIntake {
     { value: 'None', label: COVER_LABELS.None, help: 'Nothing planted between cash crops.' },
   ];
   readonly tillageOptions: { value: Tillage; label: string; help: string }[] = [
-    { value: 'ReducedTill', label: TILLAGE_LABELS.ReducedTill, help: 'STIR under 80 in USDA T-DISC.' },
-    { value: 'NoTill', label: TILLAGE_LABELS.NoTill, help: 'STIR under 20 in USDA T-DISC.' },
+    { value: 'ReducedTill', label: TILLAGE_LABELS.ReducedTill, help: 'T-DISC rating 0.252 or less. The passes are rated with T-DISC at review.' },
+    { value: 'NoTill', label: TILLAGE_LABELS.NoTill, help: 'T-DISC rating 0.075 or less. The passes are rated with T-DISC at review.' },
     { value: 'NoneOfTheAbove', label: TILLAGE_LABELS.NoneOfTheAbove, help: 'Conventional tillage, or not known.' },
   ];
   readonly manureOptions = MANURE_OPTIONS;

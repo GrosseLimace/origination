@@ -167,6 +167,29 @@ public record ConfirmFieldProgramRecordRequest
     [Required, MinLength(1), MaxLength(1000)]
     public required List<string> TicketKeys { get; init; }
 
-    /// <summary>The originator's tick: reviewed with the producer after harvest.</summary>
+    /// <summary>
+    /// The originator's tick on the review's recordkeeping step: the records the producer must keep were
+    /// reviewed with them. Must be true.
+    /// </summary>
     public required bool ReviewedWithProducer { get; init; }
+
+    /// <summary>
+    /// The field's passes from last harvest through this one, for USDA T-DISC (api/tdisc/options lists the
+    /// windows and implements). Required when the field's tillage is No till or Reduced till, ignored
+    /// otherwise. The rating is worked out on the server from these.
+    /// </summary>
+    [MaxLength(20)]
+    public List<TDiscPassRequest>? TDiscPasses { get; init; }
+}
+
+/// <summary>One field pass for T-DISC: the tillage window it fell in and the T-DISC implement used.</summary>
+public record TDiscPassRequest
+{
+    /// <summary>A window key, e.g. "Field_Preparation".</summary>
+    [Required, StringLength(40)]
+    public required string Window { get; init; }
+
+    /// <summary>A T-DISC implement name, as api/tdisc/options lists it.</summary>
+    [Required, StringLength(100)]
+    public required string Implement { get; init; }
 }

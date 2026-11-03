@@ -6,6 +6,7 @@ using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services.Ctrm;
 using GrainOriginatorPortal.Api.Services.FdCic;
+using GrainOriginatorPortal.Api.Services.TDisc;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 
@@ -45,17 +46,19 @@ public sealed class FieldPlanService : IFieldPlanService
     private readonly IFieldPlanRepository _repository;
     private readonly IProducerSplitService _splits;
     private readonly IFdCicService _fdCic;
+    private readonly ITDiscService _tDisc;
     private readonly IFieldTicketService _tickets;
     private readonly IRequestContextService _requestContext;
     private readonly ILogger<FieldPlanService> _logger;
     private readonly TimeProvider _clock;
 
-    public FieldPlanService(IFieldPlanRepository repository, IProducerSplitService splits, IFdCicService fdCic, IFieldTicketService tickets,
+    public FieldPlanService(IFieldPlanRepository repository, IProducerSplitService splits, IFdCicService fdCic, ITDiscService tDisc, IFieldTicketService tickets,
         IRequestContextService requestContext, ILogger<FieldPlanService> logger, TimeProvider? clock = null)
     {
         _repository = repository;
         _splits = splits;
         _fdCic = fdCic;
+        _tDisc = tDisc;
         _tickets = tickets;
         _requestContext = requestContext;
         _logger = logger;
@@ -289,6 +292,7 @@ public sealed class FieldPlanService : IFieldPlanService
 
         // A confirmed CI is unlocked with its estimate: both go to the history, and the field can be reviewed again.
         KeepInHistory(record, reason.Trim());
+        RestoreEstimatedTillage(record);
         record.Frozen = null;
         record.Official = null;
         record.LockedBy = null;
@@ -301,11 +305,26 @@ public sealed class FieldPlanService : IFieldPlanService
     }
 
     /// <summary>
+    /// A confirm that T-DISC stepped down saved the confirmed tillage in the data; reopening puts back the tillage the
+    /// field was estimated at, so the next review rates it from where it started (and still asks for T-DISC).
+    /// </summary>
+    private static void RestoreEstimatedTillage(FieldProgramRecord record)
+    {
+        if (record.Official is null) return;
+        var estimated = JsonNode.Parse(record.Official)?["tDisc"]?["estimatedTillage"]?.GetValue<string>();
+        if (FieldPlanPrograms.TillageKey(estimated) is not { } tillage) return;
+        var data = JsonNode.Parse(record.Data)!.AsObject();
+        data["tillage"] = tillage;
+        record.Data = data.ToJsonString(FieldPlanPrograms.Json);
+    }
+
+    /// <summary>
     /// Confirms a 45Z field after harvest, once the originator has gone over its inputs and CTRM tickets with
     /// the producer. The tickets are read again here and only the listed keys are kept, so the bushels are
-    /// CTRM's, never the request's. The actual yield is set, the CI is rescored with the server's calculator
-    /// and the record locked, and the confirmed CI with its
-    /// bushels and tickets becomes the record's official result: what the Bins' CSV is built from.
+    /// CTRM's, never the request's. A no-till or reduced-till field needs its passes, which are rated here with
+    /// USDA T-DISC, and is confirmed at the tillage that rating supports (FieldPlanTDisc). The actual yield is set, the CI is rescored with
+    /// the server's calculator and the record locked, and the confirmed CI with its bushels and tickets becomes
+    /// the record's official result: what the Mass Balance Ledger and the Biofuel Feedstock Report are built from.
     /// Allowed while an attested enrollment holds the record: attesting comes before harvest, confirming after.
     /// </summary>
     public async Task<FieldProgramRecordResponse> ConfirmAsync(int recordId, ConfirmFieldProgramRecordRequest request, CancellationToken ct)
@@ -317,7 +336,7 @@ public sealed class FieldPlanService : IFieldPlanService
         if (record.Official is not null || record.Status == Locked)
             throw new BusinessException("This field's CI is already confirmed; unlock it to review it again.", "FIELD_PLAN_ALREADY_CONFIRMED");
         if (!request.ReviewedWithProducer)
-            throw new ValidationException("reviewedWithProducer", "Confirm that the inputs and tickets were reviewed with the producer after harvest.");
+            throw new ValidationException("reviewedWithProducer", "Confirm that the recordkeeping requirements were reviewed with the producer.");
         var keys = request.TicketKeys.Select(k => k.Trim()).Where(k => k.Length > 0).ToHashSet(StringComparer.Ordinal);
         if (keys.Count == 0)
             throw new ValidationException("ticketKeys", "Include at least one ticket.");
@@ -339,6 +358,35 @@ public sealed class FieldPlanService : IFieldPlanService
                 "FIELD_PLAN_TICKET_NO_BUSHELS", StatusCodes.Status422UnprocessableEntity);
 
         var data = JsonNode.Parse(record.Data)!.AsObject();
+        var estimatedTillage = data["tillage"]?.GetValue<string>() ?? "";
+        JsonObject? tDisc = null;
+        // Only the server's rating counts: whatever the saved data says is replaced here.
+        data["tDiscRating"] = null;
+        data["tDiscPasses"] = null;
+        if (FieldPlanTDisc.IsNeeded(estimatedTillage))
+        {
+            if (request.TDiscPasses is not { Count: > 0 } passes)
+                throw new BusinessException("Add the field's passes for T-DISC (No till and Reduced till need a T-DISC rating).",
+                    "FIELD_PLAN_TDISC_REQUIRED", StatusCodes.Status422UnprocessableEntity);
+            if (passes.Any(p => p is null))
+                throw new ValidationException("tDiscPasses", "A T-DISC pass is empty.");
+            var result = _tDisc.Rate(passes.Select(p => new TDiscPassInput(p.Window, p.Implement)).ToList());
+            var designation = FieldPlanTDisc.Tillage(result.Designation);
+            var confirmedTillage = FieldPlanTDisc.SupportedTillage(estimatedTillage, result.Designation);
+            data["tDiscRating"] = result.Rating;
+            data["tDiscPasses"] = JsonSerializer.SerializeToNode(passes.Select(p => new { p.Window, p.Implement }), FieldPlanPrograms.Json);
+            data["tillage"] = confirmedTillage;
+            tDisc = new JsonObject
+            {
+                ["rating"] = result.Rating,
+                ["designation"] = FieldPlanPrograms.TillageLabel(designation),
+                ["estimatedTillage"] = FieldPlanPrograms.TillageLabel(estimatedTillage),
+                ["confirmedTillage"] = FieldPlanPrograms.TillageLabel(confirmedTillage),
+                ["version"] = result.Label,
+                ["windows"] = JsonSerializer.SerializeToNode(result.Windows, FieldPlanPrograms.Json),
+                ["passes"] = JsonSerializer.SerializeToNode(result.Passes, FieldPlanPrograms.Json),
+            };
+        }
         data["actualYield"] = request.ActualYield;
         record.Data = data.ToJsonString(FieldPlanPrograms.Json);
 
@@ -353,7 +401,10 @@ public sealed class FieldPlanService : IFieldPlanService
             ["actualYield"] = request.ActualYield,
             ["bushels"] = included.Sum(t => t.NetBushels!.Value),
             ["tickets"] = JsonSerializer.SerializeToNode(included, FieldPlanPrograms.Json),
+            ["tDisc"] = tDisc,
+            ["recordkeepingAcknowledged"] = true,
             ["documentedBy"] = User,
+            ["documentedByName"] = _requestContext.GetCurrentUserDisplayName(),
             ["documentedAt"] = now.ToString("o"),
         }.ToJsonString(FieldPlanPrograms.Json);
         record.Status = Locked;

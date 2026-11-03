@@ -7,7 +7,7 @@ import { ProgramRegistry } from './program-registry';
 import { FieldResult } from './program-def';
 import { LadderRow, atOrBelowTarget, ciLadder } from './ci-ladder';
 import { downloadCsv } from '@shared/utils/csv';
-import { confirmedCiCsv, confirmedCiFileName } from './fd-cic/confirmed-ci-export';
+import { ledgerCsv, ledgerFileName } from './fd-cic/mass-balance-ledger';
 
 /** One field in the card: what the enrollment lists, plus its score and bushels. */
 type CardField = EnrollableRecord & { result: FieldResult; official: string; confirmed: boolean };
@@ -27,7 +27,7 @@ type CardField = EnrollableRecord & { result: FieldResult; official: string; con
  *
  * Every CI here is a planning estimate until the field is reviewed with the producer and its CTRM tickets after
  * harvest and confirmed; then the confirmed CI and its ticket bushels show, and the card downloads the
- * confirmed fields as the Bins' CSV (one row per ticket).
+ * confirmed fields as the Mass Balance Ledger (one row per field).
  *
  * Shows nothing until the producer has a field in the program. PROTOTYPE ONLY (in memory).
  */
@@ -72,7 +72,7 @@ type CardField = EnrollableRecord & { result: FieldResult; official: string; con
                 <p class="text-xs text-gray-500 dark:text-gray-400">Planning estimates from the {{ p.shortLabel }} calculator. {{ o.requirementsNote }}</p>
                 @if (confirmedCount() && producer()) {
                   <button type="button" class="h-8 rounded-md px-3 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible"
-                          (click)="downloadConfirmed()">Download confirmed CI (CSV) · {{ confirmedCount() }} field{{ confirmedCount() === 1 ? '' : 's' }}</button>
+                          (click)="downloadLedger()">Download Mass Balance Ledger · {{ confirmedCount() }} field{{ confirmedCount() === 1 ? '' : 's' }}</button>
                 }
               </div>
             }
@@ -175,7 +175,7 @@ export class ProgramEnrollmentCardComponent {
   readonly programKey = input.required<string>();
   readonly customerId = input.required<number>();
   readonly year = input.required<number>();
-  /** The producer's CTRM code and name, for the confirmed-CI CSV. */
+  /** The producer's CTRM code and name, for the Mass Balance Ledger. */
   readonly producer = input<{ code: string; name: string } | null>(null);
 
   /** The program, if it has a producer-level enrollment (otherwise the card shows nothing). */
@@ -215,14 +215,14 @@ export class ProgramEnrollmentCardComponent {
 
   readonly confirmedCount = computed(() => this.records().filter(r => r.confirmed).length);
 
-  /** The Bins' mass balance ledger file: every confirmed field's tickets, one row each, with its confirmed CI. */
-  downloadConfirmed(): void {
+  /** The Mass Balance Ledger: one row per confirmed field, with its confirmed bushels and CI. */
+  downloadLedger(): void {
     const producer = this.producer();
     if (!producer) return;
     const fields = this.items()
       .filter(i => i.record.official?.status === 'Documented')
       .map(i => ({ ...i, enrollmentId: this.store.enrollmentIdOf(i.record) }));
-    downloadCsv(confirmedCiCsv(producer, fields), confirmedCiFileName(producer.code, this.year(), new Date()));
+    downloadCsv(ledgerCsv(producer, fields), ledgerFileName(producer.code, this.year(), new Date()));
   }
 
   /** Per group (45Z: crop), the scored fields as a ladder, lowest CI first, with the range and total bushels. */

@@ -1,5 +1,5 @@
 import { InjectionToken, inject } from '@angular/core';
-import { EnrollableRecord, FieldProgramRecord, FieldSeason, FieldTickets, ProducerField, ProgramEnrollment, ProgramRecordStatus } from '@models';
+import { EnrollableRecord, FieldProgramRecord, FieldSeason, FieldTickets, ProducerField, ProgramEnrollment, ProgramRecordStatus, TDiscPass } from '@models';
 import { environment } from '@env/environment';
 import { InMemoryFieldPlanBackend } from './in-memory-field-plan-backend';
 import { HttpFieldPlanBackend } from './http-field-plan-backend';
@@ -57,10 +57,11 @@ export interface FieldPlanBackend {
   fieldTickets(id: string): Promise<FieldTickets>;
   /**
    * POST api/field-plan/records/{id}/confirm: after harvest, with the producer. The server reads the tickets
-   * again (its bushels, never ours), rescores with this actual yield, locks, and records the confirmed CI
-   * with its bushels and tickets as the record's official result.
+   * again (its bushels, never ours), checks the T-DISC rating against the tillage (no till and reduced till
+   * need one; a rating that doesn't support the tillage steps it down), rescores with this actual yield,
+   * locks, and records the confirmed CI with its bushels and tickets as the record's official result.
    */
-  confirm(id: string, actualYield: number, ticketKeys: readonly string[]): Promise<FieldProgramRecord>;
+  confirm(id: string, actualYield: number, ticketKeys: readonly string[], review: ConfirmReview): Promise<FieldProgramRecord>;
 
   /**
    * POST api/field-plan/enrollments: the producer's live enrollment in the program for the year, or a new
@@ -85,3 +86,11 @@ export const FIELD_PLAN_BACKEND = new InjectionToken<FieldPlanBackend>('FIELD_PL
   providedIn: 'root',
   factory: () => environment.fieldPlanBackend === 'api' ? inject(HttpFieldPlanBackend) : inject(InMemoryFieldPlanBackend),
 });
+
+/** The review's other answers sent with a confirm. */
+export interface ConfirmReview {
+  /** The field's passes for USDA T-DISC, rated on the server; needed for no till and reduced till, ignored otherwise. */
+  tDiscPasses: TDiscPass[] | null;
+  /** The recordkeeping step's tick: what the producer must keep was reviewed with them. */
+  recordkeepingReviewed: boolean;
+}

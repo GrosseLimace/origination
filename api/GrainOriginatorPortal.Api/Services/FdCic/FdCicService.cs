@@ -35,7 +35,8 @@ public sealed class FdCicService : IFdCicService
                 var (method, problem) = FdCicVersionGate.Check(pack, methodList);
                 state = new VersionState(version, pack, method, problem);
             }
-            catch (Exception ex) when (ex is InvalidDataException or System.Text.Json.JsonException)
+            // Any fault in the pack (bad shape, duplicate name, missing list) switches the version off; it never stops the app.
+            catch (Exception ex)
             {
                 state = new VersionState(version, null, null, ex.Message);
             }

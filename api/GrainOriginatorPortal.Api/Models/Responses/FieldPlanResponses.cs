@@ -101,6 +101,11 @@ public record FieldTicketResponse
     /// <summary>Stable key for the detail row (ticket prefix, number, suffix, BL date, product, sequence).</summary>
     public required string TicketKey { get; init; }
     public required string TicketNumber { get; init; }
+    /// <summary>
+    /// The party the row is for: the producer or a partner on the split (e.g. a landlord). One ticket number has a
+    /// row per party, all under the split ID.
+    /// </summary>
+    public string? CustomerCode { get; init; }
     /// <summary>yyyy-MM-dd.</summary>
     public string? BlDate { get; init; }
     /// <summary>Elevator, e.g. "Pratt, KS (PRA)".</summary>
@@ -116,7 +121,7 @@ public record FieldTicketResponse
     public string? Note { get; init; }
     /// <summary>The crop year whose confirmed CI already counts this ticket; it can't be counted twice.</summary>
     public int? ConfirmedFor { get; init; }
-    /// <summary>Net bushels for the split's share; null when the pounds or the conversion are missing.</summary>
+    /// <summary>Net bushels for this party's row; null when the pounds or the conversion are missing.</summary>
     public decimal? NetBushels { get; init; }
     public required bool Settled { get; init; }
     /// <summary>yyyy-MM-dd.</summary>

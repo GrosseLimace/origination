@@ -3,7 +3,7 @@ import { EnrollableRecord, FieldProgramRecord, FieldSeason, FieldTickets, Produc
 import { ToastService } from '@core/services/toast.service';
 import { ProgramRegistry } from '../programs/program-registry';
 import { enrollmentBlockers, enrollmentIdFor } from '../programs/program-enrollment';
-import { FIELD_PLAN_BACKEND, FieldPlanSnapshot } from './field-plan-backend';
+import { ConfirmReview, FIELD_PLAN_BACKEND, FieldPlanSnapshot } from './field-plan-backend';
 
 /** Another field this year whose program inputs can be copied onto a field. */
 export interface CopySource {
@@ -382,9 +382,9 @@ export class FieldPlanStore {
    * Confirms a 45Z field after harvest with the producer: the actual yield and the tickets kept. The record
    * comes back locked with its confirmed CI (the official result). Undefined when refused; the store has said why.
    */
-  async confirm(recordId: string, actualYield: number, ticketKeys: readonly string[]): Promise<FieldProgramRecord | undefined> {
+  async confirm(recordId: string, actualYield: number, ticketKeys: readonly string[], review: ConfirmReview): Promise<FieldProgramRecord | undefined> {
     await this.flush();
-    const confirmed = await this.write('confirm the CI', () => this.backend.confirm(recordId, actualYield, ticketKeys));
+    const confirmed = await this.write('confirm the CI', () => this.backend.confirm(recordId, actualYield, ticketKeys, review));
     if (confirmed) this.putRecord(confirmed);
     return confirmed;
   }

@@ -9,8 +9,9 @@ using GrainOriginatorPortal.Infrastructure.Interfaces;
 namespace GrainOriginatorPortal.Api.Services.FieldPlan;
 
 /// <summary>
-/// The CTRM tickets behind a field's 45Z review: delivered under the field's split ID, for its crop, in its
-/// crop year, settled or not. CTRM tickets carry no crop year, so (user decision 2026-10-29) a ticket on a
+/// The CTRM tickets behind a field's 45Z review: every party's row delivered under the field's split ID
+/// (CTRM's <c>combinedCustomerId</c>; the producer's and any partner's, whatever the split percentage), for its
+/// crop, in its crop year, settled or not. CTRM tickets carry no crop year, so (user decision 2026-10-29) a ticket on a
 /// contract takes the contract's crop year, and any other ticket counts when its BL date falls in the crop
 /// year's window: <c>FieldPlan:TicketWindow:{crop}</c> From/To as MM-dd, default 08-01 to 07-31 of the next
 /// year. The originator can still leave any ticket out when confirming, or add one of the split's other
@@ -109,6 +110,7 @@ public sealed class FieldTicketService : IFieldTicketService
             {
                 TicketKey = key,
                 TicketNumber = ticketNumber,
+                CustomerCode = t.CustomerCode,
                 BlDate = bl?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 Location = Location(t),
                 ProductCode = t.ProductCode,

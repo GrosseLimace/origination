@@ -10,6 +10,8 @@ import { FieldProgramRecord, FieldSeason, OFFICIAL_STATUS_TEXT, ProducerField } 
 import { ProgramRegistry } from './programs/program-registry';
 import { FD_CIC_PROGRAM_KEY } from './programs/fd-cic/fd-cic.program';
 import { FdCicReviewComponent } from './programs/fd-cic/fd-cic-review.component';
+import { feedstockReport } from './programs/fd-cic/feedstock-report';
+import { FeedstockReportService } from './programs/fd-cic/feedstock-report.service';
 
 /**
  * One field on one crop row: its CTRM split (ID, name, split %) and location, its acres this year, and the
@@ -32,15 +34,25 @@ export class FieldSeasonDialogComponent {
   private readonly registry = inject(ProgramRegistry);
   private readonly fdCic = inject(FdCicApiService);
   private readonly toast = inject(ToastService);
+  private readonly reports = inject(FeedstockReportService);
 
   readonly seasonId = input.required<string>();
   /** Opens straight onto this program, adding it to the field if it isn't there yet. */
   readonly startProgram = input<string | null>(null);
   readonly close = output<void>();
-  /** The producer's CTRM code and name, for the confirmed-CI CSV in the review. */
-  readonly producer = input<{ code: string; name: string } | null>(null);
+  /** The producer's CTRM code and name, for the Biofuel Feedstock Report and the Mass Balance Ledger. */
+  readonly producer = input<{ code: string; name: string; primaryContact?: string | null } | null>(null);
   /** The 45Z review open over this dialog, by record id. */
   readonly reviewRecordId = signal<string | null>(null);
+  readonly fdCicKey = FD_CIC_PROGRAM_KEY;
+
+  /** A confirmed 45Z field's Biofuel Feedstock Report, as a PDF. */
+  async generateReport(record: FieldProgramRecord): Promise<void> {
+    const producer = this.producer(), season = this.season(), field = this.field();
+    if (!producer || !season || !field) return;
+    const report = feedstockReport({ producer, field, season, record, enrollmentId: this.store.enrollmentIdOf(record), generatedAt: new Date() });
+    if (report) await this.reports.download(report);
+  }
 
   readonly season = computed(() => this.store.season(this.seasonId()));
   readonly field = computed(() => this.store.field(this.season()?.fieldKey ?? ''));

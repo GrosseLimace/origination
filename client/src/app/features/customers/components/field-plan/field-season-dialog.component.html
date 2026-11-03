@@ -130,11 +130,15 @@
                 @if (a.record.official?.status === 'Documented') {
                   <span>Confirmed {{ o.resultName }}: {{ a.record.official?.score?.value | number:'1.0-0' }} g CO₂e/bu · {{ a.record.official?.bushels | number:'1.0-0' }} bu</span>
                   <button type="button" class="text-scoular-green-accessible bg-transparent border-0 p-0 hover:underline" (click)="reviewRecordId.set(a.record.id)">View review</button>
+                  @if (producer() && a.record.programKey === fdCicKey) {
+                    <button type="button" class="h-7 rounded-md px-2 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green border-0"
+                            (click)="generateReport(a.record)">Generate Biofuel Feedstock Report</button>
+                  }
                 } @else {
                   <span>Official {{ o.resultName }}: {{ officialStatus(a.record) }}</span>
                   @if (canReview(a.record)) {
                     <button type="button" class="h-7 rounded-md px-2 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green border-0"
-                            (click)="reviewRecordId.set(a.record.id)">Review with tickets…</button>
+                            (click)="reviewRecordId.set(a.record.id)">Confirm CI Score</button>
                   } @else {
                     <span>· Review opens once the field has an estimated CI.</span>
                   }

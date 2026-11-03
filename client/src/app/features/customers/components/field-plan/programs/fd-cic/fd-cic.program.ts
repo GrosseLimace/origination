@@ -98,7 +98,7 @@ export function createFdCicProgram(api: FdCicApiService): SustainabilityProgramD
           state: field.state, county: field.county, acres: season.acres,
           expectedYield: data.expectedYield, actualYield: data.actualYield,
           syntheticN: data.syntheticN, niPercent: Math.round(data.niFraction * 100),
-          coverCrop: COVER_LABELS[data.coverCrop], tillage: TILLAGE_LABELS[data.tillage],
+          coverCrop: COVER_LABELS[data.coverCrop], tillage: TILLAGE_LABELS[data.tillage], tDiscRating: data.tDiscRating ?? null,
           manure: data.manure.map(m => ({ ...m })),
         },
         outputs: {

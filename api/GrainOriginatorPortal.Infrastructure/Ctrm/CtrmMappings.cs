@@ -224,6 +224,13 @@ public static class CtrmMappings
         => ToTickets(header, d => Matches(d.CustomerCode, scoularId));
 
     /// <summary>
+    /// Every party's detail row delivered under a split ID (<c>combinedCustomerId</c>): the producer's and each
+    /// partner's, whatever the split percentage (user decision 2026-11-03, for the 45Z review).
+    /// </summary>
+    public static List<Ticket> ToTicketsForSplit(CtrmTicketDto header, string splitId)
+        => ToTickets(header, d => Matches(d.CombinedCustomerId, splitId));
+
+    /// <summary>
     /// Projects the detail rows belonging to a specific contract, whichever producer they name.
     /// </summary>
     /// <remarks>

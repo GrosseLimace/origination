@@ -1,3 +1,5 @@
+import type { TDiscRatedPass, TDiscRatedWindow } from './tdisc.model';
+
 /**
  * Fields under planting intentions, and the sustainability programs recorded on them.
  *
@@ -115,20 +117,35 @@ export interface OfficialResult {
   method?: string;
   requirements?: { key: string; label: string; met: boolean }[];
   evidence?: { kind: string; reference: string; addedBy: string; addedAt: string }[];
+  /** Who confirmed it: their UPN (the audit identifier). */
   documentedBy?: string;
+  /** Their display name, for documents such as the Mass Balance Ledger. Absent on older records. */
+  documentedByName?: string;
   documentedAt?: string;
   /** 45Z confirmed CI: the actual yield it was rescored with (bu/ac). */
   actualYield?: number;
   /** 45Z confirmed CI: net bushels of the confirmed tickets. */
   bushels?: number;
-  /** 45Z confirmed CI: the CTRM tickets reviewed with the producer: the rows of the Bins' CSV. */
+  /** 45Z confirmed CI: the CTRM tickets reviewed with the producer, listed in the Biofuel Feedstock Report. */
   tickets?: FieldTicket[];
+  /**
+   * 45Z confirmed CI: the T-DISC check, for no till or reduced till (null otherwise), rated on the server from the
+   * field's passes. Tillage as USDA FD-CIC labels; version is the T-DISC release; windows and passes are the worksheet.
+   */
+  tDisc?: {
+    rating: number; designation: string; estimatedTillage: string; confirmedTillage: string;
+    version?: string; windows?: TDiscRatedWindow[]; passes?: TDiscRatedPass[];
+  } | null;
+  /** 45Z confirmed CI: the producer's recordkeeping requirements were reviewed with them. */
+  recordkeepingAcknowledged?: boolean;
 }
 
 /** One delivery (a CTRM ticket's detail row for the field's split), as reviewed, confirmed and exported. */
 export interface FieldTicket {
   ticketKey: string;
   ticketNumber: string;
+  /** The party the row is for: the producer or a partner on the split. A ticket has a row per party. */
+  customerCode?: string | null;
   /** yyyy-mm-dd. */
   blDate: string | null;
   location: string | null;
