@@ -135,11 +135,25 @@ public class CtrmQueryDocumentTests
     [Fact]
     public void BothTicketDocumentsAskTheServerToExcludeCancelledAndConsolidatedRows()
     {
-        foreach (var document in new[] { CtrmQueries.TicketsByCustomer, CtrmQueries.TicketsByContractNumbers })
+        foreach (var document in new[] { CtrmQueries.TicketsByCustomer, CtrmQueries.TicketsByContractNumbers, CtrmQueries.TicketsBySplitProducer })
         {
             Assert.Contains("excludeCancelled: true", document);
             Assert.Contains("excludeConsolidated: true", document);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public void OnlyTheFieldPlanTicketReadAsksForTheSplitId()
+    {
+        // An API without combinedCustomerId answers HTTP 400; on the shared projection that would fail every ticket screen.
+        Assert.Contains("customerCode combinedCustomerId", CtrmQueries.TicketsBySplitProducer);
+        Assert.DoesNotContain("combinedCustomerId", CtrmQueries.TicketsByCustomer);
+        Assert.DoesNotContain("combinedCustomerId", CtrmQueries.TicketsByContractNumbers);
+        Assert.DoesNotContain("combinedCustomerId", CtrmQueries.TicketsByCustomers);
+
+        // Otherwise the same projection as the shared one, so the mapping reads the same fields.
+        Assert.Equal(CtrmQueries.TicketsByCustomer, CtrmQueries.TicketsBySplitProducer.Replace(" combinedCustomerId", ""));
     }
 
     // -------------------------------------------------------------------------

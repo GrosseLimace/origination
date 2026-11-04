@@ -1,0 +1,202 @@
+{
+  "note": "Test cases for the T-DISC calculator. Passes are written by hand; every expected block is Excel's own result (tools/tdisc-extract/golden.mjs).",
+  "cases": [
+    {
+      "name": "1 no-till corn",
+      "passes": [
+        {"window":"Planting","implement":"PLANTER, NO-TILL"},
+        {"window":"After_Planting","implement":"SPRAYER/AERIAL/BROADCAST APPLICATION"},
+        {"window":"Harvest","implement":"HARVEST, GRAIN"}
+      ],
+      "expected": {
+        "rating": 0.010000000000000002,
+        "designation": "NT",
+        "windows": {
+          "Field_Preparation": {"index":null,"designation":null},
+          "Before_Planting": {"index":null,"designation":null},
+          "Planting": {"index":0.010000000000000002,"designation":"NT"},
+          "After_Planting": {"index":0,"designation":"NT"},
+          "Harvest": {"index":0,"designation":"NT"}
+        }
+      }
+    },
+    {
+      "name": "2 rotary hoe at exactly 0.075",
+      "passes": [
+        {"window":"Planting","implement":"CULTIVATOR, ROTARY HOE"},
+        {"window":"Harvest","implement":"HARVEST, GRAIN"}
+      ],
+      "expected": {
+        "rating": 0.075,
+        "designation": "NT",
+        "windows": {
+          "Field_Preparation": {"index":null,"designation":null},
+          "Before_Planting": {"index":null,"designation":null},
+          "Planting": {"index":0.075,"designation":"NT"},
+          "After_Planting": {"index":null,"designation":null},
+          "Harvest": {"index":0,"designation":"NT"}
+        }
+      }
+    },
+    {
+      "name": "3 two passes in one window",
+      "passes": [
+        {"window":"Field_Preparation","implement":"CULTIVATOR, FIELD"},
+        {"window":"Field_Preparation","implement":"HARROW, COILED TINES"},
+        {"window":"Planting","implement":"PLANTER, REGULAR"},
+        {"window":"Harvest","implement":"HARVEST, GRAIN"}
+      ],
+      "expected": {
+        "rating": 0.1422,
+        "designation": "RT",
+        "windows": {
+          "Field_Preparation": {"index":0.1422,"designation":"RT"},
+          "Before_Planting": {"index":null,"designation":null},
+          "Planting": {"index":0.006666666666666667,"designation":"NT"},
+          "After_Planting": {"index":null,"designation":null},
+          "Harvest": {"index":0,"designation":"NT"}
+        }
+      }
+    },
+    {
+      "name": "4 strip till",
+      "passes": [
+        {"window":"Field_Preparation","implement":"NUTRIENT MGMT: FERT APPL, STRIP TILL"},
+        {"window":"Planting","implement":"PLANTER, STRIP TILL"},
+        {"window":"Harvest","implement":"HARVEST, GRAIN"}
+      ],
+      "expected": {
+        "rating": 0.07,
+        "designation": "NT",
+        "windows": {
+          "Field_Preparation": {"index":0.07,"designation":"NT"},
+          "Before_Planting": {"index":null,"designation":null},
+          "Planting": {"index":0.006666666666666667,"designation":"NT"},
+          "After_Planting": {"index":null,"designation":null},
+          "Harvest": {"index":0,"designation":"NT"}
+        }
+      }
+    },
+    {
+      "name": "5 conventional chisel and disk",
+      "passes": [
+        {"window":"Field_Preparation","implement":"PLOW, CHISEL"},
+        {"window":"Before_Planting","implement":"HARROW, DISK, TANDEM, LIGHTDUTY"},
+        {"window":"Planting","implement":"PLANTER, REGULAR"},
+        {"window":"Harvest","implement":"HARVEST, GRAIN"}
+      ],
+      "expected": {
+        "rating": 0.5,
+        "designation": "CT",
+        "windows": {
+          "Field_Preparation": {"index":0.5,"designation":"CT"},
+          "Before_Planting": {"index":0.21333333333333335,"designation":"RT"},
+          "Planting": {"index":0.006666666666666667,"designation":"NT"},
+          "After_Planting": {"index":null,"designation":null},
+          "Harvest": {"index":0,"designation":"NT"}
+        }
+      }
+    },
+    {
+      "name": "6 deep pass entered before a shallow one (moldboard)",
+      "passes": [
+        {"window":"Field_Preparation","implement":"PLOW, MOLDBOARD"},
+        {"window":"Field_Preparation","implement":"HARROW, SPIKE TOOTH OR SPRING TOOTH"},
+        {"window":"Harvest","implement":"HARVEST, GRAIN"}
+      ],
+      "expected": {
+        "rating": 0.4532,
+        "designation": "CT",
+        "windows": {
+          "Field_Preparation": {"index":0.4532,"designation":"CT"},
+          "Before_Planting": {"index":null,"designation":null},
+          "Planting": {"index":null,"designation":null},
+          "After_Planting": {"index":null,"designation":null},
+          "Harvest": {"index":0,"designation":"NT"}
+        }
+      }
+    },
+    {
+      "name": "7 just under 0.252",
+      "passes": [
+        {"window":"Before_Planting","implement":"HARROW, FLEX-TINE"},
+        {"window":"Before_Planting","implement":"BED SHAPING, BEDDER DISK-ROW"},
+        {"window":"Harvest","implement":"HARVEST, GRAIN"}
+      ],
+      "expected": {
+        "rating": 0.24336000000000002,
+        "designation": "RT",
+        "windows": {
+          "Field_Preparation": {"index":null,"designation":null},
+          "Before_Planting": {"index":0.24336000000000002,"designation":"RT"},
+          "Planting": {"index":null,"designation":null},
+          "After_Planting": {"index":null,"designation":null},
+          "Harvest": {"index":0,"designation":"NT"}
+        }
+      }
+    },
+    {
+      "name": "8 highest window wins",
+      "passes": [
+        {"window":"Field_Preparation","implement":"CULTIVATOR, FIELD"},
+        {"window":"Before_Planting","implement":"HARROW, DISK, SINGLE"},
+        {"window":"Planting","implement":"PLANTER, DRILL, NO-TILL, MIN-TILL"},
+        {"window":"After_Planting","implement":"CULTIVATOR, ROW"},
+        {"window":"Harvest","implement":"HARVEST, GRAIN"}
+      ],
+      "expected": {
+        "rating": 0.2,
+        "designation": "RT",
+        "windows": {
+          "Field_Preparation": {"index":0.13,"designation":"RT"},
+          "Before_Planting": {"index":0.2,"designation":"RT"},
+          "Planting": {"index":0.006666666666666667,"designation":"NT"},
+          "After_Planting": {"index":0.025,"designation":"NT"},
+          "Harvest": {"index":0,"designation":"NT"}
+        }
+      }
+    },
+    {
+      "name": "9 harvest only",
+      "passes": [
+        {"window":"Harvest","implement":"HARVEST, GRAIN"}
+      ],
+      "expected": {
+        "rating": 0,
+        "designation": "NT",
+        "windows": {
+          "Field_Preparation": {"index":null,"designation":null},
+          "Before_Planting": {"index":null,"designation":null},
+          "Planting": {"index":null,"designation":null},
+          "After_Planting": {"index":null,"designation":null},
+          "Harvest": {"index":0,"designation":"NT"}
+        }
+      }
+    },
+    {
+      "name": "10 same depth, different mixing efficiency",
+      "passes": [
+        {"window":"Field_Preparation","implement":"PLOW, SWEEP"},
+        {"window":"Field_Preparation","implement":"AERATOR"},
+        {"window":"Field_Preparation","implement":"NUTRIENT MGMT: FERT APPL, SHANK"},
+        {"window":"Harvest","implement":"RESIDUE MGMT: STALK PULLER CHOPPER"}
+      ],
+      "expected": {
+        "rating": 0.2252333333333333,
+        "designation": "RT",
+        "windows": {
+          "Field_Preparation": {"index":0.2252333333333333,"designation":"RT"},
+          "Before_Planting": {"index":null,"designation":null},
+          "Planting": {"index":null,"designation":null},
+          "After_Planting": {"index":null,"designation":null},
+          "Harvest": {"index":0.06666666666666667,"designation":"NT"}
+        }
+      }
+    }
+  ],
+  "confirmedInExcel": {
+    "on": "2026-11-03",
+    "workbookSha256": "5f71a1b33e514d9348f28f5a62b553dca60fb4f58e51702a9033d4a4bc7dce9e",
+    "how": "Passes typed into User Input C9:D28 (management unit 1) by tools/tdisc-extract/excel-run.ps1; macros disabled; workbook not saved."
+  }
+}

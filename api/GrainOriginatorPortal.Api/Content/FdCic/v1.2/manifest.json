@@ -1,0 +1,28 @@
+{
+  "method": "USDA FD-CIC",
+  "version": "1.2",
+  "label": "USDA FD-CIC v1.2",
+  "source": {
+    "file": "usda-fdcic-ver1.2_9_11_2026.xlsm",
+    "sha256": "db3ef7cac515756c9a00d9e74e12e41521feb18c3241abd78016062a2489468a",
+    "versionLabel": "Version 1.2",
+    "workbookModified": "2026-09-11T14:56:01Z"
+  },
+  "extractor": {"version":"1","extractedAt":"2026-10-22"},
+  "formulaFingerprint": "a2ccea4bf326bc42de747ddea8fe1a45d8879d18d364aa8bb8ba97ef105328d7",
+  "counts": {
+    "counties": 3111,
+    "mlras": 209,
+    "iefRows": {"Corn":176,"Sorghum":84,"Soybean":123,"Canola":19},
+    "csaMlras": {"Corn":177,"Sorghum":84,"Soybean":123,"Canola":19}
+  },
+  "files": {
+    "constants.json": "8f2a1034ec56e5049ced9e12a196330a28111da1adebb97ca4abae9d8e267228",
+    "options.json": "20337c00e2b16bbb275b8705c017145a4bb77645613ea748bf82a71c91ad061c",
+    "counties.json": "52f182e60379c37ea586fcfa3c513d9a57c987e549cde7b671e48f0805f5fcc3",
+    "ief.json": "8ab04ae40fab38f679b4fd2736cee02c7502c72708c018e2193df9da733fabbd",
+    "csa.json": "cb1c485cc9b716e218593163570e37eaca7971900c5d342de2657deb1a821b30",
+    "ni-impact.json": "7c57a7ce38ea51789a9221828cdb1becd31b3d9c2b566e6b55fa53df2b0253f3",
+    "formulas.json": "1d55a717327f6d05171d418fed60cce36eac313d25934ee0fd74233b0839ee3b"
+  }
+}

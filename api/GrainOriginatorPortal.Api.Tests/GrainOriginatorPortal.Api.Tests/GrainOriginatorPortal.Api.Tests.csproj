@@ -25,12 +25,14 @@
            Repositories/CommodityTradeGroupScopeTests.cs
            Repositories/ContractRepositorySwitchTests.cs
            Repositories/CtrmOutageEndToEndTests.cs
+           Repositories/CtrmFieldTicketReaderTests.cs
            Repositories/CustomerRepositoryOpenActivityTests.cs
            Repositories/CustomerRepositoryTradeUnitsTests.cs
            Repositories/DailyRecapGroupRepositoryTests.cs
            Repositories/PlantingIntentionRetagTests.cs
            Repositories/PlantingIntentionScopingTests.cs
            Repositories/PlantingIntentionSoftDeleteTests.cs
+           Services/FieldPlan/FieldPlanServiceTests.cs
            Repositories/ProducerBinSiteTests.cs
            Repositories/ProducerContactTests.cs
            Repositories/ProducerGrainOnFarmSiteLinkTests.cs
