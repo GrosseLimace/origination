@@ -23,12 +23,14 @@ namespace GrainOriginatorPortal.Infrastructure.Ctrm;
 /// <c>contracts(customerIds:)</c> costs ~20-27s cold per 500-producer chunk on the server side (reported to
 /// the API owner) - fine once in the background, never on a click. So the producer-set read is held per set
 /// and served stale-while-refreshing: an expired copy goes back instantly while the refresh runs behind it.
-/// The home-page contract load is what warms it, and it kicks the same producers' ticket read too.</para>
+/// The home-page contract load is what warms it. It no longer kicks the same producers' ticket read
+/// (removed 2026-11-04): that three-year walk is the heaviest read the app makes against CTRM and only
+/// Build-a-List ticket prompts use it, so Build-a-List starts it itself - see
+/// <see cref="CtrmTicketRepository.GetAsync"/>.</para>
 /// </remarks>
 public sealed class CtrmContractRepository : IContractRepository
 {
     private readonly CtrmContractReader _reader;
-    private readonly CtrmTicketReader _ticketReader;
     private readonly ApplicationDbContext _appContext;
     private readonly ContractRepository _ods;
     private readonly CtrmProvenance _provenance;
@@ -39,7 +41,6 @@ public sealed class CtrmContractRepository : IContractRepository
     /// read serves, so <c>CtrmKeepWarmService</c> can keep their caches warm on a cadence.</param>
     public CtrmContractRepository(
         CtrmContractReader reader,
-        CtrmTicketReader ticketReader,
         ApplicationDbContext appContext,
         ContractRepository ods,
         CtrmProvenance provenance,
@@ -47,7 +48,6 @@ public sealed class CtrmContractRepository : IContractRepository
         CtrmWarmRegistry? warmRegistry = null)
     {
         _reader = reader;
-        _ticketReader = ticketReader;
         _appContext = appContext;
         _ods = ods;
         _provenance = provenance;
@@ -209,9 +209,12 @@ public sealed class CtrmContractRepository : IContractRepository
     ///
     /// <para>This is the read the home page makes when the trade-unit selection loads, so it doubles as the
     /// warm-up for the session: the result is cached per producer set and served stale-while-refreshing to
-    /// every prompt that follows, and the same producers' TICKETS are kicked off here in the background so
-    /// the ticket prompts find them ready too. The first prompt of a session is the only one that can wait,
-    /// and only if it beats this call.</para>
+    /// every prompt that follows. It deliberately does NOT start the same producers' three-year ticket
+    /// history. Until 2026-11-04 it did, so Build-a-List ticket prompts would find it warm - which meant the
+    /// heaviest CTRM read (100+ pages for a large trade unit) ran on every home-page load for every user,
+    /// whether or not they ever asked a ticket question, and the IBM i team measured it as the bulk of our
+    /// load on their database. Build-a-List requests tickets itself when it opens
+    /// (<see cref="CtrmTicketRepository.GetAsync"/>), which is the only place that read is used.</para>
     /// </remarks>
     public async Task<List<Contract>> GetAsync(List<string>? tradeUnits, CancellationToken cancellationToken)
     {
@@ -230,14 +233,11 @@ public sealed class CtrmContractRepository : IContractRepository
 
         var read = await _reader.GetForProducersAsync(codes, tradeUnits, cancellationToken);
 
-        // Tickets AFTER contracts, never alongside. Re-measured 2026-09-24 with the batched contract walk:
-        // run together, the pair finished no sooner (84 s vs 85 s; 78 s vs 104 s), the contract walk slowed
-        // from ~40 s to 65-82 s, and 2 of its 59 batches failed each round (HC0045 timeouts, dropped
-        // connections) - the gateway's throughput is fixed and both reads saturate it. The contract list is
-        // what the page is waiting on (two Insights cards and every contract prompt), so it goes first and gets
-        // the gateway to itself; the tickets warm behind it. (The original 2026-08-27 reason - contract pages
-        // were ~25 s list scans - no longer applies; the conclusion does.)
-        WarmTicketsInBackground(codes, tradeUnits);
+        // No ticket pre-fetch behind this read (removed 2026-11-04; see the remarks above). If one is ever
+        // put back, it must run AFTER this read completes, never alongside: measured 2026-09-24, the pair run
+        // together finished no sooner (84 s vs 85 s; 78 s vs 104 s) and the contract walk the page waits on
+        // slowed from ~40 s to 65-82 s with 2 of 59 batches failing each round. The ticket repository's own
+        // read keeps that contracts-then-tickets ordering.
 
         if (!read.Ok)
         {
@@ -259,30 +259,6 @@ public sealed class CtrmContractRepository : IContractRepository
             contracts.Count, scoped.Count, tradeUnits?.Count ?? 0, truncated ? ", TRUNCATED" : string.Empty);
 
         return contracts;
-    }
-
-    /// <summary>
-    /// Starts the trade-unit-wide ticket read for these producers without waiting for it.
-    /// </summary>
-    /// <remarks>
-    /// The contract list is requested the moment the trade-unit selection loads; the ticket prompts come
-    /// seconds to minutes later and want the same producers. Kicking the read here means it is normally
-    /// cached by then. The reader owns the cache and coalesces concurrent callers, so a prompt arriving
-    /// mid-walk simply awaits the walk already in progress rather than starting another.
-    /// </remarks>
-    private void WarmTicketsInBackground(List<string> codes, List<string>? tradeUnits)
-    {
-        if (_ticketReader.IsWarm(codes)) return;
-
-        var units = tradeUnits?.Count ?? 0;
-        _ = _ticketReader.GetForProducersHistoryAsync(codes, CancellationToken.None).ContinueWith(t =>
-        {
-            if (t.IsFaulted)
-                _logger.LogWarning(t.Exception, "CTRM ticket warm-up for {Producers} producer(s) in {TradeUnits} trade unit(s) faulted.", codes.Count, units);
-            else if (t.IsCompletedSuccessfully && !t.Result.Ok)
-                _logger.LogWarning("CTRM ticket warm-up for {Producers} producer(s) in {TradeUnits} trade unit(s) did not complete: {Status} - {Detail}",
-                    codes.Count, units, t.Result.Status, t.Result.Detail);
-        }, TaskScheduler.Default);
     }
 
     /// <summary>
