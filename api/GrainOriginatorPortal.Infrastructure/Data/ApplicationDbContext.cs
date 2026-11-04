@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Infrastructure.Platform.Access.Configurations;
+using GrainOriginatorPortal.Infrastructure.Platform.Access.Entities;
 using GrainOriginatorPortal.Infrastructure.Sync;
 
 namespace GrainOriginatorPortal.Infrastructure.Data;
@@ -75,9 +77,22 @@ public class ApplicationDbContext : DbContext
     public DbSet<ProducerFieldSeason> ProducerFieldSeasons => Set<ProducerFieldSeason>();
     public DbSet<FieldProgramRecord> FieldProgramRecords => Set<FieldProgramRecord>();
 
+    // Access: roles, the permission catalog and the grants between them; see Platform/Access and plan §4.3.
+    // The first tables in the module layout (plan §4.1): entities and configurations live with the module.
+    public DbSet<Role> Roles => Set<Role>();
+    public DbSet<Permission> Permissions => Set<Permission>();
+    public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
+    public DbSet<RoleSegment> RoleSegments => Set<RoleSegment>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        // Platform/Access. Applied by name, not discovered: the assembly also holds the other DbContexts.
+        modelBuilder.ApplyConfiguration(new RoleConfiguration());
+        modelBuilder.ApplyConfiguration(new PermissionConfiguration());
+        modelBuilder.ApplyConfiguration(new RolePermissionConfiguration());
+        modelBuilder.ApplyConfiguration(new RoleSegmentConfiguration());
 
         // Ids for producers the customer sync finds only in CTRM (they have no ODS surrogate id), drawn from the
         // reserved band [5e15, 6e15). The AddCustomerIdSequence migration creates the real sequence with a start

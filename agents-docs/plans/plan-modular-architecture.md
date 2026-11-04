@@ -81,14 +81,14 @@ User ──< Role ──< Permission = resource : action [: scope]      Resource
 
 | Term | Meaning | Where it lives |
 |---|---|---|
-| **Role** | A set of grants. **Persona roles** (`Originator`, `Trader`) decide what you see. **Add-on roles** decide what you may do with it: `Editor` adds editing, `Manager` team oversight. IT's `Support` role sees everything and edits no business data. `Admin` is the style guide's full-access base role, held in production only by a break-glass account. Roles only add (§7.3). `Admin` is an ordinary role, not an Azure AD group. | Assigned to users in the shared entitlements app; arrives as role claims in the API access token. Our `dbo.Role` lists only the role names we grant to (§7.1). |
-| **Permission** | What a role grants: `resource:action[:scope]`, e.g. `planting-intentions:write`, `saved-lists:read:team`. | The catalog is code (`AppPermissions`); grants are rows in `dbo.RolePermission` (§4.3). |
+| **Role** | A set of grants. **Persona roles** (`Originator`, `Trader`) decide what you see. **Add-on roles** decide what you may do with it: `Editor` adds editing, `Manager` team oversight. IT's `Support` role sees everything and edits no business data. `Admin` is the style guide's full-access base role, held in production only by a break-glass account. Roles only add (§7.3). `Admin` is an ordinary role, not an Azure AD group. | Assigned to users in the shared entitlements app; arrives as role claims in the API access token. Our `dbo.Roles` lists only the role names we grant to (§7.1). |
+| **Permission** | What a role grants: `resource:action[:scope]`, e.g. `planting-intentions:write`, `saved-lists:read:team`. | The catalog is code (`AppPermissions`); grants are rows in `dbo.RolePermissions` (§4.3). |
 | **Resource** | A business-level thing users work with, such as planting intentions, notes or bid-sheet locations. Each belongs to exactly one module. | `AppPermissions`, grouped by module. |
 | **Action** | The guide's standard set: `read`, `create`, `update`, `delete`, `export`, `approve`, `assign`, `manage`. | Part of the permission string. |
 | **Permission scope** | The guide's optional third part, about *ownership*: `own`, `team`, `global`. It replaces today's "Admin may also act on other people's records" checks. | Part of the permission string; services filter by it (§4.3). |
 | **Module** | A cohesive slice of code with its own data access and UI, such as Producers or Contracts. The code boundary. A module is "on" for a user who holds any permission on its resources. | Module-first folders on both backend and frontend. |
 | **Customer segment** | The kind of customer being viewed: `Producer` or `Commercial`. It decides which customer-screen contributions *apply*, independent of who is looking. | `Customer.Segment` (§6); the `segments` field on a contribution (§5.2). |
-| **Data scope** | Which rows a user sees: trade units today, plus the customer segments and contract types a role may see. Not the same thing as permission scope. | Repository and service parameters; a role's segments are rows in `dbo.RoleSegment` (§4.3). It stays a UX filter, as today. |
+| **Data scope** | Which rows a user sees: trade units today, plus the customer segments and contract types a role may see. Not the same thing as permission scope. | Repository and service parameters; a role's segments are rows in `dbo.RoleSegments` (§4.3). It stays a UX filter, as today. |
 
 **The one rule that keeps this clean:** code never asks "is this user a trader?" or "is this user an admin?"
 - It asks "does the user hold permission X?"
@@ -173,7 +173,8 @@ api/GrainOriginatorPortal.Api/
 
 api/GrainOriginatorPortal.Infrastructure/
 ├── Platform/
-│   ├── Access/                       # AppPermissions (the catalog) and the grants entities: here so EF HasData can seed dbo.Permission
+│   ├── Access/                       # AppPermissions (the catalog; here so EF HasData can seed dbo.Permissions), Entities/, Configurations/.
+│   │                                 #   Built in Phase 1: the first code in this layout, and the pattern Phase 2 follows
 │   ├── Data/                         # all DbContexts, Migrations/, ApplicationDbContextFactory
 │   ├── Ctrm/                         # ICtrmGraphQlClient, CtrmConfig, throttle, retry, synthetic ids, provenance
 │   └── DependencyInjection.cs        # AddPlatformInfrastructure(): DbContexts and the CTRM plumbing
@@ -236,7 +237,7 @@ public static class ProducersModule
 
 Three sources, each with one job:
 - **The token** says who the user is and which roles they hold. The entitlements app assigns the roles (§7.1).
-- **Our database** says what each role may do: `dbo.RolePermission` and `dbo.RoleSegment`.
+- **Our database** says what each role may do: `dbo.RolePermissions` and `dbo.RoleSegments`.
 - **The code** says which permissions exist (`AppPermissions`), and every endpoint names the one it needs.
 
 ```csharp
@@ -246,11 +247,11 @@ public interface IUserRoleSource
     IReadOnlySet<string> GetRoles(ClaimsPrincipal user);
 }
 // ClaimsUserRoleSource: reads the role claims the entitlements app puts in the access token.
-// Until that app issues persona roles, a token with none gets Access:DefaultRoles (§7.1).
+// Until that app issues persona roles (Roles.Kind = Persona), a token with none gets Access:DefaultRoles (§7.1).
 
 // Infrastructure/Platform/Access/AppPermissions.cs: the catalog, grouped by module. The class a
 // permission sits in is its module, and a test checks that every resource belongs to exactly one
-// module. It lives in Infrastructure because dbo.Permission is generated from it through EF HasData,
+// module. It lives in Infrastructure because dbo.Permissions is generated from it through EF HasData,
 // and the DbContext can't reference Api.
 public static class AppPermissions
 {
@@ -285,7 +286,7 @@ public sealed class PermissionService(IUserRoleSource roles, IRoleGrantCache gra
     public Task<IReadOnlySet<string>> GetPermissionsAsync(CancellationToken cancellationToken) { … }
     public Task<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken) { … }
 
-    // Union of dbo.RoleSegment across the user's roles. Customer queries and ICommercialScopeProvider read this.
+    // Union of dbo.RoleSegments across the user's roles. Customer queries and ICommercialScopeProvider read this.
     public Task<IReadOnlySet<string>> GetAllowedSegmentsAsync(CancellationToken cancellationToken) { … }
 
     // Modules with at least one held permission: drives nav and preload on the client.
@@ -330,13 +331,18 @@ public sealed class PlantingIntentionsController : ControllerBase
 #### The grants tables
 
 ```
-dbo.Permission     (PermissionId PK 'planting-intentions:write', Resource, Action, Scope, ModuleId, Description)
-                   -- written only by migrations, from AppPermissions through EF HasData
-dbo.Role           (RoleId PK, Name UNIQUE, Description, IsSystem)
-                   -- names match the token's role values; no user assignments here
-dbo.RolePermission (RoleId FK, PermissionId FK, GrantedBy, GrantedAt)   PK (RoleId, PermissionId)   -- temporal
-dbo.RoleSegment    (RoleId FK, Segment, GrantedBy, GrantedAt)          PK (RoleId, Segment)        -- temporal
+dbo.Permissions     (Id PK 'planting-intentions:write', Resource, Action, Scope, ModuleId, Description)
+                    -- written only by migrations, from AppPermissions through EF HasData
+dbo.Roles           (Id PK Guid, Name UNIQUE, Description, Kind (Persona | AddOn | Base), IsSystem, ParentRoleId (unused), CreatedAt, UpdatedAt)
+                    -- data, like the grants: seeded by a migration, then the grant editor; names match the token's role values
+dbo.RolePermissions (RoleId FK, PermissionId FK, GrantedBy, GrantedAt)   PK (RoleId, PermissionId)   -- temporal
+dbo.RoleSegments    (RoleId FK, Segment, GrantedBy, GrantedAt)          PK (RoleId, Segment)        -- temporal
 ```
+
+- **The style guide's tables (its §5.1), with two differences.** There is no `UserRoles` table, because assignments live in the entitlements app. A permission's key is its own string rather than a Guid: the catalog's strings are already unique, the `HasData` seed stays deterministic, and grant rows read plainly.
+- **Code owns the permissions; roles and grants are data.** Every permission is checked by an endpoint, so the catalog is code and `HasData` seeds `Permissions`. No code names a role: what kind a role is and whether it is the system role are columns, which the default-role rule and the `Admin` warning read (§7.1). The grant editor changes roles and grants at run time, so `HasData` must not own them, or a later migration could overwrite those edits. The first roles and grants are an `InsertData` in the `AddAccessGrants` migration. A test replays every migration and checks the result: the base role holds everything, add-on roles hold no segments, `Support` writes no business data, and `Originator` + `Editor` equals what a non-admin can do today.
+- **Adding a role needs no code change.** It is a row plus its grants and segments: a grant migration until the grant editor can create roles (Phase 1b), and the same name in the entitlements app. **Never rename a role.** Everyone whose token carries the old name would lose its grants, so create the new role and retire the old one instead.
+- **Deletes are restricted.** A migration that removes a permission or role must delete its grants first, deliberately (style guide §9.2).
 
 #### Permission catalog
 
@@ -400,7 +406,7 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
   - **Exempt list:** `me` (including `/api/me/permissions`), `version`, `help`, `whats-new`, the client-telemetry config and the usage click event. Any signed-in user may call them.
   - **One machine exception:** `BarchartIngest` keeps its policy for the pipeline's `Origination.Application` app role. That caller is not a user and holds no grants. A person re-running the feed by hand needs `bid-feed:manage`, so the policy is "the machine role, or that permission."
 - **Grants stay honest without a code map:**
-  - `dbo.Permission` is generated from `AppPermissions` through EF `HasData`. Adding a permission constant without a migration is a pending model change, and a test calling `HasPendingModelChanges()` fails on it. `RolePermission` has a foreign key to it.
+  - `dbo.Permissions` is generated from `AppPermissions` through EF `HasData`. Adding a permission constant without a migration is a pending model change, and a test calling `HasPendingModelChanges()` fails on it. `RolePermission` has a foreign key to it.
   - **Deny by default.** A new permission reaches nobody until it is granted. Its PR includes a grant migration for the intended roles: the persona roles (`Support` included) for a `:read` or a personal write, `Editor` for an edit, `Manager` or `Support` for a manager or operational power, and always `Admin`. The first grant is therefore still code-reviewed; later changes are edits in the grant editor.
   - The deploy workflows run `dotnet ef database update` before new code goes out, so the grant exists when the code that checks it arrives.
   - `GET /api/diagnostics/access-map` (`diagnostics:read`) shows each role's grants and any permission no role holds, per environment. That replaces the first draft's checked-in grant snapshot.
@@ -736,7 +742,7 @@ This is not a folder problem. The data simply isn't there yet.
      ```
 
    - A scoped `ICommercialScopeProvider` (in the Contracts module) builds it.
-     - The customer segments come from the caller's roles through `dbo.RoleSegment` (§4.3). That is data scope: which customers they may see.
+     - The customer segments come from the caller's roles through `dbo.RoleSegments` (§4.3). That is data scope: which customers they may see.
      - The contract prefixes and ticket types may follow **the customer's segment rather than the caller** (Q2). For example, a producer customer always shows purchase contracts and a commercial customer always shows sales contracts, whoever is looking.
      - If they do, the provider builds the scope per customer for profile reads and per segment set for list reads.
    - **CTRM work is the expensive part:**
@@ -758,22 +764,22 @@ This is not a folder problem. The data simply isn't there yet.
 
 - **Who has which role lives in the shared entitlements app, and arrives in the token.**
   - We keep no user-to-role table. The API reads the role claims on the access token (`ClaimsUserRoleSource`, §4.3).
-  - **We define this app's roles.** The entitlements app lets each app choose its own roles, so the role list and names are our decision. Each name must match `dbo.Role.Name`.
+  - **We define this app's roles.** The entitlements app lets each app choose its own roles, so the role list and names are our decision. Each name must match `dbo.Roles.Name`.
   - **Still to agree with the entitlements team:**
     - which claim carries the roles;
     - how the roles get into the token. If they are app roles on the API's app registration, assigned through Microsoft Graph, each role is also declared in that registration.
   - **A role change waits for the user's next access token,** roughly 60–90 minutes with Entra's defaults, not the ~10 minutes the first draft assumed. Removing someone's access is that slow unless their sessions are revoked.
-  - A token role with no row in `dbo.Role` grants nothing and is logged. A role in `dbo.Role` that the entitlements app never issues is harmless.
+  - A token role with no row in `dbo.Roles` grants nothing and is logged. A role in `dbo.Roles` that the entitlements app never issues is harmless.
 - **`Admin` is an ordinary role.** It comes from the entitlements app like the others, and its permissions are rows like the others. Nothing in code gives it extra powers.
   - It is the style guide's required base role (§3.1 of the guide): every permission and every segment. It is a system role, so it can't be deleted and the grant editor can't change it.
   - **In production, only a named break-glass account holds it**, assigned when needed. IT has to be able to see everything in production without editing business data, so IT's everyday role is `Support` instead (§7.3). In Dev and QA, IT may hold `Admin` for testing.
-  - `PermissionService` logs a warning whenever a production request carries `Admin`. Break-glass use should be rare enough that every line deserves a look.
+  - `PermissionService` logs a warning whenever a production request carries a system role (`IsSystem`, which only `Admin` is). Break-glass use should be rare enough that every line deserves a look.
   - The switch-over can be invisible. Today's Super Users group already puts `Admin` in the `roles` claim. If we name the entitlements role `Admin` too and it arrives in the same claim, only who assigns it changes, and the group can then be retired.
   - That group holds managers and IT alike. Before production enforces permissions, they move to `Manager` and `Support`, and production `Admin` shrinks to the break-glass account (Phase 6).
   - New permissions reach `Admin` through their grant migration, like any role. A test fails if `Admin` lacks any permission in the catalog.
 - **What each role may do lives in our database** (the §4.3 tables).
   - **Individual rows only.** No wildcards such as `*:read` or `contracts:*`. A persona role therefore holds one row per read permission of its modules, and a new read permission's grant migration includes it.
-  - **Every change is audited and kept.** Each change writes a `role_modified` event, as the style guide's §10 requires: actor, role, permissions added and removed. `RolePermission` and `RoleSegment` are SQL temporal tables, so "who held what, when" is a query. The repo has no temporal tables yet; these are the first.
+  - **Every change is audited and kept.** Each change writes a `role_modified` event, as the style guide's §10 requires: actor, role, permissions added and removed. `RolePermissions` and `RoleSegments` are SQL temporal tables, so "who held what, when" is a query. The repo has no temporal tables yet; these are the first.
   - **Who edits:** IT for now, through the grant editor, which requires `roles:manage`. `Support` holds it, in production too: changing grants is an operational action, not a business-data edit. Moving it to business admins later means granting `roles:manage` to their role: one row.
   - **Nobody can widen their own access.** The editor refuses changes to any role the person editing holds. Otherwise IT could add edit permissions to `Support` and give itself the edit rights production denies it.
   - **The editor can't lock everyone out.** It refuses to remove the last grant of `roles:manage` outside `Admin`. If that happens some other way, a migration restores it.
@@ -786,7 +792,7 @@ This is not a folder problem. The data simply isn't there yet.
     - `Admin` gets everything.
     - `Manager` and `Support` get their §7.2 rows, and `Support` also gets every read.
     - Segments: `Originator`'s is `Producer`; `Support`'s and `Admin`'s are every segment; `Editor` and `Manager` hold none.
-  - Until the entitlements app issues persona roles, a token with no persona role gets `Access:DefaultRoles = ["Originator", "Editor"]`, and every use is logged. Today everyone can edit, so the default includes `Editor`.
+  - Until the entitlements app issues persona roles, a token with no persona role (a `dbo.Roles` row whose `Kind` is `Persona`) gets `Access:DefaultRoles = ["Originator", "Editor"]`, and every use is logged. Today everyone can edit, so the default includes `Editor`.
     - `Support` counts as a persona role, so IT never picks up that default `Editor`.
     - Today's `Admin` tokens keep everything they have now, since `Admin` holds every permission.
   - **Remove that default before traders launch (Phase 6).** Otherwise a trader whose roles lag, or a token issued during an entitlements outage, would silently get producer access and edit rights.
@@ -890,8 +896,8 @@ Phases 1–4 deliver modularity and stand on their own even if traders slip. Pha
 |---|---|---|---|
 | **0. Decide** | — | Answer section 9 with the business; agree the module list and the draft resource catalog (§4.3); **define this app's roles in the entitlements app, and agree with that team which claim carries them and how** (§7.1); record an ADR; **ask the API team when the customer↔trade-unit pairs query will land**, which decides how commercial links are backfilled (§6.1) | none |
 | **1. Access plumbing** | M | `AppPermissions` catalog and the generated TypeScript ids; the four grants tables, `HasData`, and the seed migration that reproduces today's access; `ClaimsUserRoleSource` with the temporary default role; grant cache; `PermissionService`; `RequirePermission` and its handler; `/api/me/permissions`; the access-map endpoint; frontend `PermissionService`, `permissionGuard` (waits for the first load) and `*appHasPermission`; the single 403 interceptor (screens stop showing their own 403s); the test that no permission policy is weaker than the default; **replace every Admin check in §7.2**; tests | none: everyone is `Originator` + `Editor`, and admins keep what they have |
-| **1b. Grant editor** | S–M | An admin screen for each role's permissions and segments, gated by `roles:manage`; `role_modified` audit; the last-grant guard and the no-editing-your-own-role guard | IT changes grants without a deploy |
-| **2. Backend modules** | M, mostly `git mv` | One PR per module, **Producers first**: move files, fix namespaces, add `AddXModule()`, **put `RequirePermission` on every controller and write action and turn the convention test on for the module**, split mixed controllers (routes unchanged), per-module EF configurations (empty migration), architecture tests, delete the `farm/{farmId}` endpoints. Program.cs shrinks to ~150 lines. | none. Read-only is now enforced by the API. |
+| **1b. Grant editor** | S–M | An admin screen for each role's permissions and segments, and for creating and retiring roles (never renaming them), gated by `roles:manage`; `role_modified` audit; the last-grant guard and the no-editing-your-own-role guard | IT changes roles and grants without a deploy |
+| **2. Backend modules** | M, mostly `git mv` | One PR per module, **Producers first**: move files, fix namespaces, add `AddXModule()`, **put `RequirePermission` on every controller and write action and turn the convention test on for the module**, split mixed controllers (routes unchanged), per-module EF configurations as `IEntityTypeConfiguration` classes in each module's `Configurations/`, the pattern Phase 1 set in `Platform/Access` (empty migration), architecture tests, delete the `farm/{farmId}` endpoints. Program.cs shrinks to ~150 lines. | none. Read-only is now enforced by the API. |
 | **3. Frontend foundations** | M | ESLint and boundaries; move header to `core/layout`; NLQ out of core; delete dead code; split `ApiService` and `AppStateService` per module; manifests and registry; data-driven routes and nav | none |
 | **4. Profile extension slots** | L | Break up `home.component` (1,621 lines) and `customer-profile` into a shell plus slots; move producer components to `features/producers`; **`*appHasPermission` on every add, edit and delete control as its component moves**; per-module preload; `Customer` → `ProducerProfile` split (paired with the backend DTO change); segment filter in the hosts, treating every customer as `Producer` until Phase 5 adds the column | none for originators. **A Trader-role test user now gets a working contracts + tickets view, still over producer data, and a test user without `Editor` sees no control they can't use.** |
 | **5. Trader data scope** | L | Customer `Segment`; widen the CTRM sync, search and onboarding from `PR` to the agreed industry codes; backfill commercial trade-unit links (§6.1); `CommercialScope` through the contracts and tickets repositories and the CTRM readers and caches; outbound ticket semantics; tests; wording | traders see their own customers |
@@ -938,7 +944,7 @@ Phases 1–4 deliver modularity and stand on their own even if traders slip. Pha
 
 - **No split of the database or `ApplicationDbContext` per module.**
 - **No project or assembly per module** for now; section 4.1 describes the graduation path.
-- **No role checks in code:** no `RequireRole`, `IsInRole`, `isAdmin` or `isTrader()`. Roles are read once, by `PermissionService`, and every check is a permission. The pipeline's machine role on `BarchartIngest` is the one exception.
+- **No role checks in code:** no `RequireRole`, `IsInRole`, `isAdmin` or `isTrader()`, and no role names in code at all: roles are rows (§4.3). Roles are read once, by `PermissionService`, and every check is a permission. The pipeline's machine role on `BarchartIngest` is the one exception.
 - **No user-to-role table in our database.** Assignments live in the entitlements app and arrive in the token.
 - **No grants to named users,** such as today's `ExclusionManagers` list. Permissions flow only through roles.
 - **No wildcard grants** such as `*:read` or `contracts:*`. Every grant is an individual row.
@@ -956,6 +962,7 @@ Phases 1–4 deliver modularity and stand on their own even if traders slip. Pha
   - Resources are business-level rather than one per entity.
   - Grants are individual rows with no role inheritance (`ParentRoleId` unused).
   - One custom `write` action per resource in place of `create`, `update` and `delete` (the guide allows a custom action when its standard set doesn't fit, §4.2).
+  - A permission's key is its own string (`notes:write`), not a Guid; roles keep the guide's Guid ids.
 - **SBOM** (README + CLAUDE.md): ArchUnitNET, ESLint, `@angular-eslint`, `eslint-plugin-boundaries` when they're added.
 
 ---

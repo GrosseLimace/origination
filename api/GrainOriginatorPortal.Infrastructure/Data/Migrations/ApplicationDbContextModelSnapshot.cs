@@ -3189,6 +3189,525 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.ToTable("WeeklyLoginAggregate", "dbo");
                 });
 
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Platform.Access.Entities.Permission", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("ModuleId")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Resource")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Permissions", "dbo");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = "bid-feed:manage",
+                            Action = "manage",
+                            ModuleId = "bid-sheet",
+                            Resource = "bid-feed",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "bid-feed:read",
+                            Action = "read",
+                            ModuleId = "bid-sheet",
+                            Resource = "bid-feed",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "bid-sheet-locations:delete:global",
+                            Action = "delete",
+                            ModuleId = "bid-sheet",
+                            Resource = "bid-sheet-locations",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "bid-sheets:read",
+                            Action = "read",
+                            ModuleId = "bid-sheet",
+                            Resource = "bid-sheets",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "bid-sheets:write",
+                            Action = "write",
+                            ModuleId = "bid-sheet",
+                            Resource = "bid-sheets",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "carbon-intensity:read",
+                            Action = "read",
+                            ModuleId = "producers",
+                            Resource = "carbon-intensity",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "contract-pacing:read",
+                            Action = "read",
+                            ModuleId = "producers",
+                            Resource = "contract-pacing",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "contracts:read",
+                            Action = "read",
+                            ModuleId = "contracts",
+                            Resource = "contracts",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "customer-sync:manage",
+                            Action = "manage",
+                            ModuleId = "customers",
+                            Resource = "customer-sync",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "customers:read",
+                            Action = "read",
+                            ModuleId = "customers",
+                            Resource = "customers",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "customers:write",
+                            Action = "write",
+                            ModuleId = "customers",
+                            Resource = "customers",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "diagnostics:manage",
+                            Action = "manage",
+                            ModuleId = "platform",
+                            Resource = "diagnostics",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "diagnostics:read",
+                            Action = "read",
+                            ModuleId = "platform",
+                            Resource = "diagnostics",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "dp-contracts:read",
+                            Action = "read",
+                            ModuleId = "producers",
+                            Resource = "dp-contracts",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "field-plans:read",
+                            Action = "read",
+                            ModuleId = "producers",
+                            Resource = "field-plans",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "field-plans:write",
+                            Action = "write",
+                            ModuleId = "producers",
+                            Resource = "field-plans",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "notes:read",
+                            Action = "read",
+                            ModuleId = "engagement",
+                            Resource = "notes",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "notes:write",
+                            Action = "write",
+                            ModuleId = "engagement",
+                            Resource = "notes",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "planting-estimates:read",
+                            Action = "read",
+                            ModuleId = "producers",
+                            Resource = "planting-estimates",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "planting-estimates:write",
+                            Action = "write",
+                            ModuleId = "producers",
+                            Resource = "planting-estimates",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "planting-intentions:read",
+                            Action = "read",
+                            ModuleId = "producers",
+                            Resource = "planting-intentions",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "planting-intentions:write",
+                            Action = "write",
+                            ModuleId = "producers",
+                            Resource = "planting-intentions",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "preferences:read:own",
+                            Action = "read",
+                            ModuleId = "platform",
+                            Resource = "preferences",
+                            Scope = "own"
+                        },
+                        new
+                        {
+                            Id = "preferences:write:own",
+                            Action = "write",
+                            ModuleId = "platform",
+                            Resource = "preferences",
+                            Scope = "own"
+                        },
+                        new
+                        {
+                            Id = "producer-details:read",
+                            Action = "read",
+                            ModuleId = "producers",
+                            Resource = "producer-details",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "producer-details:write",
+                            Action = "write",
+                            ModuleId = "producers",
+                            Resource = "producer-details",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "query-library:read",
+                            Action = "read",
+                            ModuleId = "lists",
+                            Resource = "query-library",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "recap-groups:read",
+                            Action = "read",
+                            ModuleId = "engagement",
+                            Resource = "recap-groups",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "recap-groups:write",
+                            Action = "write",
+                            ModuleId = "engagement",
+                            Resource = "recap-groups",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "reference-data:read",
+                            Action = "read",
+                            ModuleId = "platform",
+                            Resource = "reference-data",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "reminders:read:own",
+                            Action = "read",
+                            ModuleId = "engagement",
+                            Resource = "reminders",
+                            Scope = "own"
+                        },
+                        new
+                        {
+                            Id = "reminders:write:own",
+                            Action = "write",
+                            ModuleId = "engagement",
+                            Resource = "reminders",
+                            Scope = "own"
+                        },
+                        new
+                        {
+                            Id = "roles:manage",
+                            Action = "manage",
+                            ModuleId = "platform",
+                            Resource = "roles",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "saved-lists:read:own",
+                            Action = "read",
+                            ModuleId = "lists",
+                            Resource = "saved-lists",
+                            Scope = "own"
+                        },
+                        new
+                        {
+                            Id = "saved-lists:read:team",
+                            Action = "read",
+                            ModuleId = "lists",
+                            Resource = "saved-lists",
+                            Scope = "team"
+                        },
+                        new
+                        {
+                            Id = "saved-lists:write:own",
+                            Action = "write",
+                            ModuleId = "lists",
+                            Resource = "saved-lists",
+                            Scope = "own"
+                        },
+                        new
+                        {
+                            Id = "saved-lists:write:team",
+                            Action = "write",
+                            ModuleId = "lists",
+                            Resource = "saved-lists",
+                            Scope = "team"
+                        },
+                        new
+                        {
+                            Id = "stored-grain:read",
+                            Action = "read",
+                            ModuleId = "producers",
+                            Resource = "stored-grain",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "teams-channels:read",
+                            Action = "read",
+                            ModuleId = "engagement",
+                            Resource = "teams-channels",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "tickets:read",
+                            Action = "read",
+                            ModuleId = "contracts",
+                            Resource = "tickets",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "usage-exclusions:manage",
+                            Action = "manage",
+                            ModuleId = "usage-analytics",
+                            Resource = "usage-exclusions",
+                            Scope = "global"
+                        },
+                        new
+                        {
+                            Id = "usage-reports:read",
+                            Action = "read",
+                            ModuleId = "usage-analytics",
+                            Resource = "usage-reports",
+                            Scope = "global"
+                        });
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Platform.Access.Entities.Role", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<bool>("IsSystem")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid?>("ParentRoleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.HasIndex("ParentRoleId");
+
+                    b.ToTable("Roles", "dbo", t =>
+                        {
+                            t.HasCheckConstraint("CK_Roles_Kind", "[Kind] IN ('Persona', 'AddOn', 'Base')");
+                        });
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Platform.Access.Entities.RolePermission", b =>
+                {
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PermissionId")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<DateTime>("GrantedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("GrantedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTime>("ValidFrom")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("ValidFrom");
+
+                    b.Property<DateTime>("ValidTo")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("ValidTo");
+
+                    b.HasKey("RoleId", "PermissionId");
+
+                    b.HasIndex("PermissionId");
+
+                    b.ToTable("RolePermissions", "dbo");
+
+                    b.ToTable(tb => tb.IsTemporal(ttb =>
+                            {
+                                ttb.UseHistoryTable("RolePermissionsHistory", "dbo");
+                                ttb
+                                    .HasPeriodStart("ValidFrom")
+                                    .HasColumnName("ValidFrom");
+                                ttb
+                                    .HasPeriodEnd("ValidTo")
+                                    .HasColumnName("ValidTo");
+                            }));
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Platform.Access.Entities.RoleSegment", b =>
+                {
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Segment")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("GrantedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("GrantedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTime>("ValidFrom")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("ValidFrom");
+
+                    b.Property<DateTime>("ValidTo")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("ValidTo");
+
+                    b.HasKey("RoleId", "Segment");
+
+                    b.ToTable("RoleSegments", "dbo");
+
+                    b.ToTable(tb => tb.IsTemporal(ttb =>
+                            {
+                                ttb.UseHistoryTable("RoleSegmentsHistory", "dbo");
+                                ttb
+                                    .HasPeriodStart("ValidFrom")
+                                    .HasColumnName("ValidFrom");
+                                ttb
+                                    .HasPeriodEnd("ValidTo")
+                                    .HasColumnName("ValidTo");
+                            }));
+                });
+
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BarchartCurrentQuote", b =>
                 {
                     b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.BarchartInstrument", null)
@@ -3460,6 +3979,44 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.Navigation("Customer");
                 });
 
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Platform.Access.Entities.Role", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Platform.Access.Entities.Role", null)
+                        .WithMany()
+                        .HasForeignKey("ParentRoleId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Platform.Access.Entities.RolePermission", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Platform.Access.Entities.Permission", "Permission")
+                        .WithMany()
+                        .HasForeignKey("PermissionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Platform.Access.Entities.Role", "Role")
+                        .WithMany("Permissions")
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Permission");
+
+                    b.Navigation("Role");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Platform.Access.Entities.RoleSegment", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Platform.Access.Entities.Role", "Role")
+                        .WithMany("Segments")
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Role");
+                });
+
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.BidSheet", b =>
                 {
                     b.Navigation("Locations");
@@ -3477,6 +4034,13 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.Navigation("CcEmails");
 
                     b.Navigation("Members");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Platform.Access.Entities.Role", b =>
+                {
+                    b.Navigation("Permissions");
+
+                    b.Navigation("Segments");
                 });
 #pragma warning restore 612, 618
         }
