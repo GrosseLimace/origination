@@ -357,9 +357,11 @@ public sealed class CtrmTicketReader
     ///
     /// <para><b>Nobody waits on a refresh.</b> An expired window is served as-is to the caller while a refresh
     /// runs behind it (stale-while-revalidate), so a prompt run a minute after the last one is instant and the
-    /// run after that sees the update. A caller only waits when a window has never been read - and the
-    /// home-page contract load kicks this read for the same producers, so that is normally already done by
-    /// the time a prompt is typed.</para>
+    /// run after that sees the update. A caller only waits when a window has never been read. Build-a-List
+    /// requests this read when the page opens, ahead of any prompt, so a prompt typed after that normally
+    /// finds it done or in flight (coalesced). Nothing else starts it: the home-page contract load stopped
+    /// pre-fetching it on 2026-11-04, because that ran the heaviest CTRM read for every user whether or not
+    /// they ever asked a ticket question.</para>
     ///
     /// <para>Cost: for a mid-size trade unit (300 producers) roughly 15-40 pages of 500 rows at 3-5s each,
     /// run at the configured concurrency - tens of seconds cold, instant warm. All tickets, not
@@ -677,16 +679,22 @@ public sealed class CtrmTicketReader
         // pool is exactly the failure mode Build-a-List cannot detect.
         var truncated = results.FirstOrDefault(r => r.Status == CtrmReadStatus.PartialSuccess);
 
+        // Pages, not rows, are what a ticket read costs the server (each page is a scan of the window), so
+        // the count the CTRM team feels is logged here, once per window actually fetched. This line only
+        // runs on a real fetch - a cache hit never reaches it - so it is the honest before/after number.
+        var pages = results.Sum(r => r.Pages);
+
         _logger.LogInformation(
             "CTRM live tickets: {Count} tickets for {Producers} producer(s) over {From:yyyy-MM-dd}..{To:yyyy-MM-dd} " +
-            "in {Chunks} chunk(s){Truncated}.",
-            all.Count, codes.Count, from, to, chunks.Count, truncated is null ? string.Empty : " - TRUNCATED");
+            "in {Chunks} chunk(s), {Pages} page(s){Truncated}.",
+            all.Count, codes.Count, from, to, chunks.Count, pages, truncated is null ? string.Empty : " - TRUNCATED");
 
         return new CtrmReadResult<List<CtrmTicketDto>>
         {
             Status = truncated is null ? CtrmReadStatus.Ok : CtrmReadStatus.PartialSuccess,
             Detail = truncated?.Detail,
-            Value = all
+            Value = all,
+            Pages = pages
         };
     }
 
@@ -834,9 +842,10 @@ public sealed class CtrmTicketReader
             };
 
         var all = new List<CtrmTicketDto>(firstPage.Items);
+        var pagesFetched = 1;
         var hasMore = firstPage.PageInfo?.HasNextPage == true;
         if (!hasMore)
-            return new CtrmReadResult<List<CtrmTicketDto>> { Status = CtrmReadStatus.Ok, Value = all };
+            return new CtrmReadResult<List<CtrmTicketDto>> { Status = CtrmReadStatus.Ok, Value = all, Pages = pagesFetched };
 
         // How many pages the reported count implies, bounded by the cap. At least two, because the server
         // just said there is more.
@@ -864,6 +873,7 @@ public sealed class CtrmTicketReader
             }
 
             var rest = await Task.WhenAll(Enumerable.Range(1, pagesToFetch - 1).Select(BoundedPage));
+            pagesFetched += rest.Length;
 
             var failed = rest.FirstOrDefault(r => !r.Ok);
             if (failed is not null) return PropagatePageFailure(failed, scope, window);
@@ -883,6 +893,7 @@ public sealed class CtrmTicketReader
         while (hasMore && nextPage < maxPages)
         {
             var extra = await FetchTicketPageAsync(scope, from, to, nextPage * PageSize);
+            pagesFetched++;
             if (!extra.Ok) return PropagatePageFailure(extra, scope, window);
 
             var data = extra.Value?.Tickets;
@@ -904,11 +915,12 @@ public sealed class CtrmTicketReader
             {
                 Status = CtrmReadStatus.PartialSuccess,
                 Detail = $"Truncated after {maxPages} pages in {window}.",
-                Value = all
+                Value = all,
+                Pages = pagesFetched
             };
         }
 
-        return new CtrmReadResult<List<CtrmTicketDto>> { Status = CtrmReadStatus.Ok, Value = all };
+        return new CtrmReadResult<List<CtrmTicketDto>> { Status = CtrmReadStatus.Ok, Value = all, Pages = pagesFetched };
     }
 
     /// <summary>
