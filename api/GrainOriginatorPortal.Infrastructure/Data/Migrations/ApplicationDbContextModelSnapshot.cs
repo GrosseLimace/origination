@@ -1642,6 +1642,112 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.ToTable("FeatureUsageDaily", "dbo");
                 });
 
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.FieldProgramRecord", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CopiedFromField")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("CopiedFromField");
+
+                    b.Property<int?>("CopiedFromYear")
+                        .HasColumnType("int")
+                        .HasColumnName("CopiedFromYear");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("CreatedAt")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("CreatedBy");
+
+                    b.Property<string>("Data")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("Data");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("DeletedAt");
+
+                    b.Property<string>("DeletedBy")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("DeletedBy");
+
+                    b.Property<string>("Frozen")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("Frozen");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("IsDeleted");
+
+                    b.Property<DateTime?>("LockedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("LockedAt");
+
+                    b.Property<string>("LockedBy")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("LockedBy");
+
+                    b.Property<DateTime?>("ModifiedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("ModifiedAt");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("ModifiedBy");
+
+                    b.Property<string>("Official")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("Official");
+
+                    b.Property<int>("ProducerFieldSeasonId")
+                        .HasColumnType("int")
+                        .HasColumnName("ProducerFieldSeasonId");
+
+                    b.Property<string>("ProgramKey")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("ProgramKey");
+
+                    b.Property<string>("Reopened")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("Reopened");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("Status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProducerFieldSeasonId", "ProgramKey")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_FieldProgramRecord_Season_Program")
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("FieldProgramRecord", "dbo");
+                });
+
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.HarvestWindow", b =>
                 {
                     b.Property<int>("Id")
@@ -2137,6 +2243,173 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasDatabaseName("IX_ProducerDetails_CustomerId");
 
                     b.ToTable("ProducerDetails", "dbo");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.ProducerField", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("County")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("County");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("CreatedAt")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("CreatedBy");
+
+                    b.Property<long>("CustomerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CustomerId");
+
+                    b.Property<DateOnly?>("EffectiveDate")
+                        .HasColumnType("date")
+                        .HasColumnName("EffectiveDate");
+
+                    b.Property<DateTime?>("ModifiedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("ModifiedAt");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("ModifiedBy");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("Name");
+
+                    b.Property<string>("SplitId")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("SplitId");
+
+                    b.Property<decimal>("SplitPercent")
+                        .HasColumnType("decimal(7,3)")
+                        .HasColumnName("SplitPercent");
+
+                    b.Property<string>("SplitSource")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasDefaultValue("Manual")
+                        .HasColumnName("SplitSource");
+
+                    b.Property<string>("State")
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)")
+                        .HasColumnName("State");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId")
+                        .HasDatabaseName("IX_ProducerField_CustomerId");
+
+                    b.HasIndex("SplitId")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_ProducerField_SplitId");
+
+                    b.ToTable("ProducerField", "dbo");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.ProducerFieldSeason", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal?>("Acres")
+                        .HasColumnType("decimal(10,2)")
+                        .HasColumnName("Acres");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("CreatedAt")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("CreatedBy");
+
+                    b.Property<string>("CropLabel")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("CropLabel");
+
+                    b.Property<int>("CropYear")
+                        .HasColumnType("int")
+                        .HasColumnName("CropYear");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("DeletedAt");
+
+                    b.Property<string>("DeletedBy")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("DeletedBy");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("IsDeleted");
+
+                    b.Property<DateTime?>("ModifiedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("ModifiedAt");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("ModifiedBy");
+
+                    b.Property<int>("PlantingIntentionId")
+                        .HasColumnType("int")
+                        .HasColumnName("PlantingIntentionId");
+
+                    b.Property<int>("ProducerFieldId")
+                        .HasColumnType("int")
+                        .HasColumnName("ProducerFieldId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlantingIntentionId")
+                        .HasDatabaseName("IX_ProducerFieldSeason_PlantingIntentionId");
+
+                    b.HasIndex("ProducerFieldId")
+                        .HasDatabaseName("IX_ProducerFieldSeason_ProducerFieldId");
+
+                    b.HasIndex("ProducerFieldId", "PlantingIntentionId")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_ProducerFieldSeason_Field_PlantingIntention")
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("ProducerFieldSeason", "dbo");
                 });
 
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.ProducerGrainOnFarm", b =>
@@ -3052,6 +3325,18 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.Navigation("Group");
                 });
 
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.FieldProgramRecord", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.ProducerFieldSeason", "Season")
+                        .WithMany()
+                        .HasForeignKey("ProducerFieldSeasonId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_FieldProgramRecord_ProducerFieldSeason_ProducerFieldSeasonId");
+
+                    b.Navigation("Season");
+                });
+
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.Note", b =>
                 {
                     b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.Customer", "Customer")
@@ -3110,6 +3395,37 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasConstraintName("FK_ProducerDetails_Customer_CustomerId");
 
                     b.Navigation("Customer");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.ProducerField", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_ProducerField_Customer_CustomerId");
+
+                    b.Navigation("Customer");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.ProducerFieldSeason", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.PlantingIntention", null)
+                        .WithMany()
+                        .HasForeignKey("PlantingIntentionId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_ProducerFieldSeason_ProducerPlantingIntentions_PlantingIntentionId");
+
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.ProducerField", "Field")
+                        .WithMany()
+                        .HasForeignKey("ProducerFieldId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_ProducerFieldSeason_ProducerField_ProducerFieldId");
+
+                    b.Navigation("Field");
                 });
 
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.ProducerGrainOnFarm", b =>

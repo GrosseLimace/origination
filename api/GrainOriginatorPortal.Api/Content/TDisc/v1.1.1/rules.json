@@ -1,0 +1,9 @@
+{
+  "indexDepthCm": 30,
+  "maxPasses": 20,
+  "designations": [
+    {"max":1,"designation":"CT"},
+    {"max":0.252,"designation":"RT"},
+    {"max":0.075,"designation":"NT"}
+  ]
+}

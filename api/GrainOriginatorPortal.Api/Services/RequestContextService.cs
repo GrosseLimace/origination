@@ -36,6 +36,13 @@ public class RequestContextService : IRequestContextService
     }
 
     /// <inheritdoc />
+    public string GetCurrentUserDisplayName()
+    {
+        var name = _httpContextAccessor.HttpContext?.User?.FindFirst("name")?.Value;
+        return string.IsNullOrWhiteSpace(name) ? GetCurrentUser() : name.Trim();
+    }
+
+    /// <inheritdoc />
     public bool IsAdmin() =>
         _httpContextAccessor.HttpContext?.User?.IsInRole("Admin") ?? false;
 
