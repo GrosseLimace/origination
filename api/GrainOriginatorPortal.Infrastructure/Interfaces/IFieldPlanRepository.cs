@@ -6,8 +6,7 @@ namespace GrainOriginatorPortal.Infrastructure.Interfaces;
 public sealed record FieldPlanRows(
     IReadOnlyList<ProducerField> Fields,
     IReadOnlyList<ProducerFieldSeason> Seasons,
-    IReadOnlyList<FieldProgramRecord> Records,
-    IReadOnlyList<ProgramEnrollment> Enrollments);
+    IReadOnlyList<FieldProgramRecord> Records);
 
 /// <summary>
 /// Data access for the field plan. Reads for a single row return it TRACKED (with its parents loaded) so
@@ -16,7 +15,7 @@ public sealed record FieldPlanRows(
 /// </summary>
 public interface IFieldPlanRepository
 {
-    /// <summary>The producer's fields, seasons, records and enrollments (withdrawn included), untracked.</summary>
+    /// <summary>The producer's fields, seasons and records, untracked.</summary>
     Task<FieldPlanRows> LoadAsync(long customerId, CancellationToken cancellationToken);
 
     /// <summary>The field for a split ID, whichever producer holds it.</summary>
@@ -37,14 +36,6 @@ public interface IFieldPlanRepository
     Task<FieldProgramRecord?> GetRecordAsync(int recordId, CancellationToken cancellationToken);
 
     Task<FieldProgramRecord?> GetRecordAsync(int seasonId, string programKey, CancellationToken cancellationToken);
-
-    Task<ProgramEnrollment?> GetEnrollmentAsync(Guid key, CancellationToken cancellationToken);
-
-    /// <summary>The producer's Open or Attested enrollment in a program for a year.</summary>
-    Task<ProgramEnrollment?> GetLiveEnrollmentAsync(long customerId, string programKey, int cropYear, CancellationToken cancellationToken);
-
-    /// <summary>Every producer's attested enrollments in a program for a year (the duplicate-claim check).</summary>
-    Task<List<ProgramEnrollment>> GetAttestedAsync(string programKey, int cropYear, CancellationToken cancellationToken);
 
     /// <summary>Whether the planting intention exists, belongs to the producer and is for that year.</summary>
     Task<bool> PlantingIntentionMatchesAsync(int plantingIntentionId, long customerId, int cropYear, CancellationToken cancellationToken);

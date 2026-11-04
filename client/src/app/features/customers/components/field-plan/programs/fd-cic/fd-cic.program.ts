@@ -85,8 +85,6 @@ export function createFdCicProgram(api: FdCicApiService): SustainabilityProgramD
       return state.score.scorable ? null : 'no USDA data';
     },
 
-    /** The field's production: acres × actual yield. */
-    production: (data, season) => (data.actualYield && season.acres ? data.actualYield * season.acres : null),
 
     freeze(data: FdCicData, season: FieldSeason, field: ProducerField) {
       const score = scored(data, season, field);
@@ -98,7 +96,7 @@ export function createFdCicProgram(api: FdCicApiService): SustainabilityProgramD
           state: field.state, county: field.county, acres: season.acres,
           expectedYield: data.expectedYield, actualYield: data.actualYield,
           syntheticN: data.syntheticN, niPercent: Math.round(data.niFraction * 100),
-          coverCrop: COVER_LABELS[data.coverCrop], tillage: TILLAGE_LABELS[data.tillage],
+          coverCrop: COVER_LABELS[data.coverCrop], tillage: TILLAGE_LABELS[data.tillage], tDiscRating: data.tDiscRating ?? null,
           manure: data.manure.map(m => ({ ...m })),
         },
         outputs: {
@@ -146,17 +144,6 @@ export function createFdCicProgram(api: FdCicApiService): SustainabilityProgramD
 
     enrollment: {
       idPrefix: 'CI',
-      statements: [
-        { key: 'notEnrolledElsewhere', short: '"not enrolled elsewhere" confirmation',
-          label: 'None of these fields is enrolled with another buyer or program for this crop year.' },
-        { key: 'recordsAccurate', short: '"records are accurate" confirmation',
-          label: 'The practices and yields provided are accurate, and the producer keeps the records behind them.' },
-        { key: 'consentToThirdPartyAudit', short: 'consent to third-party audit',
-          label: 'Scoular, the receiving plant and a third-party auditor may review the supporting records.' },
-        { key: 'firstPointOfAggregationAck', short: 'first-point-of-aggregation acknowledgment',
-          label: 'Scoular, as first point of aggregation, holds and allocates the CI of this grain; the producer makes no other claim on it.' },
-      ],
-      attestedNote: 'Delivery lots in the CI ledger point back to this ID.',
     },
   };
 }

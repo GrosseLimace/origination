@@ -1,3 +1,5 @@
+import type { TDiscPass } from './tdisc.model';
+
 /**
  * The 45Z program's data: the inputs of the USDA FD-CIC calculator (v1.2, "Crop Inputs" tab), less
  * the ones the field already holds (state, county, acres). Option values follow the workbook.
@@ -5,7 +7,10 @@
 
 export type FdCicCrop = 'Corn' | 'Soybean' | 'Sorghum' | 'Canola';
 
-/** FD-CIC v1.2 tillage: Reduced till (STIR < 80), No till (STIR < 20), None of the above. */
+/**
+ * FD-CIC v1.2 tillage: Reduced till, No till, None of the above. Confirming a no-till or reduced-till CI needs
+ * the field's passes rated with USDA T-DISC (no till 0.075 or less, reduced till 0.252 or less; see fd-cic-tdisc.ts).
+ */
 export type Tillage = 'ReducedTill' | 'NoTill' | 'NoneOfTheAbove';
 /** FD-CIC v1.2 cover crop: Cover crop, Cover crop with grazing, No cover crop. */
 export type CoverCrop = 'None' | 'CoverCrop' | 'CoverCropGrazed';
@@ -35,4 +40,11 @@ export interface FdCicData {
   tillage: Tillage;
   /** Up to 3, as in the workbook. */
   manure: ManureApplication[];
+  /**
+   * The field's passes for USDA T-DISC, entered in the review for no till or reduced till (saved as they're
+   * entered). Not needed for an estimate.
+   */
+  tDiscPasses?: TDiscPass[] | null;
+  /** The T-DISC rating (0-1) the server worked out from the passes when the field was confirmed. */
+  tDiscRating?: number | null;
 }

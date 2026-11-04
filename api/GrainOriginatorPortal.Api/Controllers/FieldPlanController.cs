@@ -10,7 +10,7 @@ namespace GrainOriginatorPortal.Api.Controllers;
 
 /// <summary>
 /// The field plan: producers' fields (CTRM splits), their crop-row seasons, sustainability program records
-/// (45Z) and program enrollments. One route per method of the client's FieldPlanBackend
+/// (45Z). One route per method of the client's FieldPlanBackend
 /// (client/.../field-plan/store/field-plan-backend.ts). Rules live in <see cref="FieldPlanService"/>; every
 /// write is audit-logged there.
 ///
@@ -32,7 +32,7 @@ public class FieldPlanController : ControllerBase
         _tickets = tickets;
     }
 
-    /// <summary>Everything one producer has: fields, seasons, records and enrollments (withdrawn included).</summary>
+    /// <summary>Everything one producer has: fields, seasons, and records.</summary>
     [HttpGet("customer/{customerId:long}")]
     [ProducesResponseType(typeof(FieldPlanSnapshotResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<FieldPlanSnapshotResponse>> Load(long customerId, CancellationToken ct) =>
@@ -101,7 +101,7 @@ public class FieldPlanController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Unlocks a confirmed CI with a reason; refused while an attested enrollment holds it.</summary>
+    /// <summary>Unlocks a confirmed CI with a reason.</summary>
     [HttpPost("records/{id:int}/reopen")]
     [ProducesResponseType(typeof(FieldProgramRecordResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
@@ -129,30 +129,4 @@ public class FieldPlanController : ControllerBase
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status422UnprocessableEntity)]
     public async Task<ActionResult<FieldProgramRecordResponse>> Confirm(int id, [FromBody] ConfirmFieldProgramRecordRequest request, CancellationToken ct) =>
         Ok(await _service.ConfirmAsync(id, request, ct));
-
-    // ── Enrollments ─────────────────────────────────────────────────────────
-
-    /// <summary>The producer's live enrollment, created if needed. 204 for a program without enrollment.</summary>
-    [HttpPost("enrollments")]
-    [ProducesResponseType(typeof(ProgramEnrollmentResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> EnsureEnrollment([FromBody] EnsureProgramEnrollmentRequest request, CancellationToken ct) =>
-        await _service.EnsureEnrollmentAsync(request, ct) is { } enrollment ? Ok(enrollment) : NoContent();
-
-    [HttpPut("enrollments/{key:guid}/attestation")]
-    [ProducesResponseType(typeof(ProgramEnrollmentResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<ProgramEnrollmentResponse>> UpdateAttestation(Guid key, [FromBody] UpdateAttestationRequest request, CancellationToken ct) =>
-        Ok(await _service.UpdateAttestationAsync(key, request.Attestation, ct));
-
-    [HttpPost("enrollments/{key:guid}/attest")]
-    [ProducesResponseType(typeof(ProgramEnrollmentResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status422UnprocessableEntity)]
-    public async Task<ActionResult<ProgramEnrollmentResponse>> Attest(Guid key, [FromBody] AttestEnrollmentRequest request, CancellationToken ct) =>
-        Ok(await _service.AttestAsync(key, request.Listed, ct));
-
-    [HttpPost("enrollments/{key:guid}/withdraw")]
-    [ProducesResponseType(typeof(ProgramEnrollmentResponse), StatusCodes.Status200OK)]
-    public async Task<ActionResult<ProgramEnrollmentResponse>> Withdraw(Guid key, [FromBody] FieldPlanReasonRequest request, CancellationToken ct) =>
-        Ok(await _service.WithdrawAsync(key, request.Reason, ct));
 }

@@ -1,0 +1,1261 @@
+{
+  "note": "USDA's lookup from everyday operation names to the T-DISC implements to enter, one pass each.",
+  "rows": [
+    [
+      "Aerator, field surface, ground driven",
+      ["AERATOR"]
+    ],
+    [
+      "Aerator, field surface, ground driven 0 degree offset",
+      ["AERATOR"]
+    ],
+    [
+      "Aerator, field surface, ground driven 10 degree offset",
+      ["AERATOR"]
+    ],
+    [
+      "Aerator, field surface, ground driven 5 degree offset",
+      ["AERATOR"]
+    ],
+    [
+      "Aerator, offset",
+      ["AERATOR, TANDEM DRUM, ANGLE>5"]
+    ],
+    [
+      "Aerator, single drum, lugs, angle 0",
+      ["AERATOR"]
+    ],
+    [
+      "Aerator, tandem drum, lugs, angle 10",
+      ["AERATOR, TANDEM DRUM, ANGLE>5"]
+    ],
+    [
+      "Aerator, tandem drum, lugs, angle 5",
+      ["AERATOR, TANDEM DRUM, ANGLE>5"]
+    ],
+    [
+      "Bed shaper",
+      ["BED SHAPING, BEDDER SHAPER"]
+    ],
+    [
+      "Bed shaper high disturbance",
+      ["BED SHAPING, FURROW DIKER"]
+    ],
+    [
+      "Bed shaper, 12 inch",
+      ["BED SHAPING, BEDDER SHAPER"]
+    ],
+    [
+      "Bed shaper, 12 inch, low flattening",
+      ["BED SHAPING, BEDDER SHAPER"]
+    ],
+    [
+      "Bed shaper, low flattening, high disturbance",
+      ["BED SHAPING, FURROW DIKER"]
+    ],
+    [
+      "Bedder, disk hiller",
+      ["BED SHAPING, BEDDER DISK/DISK-HIPPER, DEPTH LE4.5IN"]
+    ],
+    [
+      "Bedder, hipper, disk hiller",
+      ["BED SHAPING, BEDDER DISK/DISK-HIPPER, DEPTH LE4.5IN"]
+    ],
+    [
+      "Bedder, hipper, hiller 12 inch high",
+      ["BED SHAPING, BEDDER DISK/DISK-HIPPER, DEPTH GT4.5IN"]
+    ],
+    [
+      "Bedder, hipper, hiller 15 inch high",
+      ["BED SHAPING, BEDDER DISK/DISK-HIPPER, DEPTH GT4.5IN"]
+    ],
+    [
+      "Bedder, hipper, hiller 18 inch high",
+      ["BED SHAPING, BEDDER DISK/DISK-HIPPER, DEPTH GT4.5IN"]
+    ],
+    [
+      "Chisel plow, coulter, straight points",
+      ["PLOW, COULTER-CHISEL"]
+    ],
+    [
+      "Chisel plow, coulter, straight points, cover disks",
+      ["PLOW, COULTER-CHISEL"]
+    ],
+    [
+      "Chisel plow, coulter, straight points, cover disks, rolling basket",
+      ["PLOW, COULTER-CHISEL"]
+    ],
+    [
+      "Chisel plow, coulter, sweeps",
+      ["PLOW, COULTER-CHISEL"]
+    ],
+    [
+      "Chisel plow, coulter, twisted points",
+      ["PLOW, COULTER-CHISEL"]
+    ],
+    [
+      "Chisel plow, coulter, twisted points, cover disks",
+      ["PLOW, COULTER-CHISEL"]
+    ],
+    [
+      "Chisel plow, disk, straight points",
+      ["PLOW, COULTER-CHISEL"]
+    ],
+    [
+      "Chisel plow, disk, straight points, cover disks",
+      ["PLOW, COULTER-CHISEL"]
+    ],
+    [
+      "Chisel plow, disk, twisted points",
+      ["PLOW, COULTER-CHISEL"]
+    ],
+    [
+      "Chisel plow, disk, twisted points, cover disks",
+      ["PLOW, COULTER-CHISEL"]
+    ],
+    [
+      "Chisel, 12-16 inch low crown sweep 3 to 4 inch depth",
+      ["HARROW, DISK, CHISEL (MULCH TILLER)"]
+    ],
+    [
+      "Chisel, straight point",
+      ["HARROW, DISK, CHISEL (MULCH TILLER)"]
+    ],
+    [
+      "Chisel, straight point 12 inch deep",
+      ["PLOW, CHISEL"]
+    ],
+    [
+      "Chisel, straight point 15 inch deep",
+      ["PLOW, CHISEL"]
+    ],
+    [
+      "Chisel, straight point 5 inch deep",
+      ["HARROW, DISK, CHISEL (MULCH TILLER)"]
+    ],
+    [
+      "Chisel, straight point 5 inch deep, coil tine harrow",
+      ["HARROW, DISK, CHISEL (MULCH TILLER)"]
+    ],
+    [
+      "Chisel, straight point, coil tine harrow",
+      ["HARROW, DISK, CHISEL (MULCH TILLER)","HARROW, COILED TINES"]
+    ],
+    [
+      "Chisel, sweep shovel",
+      ["HARROW, DISK, CHISEL (MULCH TILLER)"]
+    ],
+    [
+      "Chisel, sweep shovel 5 inch depth",
+      ["HARROW, DISK, CHISEL (MULCH TILLER)"]
+    ],
+    [
+      "Chisel, sweep shovel 5 inch depth, coil tine harrow",
+      ["HARROW, DISK, CHISEL (MULCH TILLER)","HARROW, COILED TINES"]
+    ],
+    [
+      "Chisel, sweep shovel, coil tine harrow",
+      ["HARROW, DISK, CHISEL (MULCH TILLER)","HARROW, COILED TINES"]
+    ],
+    [
+      "Chisel, twisted shovel",
+      ["PLOW, CHISEL"]
+    ],
+    [
+      "Chisel, twisted shovel, coil tine harrow",
+      ["HARROW, DISK, CHISEL (MULCH TILLER)"]
+    ],
+    [
+      "Chisel, winged with furrow diker",
+      ["PLOW, COULTER-CHISEL"]
+    ],
+    [
+      "Corrugated roller or packer",
+      ["CULTIVATOR, CULTIWEEDER"]
+    ],
+    [
+      "Coulter caddy, double gang with fluted coulters",
+      ["CULTIVATOR, ROTARY HOE"]
+    ],
+    [
+      "Coulter caddy, with fluted coulters",
+      ["CULTIVATOR, ROTARY HOE"]
+    ],
+    [
+      "Coulter caddy, with smooth coulters",
+      ["CONDITIONER, COULTER CADDY, SMOOTH COULTERS"]
+    ],
+    [
+      "Coulter tiller",
+      ["HARROW, DISK, CHISEL (MULCH TILLER)"]
+    ],
+    [
+      "Coulter tiller and spike harrow",
+      ["HARROW, DISK, CHISEL (MULCH TILLER)","HARROW, SPIKE TOOTH OR SPRING TOOTH"]
+    ],
+    [
+      "Coulter tiller, 10 degree angle, coiled tine harrow, rolling basket",
+      ["HARROW, DISK, CHISEL (MULCH TILLER)","HARROW, COILED TINES","HARROW, ROLLING"]
+    ],
+    [
+      "Cover crop underseeder",
+      ["PLANTER, INTER/OVER SEEDER"]
+    ],
+    [
+      "Cultimulcher",
+      ["ROLLER, CULTI-MULCHER"]
+    ],
+    [
+      "Cultipacker, pulverizer",
+      ["ROLLER, CULTI-PACKER/PULVERIZER"]
+    ],
+    [
+      "Cultipacker, roller",
+      ["ROLLER, CULTI-MULCHER"]
+    ],
+    [
+      "Cultivator, between beds, add residue",
+      ["CULTIVATOR, ROW"]
+    ],
+    [
+      "Cultivator, field 6-12 inch shovels Central",
+      ["CULTIVATOR, FIELD"]
+    ],
+    [
+      "Cultivator, field 6-12 inch sweeps",
+      ["CULTIVATOR, FIELD"]
+    ],
+    [
+      "Cultivator, field 6-12 inch sweeps, coil tine harrow",
+      ["CULTIVATOR, FIELD","HARROW, COILED TINES"]
+    ],
+    [
+      "Cultivator, field w/ spike points",
+      ["CULTIVATOR, FIELD"]
+    ],
+    [
+      "Cultivator, field w/ spike points, coil tine harrow",
+      ["CULTIVATOR, FIELD","HARROW, COILED TINES"]
+    ],
+    [
+      "Cultivator, flame",
+      ["HARROW, COILED TINES"]
+    ],
+    [
+      "Cultivator, hipper, disk hiller on beds, depth GT4.5IN",
+      ["BED SHAPING, BEDDER DISK/DISK-HIPPER, DEPTH GT4.5IN"]
+    ],
+    [
+      "Cultivator, hipper, disk hiller on beds, depth LE4.5IN",
+      ["BED SHAPING, BEDDER DISK/DISK-HIPPER, DEPTH LE4.5IN"]
+    ],
+    [
+      "Cultivator, off bar w/disk hillers on beds, depth GT4.5IN",
+      ["BED SHAPING, BEDDER DISK/DISK-HIPPER, DEPTH GT4.5IN"]
+    ],
+    [
+      "Cultivator, off bar w/disk hillers on beds, depth LE4.5IN",
+      ["BED SHAPING, BEDDER DISK/DISK-HIPPER, DEPTH LE4.5IN"]
+    ],
+    [
+      "Cultivator, rotary",
+      ["ROTO-TILLER, ROTO-TILLER DIGGER, ROTERRA"]
+    ],
+    [
+      "Cultivator, rotary on beds",
+      ["ROTO-TILLER, ROTO-TILLER DIGGER, ROTERRA"]
+    ],
+    [
+      "Cultivator, row - 1st pass ridge till",
+      ["CULTIVATOR, ROW"]
+    ],
+    [
+      "Cultivator, row - 2nd pass ridge till",
+      ["CULTIVATOR, ROW"]
+    ],
+    [
+      "Cultivator, row 1 inch ridge",
+      ["CULTIVATOR, ROW"]
+    ],
+    [
+      "Cultivator, row 3 inch ridge",
+      ["CULTIVATOR, ROW"]
+    ],
+    [
+      "Cultivator, row between beds",
+      ["CULTIVATOR, ROW"]
+    ],
+    [
+      "Cultivator, row, high residue",
+      ["CULTIVATOR, ROW"]
+    ],
+    [
+      "Culti-weeder",
+      ["CULTIVATOR, CULTIWEEDER"]
+    ],
+    [
+      "Disc-o-vator",
+      ["HARROW, DISK, SINGLE","HARROW, SPIKE TOOTH OR SPRING TOOTH"]
+    ],
+    [
+      "Disk, inter row strips",
+      ["HARROW, DISK, SINGLE","HARROW, SPIKE TOOTH OR SPRING TOOTH"]
+    ],
+    [
+      "Disk, offset, heavy",
+      ["HARROW, DISK, OFFSET, HEAVYDUTY"]
+    ],
+    [
+      "Disk, offset, heavy 12 inch depth",
+      ["HARROW, DISK, OFFSET, HEAVYDUTY"]
+    ],
+    [
+      "Disk, offset, heavy 15 inch depth",
+      ["HARROW, DISK, OFFSET, HEAVYDUTY"]
+    ],
+    [
+      "Disk, offset, heavy, roller, corrugated packer",
+      ["HARROW, DISK, OFFSET, HEAVYDUTY","CULTIVATOR, CULTIWEEDER"]
+    ],
+    [
+      "Disk, offset, heavy, roller, smooth",
+      ["HARROW, DISK, OFFSET, HEAVYDUTY"]
+    ],
+    [
+      "Disk, offset, light",
+      ["HARROW, DISK, OFFSET, LIGHTDUTY"]
+    ],
+    [
+      "Disk, single gang",
+      ["HARROW, DISK, SINGLE"]
+    ],
+    [
+      "Disk, tandem heavy primary operation",
+      ["HARROW, DISK, TANDEM, HEAVYDUTY"]
+    ],
+    [
+      "Disk, tandem heavy primary operation, roller, smooth",
+      ["HARROW, DISK, TANDEM, HEAVYDUTY"]
+    ],
+    [
+      "Disk, tandem light finishing",
+      ["HARROW, DISK, TANDEM, LIGHTDUTY"]
+    ],
+    [
+      "Disk, tandem secondary operation",
+      ["HARROW, DISK, TANDEM, LIGHTDUTY"]
+    ],
+    [
+      "Do all (Duall)",
+      ["FINISHER, LANDOLL, DO-ALL"]
+    ],
+    [
+      "Do all, on beds",
+      ["FINISHER, LANDOLL, DO-ALL"]
+    ],
+    [
+      "Drill or air seeder single disk openers 7-10 inch spacing",
+      ["PLANTER, DRILL, AIR DELIVERY","HARROW, DISK, SINGLE"]
+    ],
+    [
+      "Drill or air seeder single disk openers, fertilizer openers 7-10 inch spacing",
+      ["PLANTER, DRILL, AIR DELIVERY","HARROW, DISK, SINGLE"]
+    ],
+    [
+      "Drill or air seeder T-slot openers 7-10 inch spacing",
+      ["PLANTER, DRILL, AIR DELIVERY","HARROW, COILED TINES"]
+    ],
+    [
+      "Drill or air seeder, 4 inch stealth openers on 12 inch spacing",
+      ["PLANTER, DRILL, AIR DELIVERY","HARROW, FINISHING"]
+    ],
+    [
+      "Drill or air seeder, 6 inch stealth openers on 12 inch spacing",
+      ["PLANTER, DRILL, AIR DELIVERY","HARROW, FINISHING"]
+    ],
+    [
+      "Drill or air seeder, combo field cult, double disk openers",
+      ["PLANTER, DRILL, AIR DELIVERY","CULTIVATOR, FIELD","HARROW, DISK, TANDEM, LIGHTDUTY"]
+    ],
+    [
+      "Drill or air seeder, combo single disk-hoe openers, 10 inch spacing",
+      ["PLANTER, DRILL, AIR DELIVERY","HARROW, DISK, SINGLE"]
+    ],
+    [
+      "Drill or air seeder, double disk",
+      ["PLANTER, DRILL, AIR DELIVERY","HARROW, DISK, TANDEM, LIGHTDUTY"]
+    ],
+    [
+      "Drill or air seeder, double disk opener w/ fluted coulter 5x10 paired row",
+      ["PLANTER, DRILL, AIR DELIVERY","HARROW, DISK, TANDEM, LIGHTDUTY"]
+    ],
+    [
+      "Drill or air seeder, double disk opener, w/ fertilizer openers",
+      ["PLANTER, DRILL, AIR DELIVERY","HARROW, DISK, TANDEM, LIGHTDUTY"]
+    ],
+    [
+      "Drill or air seeder, double disk, w/ fluted coulters",
+      ["PLANTER, DRILL, AIR DELIVERY","HARROW, DISK, TANDEM, LIGHTDUTY"]
+    ],
+    [
+      "Drill or air seeder, hoe opener in heavy residue",
+      ["PLANTER, DRILL, AIR DELIVERY","HARROW, DISK, CHISEL (MULCH TILLER)"]
+    ],
+    [
+      "Drill or air seeder, hoe opener inch heavy residue w/ fertilizer openers",
+      ["PLANTER, DRILL, AIR DELIVERY","HARROW, DISK, CHISEL (MULCH TILLER)"]
+    ],
+    [
+      "Drill or air seeder, hoe/chisel openers 12-15 inch spacing",
+      ["PLANTER, DRILL, AIR DELIVERY","HARROW, DISK, CHISEL (MULCH TILLER)"]
+    ],
+    [
+      "Drill or air seeder, hoe/chisel openers 12-15 inch spacing w/ fertilizer openers",
+      ["PLANTER, DRILL, AIR DELIVERY","HARROW, DISK, CHISEL (MULCH TILLER)"]
+    ],
+    [
+      "Drill or air seeder, hoe/chisel openers 6-12 inch spacing",
+      ["PLANTER, DRILL, AIR DELIVERY","HARROW, DISK, CHISEL (MULCH TILLER)"]
+    ],
+    [
+      "Drill or air seeder, hoe/chisel openers 6-12 inch spacing w/fertilizer openers",
+      ["PLANTER, DRILL, AIR DELIVERY","HARROW, DISK, CHISEL (MULCH TILLER)"]
+    ],
+    [
+      "Drill or air seeder, offset double disk openers",
+      ["PLANTER, DRILL, AIR DELIVERY","HARROW, DISK, OFFSET, LIGHTDUTY"]
+    ],
+    [
+      "Drill or air seeder, paired, opposing single disk openers 6x9 inch spacing",
+      ["PLANTER, DRILL, AIR DELIVERY","HARROW, DISK, TANDEM, LIGHTDUTY"]
+    ],
+    [
+      "Drill or air seeder, sweep or band opener",
+      ["PLANTER, DRILL, AIR DELIVERY","CULTIVATOR, ROW"]
+    ],
+    [
+      "Drill, deep furrow 12 to 18 inch spacing",
+      ["PLANTER, DRILL, DISCGRAIN","CULTIVATOR, FURROW-OUT"]
+    ],
+    [
+      "Drill, deep furrow 7 to 10 inch spacing",
+      ["PLANTER, DRILL, DISCGRAIN","CULTIVATOR, FURROW-OUT"]
+    ],
+    [
+      "Drill, double disk, 7-8 inch packer Central",
+      ["PLANTER, DRILL, DISCGRAIN","HARROW, DISK, TANDEM, LIGHTDUTY"]
+    ],
+    [
+      "Drill, double disk, orchard vineyard cover",
+      ["PLANTER, DRILL, DISCGRAIN","HARROW, DISK, TANDEM, LIGHTDUTY"]
+    ],
+    [
+      "Drill, heavy, direct seed, double disk opener",
+      ["PLANTER, DRILL, DISCGRAIN","HARROW, DISK, TANDEM, LIGHTDUTY"]
+    ],
+    [
+      "Drill, heavy, direct seed, double disk opener w/row cleaners",
+      ["PLANTER, DRILL, DISCGRAIN","HARROW, DISK, TANDEM, LIGHTDUTY"]
+    ],
+    [
+      "Drill, semi-deep furrow 12 to 18 inch spacing",
+      ["PLANTER, DRILL, DISCGRAIN","CULTIVATOR, FURROW-OUT"]
+    ],
+    [
+      "Fertilizer applicator anhydrous knife 12 inches",
+      ["NUTRIENT MGMT: FERT APPL, ANYHD KNIFE"]
+    ],
+    [
+      "Fertilizer applicator anhydrous knife 12 inches, coil tine harrow",
+      ["NUTRIENT MGMT: FERT APPL, ANYHD KNIFE","HARROW, COILED TINES"]
+    ],
+    [
+      "Fertilizer applicator anhydrous knife 15 inch spacing",
+      ["NUTRIENT MGMT: FERT APPL, ANYHD KNIFE"]
+    ],
+    [
+      "Fertilizer applicator anhydrous knife 15 inch spacing high disturbance",
+      ["NUTRIENT MGMT: FERT APPL, SHANK"]
+    ],
+    [
+      "Fertilizer applicator anhydrous knife 15 inch spacing high disturbance, coil tine harrow",
+      ["NUTRIENT MGMT: FERT APPL, SHANK","HARROW, COILED TINES"]
+    ],
+    [
+      "Fertilizer applicator anhydrous knife 15 inch spacing, coil tine harrow",
+      ["NUTRIENT MGMT: FERT APPL, ANYHD KNIFE","HARROW, COILED TINES"]
+    ],
+    [
+      "Fertilizer applicator anhydrous knife 30 inch spacing",
+      ["NUTRIENT MGMT: FERT APPL, ANYHD KNIFE"]
+    ],
+    [
+      "Fertilizer applicator anhydrous knife 30 inch spacing, bedded",
+      ["NUTRIENT MGMT: FERT APPL, ANYHD KNIFE"]
+    ],
+    [
+      "Fertilizer applicator anhydrous, low disturbance single disk opener, 30 inch spacing",
+      ["NUTRIENT MGMT: FERT APPL, ANYHD KNIFE","HARROW, DISK, SINGLE"]
+    ],
+    [
+      "Fertilizer applicator anhydrous, minimal disturbance precision placement, 30 inch spacing",
+      ["NUTRIENT MGMT: FERT APPL, PRECISION"]
+    ],
+    [
+      "Fertilizer applicator coulter, high pressure inject 12 inches",
+      ["NUTRIENT MGMT: FERT APPL, COULTER"]
+    ],
+    [
+      "Fertilizer applicator deep placement heavy shank",
+      ["NUTRIENT MGMT: FERT APPL, SHANK"]
+    ],
+    [
+      "Fertilizer applicator double shot knife 15 inch spacing high disturbance",
+      ["NUTRIENT MGMT: FERT APPL, SHANK"]
+    ],
+    [
+      "Fertilizer applicator shallow anhydrous knife 38 inch spacing",
+      ["NUTRIENT MGMT: FERT APPL, ANYHD KNIFE"]
+    ],
+    [
+      "Fertilizer applicator shank low disturbance, 12 inches",
+      ["NUTRIENT MGMT: FERT APPL, SHANK"]
+    ],
+    [
+      "Fertilizer applicator shank low disturbance, 12 inches, coil tine harrow",
+      ["NUTRIENT MGMT: FERT APPL, SHANK","HARROW, COILED TINES"]
+    ],
+    [
+      "Fertilizer applicator shank low disturbance, 15 inch spacing",
+      ["NUTRIENT MGMT: FERT APPL, SHANK"]
+    ],
+    [
+      "Fertilizer applicator single disk opener, low disturbance, 30 inch spacing",
+      ["NUTRIENT MGMT: FERT APPL, PRECISION","HARROW, DISK, SINGLE"]
+    ],
+    [
+      "Fertilizer applicator, strip-till 30 inch spacing",
+      ["NUTRIENT MGMT: FERT APPL, STRIP TILL"]
+    ],
+    [
+      "Float",
+      ["FINISHING, FLOAT"]
+    ],
+    [
+      "Furrow diker",
+      ["CULTIVATOR, FURROW-OUT"]
+    ],
+    [
+      "Furrow shaper, torpedo",
+      ["BED SHAPING, BEDDER SHAPER"]
+    ],
+    [
+      "Harrow, coiled tine",
+      ["HARROW, COILED TINES"]
+    ],
+    [
+      "Harrow, coiled tine weeder",
+      ["HARROW, COILED TINES"]
+    ],
+    [
+      "Harrow, disk chain",
+      ["HARROW, DISK, SINGLE"]
+    ],
+    [
+      "Harrow, heavy",
+      ["HARROW, DISK, SINGLE"]
+    ],
+    [
+      "Harrow, heavy on heavy residue",
+      ["HARROW, DISK, SINGLE"]
+    ],
+    [
+      "Harrow, rolling",
+      ["HARROW, ROLLING"]
+    ],
+    [
+      "Harrow, rotary",
+      ["HARROW, POWERED SPIKE TOOTH"]
+    ],
+    [
+      "Harrow, rotary paddle wheel and spike gangs",
+      ["HARROW, POWERED SPIKE TOOTH"]
+    ],
+    [
+      "Harrow, rotary, light, fluff fragile residue",
+      ["HARROW, FLEX-TINE"]
+    ],
+    [
+      "Harrow, rotary, light, fluff residue",
+      ["HARROW, FLEX-TINE"]
+    ],
+    [
+      "Harrow, spike tooth",
+      ["HARROW, SPIKE TOOTH OR SPRING TOOTH"]
+    ],
+    [
+      "Harrow, spike tooth, cover seed",
+      ["HARROW, SPIKE TOOTH OR SPRING TOOTH"]
+    ],
+    [
+      "Harrow, tine, on beds",
+      ["HARROW, COILED TINES"]
+    ],
+    [
+      "Harvest, corn",
+      ["HARVEST, GRAIN"]
+    ],
+    [
+      "Harvest, corn silage with cover crop",
+      ["HARVEST, FORAGE"]
+    ],
+    [
+      "Harvest, forage sorghum",
+      ["HARVEST, FORAGE"]
+    ],
+    [
+      "Harvest, grass or legume seed, remove forage",
+      ["HARVEST, OILSEEDS"]
+    ],
+    [
+      "Harvest, hay, grass",
+      ["HARVEST, FORAGE"]
+    ],
+    [
+      "Harvest, hay, legume",
+      ["HARVEST, FORAGE"]
+    ],
+    [
+      "Harvest, hay, no regrowth",
+      ["HARVEST, FORAGE"]
+    ],
+    [
+      "Harvest, oilseeds, combine",
+      ["HARVEST, OILSEEDS"]
+    ],
+    [
+      "Harvest, residue, forage chopper, complete",
+      ["RESIDUE MGMT: STALK PULLER CHOPPER"]
+    ],
+    [
+      "Harvest, silage",
+      ["HARVEST, FORAGE"]
+    ],
+    [
+      "Harvest, silage 3-foot stubble",
+      ["HARVEST, FORAGE"]
+    ],
+    [
+      "Harvest, small grain haylage 5 inch height",
+      ["HARVEST, FORAGE"]
+    ],
+    [
+      "Harvest, small grain silage with cover crop",
+      ["HARVEST, FORAGE"]
+    ],
+    [
+      "Harvest, small grain, release understory",
+      ["HARVEST, GRAIN"]
+    ],
+    [
+      "Hipper",
+      ["BED SHAPING, HIPPER"]
+    ],
+    [
+      "Land plane",
+      ["LEVELING, LAND PLANE-LEVELER"]
+    ],
+    [
+      "Lister, 30 inch",
+      ["PLANTER, LISTER-BEDDER"]
+    ],
+    [
+      "Lister, 30 inch with fertilizer applicator",
+      ["PLANTER, LISTER-BEDDER"]
+    ],
+    [
+      "Lister, 40 inch",
+      ["PLANTER, LISTER-BEDDER"]
+    ],
+    [
+      "Lister, 40 inch with fertilizer applicator",
+      ["PLANTER, LISTER-BEDDER"]
+    ],
+    [
+      "Manure injector, liquid high disturbance 30 inch",
+      ["NUTRIENT MGMT: MANURE INJECTOR"]
+    ],
+    [
+      "Manure injector, liquid low disturbance 15 inch",
+      ["NUTRIENT MGMT: MANURE INJECTOR"]
+    ],
+    [
+      "Manure injector, liquid low disturbance 30 inch",
+      ["NUTRIENT MGMT: MANURE INJECTOR"]
+    ],
+    [
+      "Manure injector, low disturbance 15 inch",
+      ["NUTRIENT MGMT: MANURE INJECTOR"]
+    ],
+    [
+      "Manure injector, low disturbance 30 inch",
+      ["NUTRIENT MGMT: MANURE INJECTOR"]
+    ],
+    [
+      "Marker (cultivator)",
+      ["CULTIVATOR, MARKER"]
+    ],
+    [
+      "Middle buster, digger",
+      ["CULTIVATOR, MIDDLE-BUSTER, GT5IN"]
+    ],
+    [
+      "Mulch treader",
+      ["RESIDUE MGMT: MULCH TREADER"]
+    ],
+    [
+      "Multiweeder",
+      ["WEED MGMT: MULTI-WEEDER OR ROD WEEDER"]
+    ],
+    [
+      "Packer",
+      ["ROLLER, PACKER"]
+    ],
+    [
+      "Para-plow or para-till",
+      ["PLOW, PARAPLOW"]
+    ],
+    [
+      "Planter, double disk opener w/fluted coulter",
+      ["PLANTER, REGULAR","HARROW, DISK, TANDEM, LIGHTDUTY"]
+    ],
+    [
+      "Planter, furrow opener 4 inch deep furrows",
+      ["PLANTER, REGULAR","CULTIVATOR, FURROW-OUT"]
+    ],
+    [
+      "Planter, furrow opener 6 inch deep furrows",
+      ["PLANTER, REGULAR","BED SHAPING, FURROW DIKER"]
+    ],
+    [
+      "Planter, furrow opener 8 inch deep furrows",
+      ["PLANTER, REGULAR","HARROW, DISK, TANDEM, HEAVYDUTY"]
+    ],
+    [
+      "Planter, in-row subsoiler",
+      ["PLANTER, REGULAR","CULTIVATOR, ROW"]
+    ],
+    [
+      "Planter, in-row subsoiler low disturbance",
+      ["PLANTER, REGULAR","CONDITIONER, ROW"]
+    ],
+    [
+      "Planter, in-row subsoiler w/ residue managers",
+      ["PLANTER, REGULAR","CULTIVATOR, ROW"]
+    ],
+    [
+      "Planter, narrow slot w/smooth or rippled coulter",
+      ["PLANTER, NO-TILL"]
+    ],
+    [
+      "Planter, RELAY INTERCROP, double disk opener",
+      ["PLANTER, INTER/OVER SEEDER","HARROW, DISK, TANDEM, LIGHTDUTY"]
+    ],
+    [
+      "Planter, ridge till",
+      ["PLANTER, RIDGE TILL"]
+    ],
+    [
+      "Planter, runner opener",
+      ["PLANTER, REGULAR"]
+    ],
+    [
+      "Planter, strip till",
+      ["PLANTER, STRIP TILL"]
+    ],
+    [
+      "Planter, strip till, 22 inch",
+      ["PLANTER, STRIP TILL"]
+    ],
+    [
+      "Planter, strip till, shallow subsoiler",
+      ["PLANTER, STRIP TILL"]
+    ],
+    [
+      "Planter, strip till, subsoiler",
+      ["PLANTER, STRIP TILL"]
+    ],
+    [
+      "Plow, deep, large, moldboard",
+      ["PLOW, MOLDBOARD"]
+    ],
+    [
+      "Plow, disk",
+      ["PLOW, DISK"]
+    ],
+    [
+      "Plow, Levee-plow (or Border Plow)",
+      ["CULTIVATOR, MIDDLE-BUSTER, GT5IN"]
+    ],
+    [
+      "Plow, moldboard",
+      ["PLOW, MOLDBOARD"]
+    ],
+    [
+      "Plow, moldboard 10 inch depth",
+      ["PLOW, MOLDBOARD"]
+    ],
+    [
+      "Plow, moldboard 6-7 inch depth",
+      ["PLOW, MOLDBOARD"]
+    ],
+    [
+      "Plow, moldboard, conservation",
+      ["PLOW, MOLDBOARD"]
+    ],
+    [
+      "Plow, moldboard, up hill",
+      ["PLOW, MOLDBOARD"]
+    ],
+    [
+      "Plow, reversible",
+      ["PLOW, MOLDBOARD"]
+    ],
+    [
+      "Power mulcher bed conditioner",
+      ["RESIDUE MGMT: POWER MULCHER"]
+    ],
+    [
+      "Reel disk vertical tiller",
+      ["CONDITIONER, COULTER CADDY, SMOOTH COULTERS","HARROW, SPIKE TOOTH OR SPRING TOOTH","HARROW, ROLLING"]
+    ],
+    [
+      "Residue conditioner, coil tine harrow, rolling basket",
+      ["HARROW, FLEX-TINE","HARROW, COILED TINES","HARROW, ROLLING"]
+    ],
+    [
+      "Residue, row cleaner",
+      ["RESIDUE MGMT: TRASH WHEEL"]
+    ],
+    [
+      "Ripper",
+      ["RIPPER/SUBSOILER"]
+    ],
+    [
+      "Ripper, deep ripper-subsoiler",
+      ["RIPPER/SUBSOILER"]
+    ],
+    [
+      "Ripper, intra row",
+      ["CULTIVATOR, ROW"]
+    ],
+    [
+      "Ripper, intra row and furrow diker",
+      ["CULTIVATOR, FURROW-OUT"]
+    ],
+    [
+      "Rodweeder",
+      ["WEED MGMT: MULTI-WEEDER OR ROD WEEDER"]
+    ],
+    [
+      "Rodweeder, harrow, spike tooth",
+      ["WEED MGMT: MULTI-WEEDER OR ROD WEEDER"]
+    ],
+    [
+      "Roller harrow",
+      ["HARROW, ROLLING"]
+    ],
+    [
+      "Roller packer, flat roller",
+      ["ROLLER, PACKER"]
+    ],
+    [
+      "Roller, corrugated packer",
+      ["ROLLER, PACKER"]
+    ],
+    [
+      "Roller, corrugated packer 6 by 16",
+      ["ROLLER, PACKER"]
+    ],
+    [
+      "Roller, crimp, cover crop",
+      ["ROLLER, CRIMPER"]
+    ],
+    [
+      "Roller, on beds",
+      ["ROLLER, PACKER"]
+    ],
+    [
+      "Roller, packer, flat roller",
+      ["ROLLER, PACKER"]
+    ],
+    [
+      "Roller, residue",
+      ["ROLLER, PACKER"]
+    ],
+    [
+      "Roller, residue incorporator",
+      ["ROLLER, CULTI-MULCHER"]
+    ],
+    [
+      "Roller, row shaper",
+      ["ROLLER, PACKER"]
+    ],
+    [
+      "Roller, smooth",
+      ["ROLLER, PACKER"]
+    ],
+    [
+      "Rolling basket incorporator",
+      ["HARROW, ROLLING"]
+    ],
+    [
+      "Rolling cultivator, GE15 ft",
+      ["CULTIVATOR, ROLLING"]
+    ],
+    [
+      "Rotary hoe",
+      ["CULTIVATOR, ROTARY HOE"]
+    ],
+    [
+      "Rotary hoe, on heavy soil",
+      ["CULTIVATOR, ROTARY HOE"]
+    ],
+    [
+      "Rotary hoe, residue",
+      ["CULTIVATOR, ROTARY HOE"]
+    ],
+    [
+      "Roterra",
+      ["ROTO-TILLER, ROTO-TILLER DIGGER, ROTERRA"]
+    ],
+    [
+      "Rototiller, field, add residue",
+      ["ROTO-TILLER, ROTO-TILLER DIGGER, ROTERRA"]
+    ],
+    [
+      "Rototiller, on beds",
+      ["ROTO-TILLER, ROTO-TILLER DIGGER, ROTERRA"]
+    ],
+    [
+      "Rototiller, row cultivation add residue",
+      ["ROTO-TILLER, ROTO-TILLER DIGGER, ROTERRA"]
+    ],
+    [
+      "Rototiller, row cultivator",
+      ["ROTO-TILLER, ROTO-TILLER DIGGER, ROTERRA"]
+    ],
+    [
+      "Rotovator-bedder",
+      ["CULTIVATOR, ROTOVATOR-BEDDER"]
+    ],
+    [
+      "Row conditioner",
+      ["CONDITIONER, ROW"]
+    ],
+    [
+      "Rubber wheel weed puller",
+      ["WEED MGMT: RUBBER-WHEEL WEED PULLER"]
+    ],
+    [
+      "Sandfighter",
+      ["CULTIVATOR, SAND-FIGHTER"]
+    ],
+    [
+      "Scalper",
+      ["WEED MGMT: SCALPER"]
+    ],
+    [
+      "Scarifier",
+      ["CONDITIONER, FIELD"]
+    ],
+    [
+      "Scraper/pan/grader, clearing/cutting",
+      ["LEVELING, LAND PLANE-LEVELER"]
+    ],
+    [
+      "Seedbed conditioner: coil tine harrow, rolling basket",
+      ["HARROW, COILED TINES","HARROW, ROLLING"]
+    ],
+    [
+      "Seedbed conditioner: coulter caddy (smooth), coil tine harrow",
+      ["CONDITIONER, COULTER CADDY, SMOOTH COULTERS","HARROW, COILED TINES"]
+    ],
+    [
+      "Seedbed conditioner: coulter caddy (smooth), coil tine harrow, rolling basket",
+      ["CONDITIONER, COULTER CADDY, SMOOTH COULTERS","HARROW, COILED TINES","HARROW, ROLLING"]
+    ],
+    [
+      "Seedbed conditioner: coulter caddy (smooth), field cult, spike harrow",
+      ["CONDITIONER, COULTER CADDY, SMOOTH COULTERS","CULTIVATOR, FIELD","HARROW, SPIKE TOOTH OR SPRING TOOTH"]
+    ],
+    [
+      "Seedbed conditioner: coulter caddy (smooth), rotary harrow",
+      ["CONDITIONER, COULTER CADDY, SMOOTH COULTERS","HARROW, POWERED SPIKE TOOTH"]
+    ],
+    [
+      "Seedbed conditioner: coulter caddy (smooth), rotary harrow, rolling basket",
+      ["CONDITIONER, COULTER CADDY, SMOOTH COULTERS","HARROW, POWERED SPIKE TOOTH","HARROW, ROLLING"]
+    ],
+    [
+      "Seedbed conditioner: coulter caddy (smooth), spike harrow",
+      ["CONDITIONER, COULTER CADDY, SMOOTH COULTERS","HARROW, SPIKE TOOTH OR SPRING TOOTH"]
+    ],
+    [
+      "Seedbed conditioner: coulter caddy (smooth), spike harrow, rolling basket",
+      ["CONDITIONER, COULTER CADDY, SMOOTH COULTERS","HARROW, SPIKE TOOTH OR SPRING TOOTH","HARROW, ROLLING"]
+    ],
+    [
+      "Seedbed conditioner: coulter caddy (fluted), coil tine harrow",
+      ["CULTIVATOR, ROTARY HOE","HARROW, COILED TINES"]
+    ],
+    [
+      "Seedbed conditioner: coulter caddy (fluted), coil tine harrow, rolling basket",
+      ["CULTIVATOR, ROTARY HOE","HARROW, COILED TINES","HARROW, ROLLING"]
+    ],
+    [
+      "Seedbed conditioner: coulter caddy (fluted), field cult, spike harrow",
+      ["CULTIVATOR, ROTARY HOE","CULTIVATOR, FIELD","HARROW, SPIKE TOOTH OR SPRING TOOTH"]
+    ],
+    [
+      "Seedbed conditioner: coulter caddy (fluted), rotary harrow",
+      ["CULTIVATOR, ROTARY HOE","HARROW, POWERED SPIKE TOOTH"]
+    ],
+    [
+      "Seedbed conditioner: coulter caddy (fluted), rotary harrow, rolling basket",
+      ["CULTIVATOR, ROTARY HOE","HARROW, POWERED SPIKE TOOTH","HARROW, ROLLING"]
+    ],
+    [
+      "Seedbed conditioner: coulter caddy (fluted), spike harrow",
+      ["CULTIVATOR, ROTARY HOE","HARROW, SPIKE TOOTH OR SPRING TOOTH"]
+    ],
+    [
+      "Seedbed conditioner: coulter caddy (fluted), spike harrow, rolling basket",
+      ["CULTIVATOR, ROTARY HOE","HARROW, SPIKE TOOTH OR SPRING TOOTH","HARROW, ROLLING"]
+    ],
+    [
+      "Seedbed finisher, single disk, rotary harrow",
+      ["HARROW, DISK, SINGLE","HARROW, POWERED SPIKE TOOTH"]
+    ],
+    [
+      "Seedbed finisher: coil tine harrow",
+      ["HARROW, COILED TINES"]
+    ],
+    [
+      "Seedbed finisher: coil tine harrow, rolling basket",
+      ["HARROW, COILED TINES","HARROW, ROLLING"]
+    ],
+    [
+      "Seedbed finisher: rotary harrow",
+      ["HARROW, POWERED SPIKE TOOTH"]
+    ],
+    [
+      "Seedbed finisher: single disk, coil tine harrow",
+      ["HARROW, DISK, SINGLE","HARROW, COILED TINES"]
+    ],
+    [
+      "Seedbed finisher: spike harrow, rolling basket",
+      ["HARROW, SPIKE TOOTH OR SPRING TOOTH","HARROW, ROLLING"]
+    ],
+    [
+      "Seeder, corrugated packer",
+      ["PLANTER, AIR-DELIVERY","CULTIVATOR, CULTIWEEDER"]
+    ],
+    [
+      "Seeder, dormant, corrugated packer",
+      ["PLANTER, AIR-DELIVERY","CULTIVATOR, CULTIWEEDER"]
+    ],
+    [
+      "Shred residue, 6 inch stubble",
+      ["RESIDUE MGMT: MULCH TREADER"]
+    ],
+    [
+      "Single disk",
+      ["HARROW, DISK, SINGLE"]
+    ],
+    [
+      "Slip plow 48 to 60 inches deep",
+      ["RIPPER/SUBSOILER"]
+    ],
+    [
+      "Soil aerator",
+      ["AERATOR"]
+    ],
+    [
+      "Soil finisher: field cult, chop, spike harrow, rolling basket",
+      ["CULTIVATOR, FIELD","RESIDUE MGMT: STALK PULLER CHOPPER","HARROW, SPIKE TOOTH OR SPRING TOOTH","HARROW, ROLLING"]
+    ],
+    [
+      "Soil finisher: field cult, coil tine harrow, rolling basket",
+      ["CULTIVATOR, FIELD","HARROW, COILED TINES","HARROW, ROLLING"]
+    ],
+    [
+      "Soil finisher: field cultivator, mulch treader",
+      ["CULTIVATOR, FIELD","RESIDUE MGMT: MULCH TREADER"]
+    ],
+    [
+      "Soil finisher: field cultivator, rotary harrow",
+      ["CULTIVATOR, FIELD","HARROW, POWERED SPIKE TOOTH"]
+    ],
+    [
+      "Soil finisher: single disk, field cultivator, coil tine harrow",
+      ["CULTIVATOR, FIELD","HARROW, DISK, SINGLE","HARROW, COILED TINES"]
+    ],
+    [
+      "Soil finisher: single disk, field cultivator, coil tine harrow, rolling basket",
+      ["CULTIVATOR, FIELD","HARROW, DISK, SINGLE","HARROW, COILED TINES","HARROW, ROLLING"]
+    ],
+    [
+      "Soil finisher: single disk, rotary harrow",
+      ["HARROW, DISK, SINGLE","HARROW, POWERED SPIKE TOOTH"]
+    ],
+    [
+      "Spader",
+      ["SPADER, GT4IN"]
+    ],
+    [
+      "Spader, shallow depth",
+      ["SPADER, SHALLOW, LE4IN"]
+    ],
+    [
+      "Stalk chopper, rolling",
+      ["RESIDUE MGMT: STALK PULLER CHOPPER"]
+    ],
+    [
+      "Stalk chopper, rolling, light disturbance",
+      ["RESIDUE MGMT: STALK PULLER CHOPPER"]
+    ],
+    [
+      "Stalk chopper, rolling, on ridgetill ridges",
+      ["RESIDUE MGMT: STALK PULLER CHOPPER"]
+    ],
+    [
+      "Stalk chopper, rolling, strip",
+      ["RESIDUE MGMT: STALK PULLER CHOPPER"]
+    ],
+    [
+      "Stalk chopper, rotary",
+      ["RESIDUE MGMT: STALK PULLER CHOPPER"]
+    ],
+    [
+      "Stalk chopper, strip rotary",
+      ["RESIDUE MGMT: STALK PULLER CHOPPER"]
+    ],
+    [
+      "Stalk puller",
+      ["RESIDUE MGMT: STALK PULLER CHOPPER"]
+    ],
+    [
+      "Stalk puller high disturbance",
+      ["RESIDUE MGMT: STALK PULLER CHOPPER"]
+    ],
+    [
+      "S-Tine Cultivator",
+      ["HARROW, FLEX-TINE"]
+    ],
+    [
+      "Strip till bed conditioner",
+      ["CONDITIONER, ROW"]
+    ],
+    [
+      "Striptiller w/ middlebuster on beds",
+      ["CULTIVATOR, MIDDLE-BUSTER, LE5IN"]
+    ],
+    [
+      "Subsoil disk ripper",
+      ["RIPPER/SUBSOILER"]
+    ],
+    [
+      "Subsoil disk ripper, coulter smooth, rolling basket",
+      ["RIPPER/SUBSOILER"]
+    ],
+    [
+      "Subsoil disk ripper, roller smooth",
+      ["RIPPER/SUBSOILER"]
+    ],
+    [
+      "Subsoiler",
+      ["RIPPER/SUBSOILER"]
+    ],
+    [
+      "Subsoiler bedder (ripper/hipper)",
+      ["RIPPER/SUBSOILER"]
+    ],
+    [
+      "Subsoiler leveler",
+      ["LEVELING, LEVELER"]
+    ],
+    [
+      "Subsoiler ripper, 24 to 40 inches deep",
+      ["RIPPER/SUBSOILER"]
+    ],
+    [
+      "Subsoiler, 12 foot spacing",
+      ["CULTIVATOR, ROW"]
+    ],
+    [
+      "Subsoiler, in row",
+      ["CULTIVATOR, ROW"]
+    ],
+    [
+      "Subsoiler, in row strip conditioner",
+      ["CULTIVATOR, ROW"]
+    ],
+    [
+      "Subsoiler, in row strip conditioner, 40 inch row",
+      ["CULTIVATOR, ROW"]
+    ],
+    [
+      "Subsoiler, inline heavy shanks with coulter caddy",
+      ["RIPPER/SUBSOILER"]
+    ],
+    [
+      "Subsoiler, inline with coulter caddy",
+      ["RIPPER/SUBSOILER"]
+    ],
+    [
+      "Subsoiler, rolling stalk chopper, roller, mulch treader",
+      ["RIPPER/SUBSOILER"]
+    ],
+    [
+      "Subsoiler, wide spacing",
+      ["CULTIVATOR, ROW"]
+    ],
+    [
+      "Subsoiler; stalk chopper, rolling basket",
+      ["RIPPER/SUBSOILER"]
+    ],
+    [
+      "Sweep plow 20-40 inch wide",
+      ["PLOW, SWEEP"]
+    ],
+    [
+      "Sweep plow wider than 40 inch w/ mulch treader",
+      ["PLOW, SWEEP"]
+    ],
+    [
+      "Sweep plow, under bed",
+      ["PLOW, SWEEP"]
+    ],
+    [
+      "Sweep plow, wider than 40 inches",
+      ["PLOW, SWEEP"]
+    ],
+    [
+      "Sweep, single under row",
+      ["PLOW, SWEEP"]
+    ],
+    [
+      "Sweep, single under row, regrow perennial",
+      ["PLOW, SWEEP"]
+    ],
+    [
+      "Triple K",
+      ["CULTIVATOR, TRIPLE-K"]
+    ],
+    [
+      "V-Ripper",
+      ["RIPPER/SUBSOILER"]
+    ]
+  ]
+}

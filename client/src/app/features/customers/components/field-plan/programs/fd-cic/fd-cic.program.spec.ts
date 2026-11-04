@@ -57,11 +57,6 @@ describe('45Z program (USDA FD-CIC on the API)', () => {
     expect(program.appliesTo('Hard Red Winter Wheat')).toBe(false);
   });
 
-  it('should give the field\'s production: acres × actual yield', () => {
-    expect(program.production!(data({ actualYield: 205 }), season)).toBe(16400);
-    expect(program.production!(data(), season)).toBeNull();
-  });
-
   it('should freeze the inputs, the USDA outputs and the exact USDA version', () => {
     const frozen = program.freeze(data({ actualYield: 205, tillage: 'NoTill' }), season, field);
     expect(frozen.calculatorVersion).toBe('USDA FD-CIC v1.2');

@@ -60,8 +60,12 @@ export class CropFieldsPanelComponent {
   readonly updateTotal = output<number>();
 
   readonly expanded = signal(false);
-  /** For the confirmed-CI CSV: the producer's CTRM code and name. */
-  readonly producerForExport = computed(() => ({ code: this.customer().scoularId ?? '', name: this.customer().name }));
+  /** The producer as the field's reports name them: code, name, and the primary contact when there is one. */
+  readonly producerForExport = computed(() => {
+    const c = this.customer();
+    const primaryContact = c.contacts?.find(x => x.isPrimary)?.name?.trim() || c.primaryContact?.trim() || null;
+    return { code: c.scoularId ?? '', name: c.name, primaryContact };
+  });
   /** The producer's fields are in from the backend (the planting table asks for them). */
   readonly loaded = computed(() => this.store.isLoaded(this.customer().id));
   readonly loadFailed = computed(() => this.store.loadFailed(this.customer().id));

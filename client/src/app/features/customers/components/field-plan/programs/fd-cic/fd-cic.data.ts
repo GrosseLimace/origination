@@ -5,6 +5,10 @@ import { FdCicApiService } from '@core/services/fd-cic-api.service';
 export const TILLAGE_LABELS: Record<Tillage, string> = {
   ReducedTill: 'Reduced till', NoTill: 'No till', NoneOfTheAbove: 'None of the above',
 };
+/** A USDA tillage label back to its key ("No till" → NoTill); null when it isn't one. */
+export function tillageFromLabel(label: string | null | undefined): Tillage | null {
+  return (Object.keys(TILLAGE_LABELS) as Tillage[]).find(k => TILLAGE_LABELS[k] === label) ?? null;
+}
 export const COVER_LABELS: Record<CoverCrop, string> = {
   CoverCrop: 'Cover crop', CoverCropGrazed: 'Cover crop with grazing', None: 'No cover crop',
 };

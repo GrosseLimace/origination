@@ -109,53 +109,6 @@ public record FieldPlanReasonRequest
     public required string Reason { get; init; }
 }
 
-public record EnsureProgramEnrollmentRequest
-{
-    [Required, StringLength(30, MinimumLength = 1)]
-    public required string ProgramKey { get; init; }
-
-    [Range(1, long.MaxValue)]
-    public required long CustomerId { get; init; }
-
-    [Range(2000, 2100)]
-    public required int Year { get; init; }
-}
-
-/// <summary>The producer's signed attestation, as the client's ProgramAttestation.</summary>
-public record ProgramAttestationDto
-{
-    [StringLength(200)]
-    public required string SignerName { get; init; }
-
-    /// <summary>yyyy-MM-dd, or "" until signed.</summary>
-    [StringLength(10)]
-    public required string SignedOn { get; init; }
-
-    [RegularExpression("^(eSign|Paper)$")]
-    public required string Method { get; init; }
-
-    [StringLength(200)]
-    public required string DocumentRef { get; init; }
-
-    public required Dictionary<string, bool> Confirmations { get; init; }
-}
-
-public record UpdateAttestationRequest
-{
-    [Required]
-    public required ProgramAttestationDto Attestation { get; init; }
-}
-
-/// <summary>
-/// Attests an enrollment. <see cref="Listed"/> is the client's list of the producer's records in the program
-/// that year (EnrollableRecord, kept as the snapshot); the server checks it against its own records.
-/// </summary>
-public record AttestEnrollmentRequest
-{
-    [Required, MaxLength(500)]
-    public required List<JsonElement> Listed { get; init; }
-}
-
 /// <summary>Confirms a 45Z field after harvest with the tickets reviewed with the producer.</summary>
 public record ConfirmFieldProgramRecordRequest
 {
@@ -167,6 +120,29 @@ public record ConfirmFieldProgramRecordRequest
     [Required, MinLength(1), MaxLength(1000)]
     public required List<string> TicketKeys { get; init; }
 
-    /// <summary>The originator's tick: reviewed with the producer after harvest.</summary>
+    /// <summary>
+    /// The originator's tick on the review's recordkeeping step: the records the producer must keep were
+    /// reviewed with them. Must be true.
+    /// </summary>
     public required bool ReviewedWithProducer { get; init; }
+
+    /// <summary>
+    /// The field's passes from last harvest through this one, for USDA T-DISC (api/tdisc/options lists the
+    /// windows and implements). Required when the field's tillage is No till or Reduced till, ignored
+    /// otherwise. The rating is worked out on the server from these.
+    /// </summary>
+    [MaxLength(20)]
+    public List<TDiscPassRequest>? TDiscPasses { get; init; }
+}
+
+/// <summary>One field pass for T-DISC: the tillage window it fell in and the T-DISC implement used.</summary>
+public record TDiscPassRequest
+{
+    /// <summary>A window key, e.g. "Field_Preparation".</summary>
+    [Required, StringLength(40)]
+    public required string Window { get; init; }
+
+    /// <summary>A T-DISC implement name, as api/tdisc/options lists it.</summary>
+    [Required, StringLength(100)]
+    public required string Implement { get; init; }
 }

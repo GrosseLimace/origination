@@ -78,7 +78,7 @@ keep their version either way.
 
 ## Where field-plan data is kept
 
-The client keeps fields, field seasons, program records and enrollments in `FieldPlanStore`
+The client keeps fields, field seasons and program records in `FieldPlanStore`
 (`client/src/app/features/customers/components/field-plan/store/`). It loads one producer at a time and
 saves through `FIELD_PLAN_BACKEND`. That interface is the shape of the field-plan API: each method names its
 endpoint.
@@ -86,7 +86,7 @@ endpoint.
 **Today:** `InMemoryFieldPlanBackend` stands in for the server, so nothing survives a reload.
 
 The API side is built and approved (2026-10-27), and held off `main` until the feature is ready for QA and PROD:
-- the four tables, migration `AddFieldPlanTables`;
+- the tables, migration `AddFieldPlanTables` (its `ProgramEnrollment` table was dropped on 2026-11-03 by `DropProgramEnrollment`);
 - `api/field-plan`;
 - the client's `HttpFieldPlanBackend`.
 
@@ -97,8 +97,8 @@ The proposed tables, rules and endpoints are written up for approval in
 
 **Once the database is approved:**
 - An API-backed implementation replaces it as the single provider.
-- The API adds four tables in `ApplicationDbContext`: `ProducerField`, `ProducerFieldSeason`,
-  `FieldProgramRecord` and `ProgramEnrollment`.
+- The API adds three tables in `ApplicationDbContext`: `ProducerField`, `ProducerFieldSeason` and
+  `FieldProgramRecord`. A field is in 45Z when it has a 45Z record; no enrollment or producer attestation is kept.
 - `ProducerField` is keyed by the CTRM `SplitId` (unique), with `SplitPercent`, `EffectiveDate`, the split's
   name as CTRM had it, and the `State` and `County` entered for 45Z (see [CTRM splits](#ctrm-splits-the-fields)).
 - They follow the producer-table conventions:
@@ -110,8 +110,8 @@ The proposed tables, rules and endpoints are written up for approval in
   - `FieldProgramRecord.Official` (JSON, nullable): the official result, kept apart from the estimate (see
     [Estimate vs confirmed (official) CI](#estimate-vs-confirmed-official-ci)). It may become its own table once its shape is known.
 - Access is the same as planting intentions: any signed-in user (accepted risks AR-01 to AR-03).
-- The server owns two rules:
-  - refusing duplicate claims at attestation (a split ID in two enrollments of one program and year);
+- The server owns these rules:
+  - a split is one producer's field (a split another producer holds is refused);
   - locking the harvest estimate, which rescores with `FdCicService` rather than trusting the client's number.
 
 ## Enrollment identifier
@@ -119,13 +119,11 @@ The proposed tables, rules and endpoints are written up for approval in
 Each field in a program has an enrollment ID **derived** from identifiers the system already has, not issued
 from a counter: `{program prefix}-{crop year}-{split ID}`, e.g. `CI-2026-TATOB43`. Nobody types it, and in
 particular the scale or ticket-entry user never keys an extra ID: a ticket carries the split ID, its crop year
-is known, and `FieldPlanStore.resolveEnrollment(program, splitId, cropYear)` finds the field, its record and
-the producer's enrollment. The server will offer the same as `GET api/field-plan/enrollment?programKey&splitId&cropYear`.
+is known, so the split ID and crop year find the field and its record. The server stores no enrollment ID and
+offers no lookup for it (none is built yet).
 
-- The producer's enrollment (producer + program + year) still groups the fields for
-  attestation and withdrawal, but has no display ID of its own.
-- Withdrawal is kept with its reason. Re-enrolling makes the producer live again under the **same** field
-  IDs, since they derive from split and year.
+- There is no producer-level enrollment, attestation or withdrawal (dropped 2026-11-03): a field is in 45Z when it has a
+  45Z record, and a confirmed CI changes only by unlocking it with a reason.
 - The format lives in one function, `enrollmentIdFor` (`client/.../field-plan/programs/program-enrollment.ts`).
 - **Open (technical design):** the final format; where the crop year comes from (ticket date, contract or
   CTRM crop year); a split growing two crops in one program year (the crop would need to be in the key);
@@ -142,46 +140,92 @@ result.
   - After harvest each field is confirmed on its own in the Review, which locks it with the confirmed CI. The enrollment-level "Mark harvest complete" button was removed on 2026-10-30: it locked estimates that confirming then replaced.
   - A locked estimate can be unlocked with a reason, which is kept.
   - Screens say "estimate · projected / actual / locked".
-- **Confirmed CI:** see [Review with tickets and the Bins' CSV](#review-with-tickets-and-the-bins-csv). The record's `official` result holds:
+- **Confirmed CI:** see [The review, the Biofuel Feedstock Report and the Mass Balance Ledger](#the-review-the-biofuel-feedstock-report-and-the-mass-balance-ledger). The record's `official` result holds:
   - `status: Documented`;
-  - the CI, rescored on the server with the confirmed actual yield;
+  - the CI, rescored on the server with the confirmed actual yield and tillage;
   - the USDA version;
   - the actual yield;
   - the confirmed bushels and tickets;
-  - who confirmed it and when.
+  - `tDisc` for no till or reduced till: the rating, its designation, the estimated and confirmed tillage, the T-DISC version, and the worksheet (`windows` with each index, `passes` with each tillage intensity); null otherwise. The passes themselves are also kept in the data (`tDiscPasses`);
+  - `recordkeepingAcknowledged: true`;
+  - who confirmed it and when: `documentedBy` (their UPN, the audit identifier), `documentedByName` (their display name from the sign-in's `name` claim, for documents) and `documentedAt`.
 
   An estimate is never copied into it. Screens say "confirmed".
 - **Unlocking a confirmed field** moves both its estimate and its confirmed CI into the record's history, with the reason. The field can then be reviewed again.
 - **Still open:** whether an official CI will need more than the review (evidence, a verifier, sign-off). `requirements` and `evidence` on the official result are kept for that.
 
-## Review with tickets and the Bins' CSV
+## USDA T-DISC
 
-1. Once a 45Z field has an estimated CI, its tab shows **Review with tickets…**.
-2. The review lists the field's CTRM tickets (`GET api/field-plan/records/{id}/tickets`), **settled or not**. A ticket is listed when:
-   - it was delivered under the field's split ID (the ticket detail's customer code);
+No-till and reduced-till fields need a USDA T-DISC (Tillage Disturbance Index for Soil Carbon) rating before
+their CI is confirmed (7 CFR 2100.051). The app rebuilds USDA's T-DISC workbook the same way as FD-CIC.
+
+| | |
+|---|---|
+| Method | USDA T-DISC **v1.1.1** (one management unit) |
+| Source workbook | `usda-tdisc-ver1.1.1_9_4_2026.xlsm` (USDA last modified 2026-09-04), SHA-256 `5f71a1b33e514d9348f28f5a62b553dca60fb4f58e51702a9033d4a4bc7dce9e` |
+| Data pack | [api/GrainOriginatorPortal.Api/Content/TDisc/v1.1.1/](../../api/GrainOriginatorPortal.Api/Content/TDisc/v1.1.1/), made by [tools/tdisc-extract](../../tools/tdisc-extract/) |
+| Checked against Excel | 2026-11-03: 10 cases (rating, designation and every window) matched ([golden-cases.json](../../api/GrainOriginatorPortal.Api/Content/TDisc/v1.1.1/golden-cases.json)) |
+| Formula fingerprint | `cb1d263f…` (`TDiscCalculator.FormulaFingerprint`) |
+
+How the workbook rates a field ('User Input' rows 8-29):
+1. Each pass is a tillage window (field preparation, before planting, planting, after planting, harvest) and a T-DISC implement, which has a mixing efficiency and a depth in cm. Each window allows only its own implements. Up to 20 passes.
+2. All passes are sorted by depth, then mixing efficiency. Within each window, in that order, a pass adds *mixing efficiency × (depth − the window's earlier intensities)*.
+3. A window's index is its total ÷ 30 cm. **The rating is the highest window index.**
+4. NT is 0.075 or less, RT 0.252 or less, CT above. The farm, state, county, crop and date on the sheet don't affect the rating.
+
+The pack holds the 93 implements, each window's list, USDA's operation lookup ("If your operation is this, use these T-DISC implements") and the limits. USDA's lookup has three names that don't match its own implement list: two typos (`RESIDUE MGMT, POWER MULCHER` and `RESIDUE MGMT, TRASH WHEEL`, a comma where the list has a colon) are fixed by the extractor, and *Cultivator, rotary on beds; Bedder, hipper, disk hiller* is left out (314 of 315 kept) because its "BEDDER DISK/DISK-HIPPER" could be either of two depths. Both are listed in the manifest.
+
+Code: `Services/TDisc/` (`TDiscPack`, `TDiscCalculator`, `TDiscService`) and `GET api/tdisc/options`. The pack is gated at startup like FD-CIC: if a file's hash, the formula fingerprint or any Excel case doesn't match, "T-DISC v1.1.1 is switched off" is logged and no-till or reduced-till fields can't be confirmed until it's fixed.
+
+**When USDA releases a new T-DISC:** run `node tools/tdisc-extract/extract.mjs <workbook.xlsm> api/GrainOriginatorPortal.Api/Content/TDisc/v<version>`, copy in `golden-cases.json` and run `node tools/tdisc-extract/golden.mjs <workbook.xlsm> <packDir>` (Windows + Excel; macros stay off), then set `TDiscService.CurrentVersion`. A changed fingerprint means the formulas changed: review `TDiscCalculator` (and the client's mirror) before updating `FormulaFingerprint`.
+
+## The review, the Biofuel Feedstock Report and the Mass Balance Ledger
+
+Once a 45Z field has an estimated CI, its tab shows **Confirm CI Score**. The review (2026-11-02; tickets and yield merged 2026-11-03) is five steps, gone through with the producer after harvest. Each step's **Next** waits on that step's own check; a confirmed field opens on step 5 with every step read-only.
+
+1. **Inputs.** The calculator inputs as entered (crop, location, acres, expected yield, nitrogen, inhibitor, cover crop, tillage, manure). "Edit inputs" closes the review.
+2. **T-DISC** (no till and reduced till only; otherwise "not needed"). The originator enters the field's passes from last harvest through this one, each a tillage window and a T-DISC implement, picked by USDA's implement name or by an everyday operation from USDA's lookup (which adds a pass per implement). The app rates them as USDA's T-DISC v1.1.1 workbook does (see [USDA T-DISC](#usda-t-disc)) and shows each window's index and the rating live. The passes are saved with the field's data as they're entered. The limits are 7 CFR 2100.051's: **no till 0.075 or less, reduced till 0.252 or less**, above that conventional. A rating that doesn't support the selected tillage **steps it down** (no till → reduced till → none, never up), and the CI is rescored at that tillage; the screen says so before confirming. When a reduced-till field's passes rate no till, the step offers **Change to No till** once the originator ticks that the producer meets the no-till rules (including no till 4 of 5 years); it changes the field's tillage, so the estimate and the recordkeeping follow. An estimate doesn't need T-DISC. The client's `programs/fd-cic/fd-cic-tdisc.ts` mirrors the rating for the screen; the server rates the passes again at confirm, and that one counts.
+3. **Tickets & yield.** The field's CTRM tickets (`GET api/field-plan/records/{id}/tickets`), **settled or not**. A ticket is listed when:
+   - it was delivered under the field's split ID: the ticket detail's `combinedCustomerId` (added to CTRM's ticket API 2026-11). A split ticket has a row per party, the producer and any partner such as a landlord, each with its own customer code and the split ID. **Every party's row counts, whatever the split percentage** (user decision 2026-11-03); the table's Customer column shows whose row it is. `tickets` has no split filter, so the producer's tickets are read (`CtrmQueries.TicketsBySplitProducer`, its own document so an API without the field fails only this review) and the split's rows kept. A row only a partner holds, on a ticket with no row for the producer, isn't reached;
    - its product code is the crop row's crop (`FieldPlanCropGroups`, ported from the client's `CROP_CODE_MAP`, with a test that keeps them in step);
    - it's in the crop year. CTRM tickets carry no crop year, so:
      - a ticket on one of the producer's or the split's contracts takes **that contract's crop year**;
      - any other ticket counts when its **BL date** is in the crop year's window: `FieldPlan:TicketWindow:{crop}:From/To` (MM-dd), default `08-01` to `07-31` of the next year. The same window applies to every crop, canola included; a ticket outside it (an early canola harvest, say) is added in the review.
-   - Net bushels are the split's net pounds ÷ the ODS conversion for the product code. With no conversion there is no figure ("?"), as everywhere in the portal: the ticket starts left out and can't be confirmed. (The standard-weight fallback was removed 2026-10-30.)
-3. The originator and the producer go over the inputs and the tickets. Any ticket that isn't the field's can be unticked. **Adding a ticket** (2026-10-30): "+ Add a ticket from outside the crop year" lists the split's other tickets for the crop (on another year's contract, or BL-dated outside the window), newest first, with the reason each is outside. An added ticket joins the table tagged *added* and is kept as `cropYearMatch: "added"` in the confirmed CI and as "Added in review" in the CSV. Only the split's own tickets for the crop can be added, and a ticket another of the field's confirmed CIs already counts (another crop year) is marked and can't be added or confirmed, so no ticket is counted twice. The actual yield is suggested as included bushels ÷ acres and can be edited. The CI at that yield shows live.
-4. After harvest, with "Reviewed these inputs and tickets with the producer after harvest" ticked, **Confirm CI** (`POST .../records/{id}/confirm`):
-   - reads the tickets again on the server and keeps only the ones listed, so the bushels are CTRM's;
-   - sets the actual yield, rescores, locks, and writes the confirmed CI.
-   - Confirming is allowed while an attested enrollment holds the record, because attesting comes before harvest and confirming after.
-5. **CSV for the Bins' mass balance ledger:** "Download confirmed CI (CSV)" appears on the enrollment card for the producer and year, and in a confirmed review.
-   - One row per confirmed ticket: producer code and name, split ID, field, enrollment ID, crop year, commodity, ticket #, product code, BL date, location, contract #, crop year by (contract year, BL date window or added in review), net bushels, settled (Y/N), settled date, CI (g CO2e/bu), USDA version, confirmed by and at.
-   - Built in the browser (`programs/fd-cic/confirmed-ci-export.ts`), with spreadsheet formula injection guarded (`shared/utils/csv.ts`).
-   - File name: `45Z-confirmed-CI_{producer}_{year}_{yyyymmdd}.csv`.
+   - Net bushels are the split's net pounds ÷ the ODS conversion for the product code. With no conversion there is no figure ("?"), as everywhere in the portal: the ticket starts left out and can't be confirmed.
 
-**To verify on real data:** that tickets name the split ID as their customer code. A split is its own CTRM customer: TATOB02 "T-A TOBIN - PARKER WEST" is synced as a producer with that code. The tickets query is therefore the standard per-customer one. TATOB02 had no deliveries in the last three years, though, so this still needs checking against a split that has delivered.
+   Any ticket that isn't the field's can be unticked. **"+ Add a ticket from outside the crop year"** lists the split's other tickets for the crop, newest first, with the reason each is outside; an added one is kept as `cropYearMatch: "added"`. A ticket another of the field's confirmed CIs already counts is marked and can't be added or confirmed, so no ticket is counted twice.
+   **Actual yield**, under the ticket table on the same step: suggested as included bushels ÷ acres, editable (up to 1,000 bu/ac). The CI at that yield and the confirmed tillage shows live.
+4. **Recordkeeping.** What the producer keeps for 5 years, listed only for the practices the field claims: every field (location and acres, planting date, bushels and sales, expected-yield proof, nutrient plan, fertilizer records), plus nitrification inhibitor, manure, cover crop, tillage (field-pass log, T-DISC worksheet) and the no-till 4-of-5-years promise. Simplified from 7 CFR 2100.031, .051(c), .052(b) and .063; the wording is in `programs/fd-cic/fd-cic-recordkeeping.ts` for the business to edit. The originator ticks that it was reviewed with the producer; the tick is sent as `reviewedWithProducer` and the server refuses a confirm without it.
+5. **Confirm CI** (`POST .../records/{id}/confirm` with the actual yield, ticket keys, `tDiscPasses` and `reviewedWithProducer`):
+   - reads the tickets again on the server and keeps only the ones listed, so the bushels are CTRM's;
+   - refuses a no-till or reduced-till field without passes (`FIELD_PLAN_TDISC_REQUIRED`, 422) or with a pass T-DISC doesn't allow; rates them with `TDiscService`, ignoring any rating in the saved data, and sets the tillage the rating supports;
+   - sets the actual yield, rescores, locks, and writes the confirmed CI.
+
+   Once confirmed, step 5 (and the field's tab, beside "View review") offers the report and the ledger.
+
+**Biofuel Feedstock Report** (PDF, one per confirmed field): "Generate Biofuel Feedstock Report". Only the inputs and how the CI was worked out from them; not an attestation (changed 2026-11-03: no certification, tickets, recordkeeping list, attestation, signature, workbook hashes or bushels):
+- farm and producer name, producer code, the primary contact's name (when the producer has one), and the field's county and state;
+- the field's unique ID (the enrollment ID), split ID, name, acres, crop and crop year;
+- every FD-CIC input, including the actual yield, the T-DISC rating, any stepped-down tillage, and the MLRA the county gives;
+- the **T-DISC worksheet** for no till or reduced till (every pass with its mixing efficiency, depth and tillage intensity, each window's index, and the rating);
+- the **CI calculation**: USDA's seven components and their total, the CI, with the FD-CIC version;
+- a footer with who confirmed it (by name) and when.
+
+Built in the browser: content in `programs/fd-cic/feedstock-report.ts` (tested), drawn by `feedstock-report.service.ts` with jsPDF, as the calculators' reports are. File name: `45Z-Biofuel-Feedstock-Report_{producer}_{enrollmentId}_{yyyymmdd}.pdf`.
+
+**Mass Balance Ledger** (CSV for the Bins, one row per confirmed field, not per ticket): "Download Mass Balance Ledger" on the 45Z card above the planting table for the producer and year, and in a confirmed review.
+- Columns: producer code and name, split ID, field, enrollment ID, crop year, commodity, acres, confirmed bushels, tickets (count), CI (g CO2e/bu), tillage, USDA version, confirmed by (the originator's name; their sign-in on a field confirmed before names were kept) and at.
+- Built in the browser (`programs/fd-cic/mass-balance-ledger.ts`), with spreadsheet formula injection guarded (`shared/utils/csv.ts`).
+- File name: `45Z-Mass-Balance-Ledger_{producer}_{year}_{yyyymmdd}.csv`.
+
+**Checked on QA (2026-11-03):** `tickets(customerId: "TATOB43")` returns nothing, because a split ID isn't a ticket customer. TATOBIN's tickets carry the split in `combinedCustomerId`: TATOB43 has 5 rows in the 2024-25 window, all TATOBIN's, and TATOB02's rows are TATOBIN's, PARKROR's and TAYLSAE's. Not yet checked: that PROD's API has `combinedCustomerId`.
 
 ## Reporting: field-level CI and bushels
 
 The business doesn't plan on one producer-wide average CI. Downstream opportunities may each need a
 different CI target, so the question is **how many bushels sit at or below a given CI**, by crop.
 
-- The enrollment card shows a "bushels by CI" ladder per crop: fields lowest CI first, each with its
+- The 45Z card shows a "bushels by CI" ladder per crop: fields lowest CI first, each with its
   bushels and a running total, and a target box ("at or below 3,000 g/bu → 69,000 bu from 2 fields").
   Crop rows show the range of CIs and the bushels, never an average.
 - Bushels are acres × actual yield once it's in, otherwise acres × expected yield, marked projected. A
@@ -266,10 +310,8 @@ For a tables-only release this should take about a day, most of it review.
 
 On 2026-10-30 the branch was reviewed against the Scoular standards with the marketplace skills
 (`audit-dotnet`, `audit-angular`, `audit-sql`, `audit-security`, `code-review`). Fixed before the merge:
-- **Attested snapshot built on the server.** It was kept as the browser sent it; a crafted list could put
-  another producer's split in it, or a non-text split ID that broke attesting for everyone in the program and year.
 - **A field once per crop per year.** The same split on two rows of the same crop (say irrigated and dryland
-  corn) pulled the same tickets twice, so the Bins' CSV would have counted them twice.
+  corn) pulled the same tickets twice, so the Bins' ledger would have counted them twice.
 - **No uncounted tickets.** A ticket with no bushel figure starts left out of the review and can't be confirmed.
 - **Copying inputs onto a scored field** now refreshes the form, so the next edit no longer writes the old inputs back.
 - **Smaller fixes:** "settled" is matched exactly, the actual yield is capped at 1,000 bu/ac on screen as in the

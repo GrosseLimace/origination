@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace GrainOriginatorPortal.Api.Models.Responses;
 
 // The shapes match client/src/app/models/field-plan.model.ts exactly, so the client's FieldPlanStore takes
-// them as they come. Program data, frozen estimates, attestations and snapshots are passed through as JSON.
+// them as they come. Program data and frozen estimates are passed through as JSON.
 
 /// <summary>Everything one producer has in the field plan, across all years.</summary>
 public record FieldPlanSnapshotResponse
@@ -11,7 +11,6 @@ public record FieldPlanSnapshotResponse
     public required IReadOnlyList<ProducerFieldResponse> Fields { get; init; }
     public required IReadOnlyList<FieldSeasonResponse> Seasons { get; init; }
     public required IReadOnlyList<FieldProgramRecordResponse> Records { get; init; }
-    public required IReadOnlyList<ProgramEnrollmentResponse> Enrollments { get; init; }
 }
 
 /// <summary>A producer's field: one CTRM split.</summary>
@@ -59,21 +58,6 @@ public record FieldProgramRecordResponse
     public JsonElement? Reopened { get; init; }
 }
 
-public record ProgramEnrollmentResponse
-{
-    public required string Key { get; init; }
-    public required string ProgramKey { get; init; }
-    public required long CustomerId { get; init; }
-    public required int Year { get; init; }
-    /// <summary>Open, Attested or Withdrawn.</summary>
-    public required string Status { get; init; }
-    public required JsonElement Attestation { get; init; }
-    public string? AttestedBy { get; init; }
-    public DateTime? AttestedAt { get; init; }
-    public JsonElement? Snapshot { get; init; }
-    public string? WithdrawnReason { get; init; }
-}
-
 /// <summary>
 /// A field's CTRM tickets for its crop year and crop: delivered under its split ID, settled or not. Each is
 /// matched to the crop year by the contract it's applied to, or failing that by its BL date in the window.
@@ -101,6 +85,11 @@ public record FieldTicketResponse
     /// <summary>Stable key for the detail row (ticket prefix, number, suffix, BL date, product, sequence).</summary>
     public required string TicketKey { get; init; }
     public required string TicketNumber { get; init; }
+    /// <summary>
+    /// The party the row is for: the producer or a partner on the split (e.g. a landlord). One ticket number has a
+    /// row per party, all under the split ID.
+    /// </summary>
+    public string? CustomerCode { get; init; }
     /// <summary>yyyy-MM-dd.</summary>
     public string? BlDate { get; init; }
     /// <summary>Elevator, e.g. "Pratt, KS (PRA)".</summary>
@@ -116,7 +105,7 @@ public record FieldTicketResponse
     public string? Note { get; init; }
     /// <summary>The crop year whose confirmed CI already counts this ticket; it can't be counted twice.</summary>
     public int? ConfirmedFor { get; init; }
-    /// <summary>Net bushels for the split's share; null when the pounds or the conversion are missing.</summary>
+    /// <summary>Net bushels for this party's row; null when the pounds or the conversion are missing.</summary>
     public decimal? NetBushels { get; init; }
     public required bool Settled { get; init; }
     /// <summary>yyyy-MM-dd.</summary>
