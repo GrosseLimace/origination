@@ -809,20 +809,29 @@ public sealed class CtrmTicketReader
     }
 
     /// <summary>
-    /// One window's tickets: first page, then the remaining pages concurrently.
+    /// One window's tickets: the first page, then batches of pages in parallel until the server says there
+    /// are no more.
     /// </summary>
     /// <remarks>
     /// <para><b>Why not a simple sequential loop.</b> It was one, and it cost real time on exactly the
     /// producers who matter most. Measured 2026-08-27 against an idle gateway: TATOBIN has 821 tickets and
-    /// its per-producer read took 13.3s, because each 500-row page waited for the one before it. The first
-    /// page reports <c>totalCount</c>, so the rest can go at once - the same two-phase pump
-    /// <see cref="CtrmContractReader"/> already used for contracts.</para>
+    /// its per-producer read took 13.3s, because each 500-row page waited for the one before it.</para>
     ///
-    /// <para><b><c>hasNextPage</c> stays authoritative.</b> <c>totalCount</c> only decides how many pages to
-    /// REQUEST up front. If the last page fetched still reports more, the pump continues sequentially rather
-    /// than trusting the arithmetic - the two can disagree, and silently dropping a producer's tickets is the
-    /// one outcome worth an extra round trip to avoid. Equally, the loop never keeps going on a count alone,
-    /// which would spend requests on empty pages when <c>totalCount</c> counts something broader.</para>
+    /// <para><b>No <c>totalCount</c> (2026-11-04).</b> The walk used to ask the server for the window's count
+    /// on every page and size its fan-out from the first page's answer. The ticket documents no longer
+    /// request it: the CTRM team asked whether we depended on it, because serving it costs them a count
+    /// query for every page we fetch, and the only thing it ever decided here was how many pages to request
+    /// at once. The walk speculates instead - each round requests the next batch of pages in parallel and the
+    /// last page's <c>hasNextPage</c> decides whether to go again. The batch ramps 1, 2, 4 ... up to
+    /// <c>Ctrm:TicketPageBatch</c>, so a one- or two-page window (most producer clicks, Spot Loads) requests
+    /// exactly the pages it has, and a long walk runs at the width the throttles allowed it anyway
+    /// (interactive pages are capped by <c>Ctrm:InteractivePageConcurrency</c>, background pages by
+    /// <see cref="CtrmTradeUnitThrottle"/>). The cost of not knowing the length is bounded: at most one batch
+    /// minus one of pages past the end of a window, each an empty page the server still scans for.</para>
+    ///
+    /// <para><b><c>hasNextPage</c> is the only stop signal.</b> Silently dropping a producer's tickets is the
+    /// one outcome worth an extra round trip to avoid, so the walk never ends on arithmetic - only when the
+    /// server reports no more, or at <paramref name="maxPages"/>, which is reported as truncated.</para>
     /// </remarks>
     private async Task<CtrmReadResult<List<CtrmTicketDto>>> FetchWindowAsync(Scope scope, DateTime from, DateTime to, int maxPages)
     {
@@ -847,61 +856,47 @@ public sealed class CtrmTicketReader
         if (!hasMore)
             return new CtrmReadResult<List<CtrmTicketDto>> { Status = CtrmReadStatus.Ok, Value = all, Pages = pagesFetched };
 
-        // How many pages the reported count implies, bounded by the cap. At least two, because the server
-        // just said there is more.
-        var pagesAvailable = (int)Math.Ceiling(firstPage.TotalCount / (double)PageSize);
-        var pagesToFetch = Math.Min(Math.Max(pagesAvailable, 2), maxPages);
+        // Interactive reads are bounded. Unbounded, a nine-page window across three windows is
+        // twenty-seven simultaneous requests for one click, and the gateway was measured degrading at
+        // nine-way fan-out - so the pages would slow each other down. Background pages are already
+        // bounded by CtrmTradeUnitThrottle, so they pass through.
+        using var slot = scope.Interactive
+            ? new SemaphoreSlim(Math.Clamp(ReadInt("Ctrm:InteractivePageConcurrency", 4), 1, 16))
+            : null;
+
+        async Task<CtrmReadResult<CtrmTicketsResponse>> BoundedPage(int page)
+        {
+            if (slot is null) return await FetchTicketPageAsync(scope, from, to, page * PageSize);
+
+            await slot.WaitAsync(CancellationToken.None);
+            try { return await FetchTicketPageAsync(scope, from, to, page * PageSize); }
+            finally { slot.Release(); }
+        }
+
+        var batchCap = Math.Clamp(ReadInt("Ctrm:TicketPageBatch", 4), 1, 16);
+        var batch = 1;
         var nextPage = 1;
 
-        if (pagesToFetch > 1)
+        while (hasMore && nextPage < maxPages)
         {
-            // Interactive reads are bounded. Unbounded, a nine-page window across three windows is
-            // twenty-seven simultaneous requests for one click, and the gateway was measured degrading at
-            // nine-way fan-out - so the pages would slow each other down. Background pages are already
-            // bounded by CtrmTradeUnitThrottle, so they pass through.
-            using var slot = scope.Interactive
-                ? new SemaphoreSlim(Math.Clamp(ReadInt("Ctrm:InteractivePageConcurrency", 4), 1, 16))
-                : null;
+            var pages = await Task.WhenAll(
+                Enumerable.Range(nextPage, Math.Min(batch, maxPages - nextPage)).Select(BoundedPage));
+            pagesFetched += pages.Length;
 
-            async Task<CtrmReadResult<CtrmTicketsResponse>> BoundedPage(int page)
-            {
-                if (slot is null) return await FetchTicketPageAsync(scope, from, to, page * PageSize);
-
-                await slot.WaitAsync(CancellationToken.None);
-                try { return await FetchTicketPageAsync(scope, from, to, page * PageSize); }
-                finally { slot.Release(); }
-            }
-
-            var rest = await Task.WhenAll(Enumerable.Range(1, pagesToFetch - 1).Select(BoundedPage));
-            pagesFetched += rest.Length;
-
-            var failed = rest.FirstOrDefault(r => !r.Ok);
+            var failed = pages.FirstOrDefault(r => !r.Ok);
             if (failed is not null) return PropagatePageFailure(failed, scope, window);
 
-            foreach (var page in rest)
+            foreach (var page in pages)
             {
                 var data = page.Value?.Tickets;
                 if (data is not null) all.AddRange(data.Items);
             }
 
-            // Ordered by construction, so the last element is the highest skip - its verdict is the current one.
-            hasMore = rest[^1].Value?.Tickets?.PageInfo?.HasNextPage == true;
-            nextPage = pagesToFetch;
-        }
-
-        // Only entered when the count under-reported: keep going while the SERVER says there is more.
-        while (hasMore && nextPage < maxPages)
-        {
-            var extra = await FetchTicketPageAsync(scope, from, to, nextPage * PageSize);
-            pagesFetched++;
-            if (!extra.Ok) return PropagatePageFailure(extra, scope, window);
-
-            var data = extra.Value?.Tickets;
-            if (data is null) break;
-
-            all.AddRange(data.Items);
-            hasMore = data.PageInfo?.HasNextPage == true;
-            nextPage++;
+            // Ordered by construction, so the last element is the highest skip - its verdict is the current
+            // one. A page past the end comes back empty with hasNextPage false, which is exactly the stop.
+            hasMore = pages[^1].Value?.Tickets?.PageInfo?.HasNextPage == true;
+            nextPage += pages.Length;
+            batch = Math.Min(batch * 2, batchCap);
         }
 
         if (hasMore)
