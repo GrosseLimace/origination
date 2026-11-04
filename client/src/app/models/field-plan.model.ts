@@ -1,3 +1,5 @@
+import type { TDiscRatedPass, TDiscRatedWindow } from './tdisc.model';
+
 /**
  * Fields under planting intentions, and the sustainability programs recorded on them.
  *
@@ -8,7 +10,7 @@
  *
  * Program data never lives on the season. Each program a field takes part in (45Z first, others
  * later) is a FieldProgramRecord holding that program's own data, so adding a program needs no change
- * to fields or seasons. Producer-level sign-off is a ProgramEnrollment per program per year.
+ * to fields or seasons. A field is in a program simply by having a record for it.
  */
 
 /**
@@ -105,30 +107,43 @@ export const OFFICIAL_STATUS_TEXT: Record<OfficialResultStatus, string> = {
  * A field's official result for a program (45Z: the CI of record), kept apart from the planning estimate.
  * For 45Z it is the confirmed CI: written only when the originator confirms the field after harvest, having
  * gone over its inputs and CTRM tickets with the producer (the server rescores with the actual yield and keeps
- * the tickets and their bushels). The estimate is never copied into it automatically. Requirements and
- * evidence stay open for whatever else an official result may come to need.
+ * the tickets and their bushels). The estimate is never copied into it automatically. It changes only by
+ * unlocking the record (see FieldProgramRecord.reopened).
  */
 export interface OfficialResult {
   status: OfficialResultStatus;
   score?: ProgramScore;
   /** e.g. a USDA version or a verified pathway. */
   method?: string;
-  requirements?: { key: string; label: string; met: boolean }[];
-  evidence?: { kind: string; reference: string; addedBy: string; addedAt: string }[];
+  /** Who confirmed it: their UPN (the audit identifier). */
   documentedBy?: string;
+  /** Their display name, for documents such as the Mass Balance Ledger. Absent on older records. */
+  documentedByName?: string;
   documentedAt?: string;
   /** 45Z confirmed CI: the actual yield it was rescored with (bu/ac). */
   actualYield?: number;
   /** 45Z confirmed CI: net bushels of the confirmed tickets. */
   bushels?: number;
-  /** 45Z confirmed CI: the CTRM tickets reviewed with the producer: the rows of the Bins' CSV. */
+  /** 45Z confirmed CI: the CTRM tickets reviewed with the producer, listed in the Biofuel Feedstock Report. */
   tickets?: FieldTicket[];
+  /**
+   * 45Z confirmed CI: the T-DISC check, for no till or reduced till (null otherwise), rated on the server from the
+   * field's passes. Tillage as USDA FD-CIC labels; version is the T-DISC release; windows and passes are the worksheet.
+   */
+  tDisc?: {
+    rating: number; designation: string; estimatedTillage: string; confirmedTillage: string;
+    version?: string; windows?: TDiscRatedWindow[]; passes?: TDiscRatedPass[];
+  } | null;
+  /** 45Z confirmed CI: the producer's recordkeeping requirements were reviewed with them. */
+  recordkeepingAcknowledged?: boolean;
 }
 
 /** One delivery (a CTRM ticket's detail row for the field's split), as reviewed, confirmed and exported. */
 export interface FieldTicket {
   ticketKey: string;
   ticketNumber: string;
+  /** The party the row is for: the producer or a partner on the split. A ticket has a row per party. */
+  customerCode?: string | null;
   /** yyyy-mm-dd. */
   blDate: string | null;
   location: string | null;
@@ -179,57 +194,4 @@ export interface FieldProgramRecord<TData = unknown> {
   official?: OfficialResult;
   /** Each unlock (or replacement by a confirmed CI): the reason, when, the locked estimate and any confirmed CI it held. */
   reopened?: { reason: string; at: string; frozen: FrozenProgramResult; official?: OfficialResult }[];
-}
-
-/** Open: ID issued, producer hasn't signed. Attested: producer signed. Withdrawn: ID retired. */
-export type EnrollmentStatus = 'Open' | 'Attested' | 'Withdrawn';
-
-/** The producer's signed statement for one program year. Confirmations are keyed by the program's statements. */
-export interface ProgramAttestation {
-  signerName: string;
-  /** yyyy-mm-dd. */
-  signedOn: string;
-  method: 'eSign' | 'Paper';
-  documentRef: string;
-  confirmations: Record<string, boolean>;
-}
-
-/** A program record as its enrollment lists it. */
-export interface EnrollableRecord {
-  recordId: string;
-  seasonId: string;
-  fieldKey: string;
-  fieldName: string;
-  splitId: string;
-  /** The field's enrollment ID in the program for the year, derived from split ID + crop year. */
-  enrollmentId: string;
-  cropLabel: string;
-  year: number;
-  acres: number | null;
-  status: ProgramRecordStatus;
-  score?: ProgramScore;
-  /** Why there is no score yet when the inputs are in, e.g. "calculating…" (see the program's previewNote). */
-  scoreNote?: string;
-  /** The field's production (45Z: acres × actual yield, in bushels). */
-  production?: number | null;
-}
-
-/**
- * One producer's enrollment in one program for one year: what attestation and withdrawal apply to. Created when the producer's first field enters the program, before harvest; every
- * record the producer has in the program that year belongs to it. It has no ID of its own: each field in
- * it has one, derived from its split ID and the crop year (enrollmentIdFor), which is what downstream
- * records (45Z: delivery lots in the CI ledger) point back to and what a ticket resolves to.
- */
-export interface ProgramEnrollment {
-  key: string;
-  programKey: string;
-  customerId: number;
-  year: number;
-  status: EnrollmentStatus;
-  attestation: ProgramAttestation;
-  attestedBy?: string;
-  attestedAt?: string;
-  /** The producer's records as they stood when attested (projected scores before harvest). */
-  snapshot?: EnrollableRecord[];
-  withdrawnReason?: string;
 }

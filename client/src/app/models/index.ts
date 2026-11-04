@@ -29,5 +29,6 @@ export * from './whats-new.model';
 export * from './incoming-call.model';
 export * from './carbon-intensity.model';
 export * from './field-plan.model';
+export * from './tdisc.model';
 export * from './fd-cic.model';
 export * from './help.model';

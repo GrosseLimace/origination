@@ -3,12 +3,12 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { ApiError } from '@core/errors/api-error';
 import { environment } from '@env/environment';
-import { EnrollableRecord, FieldProgramRecord, FieldSeason, FieldTickets, ProducerField, ProgramEnrollment, ProgramRecordStatus } from '@models';
-import type { FieldPlanBackend, FieldPlanSnapshot } from './field-plan-backend';
+import { FieldProgramRecord, FieldSeason, FieldTickets, ProducerField, ProgramRecordStatus } from '@models';
+import type { ConfirmReview, FieldPlanBackend, FieldPlanSnapshot } from './field-plan-backend';
 
 /**
  * Drops null properties, so optional fields read as absent, as they do from the in-memory backend
- * (record.frozen, enrollment.snapshot…).
+ * (record.frozen, record.official…).
  */
 function withoutNulls<T extends object>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== null)) as T;
@@ -32,7 +32,6 @@ export class HttpFieldPlanBackend implements FieldPlanBackend {
       fields: s.fields,
       seasons: s.seasons,
       records: s.records.map(r => withoutNulls(r)),
-      enrollments: s.enrollments.map(e => withoutNulls(e)),
     };
   }
 
@@ -93,31 +92,10 @@ export class HttpFieldPlanBackend implements FieldPlanBackend {
   }
 
   /** The server reads the tickets again and uses its own bushels; it only needs which ones were kept. */
-  async confirm(id: string, actualYield: number, ticketKeys: readonly string[]): Promise<FieldProgramRecord> {
+  async confirm(id: string, actualYield: number, ticketKeys: readonly string[], review: ConfirmReview): Promise<FieldProgramRecord> {
     return withoutNulls(await this.send(this.http.post<FieldProgramRecord>(`${this.base}/records/${id}/confirm`, {
-      actualYield, ticketKeys, reviewedWithProducer: true,
+      actualYield, ticketKeys, reviewedWithProducer: review.recordkeepingReviewed, tDiscPasses: review.tDiscPasses,
     })));
-  }
-
-  /** 204 (no body) for a program without enrollment. */
-  async ensureEnrollment(programKey: string, customerId: number, year: number): Promise<ProgramEnrollment | undefined> {
-    const e = await this.send(this.http.post<ProgramEnrollment | null>(`${this.base}/enrollments`, { programKey, customerId, year }));
-    return e ? withoutNulls(e) : undefined;
-  }
-
-  async updateAttestation(enrollment: ProgramEnrollment): Promise<ProgramEnrollment> {
-    const a = enrollment.attestation;
-    return withoutNulls(await this.send(this.http.put<ProgramEnrollment>(`${this.base}/enrollments/${enrollment.key}/attestation`, {
-      attestation: { signerName: a.signerName, signedOn: a.signedOn, method: a.method, documentRef: a.documentRef, confirmations: a.confirmations },
-    })));
-  }
-
-  async attest(key: string, listed: readonly EnrollableRecord[]): Promise<ProgramEnrollment> {
-    return withoutNulls(await this.send(this.http.post<ProgramEnrollment>(`${this.base}/enrollments/${key}/attest`, { listed })));
-  }
-
-  async withdraw(key: string, reason: string): Promise<ProgramEnrollment> {
-    return withoutNulls(await this.send(this.http.post<ProgramEnrollment>(`${this.base}/enrollments/${key}/withdraw`, { reason })));
   }
 
   private async send<T>(request: Observable<T>): Promise<T> {

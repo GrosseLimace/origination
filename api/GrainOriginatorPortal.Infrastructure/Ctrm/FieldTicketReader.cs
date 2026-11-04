@@ -9,8 +9,8 @@ namespace GrainOriginatorPortal.Infrastructure.Ctrm;
 /// A field's tickets as CTRM has them: every detail row delivered under the split ID, settled or not, with
 /// the crop year of each contract they're applied to.
 /// </summary>
-/// <param name="Tickets">One row per detail row under the split (cancelled and consolidated rows dropped).</param>
-/// <param name="ContractCropYears">Contract number (trimmed, upper-case) → CTRM crop year, for the producer's and the split's contracts.</param>
+/// <param name="Tickets">One row per detail row under the split, every party's (cancelled and consolidated rows dropped).</param>
+/// <param name="ContractCropYears">Contract number (trimmed, upper-case) → CTRM crop year, for the contracts of every party on the split's tickets.</param>
 public sealed record FieldTicketRead(IReadOnlyList<Ticket> Tickets, IReadOnlyDictionary<string, int> ContractCropYears);
 
 /// <summary>Reads the CTRM tickets delivered under one split ID, for the field plan's 45Z review.</summary>
@@ -21,11 +21,15 @@ public interface IFieldTicketReader
 }
 
 /// <summary>
-/// Tickets are read by the split's own customer code: a split ID is a CTRM customer, and its deliveries are the
-/// detail rows that name it (the usual per-customer ticket query, over the configured lookback). Unlike the
-/// producer ticket screens, nothing is gated: stored and settled grain counts toward the field's CI.
-/// Contract crop years come from the producer's and the split's CTRM contracts; a contract that's in
-/// neither leaves the ticket to the date window. Locations are the ODS elevator lookup, as on every ticket read.
+/// A split ID isn't a ticket customer (<c>tickets(customerId: split)</c> returns nothing). Each detail row of a
+/// split ticket names its party in <c>customerCode</c> (the producer, or a partner such as a landlord) and the
+/// split in <c>combinedCustomerId</c>. So the producer's tickets are read, over the configured lookback, and every
+/// row with the field's split ID is kept, whichever party it's for and whatever the split percentage (user
+/// decision 2026-11-03). A split row only a partner holds, on a ticket with no row for the producer, isn't
+/// reached: <c>tickets</c> has no split filter. Unlike the producer ticket screens, nothing is gated: stored and
+/// settled grain counts toward the field's CI. Contract crop years come from the CTRM contracts of each party on
+/// those rows; a contract none of them holds leaves the ticket to the date window. Locations are the ODS elevator
+/// lookup, as on every ticket read.
 /// </summary>
 public sealed class CtrmFieldTicketReader : IFieldTicketReader
 {
@@ -47,15 +51,19 @@ public sealed class CtrmFieldTicketReader : IFieldTicketReader
 
     public async Task<CtrmReadResult<FieldTicketRead>> ReadAsync(long customerId, string splitId, CancellationToken cancellationToken)
     {
-        var read = await _tickets.GetForProducerAsync(splitId, cancellationToken);
+        var producer = await CtrmProducerCode.ResolveAsync(_appContext, _logger, "field tickets", customerId, null, cancellationToken);
+        if (producer is null)
+            return new CtrmReadResult<FieldTicketRead> { Status = CtrmReadStatus.Error, Detail = $"No producer code for customer {customerId}." };
+
+        var read = await _tickets.GetForSplitProducerAsync(producer, cancellationToken);
         if (!read.Ok)
             return new CtrmReadResult<FieldTicketRead> { Status = read.Status, HttpStatus = read.HttpStatus, Detail = read.Detail, ErrorCode = read.ErrorCode };
 
-        var tickets = (read.Value ?? []).SelectMany(h => CtrmMappings.ToTickets(h, splitId)).ToList();
+        var tickets = (read.Value ?? []).SelectMany(h => CtrmMappings.ToTicketsForSplit(h, splitId)).ToList();
 
         var years = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        var producer = await CtrmProducerCode.ResolveAsync(_appContext, _logger, "field tickets", customerId, null, cancellationToken);
-        foreach (var code in new[] { producer, splitId }.OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase))
+        var parties = tickets.Select(t => t.CustomerCode).Prepend(producer).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase);
+        foreach (var code in parties)
         {
             // Crop years only refine the match, so a contract read that fails leaves its tickets to the date window.
             var contracts = await _contracts.GetForProducerCoreAsync(code, cancellationToken);

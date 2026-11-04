@@ -132,6 +132,26 @@ public sealed class CtrmTicketReader
     }
 
     /// <summary>
+    /// This producer's tickets with each detail row's split ID (<see cref="CtrmQueries.TicketsBySplitProducer"/>),
+    /// across the same lookback as <see cref="GetForProducerAsync"/>. For the field plan's 45Z review.
+    /// </summary>
+    public Task<CtrmReadResult<List<CtrmTicketDto>>> GetForSplitProducerAsync(
+        string scoularId, CancellationToken cancellationToken)
+    {
+        var code = scoularId?.Trim() ?? string.Empty;
+        if (code.Length == 0) return Failed("No producer code supplied.");
+
+        // Never served from a warm trade-unit set: those headers come from the shared projection, which
+        // doesn't carry combinedCustomerId.
+        return GetCachedAsync(new Scope(
+            CacheKey: $"split-producer:{code}",
+            Description: $"producer {code} (with split IDs)",
+            Document: CtrmQueries.TicketsBySplitProducer,
+            Filter: new { customerId = code },
+            Interactive: true));
+    }
+
+    /// <summary>
     /// This producer's tickets across the configured lookback, newest window first.
     /// </summary>
     /// <remarks>

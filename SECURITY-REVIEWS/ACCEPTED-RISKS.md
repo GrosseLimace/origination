@@ -434,13 +434,16 @@ flagged them (CWE-639); accepted on that basis. Routes (`FieldPlanController`, a
 - `POST /api/field-plan/seasons`, `PUT` / `DELETE /api/field-plan/seasons/{id}`
 - `POST /api/field-plan/records`, `PUT` / `DELETE /api/field-plan/records/{id}`
 - `POST /api/field-plan/records/{id}/confirm`, `POST /api/field-plan/records/{id}/reopen`
-- `POST /api/field-plan/enrollments`, `PUT /api/field-plan/enrollments/{key}/attestation`,
-  `POST /api/field-plan/enrollments/{key}/attest`, `POST /api/field-plan/enrollments/{key}/withdraw`
 
 Mitigations specific to these routes: every change is audit-logged with the user (`AUDIT_*`); confirming
-re-reads the tickets from CTRM and rescores on the server, so no bushels or CI come from the request;
-unlocking a confirmed CI needs a reason and keeps the old result in the record's history; a producer's
-attested enrollment blocks unlocking; the attested snapshot is built from the database, not the request.
+re-reads the tickets from CTRM and rescores on the server (T-DISC included), so no bushels, rating or CI come
+from the request; a confirmed CI's inputs can't be changed until it's unlocked, and unlocking needs a reason
+and keeps the old result in the record's history.
+
+_Update (2026-11-03):_ the enrollment routes (`POST /api/field-plan/enrollments`, `PUT .../{key}/attestation`,
+`POST .../{key}/attest`, `POST .../{key}/withdraw`) and `dbo.ProgramEnrollment` were removed (migration
+`DropProgramEnrollment`): 45Z only calculates and confirms a CI and no producer attestation is captured, so the
+"attested enrollment blocks unlocking" safeguard no longer exists. The routes above are the whole surface.
 
 ---
 
@@ -837,7 +840,7 @@ reject it and require the code change. Whoever gets that answer: record it on th
 
 **Update (2026-10-30) — field plan (45Z) reads added to this entry.** Owner decision (H. Collins,
 2026-10-30), for the reasons at the top of this entry: `GET /api/field-plan/customer/{customerId}` (a
-producer's fields, programs and enrollments), `GET /api/field-plan/records/{id}/tickets` (the field's CTRM
+producer's fields, seasons and program records; enrollments were removed 2026-11-03), `GET /api/field-plan/records/{id}/tickets` (the field's CTRM
 tickets, the same data the producer's Tickets tab already shows any originator) and
 `GET /api/ctrm-splits/customer/{customerId}` (the producer's CTRM splits) are open to every originator.
 

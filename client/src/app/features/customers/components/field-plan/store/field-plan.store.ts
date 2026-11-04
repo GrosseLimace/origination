@@ -1,9 +1,9 @@
 import { Injectable, inject, signal } from '@angular/core';
-import { EnrollableRecord, FieldProgramRecord, FieldSeason, FieldTickets, ProducerField, ProgramEnrollment } from '@models';
+import { FieldProgramRecord, FieldSeason, FieldTickets, ProducerField } from '@models';
 import { ToastService } from '@core/services/toast.service';
 import { ProgramRegistry } from '../programs/program-registry';
-import { enrollmentBlockers, enrollmentIdFor } from '../programs/program-enrollment';
-import { FIELD_PLAN_BACKEND, FieldPlanSnapshot } from './field-plan-backend';
+import { enrollmentIdFor } from '../programs/program-enrollment';
+import { ConfirmReview, FIELD_PLAN_BACKEND, FieldPlanSnapshot } from './field-plan-backend';
 
 /** Another field this year whose program inputs can be copied onto a field. */
 export interface CopySource {
@@ -34,7 +34,7 @@ type LoadState = 'loading' | 'loaded' | 'error';
 
 /**
  * The field plan on the client: producers' fields (CTRM splits, with a location), each field's acres on
- * a crop row, its sustainability program records, and the producer's program enrollments.
+ * a crop row, and its sustainability program records.
  *
  * Reads are synchronous signal reads, so templates and computed signals use them directly. A producer's
  * data is there once `ensureLoaded(customerId)` has brought it in from the backend (FIELD_PLAN_BACKEND).
@@ -42,14 +42,14 @@ type LoadState = 'loading' | 'loaded' | 'error';
  * Writes come in two kinds:
  * - edits while typing (`updateRecord`, `updateField`, `updateSeason`) apply at once, so scores and chips
  *   move, and are saved after a pause, latest value wins, one save in flight per item;
- * - structural changes (add, remove, confirm, reopen, withdraw, enroll) wait for
+ * - structural changes (add, remove, confirm, reopen) wait for
  *   the backend, after any pending edits are saved, and return a Promise.
  * A failed save shows an error and reloads the producer from the backend, so the screen never shows
  * something that wasn't kept.
  *
- * The program lifecycle: added (the producer's enrollment starts with it; the field's ID is derived) → Draft → Ready (scored)
+ * The program lifecycle: added (the field's enrollment ID is derived) → Draft → Ready (scored)
  * → after harvest, reviewed with its CTRM tickets and confirmed (45Z) → Locked, with the confirmed CI as the official result.
- * A confirmed field is unlocked with a reason, unless the producer's attested enrollment holds it.
+ * A confirmed field is unlocked with a reason; that is the only way a confirmed CI changes.
  */
 @Injectable({ providedIn: 'root' })
 export class FieldPlanStore {
@@ -60,7 +60,6 @@ export class FieldPlanStore {
   readonly fields = signal<ProducerField[]>([]);
   readonly seasons = signal<FieldSeason[]>([]);
   readonly records = signal<FieldProgramRecord[]>([]);
-  readonly enrollments = signal<ProgramEnrollment[]>([]);
 
   private readonly _load = signal<ReadonlyMap<number, LoadState>>(new Map());
   private readonly _loadRequest = new Map<number, number>();
@@ -148,67 +147,12 @@ export class FieldPlanStore {
     return this.forSeason(seasonId).some(r => r.status === 'Locked');
   }
 
-  /** The producer's live enrollment this record belongs to (by program, producer and year). */
-  enrollmentFor(record: FieldProgramRecord): ProgramEnrollment | undefined {
-    const season = this.season(record.seasonId);
-    const field = season && this.field(season.fieldKey);
-    return season && field ? this.current(record.programKey, field.customerId, season.year) : undefined;
-  }
-
-  /** Every record in an enrollment: the producer's records in its program and year. */
-  forEnrollment(enrollment: ProgramEnrollment): FieldProgramRecord[] {
-    return this.records().filter(r => {
-      if (r.programKey !== enrollment.programKey) return false;
-      const season = this.season(r.seasonId);
-      const field = season && this.field(season.fieldKey);
-      return !!season && !!field && field.customerId === enrollment.customerId && season.year === enrollment.year;
-    });
-  }
-
-  /** A record's enrollment ID: its program's prefix, the crop year and the field's split ID. Undefined without enrollment. */
+  /** A record's enrollment ID: its program's prefix, the crop year and the field's split ID. Undefined for a program without one. */
   enrollmentIdOf(record: FieldProgramRecord): string | undefined {
     const prefix = this.registry.get(record.programKey)?.enrollment?.idPrefix;
     const season = this.season(record.seasonId);
     const field = season && this.field(season.fieldKey);
     return prefix && season && field ? enrollmentIdFor(prefix, season.year, field.splitId) : undefined;
-  }
-
-  /**
-   * Finds a field's enrollment from identifiers the system already has: a split ID and a crop year (what a
-   * ticket carries), so nobody types an enrollment ID. Undefined when that split isn't a field in the
-   * program that year. A withdrawn enrollment still resolves, with its withdrawn status.
-   */
-  resolveEnrollment(programKey: string, splitId: string, cropYear: number):
-    { enrollmentId: string; field: ProducerField; season: FieldSeason; record: FieldProgramRecord; enrollment?: ProgramEnrollment } | undefined {
-    const field = this.field(splitId.trim().toUpperCase());
-    const season = field && this.seasons().find(s => s.fieldKey === field.fieldKey && s.year === cropYear && this.find(s.id, programKey));
-    const record = season && this.find(season.id, programKey);
-    const enrollmentId = record && this.enrollmentIdOf(record);
-    if (!field || !season || !record || !enrollmentId) return undefined;
-    const enrollment = this.current(programKey, field.customerId, cropYear) ?? this.withdrawn(programKey, field.customerId, cropYear).at(-1);
-    return { enrollmentId, field, season, record, enrollment };
-  }
-
-  // ── Reads: enrollments ───────────────────────────────────────────────────
-
-  /** The producer's live (Open or Attested) enrollment in a program for the year. */
-  current(programKey: string, customerId: number, year: number): ProgramEnrollment | undefined {
-    return this.enrollments().find(e => e.programKey === programKey && e.customerId === customerId && e.year === year && e.status !== 'Withdrawn');
-  }
-
-  withdrawn(programKey: string, customerId: number, year: number): ProgramEnrollment[] {
-    return this.enrollments().filter(e => e.programKey === programKey && e.customerId === customerId && e.year === year && e.status === 'Withdrawn');
-  }
-
-  /** The attested enrollment whose signed snapshot holds this record. A locked record in it can't be reopened. */
-  heldBy(recordId: string): ProgramEnrollment | undefined {
-    return this.enrollments().find(e => e.status === 'Attested' && (e.snapshot ?? []).some(r => r.recordId === recordId));
-  }
-
-  /** What still stands between an open enrollment and the producer's attestation (checked again by the backend). */
-  blockers(enrollment: ProgramEnrollment, listed: readonly EnrollableRecord[]): string[] {
-    const statements = this.registry.get(enrollment.programKey)?.enrollment?.statements ?? [];
-    return enrollmentBlockers(enrollment, listed, this.enrollments(), statements);
   }
 
   // ── Edits while typing (saved after a pause) ─────────────────────────────
@@ -289,8 +233,7 @@ export class FieldPlanStore {
 
   /**
    * Adds a program to a field season. The data starts from the program's defaults, plus whatever the
-   * program carries over from the field's last season in it. The producer's enrollment ID for the
-   * program and year is issued now, if they don't have one.
+   * program carries over from the field's last season in it. Its enrollment ID is derived (enrollmentIdOf).
    */
   async addRecord(seasonId: string, programKey: string): Promise<FieldProgramRecord | undefined> {
     const season = this.season(seasonId);
@@ -317,13 +260,11 @@ export class FieldPlanStore {
     const draft: Omit<FieldProgramRecord, 'id'> = { seasonId, programKey, data, status: 'Draft', copiedFromYear };
     draft.status = this.statusOf({ ...draft, id: '' }, season);
 
-    const created = await this.write('add the program', async () => {
+    return this.write('add the program', async () => {
       const record = await this.backend.addRecord(draft);
       this.records.update(rs => [...rs.filter(r => r.id !== record.id), record]);
       return record;
     });
-    if (created) await this.ensureEnrollments(field.fieldKey);
-    return created;
   }
 
   /** Takes a program off a field season. A locked record stays. */
@@ -336,37 +277,10 @@ export class FieldPlanStore {
     });
   }
 
-  /** Starts the producer's enrollment for each program on the field that doesn't have a live one. Called when a program is added. */
-  async ensureEnrollments(fieldKey: string): Promise<void> {
-    const field = this.field(fieldKey);
-    if (!field) return;
-    const wanted = new Map<string, { programKey: string; year: number }>();
-    for (const r of this.records()) {
-      const season = this.season(r.seasonId);
-      if (season?.fieldKey === fieldKey) wanted.set(`${r.programKey}|${season.year}`, { programKey: r.programKey, year: season.year });
-    }
-    for (const { programKey, year } of wanted.values()) {
-      if (this.current(programKey, field.customerId, year) || !this.registry.get(programKey)?.enrollment) continue;
-      await this.ensureEnrollment(programKey, field.customerId, year);
-    }
-  }
-
-  /** The producer's live enrollment, or a new one (e.g. re-enrolling after a withdrawal, under the same field IDs). */
-  async ensureEnrollment(programKey: string, customerId: number, year: number): Promise<ProgramEnrollment | undefined> {
-    return this.write('enroll the producer', async () => {
-      const e = await this.backend.ensureEnrollment(programKey, customerId, year);
-      if (e) this.putEnrollment(e);
-      return e;
-    });
-  }
-
-  /**
-   * Unlocks a confirmed CI for correction, with the reason kept in its history.
-   * Refused while the producer's attested enrollment holds it.
-   */
+  /** Unlocks a confirmed CI for correction, with the reason kept in its history. */
   async reopen(id: string, reason: string): Promise<boolean> {
     const current = this.record(id);
-    if (!current || current.status !== 'Locked' || !reason.trim() || this.heldBy(id)) return false;
+    if (!current || current.status !== 'Locked' || !reason.trim()) return false;
     const record = await this.write('reopen the field', () => this.backend.reopen(id, reason));
     if (!record) return false;
     this.putRecord(record);
@@ -382,34 +296,11 @@ export class FieldPlanStore {
    * Confirms a 45Z field after harvest with the producer: the actual yield and the tickets kept. The record
    * comes back locked with its confirmed CI (the official result). Undefined when refused; the store has said why.
    */
-  async confirm(recordId: string, actualYield: number, ticketKeys: readonly string[]): Promise<FieldProgramRecord | undefined> {
+  async confirm(recordId: string, actualYield: number, ticketKeys: readonly string[], review: ConfirmReview): Promise<FieldProgramRecord | undefined> {
     await this.flush();
-    const confirmed = await this.write('confirm the CI', () => this.backend.confirm(recordId, actualYield, ticketKeys));
+    const confirmed = await this.write('confirm the CI', () => this.backend.confirm(recordId, actualYield, ticketKeys, review));
     if (confirmed) this.putRecord(confirmed);
     return confirmed;
-  }
-
-  /** Saves an open enrollment's attestation. An attested enrollment only changes by withdrawal. */
-  async updateAttestation(enrollment: ProgramEnrollment): Promise<void> {
-    await this.write('save the attestation', async () => this.putEnrollment(await this.backend.updateAttestation(enrollment)));
-  }
-
-  /** Records the producer's attestation over the listed records. Refused while anything is outstanding. */
-  async attest(key: string, listed: readonly EnrollableRecord[]): Promise<ProgramEnrollment | undefined> {
-    const e = this.enrollments().find(x => x.key === key);
-    if (!e || e.status !== 'Open' || this.blockers(e, listed).length > 0) return undefined;
-    await this.flush();
-    return this.write('record the attestation', async () => {
-      const attested = await this.backend.attest(key, listed);
-      this.putEnrollment(attested);
-      return attested;
-    });
-  }
-
-  /** Withdraws an enrollment with a reason, which is kept. Re-enrolling later uses the same derived field IDs. */
-  async withdraw(key: string, reason: string): Promise<void> {
-    if (!reason.trim()) return;
-    await this.write('withdraw the enrollment', async () => this.putEnrollment(await this.backend.withdraw(key, reason)));
   }
 
   // ── Copying inputs between fields (same producer, program and year) ────────
@@ -553,19 +444,12 @@ export class FieldPlanStore {
     this.records.update(rs => rs.map(r => (r.id === record.id ? record : r)));
   }
 
-  private putEnrollment(enrollment: ProgramEnrollment): void {
-    this.enrollments.update(es => (es.some(e => e.key === enrollment.key)
-      ? es.map(e => (e.key === enrollment.key ? enrollment : e))
-      : [...es, enrollment]));
-  }
-
   private replaceCustomer(customerId: number, snapshot: FieldPlanSnapshot): void {
     const keys = new Set(this.fields().filter(f => f.customerId === customerId).map(f => f.fieldKey));
     const seasonIds = new Set(this.seasons().filter(s => keys.has(s.fieldKey)).map(s => s.id));
     this.fields.update(fs => [...fs.filter(f => f.customerId !== customerId), ...snapshot.fields]);
     this.seasons.update(ss => [...ss.filter(s => !keys.has(s.fieldKey)), ...snapshot.seasons]);
     this.records.update(rs => [...rs.filter(r => !seasonIds.has(r.seasonId)), ...snapshot.records]);
-    this.enrollments.update(es => [...es.filter(e => e.customerId !== customerId), ...snapshot.enrollments]);
   }
 
   private setLoad(customerId: number, state: LoadState): void {

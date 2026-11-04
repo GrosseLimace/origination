@@ -259,6 +259,45 @@ public static class CtrmQueries
         """;
 
     /// <summary>
+    /// <see cref="TicketsByCustomer"/> plus each detail row's <c>combinedCustomerId</c>: the split ID the row was
+    /// delivered under. For the field plan's 45Z review only.
+    /// </summary>
+    /// <remarks>
+    /// <para>A split ID is not a ticket customer: <c>tickets(customerId: "TATOB43")</c> returns nothing. A split
+    /// ticket has a detail row per party (the producer and any partner, e.g. a landlord), each with its own
+    /// <c>customerCode</c> and the split in <c>combinedCustomerId</c> (QA, 2026-11-03). <c>tickets</c> has no
+    /// split filter, so the producer's tickets are read and the split's rows kept.</para>
+    /// <para>Its own document so the shared projection never asks for the field: an API without it answers
+    /// HTTP 400, which would fail every ticket screen rather than just this review.</para>
+    /// </remarks>
+    public const string TicketsBySplitProducer = """
+        query ($customerId: String, $from: Date, $to: Date, $skip: Int, $take: Int) {
+          tickets(skip: $skip, take: $take, blDateFrom: $from, blDateTo: $to, customerId: $customerId,
+                  excludeCancelled: true, excludeConsolidated: true) {
+            totalCount
+            pageInfo { skip take hasNextPage hasPreviousPage }
+            items {
+        """ + SplitTicketProjection + """
+            }
+          }
+        }
+        """;
+
+    /// <summary><see cref="TicketProjection"/> with <c>combinedCustomerId</c> on the detail row; keep the two in step.</summary>
+    private const string SplitTicketProjection = """
+        ticketPrefix ticketNumber ticketSuffix ticketBLDate productCode
+        shipmentTicketNumber unloadQuantity
+        details {
+          ticketSequenceNumber
+          customerCode combinedCustomerId organizationCode elevatorCode gradeCode
+          contractNumber ticketType ticketStatusDescription
+          appliedNetQuantity finalSettledDate
+          gradeFactorMoisturePercent gradeFactorTestWeightPercent gradeFactorProteinPercent
+          cancelFlag
+        }
+        """;
+
+    /// <summary>
     /// Every ticket applied to a set of contract numbers, over a bill-of-lading window.
     /// Variables: <c>$contractNumbers</c> ([String!]), <c>$from</c>/<c>$to</c> (Date), <c>$skip</c>, <c>$take</c> (Int).
     /// </summary>
