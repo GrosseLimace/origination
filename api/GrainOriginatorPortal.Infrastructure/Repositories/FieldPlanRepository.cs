@@ -31,11 +31,7 @@ public class FieldPlanRepository : IFieldPlanRepository
             .Where(r => seasonIds.Contains(r.ProducerFieldSeasonId))
             .OrderBy(r => r.Id)
             .ToListAsync(cancellationToken);
-        var enrollments = await _db.ProgramEnrollments.AsNoTracking()
-            .Where(e => e.CustomerId == customerId)
-            .OrderBy(e => e.Id)
-            .ToListAsync(cancellationToken);
-        return new FieldPlanRows(fields, seasons, records, enrollments);
+        return new FieldPlanRows(fields, seasons, records);
     }
 
     public Task<ProducerField?> GetFieldAsync(string splitId, CancellationToken cancellationToken) =>
@@ -61,18 +57,6 @@ public class FieldPlanRepository : IFieldPlanRepository
 
     public Task<FieldProgramRecord?> GetRecordAsync(int seasonId, string programKey, CancellationToken cancellationToken) =>
         _db.FieldProgramRecords.FirstOrDefaultAsync(r => r.ProducerFieldSeasonId == seasonId && r.ProgramKey == programKey, cancellationToken);
-
-    public Task<ProgramEnrollment?> GetEnrollmentAsync(Guid key, CancellationToken cancellationToken) =>
-        _db.ProgramEnrollments.FirstOrDefaultAsync(e => e.EnrollmentKey == key, cancellationToken);
-
-    public Task<ProgramEnrollment?> GetLiveEnrollmentAsync(long customerId, string programKey, int cropYear, CancellationToken cancellationToken) =>
-        _db.ProgramEnrollments.FirstOrDefaultAsync(e => e.CustomerId == customerId && e.ProgramKey == programKey
-            && e.CropYear == cropYear && e.Status != "Withdrawn", cancellationToken);
-
-    public Task<List<ProgramEnrollment>> GetAttestedAsync(string programKey, int cropYear, CancellationToken cancellationToken) =>
-        _db.ProgramEnrollments.AsNoTracking()
-            .Where(e => e.ProgramKey == programKey && e.CropYear == cropYear && e.Status == "Attested")
-            .ToListAsync(cancellationToken);
 
     public Task<bool> PlantingIntentionMatchesAsync(int plantingIntentionId, long customerId, int cropYear, CancellationToken cancellationToken) =>
         _db.PlantingIntentions.AnyAsync(p => p.Id == plantingIntentionId && p.CustomerId == customerId && p.PlantingYear == cropYear, cancellationToken);

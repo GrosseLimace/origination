@@ -24,6 +24,12 @@ public interface IRequestContextService
     string GetCurrentUserShortName();
 
     /// <summary>
+    /// The current user's display name (the "name" claim, e.g. "Chris Egr") for showing a person on a
+    /// document. Not an identifier: store <see cref="GetCurrentUser"/> alongside it. Falls back to it.
+    /// </summary>
+    string GetCurrentUserDisplayName();
+
+    /// <summary>
     /// True when the current user holds the "Admin" app role — the same role that gates the Usage
     /// Dashboard. Honors the identity's RoleClaimType, so it works whether the role surfaced as
     /// "roles" (Microsoft.Identity.Web default) or ClaimTypes.Role.

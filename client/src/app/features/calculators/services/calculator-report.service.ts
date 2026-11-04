@@ -3,11 +3,11 @@ import { Injectable } from '@angular/core';
 // eager home-page chunk; the runtime libs are dynamically imported on demand in download().
 import type { jsPDF } from 'jspdf';
 import { formatAccountingMoney } from '@shared/utils/accounting-money';
+import { loadReportLogo } from '@shared/utils/report-logo';
 
 const INK: [number, number, number] = [17, 24, 39];          // near-black — values & title
 const HEADER_GREY: [number, number, number] = [55, 65, 81];  // dark grey — column-header fill
 const LINE_GREY: [number, number, number] = [203, 213, 225]; // light grey — separators
-const SCOULAR_LOGO = 'assets/images/scoular-logo-dark.webp';
 
 /** jspdf-autotable records the last table's geometry on the doc; its type augmentation isn't
  *  always visible to the compiler, so we access it through this narrow typed view. */
@@ -50,7 +50,7 @@ export class CalculatorReportService {
 
     // ── Header: centered Scoular logo + centered report title ──
     const logoTop = 30;
-    const logo = await this.loadLogo();
+    const logo = await loadReportLogo();
     let titleY: number;
     if (logo) {
       const logoH = 30;
@@ -110,30 +110,6 @@ export class CalculatorReportService {
       styles[i] = { halign: 'center' };
     }
     return styles;
-  }
-
-  /** Loads the app's Scoular logo (same-origin webp) as a PNG data URL for jsPDF, which doesn't
-   *  reliably embed webp. Same-origin → canvas isn't tainted → toDataURL works. Null on failure
-   *  (a text wordmark is used as fallback). */
-  private loadLogo(): Promise<{ dataUrl: string; ratio: number } | null> {
-    return new Promise(resolve => {
-      const img = new Image();
-      img.onload = () => {
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = img.naturalWidth;
-          canvas.height = img.naturalHeight;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) { resolve(null); return; }
-          ctx.drawImage(img, 0, 0);
-          resolve({ dataUrl: canvas.toDataURL('image/png'), ratio: img.naturalWidth / img.naturalHeight });
-        } catch {
-          resolve(null);
-        }
-      };
-      img.onerror = () => resolve(null);
-      img.src = SCOULAR_LOGO;
-    });
   }
 }
 

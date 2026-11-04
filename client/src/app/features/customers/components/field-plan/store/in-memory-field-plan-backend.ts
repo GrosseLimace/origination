@@ -1,10 +1,13 @@
 import { Injectable, inject } from '@angular/core';
-import { EnrollableRecord, FieldProgramRecord, FieldSeason, FieldTicket, FieldTickets, ProducerField, ProgramEnrollment, ProgramRecordStatus } from '@models';
+import { FdCicData, FieldProgramRecord, FieldSeason, FieldTicket, FieldTickets, OfficialResult, ProducerField, ProgramRecordStatus } from '@models';
 import { ProgramRegistry } from '../programs/program-registry';
-import { blankAttestation, enrollmentBlockers } from '../programs/program-enrollment';
-import type { FieldPlanBackend, FieldPlanSnapshot } from './field-plan-backend';
+import type { ConfirmReview, FieldPlanBackend, FieldPlanSnapshot } from './field-plan-backend';
 import { CROP_GROUP_BY_TOKEN } from '../../../../../shared/utils/crop-group-match';
 import { FD_CIC_PROGRAM_KEY } from '../programs/fd-cic/fd-cic.program';
+import { TILLAGE_LABELS } from '../programs/fd-cic/fd-cic.data';
+import { TDISC_TILLAGE, passesProblem, rateTDisc, supportedTillage, tDiscNeeded } from '../programs/fd-cic/fd-cic-tdisc';
+import { TDiscApiService } from '@core/services/tdisc-api.service';
+import { MsalService } from '@azure/msal-angular';
 
 /** The server's crop groups (FieldPlanCropGroups.Codes); CROP_GROUP_BY_TOKEN also knows crops it doesn't. */
 const SERVER_CROP_GROUPS = new Set(['wheat', 'corn', 'soybeans', 'sorghum', 'canola']);
@@ -23,18 +26,25 @@ const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 /**
  * PROTOTYPE ONLY: plays the field-plan server in the browser until the database is approved. It holds
- * every producer's fields, seasons, program records and enrollments in memory (a reload starts over)
- * and enforces the rules the real server will own: duplicate claims refused at attestation, no reopening a field an attested enrollment holds, and locking.
+ * every producer's fields, seasons and program records in memory (a reload starts over)
+ * and enforces the rules the real server will own, such as locking.
  * Everything handed out is a copy, as if it had come over the wire.
  */
 @Injectable({ providedIn: 'root' })
 export class InMemoryFieldPlanBackend implements FieldPlanBackend {
   private readonly registry = inject(ProgramRegistry);
+  private readonly tDiscApi = inject(TDiscApiService);
+  private readonly msal = inject(MsalService, { optional: true });
+
+  /** The signed-in originator, as the API records them: the UPN, and the display name for documents. */
+  private me(): { by: string; name: string } {
+    const account = this.msal?.instance.getActiveAccount() ?? this.msal?.instance.getAllAccounts()[0];
+    return { by: account?.username || 'you', name: account?.name?.trim() || account?.username || 'you' };
+  }
 
   private fields: ProducerField[] = [];
   private seasons: FieldSeason[] = [];
   private records: FieldProgramRecord[] = [];
-  private enrollments: ProgramEnrollment[] = [];
   private nextSeasonId = 1;
   private nextRecordId = 1;
 
@@ -47,7 +57,6 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
       fields,
       seasons,
       records: this.records.filter(r => seasonIds.has(r.seasonId)),
-      enrollments: this.enrollments.filter(e => e.customerId === customerId),
     });
   }
 
@@ -133,7 +142,6 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
     const current = this.records[i];
     if (current.status !== 'Locked' || !current.frozen) throw new Error('Only a confirmed CI can be unlocked.');
     if (!reason.trim()) throw new Error('Give a reason for reopening.');
-    if (this.heldBy(id)) throw new Error('The producer\'s attested enrollment holds this record, so it can\'t be reopened.');
 
     const season = this.seasons.find(s => s.id === current.seasonId)!;
     const def = this.registry.get(current.programKey);
@@ -178,12 +186,16 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
     return copy({ splitId: field.splitId, cropYear: season.year, cropGroup: null, windowFrom: `${season.year}-08-01`, windowTo: `${season.year + 1}-07-31`, tickets, others });
   }
 
-  /** As the server: the actual yield set, rescored (here: the program's freeze) and locked, the confirmed CI kept as the official result. */
-  async confirm(id: string, actualYield: number, ticketKeys: readonly string[]): Promise<FieldProgramRecord> {
+  /**
+   * As the server: the T-DISC rating checked against the tillage, the actual yield set, rescored (here: the
+   * program's freeze) and locked, the confirmed CI kept as the official result.
+   */
+  async confirm(id: string, actualYield: number, ticketKeys: readonly string[], review: ConfirmReview): Promise<FieldProgramRecord> {
     const i = this.indexOf(this.records, r => r.id === id, 'program record');
     const current = this.records[i];
     if (current.programKey !== FD_CIC_PROGRAM_KEY) throw new Error('Only a 45Z field is confirmed with its tickets.');
     if (current.official) throw new Error('This field\'s CI is already confirmed; unlock it to review it again.');
+    if (!review.recordkeepingReviewed) throw new Error('Confirm that the recordkeeping requirements were reviewed with the producer.');
     const keys = new Set(ticketKeys.map(k => k.trim()).filter(Boolean));
     if (!keys.size) throw new Error('Include at least one ticket.');
     const found = await this.fieldTickets(id);
@@ -199,65 +211,36 @@ export class InMemoryFieldPlanBackend implements FieldPlanBackend {
     const season = this.seasons.find(s => s.id === current.seasonId)!;
     const field = this.fields.find(f => f.fieldKey === season.fieldKey)!;
     const def = this.registry.get(current.programKey)!;
-    const data = { ...(current.data as object), actualYield };
+    const estimate = current.data as FdCicData;
+    // Only the rating worked out here counts, as on the server.
+    let data: FdCicData = { ...estimate, actualYield, tDiscRating: null, tDiscPasses: null };
+    let tDisc: OfficialResult['tDisc'] = null;
+    if (tDiscNeeded(estimate.tillage)) {
+      const passes = review.tDiscPasses ?? [];
+      if (!passes.length) throw new Error('Add the field\'s passes for T-DISC (No till and Reduced till need a T-DISC rating).');
+      const options = await this.tDiscApi.load();
+      const result = rateTDisc(options, passes);
+      if (!result) throw new Error(passesProblem(options, passes) ?? 'These passes can\'t be rated.');
+      const tillage = supportedTillage(estimate.tillage, result.designation);
+      data = { ...data, tillage, tDiscRating: result.rating, tDiscPasses: passes.map(p => ({ ...p })) };
+      tDisc = {
+        rating: result.rating, designation: TILLAGE_LABELS[TDISC_TILLAGE[result.designation]],
+        estimatedTillage: TILLAGE_LABELS[estimate.tillage], confirmedTillage: TILLAGE_LABELS[tillage],
+        version: options.label, windows: result.windows, passes: result.passes,
+      };
+    }
     const at = new Date().toISOString();
-    const frozen = { ...def.freeze(data, season, field), basis: 'Estimate' as const, lockedBy: 'you', lockedAt: at };
+    const me = this.me();
+    const frozen = { ...def.freeze(data, season, field), basis: 'Estimate' as const, lockedBy: me.by, lockedAt: at };
     this.records[i] = {
       ...current, data, status: 'Locked', frozen,
       official: {
         status: 'Documented', score: frozen.score, method: frozen.calculatorVersion, actualYield,
-        bushels: included.reduce((sum, t) => sum + (t.netBushels ?? 0), 0), tickets: included, documentedBy: 'you', documentedAt: at,
+        bushels: included.reduce((sum, t) => sum + (t.netBushels ?? 0), 0), tickets: included,
+        tDisc, recordkeepingAcknowledged: true, documentedBy: me.by, documentedByName: me.name, documentedAt: at,
       },
     };
     return copy(this.records[i]);
-  }
-
-  // ── Enrollments ─────────────────────────────────────────────────────────
-
-  async ensureEnrollment(programKey: string, customerId: number, year: number): Promise<ProgramEnrollment | undefined> {
-    const existing = this.enrollments.find(e => e.programKey === programKey && e.customerId === customerId && e.year === year && e.status !== 'Withdrawn');
-    const config = this.registry.get(programKey)?.enrollment;
-    if (existing || !config) return existing && copy(existing);
-    const created: ProgramEnrollment = {
-      key: crypto.randomUUID(), programKey,
-      customerId, year, status: 'Open', attestation: blankAttestation(config.statements),
-    };
-    this.enrollments.push(created);
-    return copy(created);
-  }
-
-  async updateAttestation(enrollment: ProgramEnrollment): Promise<ProgramEnrollment> {
-    const i = this.indexOf(this.enrollments, e => e.key === enrollment.key, 'enrollment');
-    if (this.enrollments[i].status !== 'Open') throw new Error('Only an open enrollment\'s attestation can change.');
-    this.enrollments[i] = { ...this.enrollments[i], attestation: copy(enrollment.attestation) };
-    return copy(this.enrollments[i]);
-  }
-
-  async attest(key: string, listed: readonly EnrollableRecord[]): Promise<ProgramEnrollment> {
-    const i = this.indexOf(this.enrollments, e => e.key === key, 'enrollment');
-    const e = this.enrollments[i];
-    if (e.status !== 'Open') throw new Error('Only an open enrollment can be attested.');
-    const statements = this.registry.get(e.programKey)?.enrollment?.statements ?? [];
-    // Checked against every producer's enrollments: a field can't be claimed twice.
-    const blockers = enrollmentBlockers(e, listed, this.enrollments, statements);
-    if (blockers.length > 0) throw new Error(`Before attesting: ${blockers.join('; ')}.`);
-    this.enrollments[i] = { ...e, status: 'Attested', attestedBy: 'you', attestedAt: new Date().toISOString(), snapshot: copy([...listed]) };
-    return copy(this.enrollments[i]);
-  }
-
-  async withdraw(key: string, reason: string): Promise<ProgramEnrollment> {
-    const i = this.indexOf(this.enrollments, e => e.key === key, 'enrollment');
-    if (!reason.trim()) throw new Error('Give a reason for withdrawing.');
-    if (this.enrollments[i].status !== 'Withdrawn') {
-      this.enrollments[i] = { ...this.enrollments[i], status: 'Withdrawn', withdrawnReason: reason.trim() };
-    }
-    return copy(this.enrollments[i]);
-  }
-
-  // ── Helpers ─────────────────────────────────────────────────────────────
-
-  private heldBy(recordId: string): ProgramEnrollment | undefined {
-    return this.enrollments.find(e => e.status === 'Attested' && (e.snapshot ?? []).some(r => r.recordId === recordId));
   }
 
   private indexOf<T>(items: T[], match: (item: T) => boolean, what: string): number {

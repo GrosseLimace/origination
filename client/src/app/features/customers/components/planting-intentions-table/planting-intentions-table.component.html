@@ -1,7 +1,7 @@
 
     <div class="w-full">
       @if (fieldPlanningEnabled) {
-        <!-- Program enrollments for the plan year: the producer attestation and the ID each program issues -->
+        <!-- Per-program summary for the plan year: the producer's fields, CI ladder and ledger -->
         @for (program of programs; track program.key) {
           <app-program-enrollment-card class="block [&:not(:empty)]:mb-3" [programKey]="program.key" [customerId]="customer().id" [year]="fieldPlanYear"
                                        [producer]="{ code: customer().scoularId ?? '', name: customer().name }" />

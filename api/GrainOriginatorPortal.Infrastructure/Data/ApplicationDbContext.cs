@@ -79,7 +79,6 @@ public class ApplicationDbContext : DbContext
     public DbSet<ProducerField> ProducerFields => Set<ProducerField>();
     public DbSet<ProducerFieldSeason> ProducerFieldSeasons => Set<ProducerFieldSeason>();
     public DbSet<FieldProgramRecord> FieldProgramRecords => Set<FieldProgramRecord>();
-    public DbSet<ProgramEnrollment> ProgramEnrollments => Set<ProgramEnrollment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -1440,6 +1439,13 @@ public class ApplicationDbContext : DbContext
             // Soft delete once, on the model, as for planting intentions (see the comment there).
             entity.HasQueryFilter(e => !e.IsDeleted);
 
+            // A field is on a crop row once. The service also refuses a second row of the same crop (FIELD_PLAN_FIELD_ON_ROW);
+            // this backs the same-row half of that rule in the database. Soft-deleted rows don't count.
+            entity.HasIndex(e => new { e.ProducerFieldId, e.PlantingIntentionId })
+                  .IsUnique()
+                  .HasFilter("[IsDeleted] = 0")
+                  .HasDatabaseName("UQ_ProducerFieldSeason_Field_PlantingIntention");
+
             entity.HasOne(e => e.Field)
                   .WithMany()
                   .HasForeignKey(e => e.ProducerFieldId)
@@ -1494,43 +1500,6 @@ public class ApplicationDbContext : DbContext
                   .IsUnique()
                   .HasFilter("[IsDeleted] = 0")
                   .HasDatabaseName("UQ_FieldProgramRecord_Season_Program");
-        });
-
-        modelBuilder.Entity<ProgramEnrollment>(entity =>
-        {
-            entity.ToTable("ProgramEnrollment", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
-            // NEWID() is a backstop; the service always sets the key.
-            entity.Property(e => e.EnrollmentKey).HasColumnName("EnrollmentKey").HasDefaultValueSql("NEWID()").IsRequired();
-            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
-            entity.Property(e => e.ProgramKey).HasColumnName("ProgramKey").HasMaxLength(30).IsRequired();
-            entity.Property(e => e.CropYear).HasColumnName("CropYear").IsRequired();
-            entity.Property(e => e.Status).HasColumnName("Status").HasMaxLength(10).IsRequired();
-            entity.Property(e => e.Attestation).HasColumnName("Attestation").IsRequired();
-            entity.Property(e => e.AttestedBy).HasColumnName("AttestedBy").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.AttestedAt).HasColumnName("AttestedAt").IsRequired(false);
-            entity.Property(e => e.Snapshot).HasColumnName("Snapshot").IsRequired(false);
-            entity.Property(e => e.HarvestCompleteAt).HasColumnName("HarvestCompleteAt").IsRequired(false);
-            entity.Property(e => e.WithdrawnReason).HasColumnName("WithdrawnReason").HasMaxLength(500).IsRequired(false);
-            entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
-            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
-            entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
-            entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
-
-            entity.HasOne(e => e.Customer)
-                  .WithMany()
-                  .HasForeignKey(e => e.CustomerId)
-                  .OnDelete(DeleteBehavior.NoAction)
-                  .HasConstraintName("FK_ProgramEnrollment_Customer_CustomerId");
-
-            entity.HasIndex(e => e.EnrollmentKey).IsUnique().HasDatabaseName("UQ_ProgramEnrollment_EnrollmentKey");
-            // At most one live enrollment per producer, program and year; withdrawn rows are history.
-            entity.HasIndex(e => new { e.CustomerId, e.ProgramKey, e.CropYear })
-                  .IsUnique()
-                  .HasFilter("[Status] IN ('Open', 'Attested')")
-                  .HasDatabaseName("UQ_ProgramEnrollment_Live");
-            entity.HasIndex(e => new { e.ProgramKey, e.CropYear, e.Status }).HasDatabaseName("IX_ProgramEnrollment_Program_Year");
         });
     }
 }

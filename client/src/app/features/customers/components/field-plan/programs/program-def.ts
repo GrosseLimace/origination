@@ -4,7 +4,7 @@ import { FieldProgramRecord, FieldSeason, FrozenProgramResult, ProducerField, Pr
 /**
  * A sustainability program a field can take part in (45Z first, others later). Everything that is
  * specific to one program lives behind this contract, so the field list, field dialog, record store
- * and enrollment card never change when a program is added: write a definition and an intake
+ * and 45Z summary card never change when a program is added: write a definition and an intake
  * component, and register the definition in SUSTAINABILITY_PROGRAMS.
  */
 export interface SustainabilityProgramDef<TData = any> {
@@ -36,18 +36,13 @@ export interface SustainabilityProgramDef<TData = any> {
    */
   previewNote?(data: TData, season: FieldSeason, field: ProducerField): string | null;
 
-  /**
-   * The field's production (45Z: acres × actual yield, in bushels), or null while unknown, shown on
-   * the enrollment card. Leave it out for a program that doesn't track production.
-   */
-  production?(data: TData, season: FieldSeason): number | null;
   /** The audit copy of inputs and outputs stored when the record is locked (45Z: on confirming). */
   freeze(data: TData, season: FieldSeason, field: ProducerField): Omit<FrozenProgramResult, 'basis' | 'lockedBy' | 'lockedAt'>;
 
   /** A one-line roll-up for a crop row, or null to show none (45Z: "CI 2,629 g/bu"). */
   rowSummary?(items: { season: FieldSeason; record: FieldProgramRecord<TData>; field: ProducerField }[], intention: { id: number; acres: number }): RowSummary | null;
   /**
-   * Each field's score and bushels, for the enrollment card's "bushels by CI" ladder (one per group, e.g.
+   * Each field's score and bushels, for the 45Z summary card's "bushels by CI" ladder (one per group, e.g.
    * 45Z's crop). Field level on purpose: opportunities set different CI targets, so a producer is never
    * collapsed into one average. Left out by a program that doesn't score fields.
    */
@@ -63,28 +58,22 @@ export interface SustainabilityProgramDef<TData = any> {
 
   /**
    * The program has an official, documented result apart from its planning estimate (45Z: an official CI).
-   * Its requirements are still being defined, so this only names it and says so; each record's
-   * `official` holds the result once there is one.
+   * Each record's `official` holds the result once there is one.
    */
   official?: {
     /** e.g. "45Z CI". */
     resultName: string;
-    /** Shown with the estimates, e.g. "Requirements for an official 45Z CI are being defined." */
+    /** Shown with the estimates, e.g. how a field gets its official CI. */
     requirementsNote: string;
   };
 
   /**
-   * Enrollment, for programs that have one (45Z): each field's ID for the year, derived from its split ID
-   * and the crop year, grouped per producer for attestation and withdrawal. A program
-   * without it records field data only.
+   * For programs that give each field an ID (45Z): derived from its split ID and the crop year, and shown
+   * in the per-producer card. A program without it records field data only.
    */
   enrollment?: {
     /** Enrollment IDs read `${idPrefix}-${cropYear}-${splitId}` (provisional; see enrollmentIdFor). */
     idPrefix: string;
-    /** What the producer confirms when attesting; keys are stored with the answers. */
-    statements: { key: string; label: string; short: string }[];
-    /** Shown once an enrollment is attested, e.g. what downstream records carry the ID. */
-    attestedNote: string;
   };
 }
 
@@ -94,7 +83,7 @@ export interface SustainabilityProgramDef<TData = any> {
  */
 export interface RowSummary {
   text: string;
-  /** The figure alone for tight spots, e.g. a collapsed enrollment card: "Corn 2,874". Falls back to `text`. */
+  /** The figure alone for tight spots, e.g. a collapsed 45Z summary card: "Corn 2,874". Falls back to `text`. */
   short?: string;
 }
 

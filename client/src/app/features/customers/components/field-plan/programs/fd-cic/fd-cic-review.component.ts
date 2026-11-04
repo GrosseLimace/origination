@@ -1,14 +1,22 @@
-import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { ChangeDetectionStrategy, Component, ElementRef, OnInit, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
+import { DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DialogComponent, DialogContentComponent, DialogDescriptionComponent, DialogFooterComponent, DialogHeaderComponent, DialogTitleComponent } from '@shared/components/dialog/dialog.component';
 import { FdCicApiService } from '@core/services/fd-cic-api.service';
 import { ToastService } from '@core/services/toast.service';
-import { FdCicData, FieldTicket, FieldTickets } from '@models';
+import { TDiscApiService } from '@core/services/tdisc-api.service';
+import { FdCicData, FieldTicket, FieldTickets, TDiscPass, TDiscResult, Tillage } from '@models';
 import { downloadCsv } from '@shared/utils/csv';
 import { FieldPlanStore } from '../../store/field-plan.store';
-import { COVER_LABELS, TILLAGE_LABELS, fdCicRequest } from './fd-cic.data';
-import { confirmedCiCsv, confirmedCiFileName } from './confirmed-ci-export';
+import { COVER_LABELS, TILLAGE_LABELS, fdCicRequest, tillageFromLabel } from './fd-cic.data';
+import { DESIGNATION_LABELS, designationOf, passesProblem, rateTDisc, supportedTillage, tDiscNeeded } from './fd-cic-tdisc';
+import { recordkeepingFor } from './fd-cic-recordkeeping';
+import { ledgerCsv, ledgerFileName } from './mass-balance-ledger';
+import { feedstockReport } from './feedstock-report';
+import { FeedstockReportService } from './feedstock-report.service';
+import { ReviewTicketTableComponent } from './review/review-ticket-table.component';
+import { ReviewRecordkeepingComponent } from './review/review-recordkeeping.component';
+import { ReviewTDiscComponent } from './review/review-tdisc.component';
 
 type TicketsState = { status: 'loading' } | { status: 'done'; data: FieldTickets } | { status: 'error'; message: string };
 
@@ -17,247 +25,53 @@ export function yieldFromTickets(bushels: number, acres: number | null): number 
   return acres && acres > 0 && bushels > 0 ? Math.round((bushels / acres) * 10) / 10 : null;
 }
 
-const TICK_REASON = 'Tick that you reviewed this with the producer after harvest.';
 /** The API's limit on the actual yield (ConfirmFieldProgramRecordRequest). */
 const MAX_YIELD = 1000;
 
+export const REVIEW_STEPS = [
+  { n: 1, label: 'Inputs' },
+  { n: 2, label: 'T-DISC' },
+  { n: 3, label: 'Tickets & yield' },
+  { n: 4, label: 'Recordkeeping' },
+  { n: 5, label: 'Confirm' },
+] as const;
+
 /**
- * The 45Z review: once a field has an estimated CI, the originator goes over its inputs and its CTRM tickets
- * (delivered under the split ID, for its crop and crop year, settled or not) with the producer. After harvest
- * they confirm: the actual yield (suggested from the included tickets ÷ acres, editable) and the tickets kept.
- * The server rescores, locks, and keeps the confirmed CI with its bushels and tickets: the official result the
- * Bins' CSV is built from.
+ * The 45Z review: once a field has an estimated CI, the originator steps through it with the producer after
+ * harvest. ① the calculator inputs; ② for no till or reduced till, the field's passes rated with USDA T-DISC
+ * (a rating that doesn't support the tillage steps it down, and the CI is rescored at it); ③ the CTRM tickets
+ * (delivered under the split ID, for its crop and crop year, settled or not) and the actual yield they give
+ * (included tickets ÷ acres, editable); ④ the records the producer keeps, acknowledged; ⑤ confirm. The server
+ * rescores, locks, and keeps the confirmed CI with its bushels and tickets: the official result the Biofuel
+ * Feedstock Report and the Mass Balance Ledger are built from.
  *
- * Laid out as three steps (check inputs, pick tickets, confirm) under one summary strip that answers the
- * question first: the estimate, the CI at the confirmed yield, and the bushels. Signals throughout: the
- * dialog sits under an OnPush parent.
+ * Each step's Next waits on that step's own check. A confirmed field opens on ⑤, every step read-only.
  */
 @Component({
   selector: 'app-fd-cic-review',
   standalone: true,
-  imports: [CommonModule, FormsModule, DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent],
+  imports: [DatePipe, DecimalPipe, FormsModule, DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent,
+    ReviewTicketTableComponent, ReviewRecordkeepingComponent, ReviewTDiscComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: '../../field-plan.css',
-  template: `
-@if (record() && season() && field()) {
-<app-dialog [isOpen]="true" (close)="close.emit()" size="xl" [scrollBody]="true" [closeOnBackdrop]="false">
-  <app-dialog-header>
-    <app-dialog-title>Review 45Z · {{ field()!.name }} · {{ season()!.year }}</app-dialog-title>
-    <app-dialog-description>{{ season()!.cropLabel }} · Split {{ field()!.splitId }} · {{ season()!.acres ?? 0 | number }} ac</app-dialog-description>
-  </app-dialog-header>
-
-  <app-dialog-content>
-    <!-- The answer first: the estimate, the CI at the confirmed yield, and the bushels behind it -->
-    <div class="grid gap-3 rounded-lg bg-gray-50 dark:bg-gray-800 px-4 py-3 sm:grid-cols-[1fr_auto_1fr_1fr] sm:items-center">
-      <div>
-        <div class="text-xs text-gray-500 dark:text-gray-400">Estimated CI</div>
-        <div class="text-xl font-semibold text-gray-900 dark:text-white">{{ estimatedCi() !== null ? (estimatedCi()! | number:'1.0-0') : '—' }} <span class="text-sm font-normal">g CO₂e/bu</span></div>
-        <div class="text-xs text-gray-500 dark:text-gray-400">at {{ expectedYield() !== null ? (expectedYield() | number:'1.0-1') + ' bu/ac expected' : 'no expected yield' }}</div>
-      </div>
-      <div class="hidden sm:block text-2xl text-gray-400" aria-hidden="true">→</div>
-      <div>
-        <div class="text-xs text-gray-500 dark:text-gray-400">{{ confirmed() ? 'Confirmed CI' : 'CI at actual yield' }}</div>
-        <div class="text-xl font-semibold" [class]="confirmed() ? 'text-scoular-green-accessible dark:text-scoular-green' : 'text-gray-900 dark:text-white'">
-          {{ finalCiText() }} @if (finalCi() !== null) { <span class="text-sm font-normal">g CO₂e/bu</span> }
-        </div>
-        <div class="text-xs text-gray-500 dark:text-gray-400">at {{ shownYield() !== null ? (shownYield() | number:'1.0-1') + ' bu/ac actual' : 'actual yield not set' }}</div>
-      </div>
-      <div>
-        <div class="text-xs text-gray-500 dark:text-gray-400">Bushels</div>
-        <div class="text-xl font-semibold text-gray-900 dark:text-white">{{ shownBushels() | number:'1.0-0' }} <span class="text-sm font-normal">bu</span></div>
-        <div class="text-xs text-gray-500 dark:text-gray-400">from {{ shownTicketCount() }} ticket{{ shownTicketCount() === 1 ? '' : 's' }}</div>
-      </div>
-    </div>
-
-    <div class="mt-5 grid gap-6 lg:grid-cols-[15rem_1fr]">
-      <!-- ① The inputs as entered -->
-      <section>
-        <h4 class="flex items-center gap-2 font-semibold text-gray-900 dark:text-white"><span class="ci-step">1</span> Check inputs</h4>
-        <dl class="mt-2 space-y-1.5 text-sm">
-          @for (row of inputRows(); track row[0]) {
-            <div class="flex justify-between gap-3"><dt class="text-gray-500 dark:text-gray-400">{{ row[0] }}</dt><dd class="text-right text-gray-900 dark:text-white">{{ row[1] }}</dd></div>
-          }
-        </dl>
-        <div class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ practices() }}</div>
-        @if (!confirmed()) {
-          <button type="button" class="mt-3 text-sm text-scoular-green-accessible dark:text-scoular-green bg-transparent border-0 p-0 hover:underline" (click)="close.emit()">Edit inputs</button>
-        }
-      </section>
-
-      <!-- ② The field's CTRM tickets -->
-      <section class="min-w-0">
-        <h4 class="flex items-center gap-2 font-semibold text-gray-900 dark:text-white"><span class="ci-step">2</span> {{ confirmed() ? 'Confirmed tickets' : 'Pick tickets' }}</h4>
-        @if (confirmed(); as o) {
-          <ng-container *ngTemplateOutlet="ticketTable; context: { $implicit: o.tickets ?? [], pick: false }" />
-        } @else {
-          @switch (tickets().status) {
-            @case ('loading') { <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">Reading the split's tickets from CTRM…</p> }
-            @case ('error') {
-              <p class="mt-2 text-sm text-amber-800 dark:text-amber-300">{{ ticketsError() }}
-                <button type="button" class="underline bg-transparent border-0 p-0 text-inherit" (click)="loadTickets()">Try again</button></p>
-            }
-            @default {
-              @if (ticketData(); as t) {
-                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400"
-                   [title]="'Delivered under ' + t.splitId + ', on a ' + t.cropYear + ' contract or BL-dated ' + (t.windowFrom | date:'MM/dd/yy') + ' to ' + (t.windowTo | date:'MM/dd/yy') + '. Untick any that are not this field\\'s, or add one from outside the crop year below.'">
-                  Under {{ t.splitId }} · {{ t.cropYear }} crop year · settled included <span class="cursor-help underline decoration-dotted">how?</span>
-                </p>
-                @if (rows().length) {
-                  <ng-container *ngTemplateOutlet="ticketTable; context: { $implicit: rows(), pick: true }" />
-                } @else {
-                  <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">No tickets under {{ t.splitId }} for this crop year yet.</p>
-                }
-                @if (addable().length) {
-                  <div class="mt-3">
-                    <button type="button" class="text-sm text-scoular-green-accessible dark:text-scoular-green underline bg-transparent border-0 p-0"
-                            [attr.aria-expanded]="showOthers()" (click)="showOthers.set(!showOthers())">
-                      {{ showOthers() ? 'Hide' : '+ Add a ticket from outside the crop year' }} ({{ addable().length }})
-                    </button>
-                    @if (showOthers()) {
-                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        {{ t.splitId }}'s other {{ t.cropGroup ?? '' }} tickets, newest first: on another year's contract, or BL-dated outside the window. Add one only if it's this crop year's.
-                      </p>
-                      <table class="mt-1 min-w-full text-sm">
-                        <tbody>
-                          @for (tk of addable(); track tk.ticketKey) {
-                            <tr class="border-t border-gray-100 dark:border-gray-800">
-                              <td class="py-1.5 pr-3 font-medium text-gray-900 dark:text-white">{{ tk.ticketNumber }}</td>
-                              <td class="py-1.5 pr-3 whitespace-nowrap">{{ tk.blDate | date:'MM/dd/yy' }}</td>
-                              <td class="py-1.5 pr-3 whitespace-nowrap">{{ tk.contractNumber ?? '—' }}</td>
-                              <td class="py-1.5 pr-3 text-right tabular-nums">{{ tk.netBushels !== null ? (tk.netBushels | number:'1.0-0') : '?' }}</td>
-                              <td class="py-1.5 pr-3 text-xs text-gray-500 dark:text-gray-400">{{ addNote(tk) }}</td>
-                              <td class="py-1.5 text-right">
-                                <button type="button" class="rounded border border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs bg-transparent hover:border-scoular-green-accessible disabled:opacity-40"
-                                        [disabled]="!canAdd(tk)" (click)="addTicket(tk.ticketKey)" [attr.aria-label]="'Add ticket ' + tk.ticketNumber">Add</button>
-                              </td>
-                            </tr>
-                          }
-                        </tbody>
-                      </table>
-                    }
-                  </div>
-                }
-              }
-            }
-          }
-        }
-      </section>
-    </div>
-
-    <ng-template #ticketTable let-rows let-pick="pick">
-      <div class="mt-2 overflow-x-auto">
-        <table class="min-w-full text-sm">
-          <thead>
-            <tr class="text-left text-xs text-gray-500 dark:text-gray-400">
-              @if (pick) {
-                <th class="py-1 pr-2 w-6"><input type="checkbox" [checked]="allIncluded()" [indeterminate]="someIncluded()" (change)="toggleAll()" aria-label="Include every ticket" /></th>
-              }
-              <th class="py-1 pr-3 font-medium">Ticket #</th>
-              <th class="py-1 pr-3 font-medium">BL date</th>
-              <th class="py-1 pr-3 font-medium">Location</th>
-              <th class="py-1 pr-3 font-medium">Contract</th>
-              <th class="py-1 pr-3 text-right font-medium">Net bu</th>
-              <th class="py-1 font-medium">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (tk of rows; track tk.ticketKey) {
-              <tr class="border-t border-gray-100 dark:border-gray-800" [class.opacity-40]="pick && excluded().has(tk.ticketKey)">
-                @if (pick) {
-                  <td class="py-1.5 pr-2"><input type="checkbox" [checked]="!excluded().has(tk.ticketKey)" (change)="toggle(tk.ticketKey)" [attr.aria-label]="'Include ticket ' + tk.ticketNumber" /></td>
-                }
-                <td class="py-1.5 pr-3 font-medium text-gray-900 dark:text-white">{{ tk.ticketNumber }}</td>
-                <td class="py-1.5 pr-3 whitespace-nowrap">{{ tk.blDate | date:'MM/dd/yy' }}</td>
-                <td class="py-1.5 pr-3">{{ tk.location ?? '—' }}</td>
-                <td class="py-1.5 pr-3 whitespace-nowrap">
-                  {{ tk.contractNumber ?? '—' }}
-                  <span class="ml-1 rounded px-1.5 py-0.5 text-[11px]" [title]="matchTitle(tk)"
-                        [class]="isAdded(tk) ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'">
-                    {{ matchLabel(tk) }}</span>
-                  @if (pick && tk.cropYearMatch === 'other') {
-                    <button type="button" class="ml-1 text-xs underline bg-transparent border-0 p-0 text-gray-500 dark:text-gray-400"
-                            (click)="removeAdded(tk.ticketKey)" [attr.aria-label]="'Remove added ticket ' + tk.ticketNumber">remove</button>
-                  }
-                </td>
-                <td class="py-1.5 pr-3 text-right tabular-nums">{{ tk.netBushels !== null ? (tk.netBushels | number:'1.0-0') : '?' }}</td>
-                <td class="py-1.5 whitespace-nowrap">
-                  @if (tk.settled) {
-                    <span class="rounded-full px-2 py-0.5 text-xs bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">Settled{{ tk.settledDate ? ' ' + (tk.settledDate | date:'MM/dd') : '' }}</span>
-                  } @else {
-                    <span class="rounded-full px-2 py-0.5 text-xs bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200">Open</span>
-                  }
-                </td>
-              </tr>
-            }
-          </tbody>
-          <tfoot>
-            <tr class="border-t-2 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white">
-              @if (pick) { <td></td> }
-              <td class="py-1.5 pr-3 text-xs text-gray-500 dark:text-gray-400" colspan="4">
-                {{ pick ? included().length + ' of ' + rows.length + ' included' : rows.length + ' ticket' + (rows.length === 1 ? '' : 's') }}
-              </td>
-              <td class="py-1.5 pr-3 text-right font-semibold tabular-nums">{{ (pick ? includedBushels() : sumBushels(rows)) | number:'1.0-0' }}</td>
-              <td></td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    </ng-template>
-
-    <!-- ③ Confirm, or what was confirmed -->
-    <section class="mt-6 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
-      <h4 class="flex items-center gap-2 font-semibold text-gray-900 dark:text-white"><span class="ci-step">3</span> {{ confirmed() ? 'Confirmed' : 'Confirm after harvest' }}</h4>
-      @if (confirmed(); as o) {
-        <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">
-          Confirmed {{ o.documentedAt | date:'MM/dd/yy' }} by {{ o.documentedBy }} with {{ o.method }}. These tickets are the field's confirmed bushels.
-        </p>
-        @if (producer()) {
-          <button type="button" class="mt-2 h-8 rounded-md px-3 text-sm border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible"
-                  (click)="downloadCsv()">Download confirmed CI (CSV)</button>
-        }
-      } @else {
-        <div class="mt-2 flex flex-wrap items-start gap-x-8 gap-y-3 text-sm">
-          <label class="block">
-            <span class="text-gray-700 dark:text-gray-300">Actual yield (bu/ac)</span>
-            <input type="number" min="0" max="1000" step="0.1" class="ci-input ci-compact mt-1 !w-28 text-right" [ngModel]="actualYield()" (ngModelChange)="yieldTyped.set($event)" />
-            <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">
-              @if (suggestedYield() !== null) { Tickets ÷ acres: {{ suggestedYield() | number:'1.0-1' }} }
-              @if (yieldTyped() !== null && suggestedYield() !== null) {
-                · <button type="button" class="bg-transparent border-0 p-0 underline text-inherit" (click)="yieldTyped.set(null)">reset</button>
-              }
-            </span>
-          </label>
-          <label class="flex max-w-md items-start gap-2 pt-6 text-gray-700 dark:text-gray-300">
-            <input type="checkbox" class="mt-0.5" [checked]="reviewed()" (change)="reviewed.set(!reviewed())" />
-            Reviewed these inputs and tickets with the producer after harvest.
-          </label>
-        </div>
-      }
-    </section>
-  </app-dialog-content>
-
-  <app-dialog-footer>
-    @if (!confirmed() && footerReason(); as why) {
-      <span class="mr-auto self-center text-xs text-gray-500 dark:text-gray-400">{{ why }}</span>
-    }
-    <button type="button" class="h-9 rounded-md px-4 text-sm text-gray-700 dark:text-gray-200 bg-transparent border border-gray-300 dark:border-gray-600" (click)="close.emit()">Close</button>
-    @if (!confirmed()) {
-      <button type="button" class="h-9 rounded-md px-4 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-50 border-0"
-              [disabled]="!!blocker() || saving()" (click)="confirm()">{{ saving() ? 'Confirming…' : 'Confirm CI' }}</button>
-    }
-  </app-dialog-footer>
-</app-dialog>
-}
-`,
+  templateUrl: './fd-cic-review.component.html',
 })
 export class FdCicReviewComponent implements OnInit {
   private readonly store = inject(FieldPlanStore);
   private readonly fdCic = inject(FdCicApiService);
   private readonly toast = inject(ToastService);
+  private readonly reports = inject(FeedstockReportService);
+  private readonly tDiscApi = inject(TDiscApiService);
 
   readonly recordId = input.required<string>();
-  /** For the CSV: the producer's CTRM code and name. Without it the download is on the enrollment card only. */
-  readonly producer = input<{ code: string; name: string } | null>(null);
+  /** The producer's CTRM code and name, for the report and ledger. Without it they are on the program card only. */
+  readonly producer = input<{ code: string; name: string; primaryContact?: string | null } | null>(null);
   readonly close = output<void>();
+
+  readonly steps = REVIEW_STEPS;
+  /** Confirm: the last step. */
+  readonly lastStep = REVIEW_STEPS.length;
+  readonly step = signal(1);
 
   readonly record = computed(() => this.store.record(this.recordId()));
   readonly season = computed(() => this.store.season(this.record()?.seasonId ?? ''));
@@ -266,6 +80,44 @@ export class FdCicReviewComponent implements OnInit {
   /** The confirmed CI, once there is one. */
   readonly confirmed = computed(() => (this.record()?.official?.status === 'Documented' ? this.record()!.official! : null));
 
+  // ── ② T-DISC ──
+  /** The tillage on the estimate. Once confirmed, the data holds the confirmed tillage; the official result keeps both. */
+  readonly estimateTillage = computed((): Tillage =>
+    tillageFromLabel(this.confirmed()?.tDisc?.estimatedTillage) ?? this.data()?.tillage ?? 'NoneOfTheAbove');
+  readonly needsTDisc = computed(() => tDiscNeeded(this.estimateTillage()));
+  /** USDA T-DISC's windows and implements; loaded only for a field that needs them. */
+  readonly tDiscOptions = computed(() => (this.needsTDisc() && !this.confirmed() ? this.tDiscApi.options() : null));
+  readonly tDiscOptionsError = computed(() => this.tDiscApi.error());
+  /** The field's passes, saved with its data as they're entered. */
+  readonly tDiscPasses = signal<TDiscPass[]>([]);
+  /** The worksheet: the server's once confirmed, else the live one (the server rates the passes again at confirm). */
+  readonly tDiscResult = computed((): TDiscResult | null => {
+    const t = this.confirmed()?.tDisc;
+    if (this.confirmed()) {
+      return t?.windows && t.passes
+        ? { rating: t.rating, designation: designationOf(tillageFromLabel(t.designation) ?? 'NoneOfTheAbove'), windows: t.windows, passes: t.passes }
+        : null;
+    }
+    const options = this.tDiscOptions();
+    return options ? rateTDisc(options, this.tDiscPasses()) : null;
+  });
+  readonly tDiscRating = computed(() => this.tDiscResult()?.rating ?? null);
+  readonly designationText = computed(() => {
+    const r = this.tDiscResult();
+    return r ? DESIGNATION_LABELS[r.designation].toLowerCase() : '';
+  });
+  /** The tillage the CI is confirmed at: the estimate's, unless the rating only supports less. */
+  readonly confirmedTillage = computed((): Tillage => {
+    if (this.confirmed()) return this.data()?.tillage ?? 'NoneOfTheAbove';
+    const r = this.tDiscResult();
+    return this.needsTDisc() && r ? supportedTillage(this.estimateTillage(), r.designation) : this.estimateTillage();
+  });
+  readonly tillageStepsDown = computed(() => this.confirmedTillage() !== this.estimateTillage());
+  /** Reduced till rated as no till. Never stepped up: no till also takes a 4-of-5-years promise the producer didn't make. */
+  readonly tDiscSupportsNoTill = computed(() =>
+    !this.confirmed() && this.estimateTillage() === 'ReducedTill' && this.tDiscResult()?.designation === 'NT');
+
+  // ── ③ Tickets ──
   readonly tickets = signal<TicketsState>({ status: 'loading' });
   readonly ticketData = computed(() => { const t = this.tickets(); return t.status === 'done' ? t.data : null; });
   readonly ticketsError = computed(() => { const t = this.tickets(); return t.status === 'error' ? t.message : ''; });
@@ -289,16 +141,29 @@ export class FdCicReviewComponent implements OnInit {
   /** The tickets the header box ticks: those that can be counted. */
   private readonly countable = computed(() => this.rows().filter(t => this.canCount(t)));
   readonly allIncluded = computed(() => this.countable().length > 0 && this.countable().every(t => !this.excluded().has(t.ticketKey)));
+  /** Whether any ticket can be counted; with none, the header box is off. */
+  readonly anyCountable = computed(() => this.countable().length > 0);
   readonly someIncluded = computed(() => !this.allIncluded() && this.included().length > 0);
 
+  // ── ③ Tickets and yield, ④ recordkeeping ──
   /** What the originator typed; null follows the tickets. */
-  readonly yieldTyped = signal<number | null>(null);
+  /** What the originator typed: undefined until they type (the suggestion shows), null once they clear the box. */
+  readonly yieldTyped = signal<number | null | undefined>(undefined);
   readonly suggestedYield = computed(() => yieldFromTickets(this.includedBushels(), this.season()?.acres ?? null));
-  readonly actualYield = computed(() => this.yieldTyped() ?? this.suggestedYield());
+  readonly actualYield = computed(() => { const typed = this.yieldTyped(); return typed === undefined ? this.suggestedYield() : typed; });
+  readonly recordkeeping = computed(() => {
+    const d = this.data();
+    return d ? recordkeepingFor(d, this.confirmedTillage()) : [];
+  });
   readonly reviewed = signal(false);
   readonly saving = signal(false);
 
   ngOnInit(): void {
+    this.tDiscPasses.set([...(this.data()?.tDiscPasses ?? [])]);
+    if (this.confirmed()) {
+      this.step.set(this.lastStep);
+      return;
+    }
     void this.loadTickets();
   }
 
@@ -350,19 +215,6 @@ export class FdCicReviewComponent implements OnInit {
     this.excluded.update(s => { const next = new Set(s); next.delete(key); return next; });
   }
 
-  isAdded(t: FieldTicket): boolean {
-    return t.cropYearMatch === 'other' || t.cropYearMatch === 'added';
-  }
-
-  matchLabel(t: FieldTicket): string {
-    return this.isAdded(t) ? 'added' : t.cropYearMatch === 'contract' ? 'contract yr' : 'date';
-  }
-
-  matchTitle(t: FieldTicket): string {
-    if (this.isAdded(t)) return `Added by the originator${t.note ? ': ' + t.note.toLowerCase() : ''}`;
-    return t.cropYearMatch === 'contract' ? 'Matched by the contract\'s crop year' : 'Matched by its BL date in the crop year window';
-  }
-
   /** Why an other ticket is outside the crop year, and why it can't be added when it can't. */
   addNote(t: FieldTicket): string {
     if (t.confirmedFor != null) return `Already in the ${t.confirmedFor} confirmed CI`;
@@ -370,46 +222,76 @@ export class FdCicReviewComponent implements OnInit {
     return t.note ?? '';
   }
 
-  sumBushels(rows: readonly { netBushels: number | null }[]): number {
-    return rows.reduce((sum, t) => sum + (t.netBushels ?? 0), 0);
+  /** Loads USDA T-DISC again after it failed; the pass table appears once it arrives. */
+  retryTDisc(): void {
+    void this.tDiscApi.load().catch(() => undefined);
+  }
+
+  /** Keeps the passes, and saves them with the field's data so closing the review doesn't lose them. */
+  setPasses(passes: TDiscPass[]): void {
+    this.tDiscPasses.set(passes);
+    const d = this.data();
+    if (d && !this.confirmed()) this.store.updateRecord(this.recordId(), { ...d, tDiscPasses: passes });
+  }
+
+  /** The producer's promise that the field meets the no-till rules, ticked before switching to No till here. */
+  readonly noTillPromised = signal(false);
+
+  /** The no-till note sits below the worksheet: brought into view when it appears, so it isn't missed. */
+  private readonly noTillNote = viewChild<ElementRef<HTMLElement>>('noTillNote');
+  private readonly showNoTillNote = effect(() => this.noTillNote()?.nativeElement.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }));
+
+  /**
+   * Changes the field's tillage to No till from the review, once the passes rate No till and the producer meets the
+   * no-till rules (no till 4 of 5 years). The estimate and the recordkeeping follow; the passes are kept.
+   */
+  switchToNoTill(): void {
+    const d = this.data();
+    if (!d || !this.tDiscSupportsNoTill() || !this.noTillPromised()) return;
+    this.store.updateRecord(this.recordId(), { ...d, tillage: 'NoTill', tDiscPasses: this.tDiscPasses() });
+    this.noTillPromised.set(false);
+    this.toast.success(`${this.field()?.name ?? 'Field'}: tillage changed to No till.`);
+  }
+
+  tillageLabel(t: Tillage): string {
+    return TILLAGE_LABELS[t];
   }
 
   readonly expectedYield = computed(() => this.data()?.expectedYield ?? null);
 
-  /** The inputs that drive the CI. The actual yield isn't here: the review sets it. */
+  /** The calculator inputs as entered. The actual yield isn't here: the review sets it. */
   readonly inputRows = computed((): [string, string][] => {
-    const d = this.data();
-    if (!d) return [];
+    const d = this.data(), f = this.field(), s = this.season();
+    if (!d || !f || !s) return [];
     const n = (v: number | null, unit: string) => (v === null ? 'not entered' : `${v.toLocaleString()} ${unit}`);
+    const manure = d.manure.length ? `${d.manure.length} application${d.manure.length > 1 ? 's' : ''}` : 'None';
     return [
+      ['Crop', s.cropLabel],
+      ['Location', `${f.county ?? '—'} County, ${f.state ?? '—'}`],
+      ['Acres', n(s.acres, 'ac')],
       ['Expected yield', n(d.expectedYield, 'bu/ac')],
-      ['Nitrogen', n(d.syntheticN, 'lb N/ac')],
-      ['Inhibitor', `${Math.round(d.niFraction * 100)}% of N`],
+      ['Synthetic nitrogen', n(d.syntheticN, 'lb N/ac')],
+      ['Nitrification inhibitor', `${Math.round(d.niFraction * 100)}% of N`],
+      ['Cover crop', COVER_LABELS[d.coverCrop]],
+      ['Tillage', TILLAGE_LABELS[d.tillage]],
+      ['Manure', manure],
     ];
-  });
-
-  /** Tillage, cover crop and manure on one line. */
-  readonly practices = computed(() => {
-    const d = this.data();
-    if (!d) return '';
-    const manure = d.manure.length ? `${d.manure.length} manure application${d.manure.length > 1 ? 's' : ''}` : 'no manure';
-    return `${TILLAGE_LABELS[d.tillage]} · ${COVER_LABELS[d.coverCrop]} · ${manure}`;
   });
 
   /** The planning estimate: the inputs scored at the expected yield (projected), whatever actual yield is set. */
   readonly estimatedCi = computed(() => {
     const r = this.record(), s = this.season(), f = this.field();
     if (!r || !s || !f) return null;
-    const req = fdCicRequest({ ...(r.data as FdCicData), actualYield: null }, s, f);
+    const req = fdCicRequest({ ...(r.data as FdCicData), actualYield: null, tillage: this.estimateTillage() }, s, f);
     const state = req ? this.fdCic.score(s.year, req) : null;
     return state?.status === 'done' && state.score.scorable ? state.score.ci : null;
   });
 
-  /** The live score at the review's actual yield (the server rescores the same way on confirm). */
+  /** The live score at the review's actual yield and confirmed tillage (the server rescores the same way). */
   private readonly rescore = computed(() => {
     const d = this.data(), s = this.season(), f = this.field(), y = this.actualYield();
     if (!d || !s || !f || !y || y <= 0) return null;
-    const req = fdCicRequest({ ...d, actualYield: y }, s, f);
+    const req = fdCicRequest({ ...d, actualYield: y, tillage: this.confirmedTillage() }, s, f);
     return req ? this.fdCic.score(s.year, req) : null;
   });
 
@@ -435,44 +317,113 @@ export class FdCicReviewComponent implements OnInit {
   readonly shownBushels = computed(() => this.confirmed()?.bushels ?? this.includedBushels());
   readonly shownTicketCount = computed(() => this.confirmed()?.tickets?.length ?? this.included().length);
 
-  /** Why Confirm is off, in order; null when it can go. */
+  /** ⑤'s summary of what is (or was) confirmed. */
+  readonly summaryRows = computed((): [string, string][] => {
+    const o = this.confirmed();
+    const est = this.estimatedCi();
+    const live = this.tDiscResult();
+    const tDisc = o ? o.tDisc ?? null : this.needsTDisc() && live
+      ? { rating: live.rating, designation: '', estimatedTillage: TILLAGE_LABELS[this.estimateTillage()], confirmedTillage: TILLAGE_LABELS[this.confirmedTillage()] }
+      : null;
+    const tillage = tDisc && tDisc.estimatedTillage !== tDisc.confirmedTillage
+      ? `${tDisc.confirmedTillage} (estimated as ${tDisc.estimatedTillage})` : tDisc?.confirmedTillage ?? TILLAGE_LABELS[this.estimateTillage()];
+    const yieldShown = this.shownYield();
+    return [
+      ['Estimated CI', est !== null ? `${Math.round(est).toLocaleString()} g CO₂e/bu` : '—'],
+      [o ? 'Confirmed CI' : 'CI to confirm', this.finalCi() !== null ? `${this.finalCiText()} g CO₂e/bu` : this.finalCiText()],
+      ['Actual yield', yieldShown !== null ? `${yieldShown.toLocaleString()} bu/ac` : '—'],
+      ['Bushels', `${Math.round(this.shownBushels()).toLocaleString()} bu from ${this.shownTicketCount()} ticket${this.shownTicketCount() === 1 ? '' : 's'}`],
+      ['Tillage', tillage],
+      ...(tDisc ? [['T-DISC rating', tDisc.rating.toFixed(3)] as [string, string]] : []),
+    ];
+  });
+
+  /** Why a step isn't done yet, or null when it is. */
+  stepBlocker(n: number): string | null {
+    switch (n) {
+      case 1: {
+        const r = this.record(), s = this.season(), f = this.field();
+        return r && s && f && fdCicRequest(r.data as FdCicData, s, f) ? null : 'This field\'s inputs are incomplete; edit them first.';
+      }
+      case 2:
+        if (!this.needsTDisc()) return null;
+        if (!this.tDiscOptions()) return this.tDiscOptionsError() || 'Waiting for USDA T-DISC.';
+        return passesProblem(this.tDiscOptions()!, this.tDiscPasses());
+      case 3: {
+        if (this.tickets().status !== 'done') return 'Waiting for the tickets.';
+        if (!this.included().length) return 'Include at least one ticket.';
+        const unweighed = this.included().find(t => t.netBushels === null);
+        if (unweighed) return `Ticket ${unweighed.ticketNumber} has no bushel figure; leave it out.`;
+        const counted = this.included().find(t => t.confirmedFor != null);
+        if (counted) return `Ticket ${counted.ticketNumber} is already in the ${counted.confirmedFor} confirmed CI; leave it out.`;
+        const y = this.actualYield();
+        if (!y || y <= 0) return 'Enter the actual yield.';
+        if (y > MAX_YIELD) return `An actual yield over ${MAX_YIELD} bu/ac can't be right; check it.`;
+        const st = this.rescore();
+        return st?.status === 'done' && st.score.scorable ? null : 'Waiting for the CI at this yield.';
+      }
+      case 4:
+        return this.reviewed() ? null : 'Tick that you reviewed the record requirements with the producer.';
+      default:
+        return null;
+    }
+  }
+
+  /** A step shows as done once it and every step before it are. */
+  isDone(n: number): boolean {
+    return !!this.confirmed() || (n < this.lastStep && this.canOpen(n + 1));
+  }
+
+  /** A step opens once every step before it is done; a confirmed review opens any step. */
+  canOpen(n: number): boolean {
+    if (n < 1 || n > REVIEW_STEPS.length) return false;
+    if (this.confirmed()) return true;
+    for (let i = 1; i < n; i++) if (this.stepBlocker(i) !== null) return false;
+    return true;
+  }
+
+  /** Why Confirm is off: the first unfinished step's reason; null when it can go. */
   readonly blocker = computed((): string | null => {
-    if (this.tickets().status !== 'done') return 'Waiting for the tickets.';
-    if (!this.included().length) return 'Include at least one ticket.';
-    const unweighed = this.included().find(t => t.netBushels === null);
-    if (unweighed) return `Ticket ${unweighed.ticketNumber} has no bushel figure; leave it out.`;
-    const counted = this.included().find(t => t.confirmedFor != null);
-    if (counted) return `Ticket ${counted.ticketNumber} is already in the ${counted.confirmedFor} confirmed CI; leave it out.`;
-    const y = this.actualYield();
-    if (!y || y <= 0) return 'Enter the actual yield.';
-    if (y > MAX_YIELD) return `An actual yield over ${MAX_YIELD} bu/ac can't be right; check it.`;
-    const st = this.rescore();
-    if (st?.status !== 'done' || !st.score.scorable) return 'Waiting for the CI at this yield.';
-    if (!this.reviewed()) return TICK_REASON;
+    for (let i = 1; i < REVIEW_STEPS.length; i++) {
+      const why = this.stepBlocker(i);
+      if (why) return why;
+    }
     return null;
   });
 
-  /** The reason beside the Confirm button. The review tick explains itself, so it isn't repeated. */
-  readonly footerReason = computed(() => {
-    const b = this.blocker();
-    return b === TICK_REASON ? null : b;
-  });
+  next(): void {
+    if (this.canOpen(this.step() + 1)) this.step.update(s => s + 1);
+  }
+
+  back(): void {
+    this.step.update(s => Math.max(1, s - 1));
+  }
 
   async confirm(): Promise<void> {
     if (this.blocker() || this.saving()) return;
     this.saving.set(true);
     try {
-      const done = await this.store.confirm(this.recordId(), this.actualYield()!, this.included().map(t => t.ticketKey));
+      const done = await this.store.confirm(this.recordId(), this.actualYield()!, this.included().map(t => t.ticketKey), {
+        tDiscPasses: this.needsTDisc() ? this.tDiscPasses() : null,
+        recordkeepingReviewed: this.reviewed(),
+      });
       if (done) this.toast.success(`${this.field()!.name}: CI confirmed.`);
     } finally {
       this.saving.set(false);
     }
   }
 
-  downloadCsv(): void {
+  async generateReport(): Promise<void> {
     const p = this.producer(), r = this.record(), s = this.season(), f = this.field();
     if (!p || !r || !s || !f) return;
-    const csv = confirmedCiCsv(p, [{ field: f, season: s, record: r, enrollmentId: this.store.enrollmentIdOf(r) }]);
-    downloadCsv(csv, confirmedCiFileName(p.code, s.year, new Date()));
+    const report = feedstockReport({ producer: p, field: f, season: s, record: r, enrollmentId: this.store.enrollmentIdOf(r), generatedAt: new Date() });
+    if (report) await this.reports.download(report);
+  }
+
+  downloadLedger(): void {
+    const p = this.producer(), r = this.record(), s = this.season(), f = this.field();
+    if (!p || !r || !s || !f) return;
+    const csv = ledgerCsv(p, [{ field: f, season: s, record: r, enrollmentId: this.store.enrollmentIdOf(r) }]);
+    downloadCsv(csv, ledgerFileName(p.code, s.year, new Date()));
   }
 }

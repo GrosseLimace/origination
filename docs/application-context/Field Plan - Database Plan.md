@@ -13,7 +13,7 @@
 >    the screens stay hidden (`fieldPlanningEnabled` / `carbonIntensityEnabled` off) until a separate go-live
 >    release turns them on with `fieldPlanBackend: 'api'`.
 > 3. **DBA option.** If the DBA would rather apply QA or PROD by hand, [scripts/field-plan-AddFieldPlanTables.sql](../../scripts/field-plan-AddFieldPlanTables.sql)
->    creates the tables and records the migration, so the deploy skips it. Run it with `sqlcmd -b` (or `SET XACT_ABORT ON` first) so a failed statement stops it before the migration is recorded.
+>    creates the tables and records the migration, so the deploy skips it (it still creates `ProgramEnrollment`; run [scripts/field-plan-AfterAddFieldPlanTables.sql](../../scripts/field-plan-AfterAddFieldPlanTables.sql) after it, or let the deploy apply `DropProgramEnrollment` and `AddFieldSeasonUniqueRow`). Run it with `SET XACT_ABORT ON` first (the follow-up script sets it itself) so a failed statement rolls back before the migration is recorded; `sqlcmd -b` alone doesn't do that.
 
 > **As-built notes (after approval).** Two changes on 2026-10-29 for go-live (H. Collins with the business). Neither touches an existing table:
 > 1. **Split IDs typed by hand.** CTRM's splits query may not be ready for go-live, so `ProducerField` gained `SplitSource` (`Manual` or `Ctrm`). The migration had never been applied anywhere, so it was regenerated as `20261029193914_AddFieldPlanTables` rather than adding a second one, and the review SQL was regenerated with it.
@@ -21,11 +21,13 @@
 >
 > Two endpoints were added: `GET records/{id}/tickets` and `POST records/{id}/confirm`.
 >
-> 3. **Harvest complete removed (2026-10-30).** Confirming each field replaced the enrollment-wide "Mark harvest complete", so `records/{id}/lock` and `enrollments/{key}/harvest-complete` were removed; a record is now locked only by confirming it. `ProgramEnrollment.HarvestCompleteAt` stays in the approved schema as a nullable column nothing writes, rather than reopening the migration.
+> 3. **Harvest complete removed (2026-10-30).** Confirming each field replaced the enrollment-wide "Mark harvest complete", so `records/{id}/lock` and `enrollments/{key}/harvest-complete` were removed; a record is now locked only by confirming it.
+> 4. **Enrollment dropped (2026-11-03).** 45Z only calculates and confirms a CI; no producer attestation is captured. `dbo.ProgramEnrollment` and its routes (`enrollments`, `/attestation`, `/attest`, `/withdraw`) are gone, dropped by migration `20261103215107_DropProgramEnrollment` (the optional DBA script [scripts/field-plan-AfterAddFieldPlanTables.sql](../../scripts/field-plan-AfterAddFieldPlanTables.sql) applies it and the next migration). `20261029193914_AddFieldPlanTables` is unchanged because it was already deployed to DEV and QA, so its script still creates the table and the drop follows.
+> 5. **One field per crop row (2026-11-03).** Migration `20261103220955_AddFieldSeasonUniqueRow` adds `UQ_ProducerFieldSeason_Field_PlantingIntention`, a unique index on `ProducerFieldSeason (ProducerFieldId, PlantingIntentionId)` with soft-deleted rows excluded. It backs the service's `FIELD_PLAN_FIELD_ON_ROW` check in the database; the service still also refuses a second row of the same crop, which the index can't express.
 
 ## What this is
 
-Originators can now plan a producer's crop year field by field and enroll those fields in sustainability programs:
+Originators can now plan a producer's crop year field by field and calculate and confirm each field's CI for sustainability programs:
 - **45Z:** a carbon-intensity (CI) estimate from USDA's FD-CIC calculator.
 - **Later programs:** the tables are program-neutral (a program key plus its own JSON), so another program needs no schema change. 45Z is the only approved program; GrainCraft was prototyped and removed on 2026-10-30.
 
@@ -34,7 +36,7 @@ Today all of it lives in the browser and disappears on reload. These tables keep
 A **field** is one of the producer's CTRM **split IDs**, e.g. `TATOB43` "JARBOE WEST". Producers already set up a split per field, and tickets are delivered under it. The design and business rules are in [docs/45z/README.md](../45z/README.md).
 
 **Footprint:**
-- 4 new tables in `dbo`, in `ApplicationDbContext`.
+- 3 tables in `dbo`, in `ApplicationDbContext` (a fourth, `ProgramEnrollment`, was dropped on 2026-11-03).
 - No changes to existing tables, and no stored procedures.
 - Everything ships through the normal migration pipeline.
 
@@ -48,10 +50,9 @@ dbo.Customer (existing)
    │        └── ② ProducerFieldSeason ── that field on one crop row (planting intention) for a year
    │                 │                      └── dbo.ProducerPlantingIntentions (existing)
    │                 └── ③ FieldProgramRecord ── that season's inputs for one program (45Z)
-   │
-   └── ④ ProgramEnrollment ─────── the producer in one program for one crop year
-                                      (attestation, withdrawal)
 ```
+
+A field is "in 45Z" when it has a 45Z `FieldProgramRecord`. There is no enrollment, attestation or withdrawal: 45Z here only calculates and confirms a CI, and a confirmed CI changes only by unlocking it with a reason.
 
 **Conventions** (the same as planting intentions and bin sites):
 - `int` identity keys.
@@ -121,26 +122,9 @@ dbo.Customer (existing)
 - **Locked rows are never changed or removed.** To change one, the user unlocks it with a reason, which is kept in `Reopened`.
 - **Why JSON:** each program asks for different inputs, and USDA changes the 45Z inputs between versions. JSON lets a new version or program arrive without a migration. Reporting reads the frozen result, which is the same shape for every version (CI, bushels, version label).
 
-### ④ `dbo.ProgramEnrollment`: a producer in a program for a crop year
+### Enrollment IDs are derived
 
-| Column | Type | What it is |
-|---|---|---|
-| `Id` (PK) | `int` identity | |
-| `EnrollmentKey` | `uniqueidentifier`, default `NEWID()`, unique | The ID the app uses (like `ProducerBinSite.SiteKey`) |
-| `CustomerId` | `bigint` → `dbo.Customer` | |
-| `ProgramKey` | `nvarchar(30)` | |
-| `CropYear` | `int` | |
-| `Status` | `nvarchar(10)` | `Open`, `Attested` or `Withdrawn` |
-| `Attestation` | `nvarchar(max)` JSON | Signer, date, eSign/paper, document reference, confirmations |
-| `AttestedBy`, `AttestedAt` | NULL | |
-| `Snapshot` | `nvarchar(max)` JSON NULL | The fields listed when the producer attested |
-| `HarvestCompleteAt` | `datetime2` NULL | Unused since 2026-10-30 (see as-built note 3) |
-| `WithdrawnReason` | `nvarchar(500)` NULL | |
-| Audit | | |
-
-- **At most one live enrollment per producer, program and year.** A unique index on (`CustomerId`, `ProgramKey`, `CropYear`) covers only `Open` and `Attested` rows.
-- **Withdrawn rows are kept as history.** Re-enrolling creates a new row.
-- **The per-field enrollment ID is not stored.** It is derived as `CI-{crop year}-{split ID}`, e.g. `CI-2026-TATOB43`, so nobody types it and tickets can resolve it from the split ID and crop year they already carry. See [Enrollment identifier](../45z/README.md#enrollment-identifier); whether auditors need it stored is still open.
+The per-field enrollment ID is not stored. It is derived as `CI-{crop year}-{split ID}`, e.g. `CI-2026-TATOB43`, so nobody types it and tickets can resolve it from the split ID and crop year they already carry. See [Enrollment identifier](../45z/README.md#enrollment-identifier); whether auditors need it stored is still open.
 
 ---
 
@@ -149,13 +133,11 @@ dbo.Customer (existing)
 The browser applies these today. Once the tables exist, the API owns them:
 
 1. **A split is one producer's field.** Adding a split that another producer already holds is refused.
-2. **No duplicate claims.** A field can't be in two live enrollments of one program and year. Rule 1 and table ④'s unique index make this structural, and the API checks it again at attestation.
-3. **Locking rescores on the server.**
+2. **Locking rescores on the server.**
    - Confirming a field after harvest locks it. For 45Z, the API recomputes the CI with its own USDA calculator. It stores that result together with the calculator version, workbook hash and formula fingerprint, and never uses the browser's number.
    - A locked estimate is never rescored under a later USDA version.
-4. **A locked record can't be edited.** It must be unlocked with a reason first.
-5. **No unlocking a field an attested enrollment holds.**
-6. **A CI is an estimate until it is confirmed.** The frozen result is stamped `basis: Estimate`; only confirming a field after harvest, with the producer and its CTRM tickets, writes `Official` (the confirmed CI).
+3. **A locked record can't be edited.** It must be unlocked with a reason first.
+4. **A CI is an estimate until it is confirmed.** The frozen result is stamped `basis: Estimate`; only confirming a field after harvest, with the producer and its CTRM tickets, writes `Official` (the confirmed CI).
 
 ## Access and auditing
 
@@ -171,21 +153,17 @@ One controller, `api/field-plan`, matching the client contract in `field-plan-ba
 
 | Method | Route | Does |
 |---|---|---|
-| GET | `customer/{customerId}` | Everything for one producer: fields, seasons, records, enrollments |
+| GET | `customer/{customerId}` | Everything for one producer: fields, seasons, records |
 | POST / PUT | `fields`, `fields/{splitId}` | Add a split as a field; set its state/county |
 | POST / PUT / DELETE | `seasons`, `seasons/{id}` | Put a field on a crop row; change acres; take it off |
 | POST / PUT / DELETE | `records`, `records/{id}` | Add a program to a field; save inputs; remove |
 | POST | `records/{id}/reopen` | Unlock a confirmed CI with a reason; both stay in the history |
 | GET | `records/{id}/tickets` | The field's CTRM tickets for its crop and crop year, settled or not |
 | POST | `records/{id}/confirm` | Confirm the CI after harvest with the producer: actual yield and tickets kept |
-| POST | `enrollments` | Open (or return) the producer's enrollment |
-| PUT / POST | `enrollments/{key}/attestation`, `/attest`, `/withdraw` | Enrollment lifecycle |
-
-The planned `GET api/field-plan/enrollment?programKey&splitId&cropYear` lets tickets and analytics resolve an enrollment without anyone typing an ID. It is documented now and built when analytics needs it.
 
 ## Rollback
 
-The migration (`20261029193914_AddFieldPlanTables`) only creates four new tables and their indexes, so its `Down()` drops them. No existing table or row is touched.
+The migration (`20261029193914_AddFieldPlanTables`) only creates new tables and their indexes (four, one of which `DropProgramEnrollment` later removed), so its `Down()` drops them. No existing table or row is touched. `DropProgramEnrollment` only drops `dbo.ProgramEnrollment`; its `Down()` recreates it empty.
 
 The exact SQL it runs is in [scripts/field-plan-AddFieldPlanTables.sql](../../scripts/field-plan-AddFieldPlanTables.sql), for DBA review:
 - 4 `CREATE TABLE` statements and their indexes;
