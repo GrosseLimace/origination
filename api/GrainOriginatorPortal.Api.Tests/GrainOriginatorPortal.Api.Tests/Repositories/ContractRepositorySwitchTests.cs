@@ -37,13 +37,9 @@ public class ContractRepositorySwitchTests
             new Mock<ICtrmGraphQlClient>().Object,
             config,
             new Mock<ILogger<CtrmContractReader>>().Object);
-        var ticketReader = new CtrmTicketReader(
-            new Mock<ICtrmGraphQlClient>().Object,
-            config,
-            new Mock<ILogger<CtrmTicketReader>>().Object);
 
         var ctrmRepo = new CtrmContractRepository(
-            reader, ticketReader, app, odsRepo, provenance, new Mock<ILogger<CtrmContractRepository>>().Object);
+            reader, app, odsRepo, provenance, new Mock<ILogger<CtrmContractRepository>>().Object);
 
         return new ContractRepositorySwitch(odsRepo, ctrmRepo, config, provenance);
     }

@@ -162,7 +162,6 @@ public static class CtrmCustomerQueries
     public const string TicketLinksInWindow = """
         query ($from: Date!, $to: Date!, $skip: Int, $take: Int) {
           tickets(skip: $skip, take: $take, blDateFrom: $from, blDateTo: $to) {
-            totalCount
             pageInfo { hasNextPage }
             items { details { customerCode organizationCode } }
           }

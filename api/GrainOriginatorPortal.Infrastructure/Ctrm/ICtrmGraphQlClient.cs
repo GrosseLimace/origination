@@ -81,6 +81,13 @@ public sealed record CtrmReadResult<T>
     /// trade-unit producer-set cache answered a per-producer read instantly, with the live read
     /// refreshing behind it. Recorded in provenance so a fast click is attributable.</summary>
     public string? Origin { get; init; }
+
+    /// <summary>How many CTRM pages were fetched to produce this result, for the reads that page (the
+    /// ticket window walks). 0 where it does not apply. A ticket read is charged per page scan, so this
+    /// is the number the CTRM team feels; the ticket reader logs it per fetched window. A cached entry
+    /// keeps the count of the fetch that filled it, so it describes that fetch, not the call that hit the
+    /// cache.</summary>
+    public int Pages { get; init; }
 }
 
 /// <summary>Values for <see cref="CtrmReadResult{T}.Origin"/>.</summary>
