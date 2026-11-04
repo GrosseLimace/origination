@@ -140,7 +140,7 @@ public class CtrmOutageEndToEndTests
         var odsContracts = new ContractRepository(odsForContracts, app, new Mock<ILogger<ContractRepository>>().Object);
 
         return (
-            new CtrmContractRepository(contractReader, ticketReader, app, odsContracts, provenance,
+            new CtrmContractRepository(contractReader, app, odsContracts, provenance,
                 new Mock<ILogger<CtrmContractRepository>>().Object),
             new CtrmTicketRepository(ticketReader, contractReader, app, odsTickets, config, provenance,
                 new Mock<ILogger<CtrmTicketRepository>>().Object),
