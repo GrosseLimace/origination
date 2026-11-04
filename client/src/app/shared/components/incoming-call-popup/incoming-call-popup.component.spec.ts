@@ -237,7 +237,7 @@ describe('IncomingCallPopupComponent', () => {
 
     await userEvent.click(screen.getByTestId('incoming-call-collapse'));
 
-    expect(screen.queryByRole('button', { name: 'Hang up' })).toBeNull();     // full card hidden
+    expect(screen.queryByTestId('incoming-call-status')).toBeNull();          // full card hidden
     expect(screen.getByTestId('incoming-call-collapsed-name').textContent).toContain('Smith Farms');
     expect(screen.getByTestId('incoming-call-collapsed').textContent).toMatch(/0:4\d/);
     expect(screen.getByTestId('incoming-call-collapsed-badge').textContent).toContain('1 on hold');
@@ -245,6 +245,24 @@ describe('IncomingCallPopupComponent', () => {
     await userEvent.click(screen.getByTestId('incoming-call-expand'));
     expect(screen.queryByTestId('incoming-call-collapsed')).toBeNull();
     expect(screen.getAllByRole('button', { name: 'Hang up' }).length).toBeGreaterThan(0);
+  });
+
+  it('keeps Hold and Hang up on the collapsed bar, and Resume once on hold', async () => {
+    call.state.set('connected');
+    const { fixture } = await setup();
+    await userEvent.click(screen.getByTestId('incoming-call-collapse'));
+
+    await userEvent.click(screen.getByTestId('incoming-call-collapsed-hold'));
+    expect(call.hold).toHaveBeenCalled();
+    await userEvent.click(screen.getByTestId('incoming-call-collapsed-hangup'));
+    expect(call.hangUp).toHaveBeenCalled();
+
+    call.state.set('held');
+    fixture.detectChanges();
+    expect(screen.queryByTestId('incoming-call-collapsed-hold')).toBeNull();
+    await userEvent.click(screen.getByTestId('incoming-call-collapsed-resume'));
+    expect(call.resume).toHaveBeenCalled();
+    expect(screen.getByTestId('incoming-call-collapsed')).toBeTruthy();       // still collapsed
   });
 
   it('cannot be collapsed while a call is ringing', async () => {

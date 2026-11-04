@@ -172,6 +172,14 @@ used during a call, to exercise all of this without two phones. Every call is it
 stack (main call on top); the stack can be collapsed to one bar, and any call that starts ringing
 opens it again.
 
+**Look (meeting 2026-11-04).** Larger card (448 px, caller name the biggest text, taller buttons) in a
+phone call-screen style: charcoal card in light mode, white card with dark text in dark mode (solid
+colours only, nothing translucent), so it always stands out from the page. A coloured left edge shows
+the state — green ringing / on a call, amber on hold, grey ended. No "Open" hint: answering opens the
+producer, and clicking the name opens them without answering. Minimise is an icon (not while ringing);
+the collapsed bar (384 px) can be dragged by its grip or phone icon and keeps Hold / Resume and Hang up
+as icon buttons. Icon buttons show an instant tooltip on hover or keyboard focus.
+
 **Not built — possible follow-up: merging calls (3-way).** The Calling SDK cannot join two existing
 calls. The closest it offers is `TeamsCall.addParticipant({ phoneNumber })` from the live call: the
 held caller is dialled again from the originator's number and must answer a second ring, then their
