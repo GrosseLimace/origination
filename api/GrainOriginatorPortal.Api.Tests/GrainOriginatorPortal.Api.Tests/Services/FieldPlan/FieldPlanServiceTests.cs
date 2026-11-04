@@ -849,6 +849,44 @@ public class FieldPlanServiceTests
         Assert.Equal("ReducedTill", confirmed.Data.GetProperty("tillage").GetString());
     }
 
+    // Security scan (PR #767): data saved as "Tillage" was validated and scored case-insensitively but checked for T-DISC
+    // case-sensitively, so a No till field could be confirmed with no passes.
+    [Theory]
+    [InlineData("NoTill")]
+    [InlineData("ReducedTill")]
+    public async Task Confirm_TillageSavedInAnotherCase_StillNeedsTDiscPasses(string tillage)
+    {
+        var h = New();
+        var (id, key) = await FieldWithATicket(h, "NoneOfTheAbove");
+        await h.Service.UpdateRecordAsync(id, new UpdateFieldProgramRecordRequest { Data = Json($$"""
+            { "ExpectedYield": 190, "SyntheticN": 180, "NiFraction": 0.5, "CoverCrop": "None", "Tillage": "{{tillage}}", "Manure": [] }
+            """) }, default);
+
+        var ex = await Assert.ThrowsAsync<BusinessException>(() => h.Service.ConfirmAsync(id,
+            new ConfirmFieldProgramRecordRequest { ActualYield = 200, TicketKeys = [key], ReviewedWithProducer = true }, default));
+
+        Assert.Equal("FIELD_PLAN_TDISC_REQUIRED", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task SavingData_StoresCanonicalNames_AndRefusesAPropertyNamedTwice()
+    {
+        var h = New();
+        var (_, record) = await CornField(h);
+        var id = int.Parse(record.Id);
+
+        var saved = await h.Service.UpdateRecordAsync(id, new UpdateFieldProgramRecordRequest { Data = Json("""
+            { "Tillage": "NoTill", "CoverCrop": "None", "NiFraction": 0, "Manure": [], "extra": "dropped" }
+            """) }, default);
+
+        Assert.Equal("NoTill", saved.Data.GetProperty("tillage").GetString());
+        Assert.False(saved.Data.TryGetProperty("Tillage", out _));
+        Assert.False(saved.Data.TryGetProperty("extra", out _));
+        await Assert.ThrowsAsync<ValidationException>(() => h.Service.UpdateRecordAsync(id, new UpdateFieldProgramRecordRequest { Data = Json("""
+            { "tillage": "NoneOfTheAbove", "Tillage": "NoTill", "coverCrop": "None", "niFraction": 0, "manure": [] }
+            """) }, default));
+    }
+
     [Theory]
     [InlineData("Harvest", "PLOW, CHISEL")] // not a harvest implement
     [InlineData("Planting", "SPADE, GARDEN")] // not a T-DISC implement

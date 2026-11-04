@@ -235,12 +235,12 @@ public sealed class FieldPlanService : IFieldPlanService
         var existing = await _repository.GetRecordAsync(season.Id, request.ProgramKey, ct);
         if (existing is not null) return ToResponse(existing);
 
-        FieldPlanPrograms.ValidateData(request.ProgramKey, request.Data);
+        var data = FieldPlanPrograms.ValidateData(request.ProgramKey, request.Data);
         var record = new FieldProgramRecord
         {
             ProducerFieldSeasonId = season.Id,
             ProgramKey = request.ProgramKey,
-            Data = request.Data.GetRawText(),
+            Data = data,
             Status = FieldPlanPrograms.StatusFor(request.ProgramKey, request.Data, season),
             CopiedFromYear = request.CopiedFromYear,
             CreatedAt = Now,
@@ -258,8 +258,7 @@ public sealed class FieldPlanService : IFieldPlanService
         var record = await RequireRecordAsync(recordId, ct);
         if (record.Status == Locked)
             throw new BusinessException("This field's CI is confirmed; unlock it to make changes.", "FIELD_PLAN_LOCKED");
-        FieldPlanPrograms.ValidateData(record.ProgramKey, request.Data);
-        record.Data = request.Data.GetRawText();
+        record.Data = FieldPlanPrograms.ValidateData(record.ProgramKey, request.Data);
         record.Status = FieldPlanPrograms.StatusFor(record.ProgramKey, request.Data, record.Season!);
         if (Clean(request.CopiedFromField) is { } from) record.CopiedFromField = from;
         Touch(record);
@@ -314,7 +313,7 @@ public sealed class FieldPlanService : IFieldPlanService
         if (record.Official is null) return;
         var estimated = JsonNode.Parse(record.Official)?["tDisc"]?["estimatedTillage"]?.GetValue<string>();
         if (FieldPlanPrograms.TillageKey(estimated) is not { } tillage) return;
-        var data = JsonNode.Parse(record.Data)!.AsObject();
+        var data = JsonNode.Parse(FieldPlanPrograms.Canonical(record.ProgramKey, record.Data))!.AsObject();
         data["tillage"] = tillage;
         record.Data = data.ToJsonString(FieldPlanPrograms.Json);
     }
@@ -357,7 +356,8 @@ public sealed class FieldPlanService : IFieldPlanService
             throw new BusinessException($"Ticket {unconverted.TicketNumber} has no bushel figure, so it can't be counted; leave it out or ask for its product's conversion.",
                 "FIELD_PLAN_TICKET_NO_BUSHELS", StatusCodes.Status422UnprocessableEntity);
 
-        var data = JsonNode.Parse(record.Data)!.AsObject();
+        // Canonical names first, so the tillage read here is the one the score uses.
+        var data = JsonNode.Parse(FieldPlanPrograms.Canonical(record.ProgramKey, record.Data))!.AsObject();
         var estimatedTillage = data["tillage"]?.GetValue<string>() ?? "";
         JsonObject? tDisc = null;
         // Only the server's rating counts: whatever the saved data says is replaced here.

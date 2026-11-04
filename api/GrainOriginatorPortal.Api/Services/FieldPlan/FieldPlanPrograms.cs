@@ -17,7 +17,11 @@ public static class FieldPlanPrograms
     /// <summary>45Z, the only approved program. Another program adds its key, rules and freeze here.</summary>
     public const string FdCic = "45z-fdcic";
 
-    internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    /// <summary>
+    /// Reads names case-insensitively, so "tillage" and "Tillage" are one property: a body naming it twice is refused
+    /// rather than letting the two readings disagree.
+    /// </summary>
+    internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { AllowDuplicateProperties = false };
 
     private static readonly Dictionary<string, string> TillageLabels = new()
     {
@@ -57,16 +61,25 @@ public static class FieldPlanPrograms
     }
 
     /// <summary>
-    /// Reads and checks a record's data for its program. Throws a ValidationException when it isn't that
-    /// program's shape, so nothing unreadable is stored.
+    /// Reads and checks a record's data for its program and returns it as the JSON to store: the program's own
+    /// fields under their camelCase names, nothing else. Throws a ValidationException when it isn't that program's
+    /// shape. Storing this, never the raw body, means every later reader (confirm's T-DISC check, scoring) sees the
+    /// same values: a "Tillage" sent in another case can't be read one way when validated and another when confirmed.
     /// </summary>
-    public static void ValidateData(string programKey, JsonElement data)
+    public static string ValidateData(string programKey, JsonElement data)
     {
         if (data.ValueKind != JsonValueKind.Object)
             throw new ValidationException("data", "Program data must be an object.");
         if (data.GetRawText().Length > 20_000)
             throw new ValidationException("data", "Program data is too large.");
-        ReadFdCic(data);
+        return JsonSerializer.Serialize(ReadFdCic(data), Json);
+    }
+
+    /// <summary>Stored data in its canonical form (see ValidateData), for records saved before it was enforced.</summary>
+    internal static string Canonical(string programKey, string data)
+    {
+        using var doc = JsonDocument.Parse(data);
+        return ValidateData(programKey, doc.RootElement);
     }
 
     /// <summary>What a record still needs before it's Ready (the client's program.missing()).</summary>
