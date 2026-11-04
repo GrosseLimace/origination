@@ -1,0 +1,210 @@
+@if (draftSeason && draftField) {
+<app-dialog [isOpen]="true" (close)="close.emit()" size="xl" [scrollBody]="true" [closeOnBackdrop]="false">
+  <app-dialog-header>
+    <app-dialog-title>{{ draftField.name }} · {{ draftSeason.year }}</app-dialog-title>
+    <app-dialog-description>
+      {{ draftSeason.cropLabel }} · Split {{ draftField.splitId }} · {{ draftField.county }} County, {{ draftField.state }} · Changes save as you go.
+    </app-dialog-description>
+  </app-dialog-header>
+
+  <app-dialog-content>
+    <div class="space-y-6">
+      <!-- The field: a CTRM split, set up once and reused every year -->
+      <div>
+        <h4 class="font-semibold text-gray-900 dark:text-white">Field <span class="text-sm font-normal text-gray-500">(kept for every year)</span></h4>
+        @if (draftField.splitSource === 'Ctrm') {
+          <dl class="mt-2 grid gap-3 text-sm sm:grid-cols-4">
+            <div><dt class="text-gray-500 dark:text-gray-400">CTRM split ID</dt><dd class="font-medium text-gray-900 dark:text-white">{{ draftField.splitId }}</dd></div>
+            <div><dt class="text-gray-500 dark:text-gray-400">Field name</dt><dd class="font-medium text-gray-900 dark:text-white">{{ draftField.name }}</dd></div>
+            <div><dt class="text-gray-500 dark:text-gray-400">Producer's split</dt><dd class="text-gray-900 dark:text-white">{{ +draftField.splitPercent.toFixed(3) }}%</dd></div>
+            <div><dt class="text-gray-500 dark:text-gray-400">Effective</dt><dd class="text-gray-900 dark:text-white">{{ draftField.effectiveDate | date:'MM/dd/yyyy' }}</dd></div>
+          </dl>
+          <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">From CTRM; change these there.</div>
+        } @else {
+          <!-- SPLITS-GRAPHQL: typed by hand until CTRM's splits query is live; then these come from CTRM, read-only. -->
+          <div class="mt-2 grid gap-3 text-sm sm:grid-cols-4">
+            <div><div class="text-gray-500 dark:text-gray-400">CTRM split ID</div><div class="font-medium text-gray-900 dark:text-white">{{ draftField.splitId }}</div></div>
+            <label class="block"><span class="text-gray-700 dark:text-gray-300">Field name</span>
+              <input class="ci-input" maxlength="255" [disabled]="seasonLocked()" [(ngModel)]="draftField.name" (change)="saveField()" /></label>
+          </div>
+          <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">Entered by hand: the split ID is how this field's CTRM tickets are found, so check it against CTRM.</div>
+        }
+        <div class="mt-3 grid gap-3 sm:grid-cols-4">
+          <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">State</span>
+            <select class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftField.state" (ngModelChange)="draftField.county = ''; saveField()">
+              @for (st of states(); track st) { <option [value]="st">{{ st }}</option> }
+            </select></label>
+          <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">County</span>
+            <select class="ci-input" [class.ci-missing]="!draftField.county" [disabled]="seasonLocked()" [(ngModel)]="draftField.county" (ngModelChange)="saveField()">
+              <option value="" disabled>County…</option>
+              @for (c of countiesFor(draftField.state); track c) { <option [value]="c">{{ c }}</option> }
+            </select></label>
+          <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">{{ draftSeason.year }} acres</span>
+            <input type="number" min="0" class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftSeason.acres" (ngModelChange)="saveSeason()" /></label>
+        </div>
+      </div>
+
+      <!-- Sustainability programs on this field -->
+      <div>
+        <div class="flex flex-wrap items-center gap-2 border-b border-gray-200 dark:border-gray-700">
+          <h4 class="mr-2 pb-2 font-semibold text-gray-900 dark:text-white">Sustainability programs</h4>
+          @for (p of programRecords(); track p.record.id) {
+            <button type="button" (click)="activeKey.set(p.record.programKey)"
+                    class="-mb-px rounded-t-md border px-3 py-1.5 text-sm"
+                    [class]="active()?.record?.id === p.record.id
+                      ? 'border-gray-200 border-b-white bg-white font-semibold text-gray-900 dark:border-gray-700 dark:border-b-gray-800 dark:bg-gray-800 dark:text-white'
+                      : 'border-transparent bg-transparent text-gray-600 hover:text-gray-900 dark:text-gray-300'">
+              🌱 {{ p.def.shortLabel }}
+              @if (p.record.status === 'Locked') { 🔒 } @else if (p.record.status === 'Draft') { <span class="text-amber-600">•</span> }
+            </button>
+          }
+          @for (d of addable(); track d.key) {
+            <button type="button" class="mb-1 rounded-md border border-dashed border-scoular-green-accessible/60 px-2.5 py-1 text-sm text-scoular-green-accessible dark:text-scoular-green bg-transparent hover:bg-scoular-green-accessible/5"
+                    [title]="d.description" (click)="addProgram(d.key)">+ {{ d.shortLabel }}</button>
+          }
+        </div>
+
+        @if (active(); as a) {
+          <div class="pt-4 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span class="text-gray-600 dark:text-gray-300">{{ a.def.label }}</span>
+              @if (a.record.status !== 'Locked') {
+                <div class="flex flex-wrap items-center gap-3">
+                  @if (copySources().length) {
+                    <label class="text-xs text-gray-600 dark:text-gray-300">Copy from
+                      <select class="ci-input ci-compact !inline-block !w-56" [disabled]="copying()" [ngModel]="''" (ngModelChange)="pickCopySource($event)">
+                        <option value="" disabled>another field…</option>
+                        @for (c of copySources(); track c.recordId) {
+                          <option [value]="c.recordId">{{ c.fieldName }} · {{ c.cropLabel }}{{ c.status === 'Draft' ? ' · incomplete' : '' }}</option>
+                        }
+                      </select>
+                    </label>
+                  }
+                  @if (copyTargets().length) {
+                    <button type="button" class="text-xs text-scoular-green-accessible dark:text-scoular-green bg-transparent border-0 p-0 hover:underline"
+                            (click)="showCopyTo.set(!showCopyTo())">Copy to other fields…</button>
+                  }
+                  <button type="button" class="text-xs text-gray-500 hover:text-red-600 bg-transparent border-0 p-0" (click)="removeProgram()">Remove from this field</button>
+                </div>
+              }
+            </div>
+
+            @if (pendingCopyFrom()) {
+              <div class="flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 dark:bg-amber-900/30 px-4 py-2 text-sm text-amber-800 dark:text-amber-300">
+                Replace this field's {{ a.def.shortLabel }} inputs with the other field's? The actual yield stays.
+                <button type="button" class="rounded-md bg-scoular-green-accessible px-2.5 py-1 text-white border-0" (click)="copyFrom(pendingCopyFrom()!)">Copy</button>
+                <button type="button" class="bg-transparent border-0 p-0 underline text-inherit" (click)="pendingCopyFrom.set(null)">Cancel</button>
+              </div>
+            }
+
+            @if (showCopyTo()) {
+              <div class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3 text-sm space-y-2">
+                <div class="font-medium text-gray-900 dark:text-white">Copy this field's {{ a.def.shortLabel }} inputs to</div>
+                @for (t of copyTargets(); track t.seasonId) {
+                  <label class="flex items-center gap-2" [class.opacity-50]="t.effect === 'locked'">
+                    <input type="checkbox" [disabled]="t.effect === 'locked'" [checked]="copyToPicked().has(t.seasonId)" (change)="toggleCopyTo(t.seasonId)" />
+                    <span class="text-gray-900 dark:text-white">{{ t.fieldName }}</span>
+                    <span class="text-gray-500 dark:text-gray-400">· {{ t.cropLabel }} ·
+                      @switch (t.effect) {
+                        @case ('empty') { no inputs yet }
+                        @case ('replace') { its inputs will be replaced }
+                        @case ('partial') { different crop: only the inputs that carry across crops }
+                        @case ('locked') { CI confirmed; unlock it first }
+                      }
+                    </span>
+                  </label>
+                }
+                <div class="flex gap-2 pt-1">
+                  <button type="button" class="rounded-md bg-scoular-green-accessible px-3 py-1 text-white border-0 disabled:opacity-50"
+                          [disabled]="!copyToPicked().size || copying()" (click)="copyTo()">
+                    {{ copying() ? 'Copying…' : 'Copy to ' + copyToPicked().size + ' field' + (copyToPicked().size === 1 ? '' : 's') }}
+                  </button>
+                  <button type="button" class="rounded-md border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-1" (click)="showCopyTo.set(false)">Cancel</button>
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">Actual yields are never copied. Edit each field afterwards for what's different.</div>
+              </div>
+            }
+
+            @if (a.def.official; as o) {
+              <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                @if (a.record.official?.status === 'Documented') {
+                  <span>Confirmed {{ o.resultName }}: {{ a.record.official?.score?.value | number:'1.0-0' }} g CO₂e/bu · {{ a.record.official?.bushels | number:'1.0-0' }} bu</span>
+                  <button type="button" class="text-scoular-green-accessible bg-transparent border-0 p-0 hover:underline" (click)="reviewRecordId.set(a.record.id)">View review</button>
+                  @if (producer() && a.record.programKey === fdCicKey) {
+                    <button type="button" class="h-7 rounded-md px-2 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green border-0"
+                            (click)="generateReport(a.record)">Generate Biofuel Feedstock Report</button>
+                  }
+                } @else {
+                  <span>Official {{ o.resultName }}: {{ officialStatus(a.record) }}</span>
+                  @if (canReview(a.record)) {
+                    <button type="button" class="h-7 rounded-md px-2 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green border-0"
+                            (click)="reviewRecordId.set(a.record.id)">Confirm CI Score</button>
+                  } @else {
+                    <span>· Review opens once the field has an estimated CI.</span>
+                  }
+                }
+              </div>
+            }
+
+            @if (a.record.copiedFromField && a.record.status !== 'Locked') {
+              <div class="text-xs text-gray-500 dark:text-gray-400">Copied from {{ a.record.copiedFromField }}. Edit what's different.</div>
+            }
+
+            <!-- The field's enrollment ID (programs that issue one only) -->
+            @if (enrollmentId()) {
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-scoular-green-accessible/40 bg-scoular-green-accessible/5 px-4 py-2 text-sm">
+                <span class="font-semibold text-scoular-green-accessible dark:text-scoular-green">Enrollment {{ enrollmentId() }}</span>
+                <span class="text-gray-600 dark:text-gray-300">From the split ID and crop year; nobody needs to type it.</span>
+              </div>
+            }
+
+            @if (a.record.frozen; as fz) {
+              <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 px-4 py-3 text-sm text-blue-900 dark:text-blue-200">
+                <span>✓ Confirmed with the producer ({{ fz.calculatorVersion }}, by {{ a.record.official?.documentedBy ?? fz.lockedBy }})@if (fz.score; as sc) {: {{ sc.value | number:'1.0-0' }} {{ sc.unit }}}.</span>
+                <button type="button" class="underline bg-transparent border-0 p-0" (click)="showReopen = true">Unlock to correct…</button>
+              </div>
+            }
+
+            @if (intakeInputs(); as inputs) {
+              <ng-container *ngComponentOutlet="a.def.intake; inputs: inputs" />
+            }
+          </div>
+        } @else if (addable().length) {
+          <p class="pt-4 text-sm text-gray-600 dark:text-gray-300">
+            Add a program to record this field's sustainability data. Its field details above are shared by every program.
+          </p>
+        } @else {
+          <p class="pt-4 text-sm text-gray-400 dark:text-gray-500">No sustainability programs apply to {{ draftSeason.cropLabel }}.</p>
+        }
+      </div>
+
+    </div>
+  </app-dialog-content>
+
+  <app-dialog-footer>
+    <app-button variant="outline" (onClick)="close.emit()">Done</app-button>
+  </app-dialog-footer>
+</app-dialog>
+}
+
+<!-- Reopen -->
+@if (showReopen) {
+  <div class="fixed inset-0 z-[70] flex items-start justify-center bg-black/40 px-4 pt-[12vh]" (click)="showReopen = false">
+    <div class="w-full max-w-md rounded-lg bg-white dark:bg-gray-800 shadow-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4" (click)="$event.stopPropagation()">
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Unlock this field's confirmed CI</h3>
+      <label class="block text-sm">
+        <span class="text-gray-700 dark:text-gray-300">Why does it need correcting?</span>
+        <textarea rows="3" class="ci-input" [(ngModel)]="reopenReason"></textarea>
+      </label>
+      <p class="text-xs text-gray-500 dark:text-gray-400">The reason, the confirmed CI and its tickets are kept in the field's history, and the field can be reviewed again.</p>
+      <div class="flex justify-end gap-2">
+        <app-button variant="outline" (onClick)="showReopen = false">Cancel</app-button>
+        <app-button variant="default" [disabled]="!reopenReason.trim()" (onClick)="confirmReopen()">Unlock</app-button>
+      </div>
+    </div>
+  </div>
+}
+
+@if (reviewRecordId(); as rid) {
+  <app-fd-cic-review [recordId]="rid" [producer]="producer()" (close)="reviewRecordId.set(null)" />
+}

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, input, output, inject, DestroyRef, signal } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, input, output, inject, DestroyRef, effect, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -12,6 +12,12 @@ import { ToastService } from '@core/services/toast.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
+import { environment } from '@env/environment';
+import { CropFieldsPanelComponent } from '../field-plan/crop-fields-panel.component';
+import { ProgramEnrollmentCardComponent } from '../field-plan/programs/program-enrollment-card.component';
+import { ProgramRegistry } from '../field-plan/programs/program-registry';
+import { FieldPlanStore } from '../field-plan/store/field-plan.store';
+
 
 type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'tradeUnit';
 type SortDirection = 'none' | 'asc' | 'desc';
@@ -38,7 +44,9 @@ type PlantingRow = PlantingIntention;
     DialogDescriptionComponent,
     DialogContentComponent,
     DialogFooterComponent,
-    InputComponent
+    InputComponent,
+    CropFieldsPanelComponent,
+    ProgramEnrollmentCardComponent
   ],
   templateUrl: './planting-intentions-table.component.html',
   // State written outside a template event is a signal: the API responses (trade units, both
@@ -287,6 +295,36 @@ export class PlantingIntentionsTableComponent {
   /** Crop-column label for a row: "[Type ]Category" (e.g. "Double Crop Corn", "Irrigated Wheat"). */
   rowCropLabel(row: PlantingRow): string {
     return `${row.type ? row.type + ' ' : ''}${this.cropCategoryFor(row.crop, row.category)}`;
+  }
+
+  // ── Fields under each crop row + sustainability programs (prototype, behind fieldPlanningEnabled) ──
+  // The row's acres stay the total; fields only break it down (FieldPlanStore).
+  readonly fieldPlanningEnabled = environment.fieldPlanningEnabled;
+  private readonly fieldPlan = inject(FieldPlanStore);
+  /** Brings the producer's fields and program data in when the producer is shown (once per producer). */
+  private readonly _loadFieldPlan = effect(() => {
+    if (this.fieldPlanningEnabled) this.fieldPlan.ensureLoaded(this.customer().id);
+  });
+  /** One summary card per program; each shows only once the producer has a field in it. */
+  readonly programs = inject(ProgramRegistry).all.filter(p => !!p.enrollment);
+
+  /** The crop row whose fields are open: softly highlighted so it's clear which crop is being worked on. */
+  readonly activeIntentionId = signal<number | null>(null);
+
+  setActiveCrop(intentionId: number, expanded: boolean): void {
+    if (expanded) this.activeIntentionId.set(intentionId);
+    else if (this.activeIntentionId() === intentionId) this.activeIntentionId.set(null);
+  }
+
+  get fieldPlanYear(): number {
+    return this.selectedYear() || Math.max(0, ...this.plantingIntentions().map(p => p.plantingYear)) || new Date().getFullYear();
+  }
+
+  /** Fields add up to more than the row: open the normal Edit dialog with the new total filled in,
+   *  so the change is saved deliberately, the same way any acreage edit is. */
+  updateTotalFromFields(row: PlantingRow, acres: number): void {
+    this.openEditDialog(row);
+    this.editForm.acres = acres.toString();
   }
 
   get sortedIntentions(): PlantingRow[] {

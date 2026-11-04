@@ -1,0 +1,28 @@
+{
+  "method": "USDA T-DISC",
+  "version": "1.1.1",
+  "label": "USDA T-DISC v1.1.1",
+  "source": {
+    "file": "usda-tdisc-ver1.1.1_9_4_2026.xlsm",
+    "sha256": "5f71a1b33e514d9348f28f5a62b553dca60fb4f58e51702a9033d4a4bc7dce9e",
+    "versionLabel": "Ver1.1.1",
+    "workbookModified": "2026-09-04T14:21:13Z"
+  },
+  "extractor": {"version":"1","extractedAt":"2026-11-03"},
+  "formulaFingerprint": "cb1d263f18b82ce49b7a0951a4432b4f1c355ba4fe1d2ce19b0fb0f557e190e4",
+  "counts": {
+    "implements": 93,
+    "operations": 314,
+    "windows": {"Field_Preparation":86,"Before_Planting":76,"Planting":88,"After_Planting":27,"Harvest":14}
+  },
+  "workbookNames": {"HARROW, DISK, INTER-ROW STRIP DISK":"HARROW, DISK, INTER-ROW STRIP DISK ","PLOW, MOLDBOARD":"PLOW, MOLDBOARD "},
+  "lookupFixes": ["Power mulcher bed conditioner: \"RESIDUE MGMT, POWER MULCHER\" → \"RESIDUE MGMT: POWER MULCHER\"","Residue, row cleaner: \"RESIDUE MGMT, TRASH WHEEL\" → \"RESIDUE MGMT: TRASH WHEEL\""],
+  "lookupSkipped": ["Cultivator, rotary on beds; Bedder, hipper, disk hiller: \"BED SHAPING, BEDDER DISK/DISK-HIPPER\""],
+  "files": {
+    "implements.json": "1acba6a13715adc03408cbf8783a7a98e8d16ccfbb992131f898f47bf501a0b6",
+    "windows.json": "3dd812aa3bac3ddc0bb21317761f1af031d6b30f253badc823b3d52ee383825e",
+    "operations.json": "5b821bf141df757277a80c6b8a5221e64d17bd2b424983c04ad773f1daa62735",
+    "rules.json": "4f5e926e8eea074ae6cad73bfbf597cf6d8a6523704b6dc4945898936f55c11e",
+    "formulas.json": "4b2e0368e89dd9c50d15aed8439d6a0b624ebf2d55f63b11924bda743330cb31"
+  }
+}

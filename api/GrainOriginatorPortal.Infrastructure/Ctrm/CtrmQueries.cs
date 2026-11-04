@@ -38,6 +38,25 @@ public static class CtrmQueries
         }
         """;
 
+    /// <summary>Whether <see cref="SplitsByCustomer"/> has been confirmed against CTRM. Until it is,
+    /// <c>Ctrm:SplitsSource</c> = <c>ctrm</c> is refused at startup.</summary>
+    public const bool SplitsQueryConfirmed = false;
+
+    /// <summary>
+    /// A producer's splits (combined customer IDs). PLACEHOLDER: the root field and every field name are
+    /// guesses from the CTRM Customer Splits Inquiry screen, because the API blocks introspection
+    /// (<c>HC0046</c>) and the splits table hasn't been identified yet. Replace the document and
+    /// <see cref="Dtos.CtrmSplitDto"/> with the confirmed ones, then set <see cref="SplitsQueryConfirmed"/>.
+    /// </summary>
+    public const string SplitsByCustomer = """
+        query ($customerId: String!) {
+          customerSplits(customerId: $customerId, skip: 0, take: 500) {
+            totalCount
+            items { splitCustomerId primaryCustomerId name splitPercent effectiveDate expired siteType }
+          }
+        }
+        """;
+
     /// <summary>
     /// Maximum bill-of-lading range the <c>tickets</c> field accepts.
     /// </summary>
@@ -236,6 +255,45 @@ public static class CtrmQueries
         """ + TicketProjection + """
             }
           }
+        }
+        """;
+
+    /// <summary>
+    /// <see cref="TicketsByCustomer"/> plus each detail row's <c>combinedCustomerId</c>: the split ID the row was
+    /// delivered under. For the field plan's 45Z review only.
+    /// </summary>
+    /// <remarks>
+    /// <para>A split ID is not a ticket customer: <c>tickets(customerId: "TATOB43")</c> returns nothing. A split
+    /// ticket has a detail row per party (the producer and any partner, e.g. a landlord), each with its own
+    /// <c>customerCode</c> and the split in <c>combinedCustomerId</c> (QA, 2026-11-03). <c>tickets</c> has no
+    /// split filter, so the producer's tickets are read and the split's rows kept.</para>
+    /// <para>Its own document so the shared projection never asks for the field: an API without it answers
+    /// HTTP 400, which would fail every ticket screen rather than just this review.</para>
+    /// </remarks>
+    public const string TicketsBySplitProducer = """
+        query ($customerId: String, $from: Date, $to: Date, $skip: Int, $take: Int) {
+          tickets(skip: $skip, take: $take, blDateFrom: $from, blDateTo: $to, customerId: $customerId,
+                  excludeCancelled: true, excludeConsolidated: true) {
+            totalCount
+            pageInfo { skip take hasNextPage hasPreviousPage }
+            items {
+        """ + SplitTicketProjection + """
+            }
+          }
+        }
+        """;
+
+    /// <summary><see cref="TicketProjection"/> with <c>combinedCustomerId</c> on the detail row; keep the two in step.</summary>
+    private const string SplitTicketProjection = """
+        ticketPrefix ticketNumber ticketSuffix ticketBLDate productCode
+        shipmentTicketNumber unloadQuantity
+        details {
+          ticketSequenceNumber
+          customerCode combinedCustomerId organizationCode elevatorCode gradeCode
+          contractNumber ticketType ticketStatusDescription
+          appliedNetQuantity finalSettledDate
+          gradeFactorMoisturePercent gradeFactorTestWeightPercent gradeFactorProteinPercent
+          cancelFlag
         }
         """;
 
