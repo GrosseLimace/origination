@@ -1685,49 +1685,31 @@ only, with the vulnerable paths unreachable from untrusted input. Do **not** dis
 
 ---
 
-## Dependabot #167 (2026-11-02) — accepted: CANNOT BE CLOSED BY AN UPGRADE
+## Dependabot #167 → #168 (2026-11-02 → 2026-11-04) — NO LONGER ACCEPTED: advisory corrected, now FIXED
 
-### #167 — `minimatch` < 11.0.1, globParts amplification in `firstPhasePreProcess()` (GHSA-g3hv-75wg-m249)
+Kept as history so the earlier "accepted" reasoning is not mistaken for current policy.
 
-**Fixed only in minimatch 11.0.1** — a major release with breaking API changes (`makeRe()`, `#regexp`,
-`matchOne()` and the `AST` class removed). No 3.x/5.x/9.x/10.x backport exists, and as of 2026-11-02 no
-release of any package that depends on minimatch here has moved to 11.
+**What changed.** GHSA-g3hv-75wg-m249 (`minimatch` globParts amplification in `firstPhasePreProcess()`,
+fixed only in 11.0.1) was first published as affecting `< 11.0.1`. On 2026-11-02 that range swept in the
+3.1.5 (glob 7) and 5.1.9 (readdir-glob) copies under `archiver` in the production tree, which cannot take
+minimatch 11 — so #167 was recorded here as accepted. On **2026-11-04 GitHub corrected the range to
+`>= 7.0.0, < 11.0.1`**, withdrew #167 and raised **#168**. 3.x and 5.x never contained the flawed code
+(confirmed by grepping the published tarballs), so the corrected range matches reality.
 
-**Why no override can close it.** The alert covers *every* minimatch below 11.0.1 in
-`client/package-lock.json`, and two of the copies cannot take 11:
+**Fix.** Only dev copies remained in range — 9.0.9 (`@ts-morph/common`), 10.2.4 (`ignore-walk`) and
+10.2.5 (`@tufjs/models`). One version-keyed override, `"minimatch@>=7.0.0 <11": ">=11.0.1 <12"`, rewrites
+only requests for minimatch 7–10; glob 7's `^3.1.1` and readdir-glob's `^5.1.0` do not match the key and
+stay where they are. (Three per-parent nested overrides were tried first: npm marked the shared, deduped
+11.0.4 "invalid" and left two copies behind — the version-keyed form installs cleanly, including under
+`npm ci`.) `npm ls` still prints a cosmetic "invalid" against the overridden range on 11.0.4, which
+satisfies it; `npm ci` exits 0.
 
-| Copy | Reached via | Tree | Contains the flawed code? | Can move to 11? |
-|------|-------------|------|---------------------------|-----------------|
-| 3.1.5 | `glob` 7.2.3 ← `archiver-utils` / `rimraf` ← `archiver` / `fstream` | production | **No** — predates `firstPhasePreProcess` / `optimizationLevel` | **No** — glob 7 relies on minimatch 3 internals |
-| 5.1.9 | `readdir-glob` ← `archiver` | production | **No** — same | **No** — written against the 5.x API |
-| 9.0.9 | `@ts-morph/common` ← `ts-morph` ← `@analogjs/vite-plugin-angular` | dev | Yes | Only by a cross-major override |
-| 10.2.4 | `ignore-walk` ← `npm-packlist` ← `pacote` | dev | Yes | Only by a cross-major override |
-| 10.2.5 | `@tufjs/models` ← `tuf-js` ← `sigstore` | dev | Yes | Only by a cross-major override |
-
-(The two glob 13 → minimatch 10.2.4 copies under `cacache` and `@npmcli/package-json` moved to glob 14 /
-minimatch 11.0.4 with the #166 fix on `fix_DependabotHonoGlob110226`.) "Contains the flawed code" was
-checked by grepping the published tarballs for `firstPhasePreProcess`.
-
-**Unreachable even where the code exists.** The amplification only runs at `optimizationLevel >= 2`
-(`if (optimizationLevel >= 2) { … this.firstPhasePreProcess(globParts) }` in 9.0.9 and 10.2.5), and
-minimatch's default is **1**. None of the three dev callers raises it: `ignore-walk` passes
-`{ matchBase, dot, flipNegate, nocase }`, while `@tufjs/models` and `@ts-morph/common` call
-`minimatch(path, pattern)` with no options. glob *does* default to level 2 — which is why its copies
-were moved to 14/11 rather than left. The patterns these callers see come from our own config,
-packed packages' ignore files and signed TUF metadata, never from a user.
-
-Moving the three dev copies to 11 with scoped overrides was considered and **not done**: it would
-remove the unreachable code but the alert would stay open on the two production-tree copies, so it
-adds cross-major risk without closing anything.
-
-**Re-check when** `archiver` (and whatever pulls it into the production tree) drops glob 7 /
-readdir-glob, or when `ignore-walk`, `@tufjs/models` and `@ts-morph/common` publish on minimatch 11.
-
-### Dismissal wording for Dependabot
-
-**"Risk is tolerable to this project."** The flaw is absent from the production-tree copies and
-unreachable (default `optimizationLevel`, no untrusted patterns) in the dev ones. Do **not** dismiss it
-as "a fix has already been started" — no upgrade closes it.
+**Verified.** The three callers use only `new Minimatch(…)` / `.match()` / `.negate` / `minimatch(path, pattern)`
+— none of 11's removed APIs. 580 replayed calls (ignore-walk's exact options, its partial-match calls, and
+plain `minimatch()` over realistic patterns) gave identical answers on 9.0.9, 10.2.5 and 11.0.4; the real
+`ignore-walk` keeps the same files from a sample `.npmignore`; `@tufjs/models` `isDelegatedPath` answers
+the same. PoC: a 14-part `**/../dN` chain at `optimizationLevel: 2` took 3,903 ms on 10.2.5 and 77 ms on
+11.0.4. (Reachability was nil anyway: every caller uses the default level 1, where the step never runs.)
 
 ---
 
@@ -1738,6 +1720,7 @@ matches them to their remediation instead of re-doing the work.
 
 | Finding | Date | Disposition |
 |---------|------|-------------|
+| **Dependabot #168** (was #167) — `minimatch` 7–10 globParts amplification, GHSA-g3hv-75wg-m249 | 2026-11-04 | **Fixed** on `fix_DependabotMinimatch110426` by the version-keyed override `"minimatch@>=7.0.0 <11": ">=11.0.1 <12"`; the 3.x/5.x copies under `archiver` are outside the corrected range. See the #167 → #168 section above. |
 | **M-048** — BarChart catalog `elevator` / `locationName` / `city` interpolated raw into a Leaflet `bindTooltip` string (`bid-sheet.component.ts` `onBarchartResults`), which Leaflet renders as `innerHTML`, so a crafted upstream instrument record could put live markup (links, styling) on a picker pin (CWE-79; inline script already blocked by CSP) | 2026-10-26 | **Fixed** on `fix_M048_BarchartTooltipEscape`: the label goes through the component's existing `_esc()` helper, the same one every `divIcon` label on the bid-sheet map already used — this tooltip was the only Leaflet sink that missed it (the customer-map popup escapes via `_escapeHtml`). Regression spec `catalog pin tooltip is text, not markup` fails on the old code. |
 | **M-046 / M-047** — recap group `Name` interpolated raw into the daily-recap HTML email (`<h2>CRM Activities for @{variables('groupName')}</h2>`), so any rep could name a group `<a href="https://attacker.example/login">…</a>` and have it delivered as live markup from the shared mailbox to every member and every Teams channel the recap posts to (CWE-79) | 2026-10-07 | **Fixed** on `fix_RecapGroupNameHtmlEncoding`. The `<h2>` now applies the same `&`→`<`→`>` replace chain the instant-share Logic App already uses in production (`&` first, or the entities double-encode). One change covers all four sends — two email, two Teams — because all four deliver the single `emailBody`. Subjects and run-log text deliberately stay RAW: Graph renders subjects as plain text, so encoding them would show `Corn &amp; Soy` to recipients. Pinned by `DailyRecapHtmlEncodingTests`, which read the template itself: no raw interpolation, `&`-first ordering, every `contentType: HTML` send delivers `emailBody` only, subjects still raw. Mutation-verified. **Server-side input restriction NOT added**, deliberately: with output encoded there is nothing left to defend, and rejecting `<`/`>` would block names like `Corn & Soy <West>` that now render correctly (before the fix, `<West>` was swallowed as a tag). ⚠ **Takes effect only after each environment's "Daily Digest … Deploy Logic App" workflow is run** — the app deploy does not touch Logic Apps. |
 | **M-044 / M-039** — `PUT /api/customers/{id}` performs an unguarded mutation of producer contact info, farm links and `LinkedProducerIds` with no entitlement check and no audit trail (CWE-639) | 2026-09-21 | **Fixed by deletion (2026-09-21) — and the finding's premise was false.** The route mutated nothing: `CustomerRepository.UpdateAsync` ran an `AsNoTracking` existence probe, wrote a log line and returned, with no `SaveChanges`. Location/phone/email originate in the ODS and cannot be written from the app; `FarmIds`, `LinkedProducerIds` and `TotalAcres` live on `ProducerDetails`. So there was no write to authorize and no mutation to audit. It was also **dead** — `api.service.updateCustomer` had no caller and no test referenced it — so the whole surface was removed: controller action, `UpdateCustomerRequest`, `ICustomerService`/`CustomerService.UpdateAsync`, `ICustomerRepository`/`CustomerRepository.UpdateAsync`, client wrapper. ⚠ **This route was listed under AR-01 in error on 2026-09-14** (M-039) because the triage accepted the scanner's description without opening the repository. Second register error of its class after H-062 and H-071, both of which claimed an `AUDIT_` control that did not exist. **Rule: read a route to its last layer before it enters or leaves this register.** Backend 533/533, client 601/601. |
