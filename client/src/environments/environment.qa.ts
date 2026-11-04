@@ -25,6 +25,14 @@ export const environment = {
   // Producer follow-up reminders. Writing the Outlook event needs delegated Calendars.ReadWrite with
   // admin consent on the API app registration, same credential as above. Granted in QA 2026-09-18.
   remindersEnabled: true,
+  // 45Z field data + carbon intensity: prototype only, not released here.
+  carbonIntensityEnabled: false,
+  // Plan by field: prototype only, not released here.
+  fieldPlanningEnabled: false,
+  // Where the field plan is kept: 'memory' (in the browser; a reload starts over) or 'api' (api/field-plan,
+  // the database). 'memory' until this environment's deploy has created the field-plan tables, then 'api'.
+  // Split IDs are typed by hand until CTRM's splits query is live (SPLITS-GRAPHQL). See docs/application-context/Field Plan - Database Plan.md.
+  fieldPlanBackend: 'memory' as 'memory' | 'api',
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.
   tradeUnitPreferencesUrl: 'https://tradeunitprefs-qa.scoular.com/my-preferences',

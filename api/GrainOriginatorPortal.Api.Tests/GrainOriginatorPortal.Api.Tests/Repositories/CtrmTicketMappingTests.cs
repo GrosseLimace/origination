@@ -51,6 +51,28 @@ public class CtrmTicketMappingTests
 
     // -------------------------------------------------------------------------
     [Fact]
+    public void ForASplit_KeepsEveryPartysRowUnderIt_AndNothingElse()
+    {
+        // The producer's and the landlord's rows of one split load, plus the producer's row for another split.
+        var header = Header(
+            Detail(sequence: 1, appliedNet: 30_000m),
+            Detail(customerCode: "PARKROR", sequence: 2, appliedNet: 27_741m),
+            Detail(sequence: 3, appliedNet: 1_000m),
+            Detail(sequence: 4, appliedNet: 2_000m));
+        header.Details[0].CombinedCustomerId = "TATOB02";
+        header.Details[1].CombinedCustomerId = " tatob02 ";
+        header.Details[2].CombinedCustomerId = "TATOB16";
+        // Details[3]: not a split load (null).
+
+        var tickets = CtrmMappings.ToTicketsForSplit(header, "TATOB02");
+
+        Assert.Equal(["TATOBIN", "PARKROR"], tickets.Select(t => t.CustomerCode));
+        Assert.Equal([30_000L, 27_741L], tickets.Select(t => t.AppliedDockQuantity!.Value));
+        Assert.Equal(2, tickets.Select(t => t.Id).Distinct().Count());
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
     public void EmitsOneTicketPerMatchingDetailRow()
     {
         // A split ticket: two rows for the same producer, plus one for someone else.

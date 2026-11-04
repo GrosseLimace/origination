@@ -423,6 +423,27 @@ gain regulatory/financial significance that would require per-record ownership e
 
 **Accepted by:** Origination engineering — recorded 2026-06-23.
 
+**Update (2026-10-30) — field plan (45Z) routes added to this entry.** Owner decision
+(H. Collins, 2026-10-30): any originator may change any producer's field plan, by design. A producer's
+fields, programs and 45Z results are shared producer records, worked by whoever covers the producer, the
+same as notes and planting intentions. The `audit-security` review of `feature_FieldSustainabilityPrograms`
+flagged them (CWE-639); accepted on that basis. Routes (`FieldPlanController`, all `[Authorize]`):
+
+- `POST /api/field-plan/fields`, `PUT /api/field-plan/fields/{splitId}`
+- `POST /api/field-plan/seasons`, `PUT` / `DELETE /api/field-plan/seasons/{id}`
+- `POST /api/field-plan/records`, `PUT` / `DELETE /api/field-plan/records/{id}`
+- `POST /api/field-plan/records/{id}/confirm`, `POST /api/field-plan/records/{id}/reopen`
+
+Mitigations specific to these routes: every change is audit-logged with the user (`AUDIT_*`); confirming
+re-reads the tickets from CTRM and rescores on the server (T-DISC included), so no bushels, rating or CI come
+from the request; a confirmed CI's inputs can't be changed until it's unlocked, and unlocking needs a reason
+and keeps the old result in the record's history.
+
+_Update (2026-11-03):_ the enrollment routes (`POST /api/field-plan/enrollments`, `PUT .../{key}/attestation`,
+`POST .../{key}/attest`, `POST .../{key}/withdraw`) and `dbo.ProgramEnrollment` were removed (migration
+`DropProgramEnrollment`): 45Z only calculates and confirms a CI and no producer attestation is captured, so the
+"attested enrollment blocks unlocking" safeguard no longer exists. The routes above are the whole surface.
+
 ---
 
 ## AR-02 — Customer-scoped reads not restricted by trade-unit entitlement
@@ -815,6 +836,12 @@ access model changes.
 now raised four times by automated scans. Not a blocker for the technical judgement above, which
 stands, but this entry needs IT Security (asksecurity@scoular.com) either to countersign it or to
 reject it and require the code change. Whoever gets that answer: record it on this line with a date.
+
+**Update (2026-10-30) — field plan (45Z) reads added to this entry.** Owner decision (H. Collins,
+2026-10-30), for the reasons at the top of this entry: `GET /api/field-plan/customer/{customerId}` (a
+producer's fields, seasons and program records; enrollments were removed 2026-11-03), `GET /api/field-plan/records/{id}/tickets` (the field's CTRM
+tickets, the same data the producer's Tickets tab already shows any originator) and
+`GET /api/ctrm-splits/customer/{customerId}` (the producer's CTRM splits) are open to every originator.
 
 ---
 
