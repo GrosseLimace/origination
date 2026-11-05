@@ -21,6 +21,9 @@ const MAX_PENDING = 20;
 
 /** Application Insights' SeverityLevel.Error. A literal so this file does not load the SDK eagerly. */
 const SEVERITY_ERROR = 3;
+/** A handled error from the same place, with the same message, is reported at most this often. */
+const HANDLED_ERROR_QUIET_MS = 60_000;
+const MAX_RECENT_HANDLED = 200;
 
 /**
  * Reports the browser app's errors to Application Insights, the same resource the server's own
@@ -46,6 +49,7 @@ export class AppInsightsService {
 
   private ai: ApplicationInsights | null = null;
   private state: 'idle' | 'starting' | 'on' | 'off' = 'idle';
+  private readonly recentHandled = new Map<string, number>();
   private pending: Pending[] = [];
 
   constructor() {
@@ -115,6 +119,28 @@ export class AppInsightsService {
 
   trackException(error: unknown, properties?: Properties): void {
     this.enqueue({ kind: 'exception', error, properties });
+  }
+
+  /**
+   * For an error a screen catches and handles itself (a toast, a fallback), which GlobalErrorHandler
+   * never sees. Before this, those only reached the console, and only in dev builds (audit 2026-11-05).
+   *
+   * An HTTP error that came back with a status is skipped: the API already records every request it
+   * answered, failures included. What is sent is what the server can't see — code errors, and requests
+   * that never got an answer (status 0: offline, timed out, blocked). The same error from the same place
+   * is sent at most once a minute, so a failure in a loop or a retry can't flood App Insights.
+   * Screens call it through HandledErrorReporter, which also logs to the console in dev builds.
+   */
+  trackHandledError(where: string, error: unknown): void {
+    const status = (error as { status?: unknown } | null | undefined)?.status;
+    if (typeof status === 'number' && status > 0) return;
+    const key = `${where}|${error instanceof Error ? error.message : String(error)}`;
+    const now = Date.now();
+    const last = this.recentHandled.get(key);
+    if (last !== undefined && now - last < HANDLED_ERROR_QUIET_MS) return;
+    if (this.recentHandled.size >= MAX_RECENT_HANDLED) this.recentHandled.clear();
+    this.recentHandled.set(key, now);
+    this.trackException(error, { handled: 'true', where });
   }
 
   trackEvent(name: string, properties?: Properties): void {
