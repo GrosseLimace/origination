@@ -6,6 +6,6 @@
     "environmentTag": { "value": "QA" },
     "appInsightsName": { "value": "appi-origination-qa-eus" },
     "nameSuffix": { "value": "origination-qa-eus" },
-    "alertEmailAddresses": { "value": [ "CEgr@scoular.com", "HCollins@scoular.com" ] }
+    "alertEmailAddresses": { "value": [ "CEgr@scoular.com", "HCollins@scoular.com", "BCozart@scoular.com" ] }
   }
 }

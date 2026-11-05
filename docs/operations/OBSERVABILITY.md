@@ -97,11 +97,15 @@ copying them here, so there is one copy.
 | Alert | Fires when | Severity | Who hears | Defined in |
 |---|---|---|---|---|
 | Failure Anomalies (smart detection), one per environment | Application Insights sees an abnormal rise in failed requests | platform default | the resource's smart-detection action group | Azure, not the repo |
-| `alert-<logic app>-runs-failed`, for the Daily Digest and the Instant Share Logic Apps in each environment | any failed run in a 5-minute window | 2 | email: CEgr@scoular.com, HCollins@scoular.com | `infra/logic-apps/*/azuredeploy.json` and its per-environment parameter files |
+| `alert-<logic app>-runs-failed`, for the Daily Digest and the Instant Share Logic Apps in each environment | any failed run in a 5-minute window | 2 | email: CEgr@scoular.com, HCollins@scoular.com, BCozart@scoular.com | `infra/logic-apps/*/azuredeploy.json` and its per-environment parameter files |
+| `alert-ctrm-failing-<env>` | 5+ CTRM reads failed **and** 10%+ of CTRM calls failed in 30 minutes; the email says whose side (CTRM, ours, or cannot tell) | 1 | email: the dev team (same three) via `ag-devteam-<env>` | `infra/alerts/data-source-alerts/` (see its README) |
+| `alert-database-failing-<env>` | 3+ requests or jobs hit a SQL failure (ODS or Origination DB) in 15 minutes | 1 | same | same |
+| `alert-customersync-failed-<env>` | the customer sync aborted or a cycle failed | 2 | same | same |
 
-Verified present in Dev and QA on 2026-10-13. **There is no alert on the API itself beyond Failure
-Anomalies**: no alert on CTRM read failures, CTRM latency, CustomerSync failure or deactivation
-counts, or 5xx rate. Those are visible in the workbook but nobody is paged for them.
+Smart detection and the Logic App alerts were verified present in Dev and QA on 2026-10-13. The three
+data-source alerts are added by `infra/alerts/` and exist only once the **Data Source Alerts Deploy**
+workflow has run for that environment. Still not alerted on: CTRM latency, CustomerSync deactivation
+counts, and the overall 5xx rate. Those are visible in the workbook.
 
 ## Log lines worth knowing
 

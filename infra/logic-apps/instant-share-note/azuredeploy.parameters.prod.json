@@ -8,6 +8,6 @@
     "sqlServerName": { "value": "azrscosqlp01.database.windows.net" },
     "sharedMailbox": { "value": "OriginationsApp@scoular.com" },
     "sqlConnectionName": { "value": "sqlshare" },
-    "alertEmailAddresses": { "value": [ "CEgr@scoular.com", "HCollins@scoular.com" ] }
+    "alertEmailAddresses": { "value": [ "CEgr@scoular.com", "HCollins@scoular.com", "BCozart@scoular.com" ] }
   }
 }
