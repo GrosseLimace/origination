@@ -192,6 +192,22 @@ describe('FieldSeasonDialogComponent', () => {
     expect(dialog.active()).toBeNull();
   });
 
+  // Regression (audit 2026-11-05): opened straight onto a program, removing it used to put it right back,
+  // because the startProgram effect re-ran on every store change and re-added what it no longer found.
+  it('should keep a program off the field once removed, even when the dialog was opened on it', async () => {
+    const fixture = open({ startProgram: WATER_PROGRAM.key });
+    const settle = async () => { for (let i = 0; i < 5; i++) { TestBed.tick(); fixture.detectChanges(); await fixture.whenStable(); await new Promise(r => setTimeout(r, 0)); } };
+    const programs = () => store.forSeason(season.id).map(r => r.programKey);
+    await settle();
+    expect(programs()).toEqual([WATER_PROGRAM.key]);
+
+    await fixture.componentInstance.removeProgram();
+    await settle();
+
+    expect(programs()).toEqual([]);
+    expect(fixture.componentInstance.activeKey()).toBeNull();
+  });
+
   it('should copy at once from another field onto a field with no inputs, and ask first when it has some', async () => {
     const other = await newSeason('TATOB03', 'SOUTH PIVOT IRR', 120);
     score((await store.addRecord(other.season.id, FD_CIC_PROGRAM.key))!);
