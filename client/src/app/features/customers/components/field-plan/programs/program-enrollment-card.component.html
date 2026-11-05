@@ -20,10 +20,16 @@
       @if (p.official; as o) {
         <div class="flex flex-wrap items-center justify-between gap-2">
           <p class="text-xs text-gray-500 dark:text-gray-400">Planning estimates from the {{ p.shortLabel }} calculator. {{ o.requirementsNote }}</p>
-          @if (confirmedCount() && producer()) {
-            <button type="button" class="h-8 rounded-md px-3 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible"
-                    (click)="downloadLedger()">Download Mass Balance Ledger · {{ confirmedCount() }} field{{ confirmedCount() === 1 ? '' : 's' }}</button>
-          }
+          <div class="flex flex-wrap gap-2">
+            @if (documentsEnabled && p.key === fdCicKey) {
+              <button type="button" class="h-8 rounded-md px-3 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible"
+                      (click)="documentsOpen.set(true)" data-testid="open-45z-documents">📄 45Z documents</button>
+            }
+            @if (confirmedCount() && producer()) {
+              <button type="button" class="h-8 rounded-md px-3 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible"
+                      (click)="downloadLedger()">Download Mass Balance Ledger · {{ confirmedCount() }} field{{ confirmedCount() === 1 ? '' : 's' }}</button>
+            }
+          </div>
         </div>
       }
       <!-- Bushels by CI, one ladder per crop -->
@@ -94,5 +100,8 @@
     </div>
   }
 </div>
+@if (documentsOpen()) {
+  <app-fd-cic-documents-dialog [customerId]="customerId()" [year]="year()" [producerName]="producer()?.name ?? ''" (close)="documentsOpen.set(false)" />
+}
 }
 }

@@ -14,7 +14,8 @@ interface AutoTableDoc extends jsPDF {
 }
 
 /**
- * Draws a 45Z Biofuel Feedstock Report (feedstock-report.ts) as a letter-size PDF and downloads it. Text is
+ * Draws a 45Z Biofuel Feedstock Report (feedstock-report.ts) as a letter-size PDF, to download or to save to
+ * Doc Store as a Blob. Text is
  * drawn from typed strings only (no HTML), so a field or producer name can't inject markup. The report's text
  * is plain ASCII where it matters (CO2e, N2O): jsPDF's built-in Helvetica has no subscript digits.
  */
@@ -25,13 +26,18 @@ export class FeedstockReportService {
   /** Builds and saves the PDF; a failure (e.g. the PDF library didn't load) is a message, not a silent error. */
   async download(report: FeedstockReport): Promise<void> {
     try {
-      await this.draw(report);
+      (await this.draw(report)).save(report.fileName);
     } catch {
       this.toast.error('The Biofuel Feedstock Report couldn\'t be built. Please try again.');
     }
   }
 
-  private async draw(report: FeedstockReport): Promise<void> {
+  /** The same PDF as a Blob, for saving to Doc Store. Throws on failure: the caller owns the message. */
+  async blob(report: FeedstockReport): Promise<Blob> {
+    return (await this.draw(report)).output('blob');
+  }
+
+  private async draw(report: FeedstockReport): Promise<jsPDF> {
     const { jsPDF } = await import('jspdf');
     const autoTable = (await import('jspdf-autotable')).default;
 
@@ -123,6 +129,6 @@ export class FeedstockReportService {
       doc.text(`${report.footer} · Page ${p} of ${pages}`, margin, pageHeight - 20);
     }
 
-    doc.save(report.fileName);
+    return doc;
   }
 }

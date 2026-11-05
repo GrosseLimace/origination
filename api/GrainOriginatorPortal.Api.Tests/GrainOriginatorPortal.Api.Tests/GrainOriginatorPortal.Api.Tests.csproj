@@ -34,6 +34,7 @@
            Repositories/PlantingIntentionScopingTests.cs
            Repositories/PlantingIntentionSoftDeleteTests.cs
            Services/FieldPlan/FieldPlanServiceTests.cs
+           Services/FieldPlan/FieldPlanDocumentServiceTests.cs
            Repositories/ProducerBinSiteTests.cs
            Repositories/ProducerContactTests.cs
            Repositories/ProducerGrainOnFarmSiteLinkTests.cs

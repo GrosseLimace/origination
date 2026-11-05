@@ -209,6 +209,18 @@
           </dl>
           @if (confirmed(); as o) {
             <p class="mt-3 text-sm text-gray-700 dark:text-gray-300">Confirmed {{ o.documentedAt | date:'MM/dd/yy' }} by {{ o.documentedBy }} with {{ o.method }}.</p>
+            @if (docStoreEnabled) {
+              <p class="mt-2 text-sm" role="status" data-testid="report-doc-store-status">
+                @if (o.reportDocumentId) {
+                  <span class="text-scoular-green-accessible">✓ Biofuel Feedstock Report saved to Doc Store.</span>
+                } @else if (reportSaving()) {
+                  <span class="text-gray-600 dark:text-gray-300">Saving the Biofuel Feedstock Report to Doc Store…</span>
+                } @else {
+                  <span class="text-amber-800 dark:text-amber-300">Biofuel Feedstock Report not saved to Doc Store{{ reportSaveError() ? ': ' + reportSaveError() : '.' }}</span>
+                  <button type="button" class="ml-2 underline text-scoular-green-accessible bg-transparent border-0 p-0" (click)="saveReport()">Save it now</button>
+                }
+              </p>
+            }
             @if (producer()) {
               <div class="mt-3 flex flex-wrap gap-2">
                 <button type="button" class="h-8 rounded-md px-3 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green border-0"
