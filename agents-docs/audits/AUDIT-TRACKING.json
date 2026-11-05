@@ -3790,7 +3790,7 @@
       "id": "angular.45z-dialog-and-card-shipped-untested",
       "audit": "angular",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "title": "Core 45Z UI components (field-season dialog, enrollment card) have zero test coverage as the feature ships to PROD",
       "description": "Commit c5483372 (2026-11-05) turned 45Z on in QA and PROD. FieldSeasonDialogComponent (228 lines) owns program add/remove, copy-from/copy-to with a confirm-before-replace branch, unlock-with-reason, and PDF report generation — all with no .spec.ts. ProgramEnrollmentCardComponent (249 lines) computes the CI ladder grouping, per-group target comparisons, and the Mass Balance Ledger CSV export shown to originators — also with no .spec.ts. review-recordkeeping.component.ts and review-ticket-table.component.ts (the review flow ticket table/recordkeeping checklist) are likewise untested, unlike their sibling review-tdisc.component.ts which does have a spec. This mirrors the already-tracked god-component test gap, but calls out specifically the components that just went live in production this run.",
       "files": [
@@ -3803,7 +3803,12 @@
         "date": "2026-11-05"
       },
       "last_verified": "2026-11-05",
-      "notes": "[2026-11-05] Verified: none of the four components had a spec or was referenced by one. test-gaps.field-season-dialog-untested and test-gaps.program-enrollment-card-untested are duplicates of this finding."
+      "notes": "[2026-11-05] Verified: none of the four components had a spec or was referenced by one. test-gaps.field-season-dialog-untested and test-gaps.program-enrollment-card-untested are duplicates of this finding.",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05 (test-only): field-season-dialog.component.spec.ts (13 tests), program-enrollment-card.component.spec.ts (10), review-ticket-table.component.spec.ts (6), review-recordkeeping.component.spec.ts (3). Each was checked to fail when a key expected value is changed. Writing them surfaced a real defect, logged separately as code-review.field-season-dialog-startprogram-readds-removed-program."
     },
     {
       "id": "sql.scoularid-trim-defeats-index-seek",
@@ -3965,7 +3970,7 @@
       "id": "test-gaps.field-season-dialog-untested",
       "audit": "test-gaps",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "title": "FieldSeasonDialogComponent, the core 45Z/field-plan editing dialog, has zero test coverage",
       "description": "228-line production dialog (not prototype scaffolding) that orchestrates FieldPlanStore, FdCicApiService, FeedstockReportService and ToastService: copy-from/copy-to across a producer's fields (with a JSON-diff check that decides whether to confirm-before-overwrite or copy silently), the confirmReopen flow that unlocks a confirmed CI, canReview gating on frozen/preview state, and PDF report generation. This shipped as part of the 45Z feature that was just turned on in QA/PROD (c5483372); every sibling field-plan file in this directory (ci-preview-panel, crop-fields-panel, field-plan-wording) has a spec, but this coordinating dialog does not. A regression in the copy-confirmation branch or the reopen flow would silently corrupt or skip a producer's program data with no CI signal.",
       "files": [
@@ -3975,13 +3980,18 @@
         "date": "2026-11-05"
       },
       "last_verified": "2026-11-05",
-      "notes": "[2026-11-05] Verified (no spec). Duplicate of angular.45z-dialog-and-card-shipped-untested."
+      "notes": "[2026-11-05] Verified (no spec). Duplicate of angular.45z-dialog-and-card-shipped-untested.",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05 (test-only): covered by field-season-dialog.component.spec.ts (13 tests); duplicate of angular.45z-dialog-and-card-shipped-untested."
     },
     {
       "id": "test-gaps.program-enrollment-card-untested",
       "audit": "test-gaps",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "title": "ProgramEnrollmentCardComponent's CI-ladder grouping and Mass Balance Ledger export logic has zero test coverage",
       "description": "249-line component computing the producer-facing 45Z summary: groups scored fields by crop into a CI ladder (ciLadder, sorted lowest-CI-first with running bushel totals), compares each field's CI against a user-typed target to color it at-or-below/above, and filters+exports confirmed fields as the Mass Balance Ledger CSV (downloadLedger). This is the view originators use to judge compliance against downstream CI targets and the artifact handed off for 45Z tax-credit documentation. No spec exists despite the non-trivial grouping/sorting/filtering logic; a bug in ladder ordering or the Documented-status filter in downloadLedger would misstate CI figures or omit/include the wrong fields in the ledger with no CI signal.",
       "files": [
@@ -3991,13 +4001,18 @@
         "date": "2026-11-05"
       },
       "last_verified": "2026-11-05",
-      "notes": "[2026-11-05] Verified (no spec). Duplicate of angular.45z-dialog-and-card-shipped-untested."
+      "notes": "[2026-11-05] Verified (no spec). Duplicate of angular.45z-dialog-and-card-shipped-untested.",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05 (test-only): covered by program-enrollment-card.component.spec.ts (10 tests: CI ladders, ranges, CI target, Mass Balance Ledger CSV); duplicate of angular.45z-dialog-and-card-shipped-untested."
     },
     {
       "id": "test-gaps.help-troubleshooter-untested",
       "audit": "test-gaps",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "HelpTroubleshooterComponent's producer-lookup branching and trade-unit-switch logic has zero test coverage",
       "description": "The in-app \"a producer isn't showing up\" troubleshooter's lookUp() has five distinct outcomes (in-selection, other-trade-unit with a canSwitch flag, not-added, not-found, error) derived from two sequential API calls, and switchTo() has a documented fragile edge case (raw vs trimmed trade-unit code comparison: \"a trimmed copy of a padded code would show as unselected and be pruned\"). No spec exists. This sits next to the entitlement/trade-unit scoping logic that already has a tracked high-severity gap (test-gaps.entitlement-service-fail-open-path-untested, now resolved) -- the same risk class (authorization-adjacent scoping with untested branches) recurring in a new component.",
       "files": [
@@ -4007,13 +4022,18 @@
         "date": "2026-11-05"
       },
       "last_verified": "2026-11-05",
-      "notes": "[2026-11-05] Verified: no spec and not referenced by one."
+      "notes": "[2026-11-05] Verified: no spec and not referenced by one.",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05 (test-only): help-troubleshooter.component.spec.ts (10 tests) covers every lookup branch and the trade-unit switch."
     },
     {
       "id": "test-gaps.help-spotlight-positioning-untested",
       "audit": "test-gaps",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "title": "HelpSpotlightComponent's element-finding and tooltip-positioning math has zero test coverage",
       "description": "Exported module-level helpers (visibleAnchor, anchorRect) and component methods (tipY's above/below flip when there's no room underneath, the find-with-timeout retry loop in follow()) are all directly testable pure/DOM-measurement logic with documented fragility (\"a component host is display:inline by default and can report an empty box around block children\"), but have no spec. Lowest priority of this pass's findings since it degrades gracefully (follow() times out and returns to the panel rather than hanging), but a regression in anchorRect's children-union fallback would silently highlight nothing or the wrong region.",
       "files": [
@@ -4023,7 +4043,30 @@
         "date": "2026-11-05"
       },
       "last_verified": "2026-11-05",
-      "notes": "[2026-11-05] Verified: no spec and not referenced by one."
+      "notes": "[2026-11-05] Verified: no spec and not referenced by one.",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05 (test-only): help-spotlight.component.spec.ts (8 tests) covers outline/tooltip placement, edge clamping, hidden copies, late targets, the 4-second give-up, scroll follow and cleanup."
+    },
+    {
+      "id": "code-review.field-season-dialog-startprogram-readds-removed-program",
+      "audit": "code-review",
+      "severity": "medium",
+      "status": "open",
+      "title": "Field-season dialog opened on a program (startProgram) re-adds that program as soon as it is removed",
+      "description": "FieldSeasonDialogComponent constructor: the second effect reads startProgram(), season() and store.find(seasonId, key), and calls addProgram(key) when the program is not on the season. Because store.find reads the store's records signal, the effect re-runs after removeProgram() removes the record, finds it missing, and adds it straight back (as a new, empty record). crop-fields-panel passes [startProgram]=\"openProgram\", so this is reachable from the real screen: open a field's dialog onto its program, click Remove from this field, and the program reappears. Opening the dialog without startProgram removes normally.",
+      "files": [
+        "client/src/app/features/customers/components/field-plan/field-season-dialog.component.ts"
+      ],
+      "suggested_fix": "Apply startProgram once per dialog/season, not on every store change: remember the season+key already handled, or read store.find/addProgram inside untracked() so record changes don't re-trigger the effect. Add a spec: open with startProgram, remove, expect the season to have no programs.",
+      "opened_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] Found while writing field-season-dialog.component.spec.ts for the audit remediation. Reproduced with a throwaway test on main 7e9a316a: opened with startProgram = a test program -> season has [program]; after removeProgram() -> season still has [program]. Control (program added by hand, no startProgram) -> removal sticks. Not fixed on the remediation branch: it changes dialog behaviour, so it waits for the owner."
     }
   ]
 }
