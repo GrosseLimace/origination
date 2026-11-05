@@ -1,3 +1,84 @@
+# Angular Audit — 2026-11-05
+
+**Findings this pass:** 3 new (0 critical, 1 high, 2 medium, 0 low) — 30 pre-existing findings not
+re-verified this pass (see 2026-10-20 section below).
+**Opened:** 2026-11-05 | **Last verified:** 2026-11-05
+
+## Scope
+
+This repo already carries 30 angular findings in `AUDIT-TRACKING.json` from the 2026-10-20 pass
+(mostly resolved/accepted, 2 open low). Rather than re-walk that ground, this pass targeted the
+largest body of Angular code added *since* that audit: the field-plan / 45Z sustainability-program
+feature (`client/src/app/features/customers/components/field-plan/**`, ~5,200 lines across 26
+non-spec files), which the most recent commit on this branch (`c5483372`, 2026-11-05) just turned
+on in QA and PROD.
+
+## What was checked
+
+- **Inventory**: all 26 non-spec `.ts` files under `field-plan/`, their corresponding `.spec.ts`
+  files (15 present), and the style guide (`style-guides/angular.md`) sections on component
+  structure, templates, signals/state boundaries, and testing.
+- **`any` usage**: none found in field-plan (`grep ": any\b|as any\b"` — clean).
+- **Error handling**: `HttpFieldPlanBackend` (converts every HTTP failure to a typed `ApiError`)
+  and `FieldPlanStore.write()`/`runSave()` (toast + automatic reload-from-backend on a failed save,
+  so the screen never shows unsaved state) are both solid — no silent swallowing, no new finding.
+- **Effect-driven async writes**: `FieldSeasonDialogComponent`'s constructor `effect()` calls
+  `this.addProgram(key)`, an async method that eventually calls `store.addRecord()` → a signal
+  `.update()`. Traced the call chain — the write happens after an `await this.flush()` inside the
+  store, i.e. after the effect's synchronous run has already returned, so this is not an NG0600
+  risk. No finding.
+- **Template style**: grepped for inline `template: \`` across field-plan. Five components use
+  inline templates against the style guide's `templateUrl`-by-default rule — **new medium
+  finding** (`angular.field-plan-inline-templates-violate-style-guide`).
+- **Store signal exposure**: `FieldPlanStore.fields/seasons/records` are `readonly` properties but
+  still full `WritableSignal`s (no `.asReadonly()`) — the same anti-pattern the 2026-10-20 pass's
+  "Notes for the next pass" explicitly warned to watch for in new stores, now found in a second,
+  independent store. **New medium finding**
+  (`angular.field-plan-store-raw-writable-signals`).
+- **Test coverage on the shipped surface**: of the 10 non-spec files with no matching `.spec.ts`,
+  two are the components carrying most of the 45Z feature's interactive logic —
+  `field-season-dialog.component.ts` (228 lines: add/remove program, copy-from/copy-to with a
+  confirm-before-replace branch, unlock-with-reason, PDF report generation) and
+  `program-enrollment-card.component.ts` (249 lines: CI-ladder grouping, per-group target
+  comparison, Mass Balance Ledger CSV export) — plus two review-flow display components
+  (`review-recordkeeping.component.ts`, `review-ticket-table.component.ts`). All four are
+  untested while the feature is live in PROD. **New high finding**
+  (`angular.45z-dialog-and-card-shipped-untested`).
+
+## What was not reviewed
+
+Consistent with "sample, don't exhaust":
+- The 30 pre-existing angular findings (not re-verified this pass; see 2026-10-20 section).
+- The other 6 field-plan files with no spec that are lower-risk (pure registry/data/interface
+  files: `program-def.ts`, `program-registry.ts`, `field-plan-backend.ts`,
+  `fd-cic.data.ts`, `feedstock-report.service.ts`) or an explicitly-labeled prototype backend
+  (`in-memory-field-plan-backend.ts`, 251 lines, "PROTOTYPE ONLY (in memory)" per its own doc
+  comment).
+- Any area outside `field-plan/` — not re-sampled this pass.
+- Build, lint, or test execution (out of scope for this invocation).
+
+## Findings (this pass)
+
+| Severity | ID | Title |
+|---|---|---|
+| High | `angular.45z-dialog-and-card-shipped-untested` | Core 45Z UI components have zero test coverage as the feature ships to PROD |
+| Medium | `angular.field-plan-inline-templates-violate-style-guide` | New field-plan components use inline template strings instead of `templateUrl` |
+| Medium | `angular.field-plan-store-raw-writable-signals` | `FieldPlanStore` exposes `fields`/`seasons`/`records` as raw `WritableSignal` |
+
+Full detail in `AUDIT-TRACKING.json` (`audit: "angular"`, 33 total findings now).
+
+## Notes for the next pass
+
+- The raw-writable-signal pattern has now recurred twice (Home stores in 2026-10-20, FieldPlanStore
+  this pass) despite being called out explicitly in between. Worth considering a lint rule or
+  shared base-store helper that forces `.asReadonly()` at the source, rather than relying on each
+  audit pass to catch it by hand.
+- `in-memory-field-plan-backend.ts` is explicitly a prototype fallback — worth checking at the next
+  pass whether it's still reachable from any production code path or whether it can be deleted now
+  that `HttpFieldPlanBackend` is live.
+
+---
+
 # Angular Audit — 2026-10-20
 
 **Findings:** 2 open (both low) — 26 resolved/accepted (0 critical, 0 high, 0 medium open)

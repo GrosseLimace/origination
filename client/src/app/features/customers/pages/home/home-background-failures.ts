@@ -1,4 +1,5 @@
 import { Injectable, inject, isDevMode } from '@angular/core';
+import { HandledErrorReporter } from '@core/services/handled-error-reporter.service';
 import { ToastService } from '@core/services/toast.service';
 
 /**
@@ -14,7 +15,8 @@ import { ToastService } from '@core/services/toast.service';
  * it has spoken. The wording is deliberately vague about scope, because the toast that gets
  * through may be standing in for several failures that were suppressed behind it.
  *
- * Dev builds still log every failure, unthrottled, so local debugging sees everything.
+ * Dev builds still log every failure, unthrottled, so local debugging sees everything; App Insights is
+ * sent the ones the server could not have recorded (HandledErrorReporter).
  *
  * Provided by HomeComponent, so the page and the stores it delegates to share one throttle.
  */
@@ -24,11 +26,13 @@ export class HomeBackgroundFailures {
   private static readonly BackgroundFailurePerSourceQuietMs = 5 * 60_000;
 
   private readonly toastService = inject(ToastService);
+  private readonly handledErrors = inject(HandledErrorReporter);
   private readonly _backgroundFailureToastAt = new Map<string, number>();
   private _lastBackgroundFailureToastAt = 0;
 
   report(what: string, err: unknown): void {
     if (isDevMode()) console.error(`[Home] failed to ${what}`, err);
+    this.handledErrors.send(`Home: failed to ${what}`, err);
     const now = Date.now();
     const lastForSource = this._backgroundFailureToastAt.get(what) ?? 0;
     if (now - lastForSource < HomeBackgroundFailures.BackgroundFailurePerSourceQuietMs) return;

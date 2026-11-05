@@ -3,8 +3,45 @@
 Scope: coverage breadth across `api/GrainOriginatorPortal.Api.Tests` (xUnit) and `client/` (Vitest)
 Baseline (unverified this run per the audit's hard limits — no test suite executed): dotnet/vitest counts not re-run; the gap is coverage breadth, not currently-failing tests.
 
-**Findings:** 11 total, 0 open, 11 resolved
-**Opened:** 2026-09-19 | **Last reconciled:** 2026-10-20
+**Findings:** 15 total, 4 open, 11 resolved
+**Opened:** 2026-09-19 | **Last reconciled:** 2026-11-05
+
+## Reconciliation (2026-11-05)
+
+231 commits landed on `main` since the 2026-10-20 pass (`5ed04040`..`c5483372`), dominated by the Field
+Sustainability Programs / 45Z feature (FD-CIC USDA calculator, field-plan editing, T-DISC review, Mass
+Balance Ledger — just turned on in QA/PROD per `c5483372`), the in-app self-help panel (578), CTRM
+Managed Identity, customers read from CTRM GraphQL, and two CTRM load-reduction perf changes. Rather
+than re-reading the full diff, sampled each new surface for the same risk pattern (orchestration/branching
+logic shipped without assertions):
+
+- **CTRM pagination/keep-warm perf changes** (`38982b0a`, `6df7f96f`) — no gap. Both shipped in the same
+  commit as rewritten/new test files (`CtrmTicketPagingTests` rewritten for the new ramped-batch shape,
+  new `CtrmTicketWalkOnDemandTests`, `CtrmKeepWarmCycleTests` extended for the new config switch).
+- **Customers-from-CTRM-GraphQL fixes** (`b5dd7627`, `af7abbe3`) — no gap. Both are bug-fix commits that
+  shipped with pinning tests in the same commit (`CustomerRepositoryCtrmOnboardingTests`); the whole CTRM
+  customer surface has 9 dedicated xUnit test files.
+- **Backend field-plan/45Z services** (`FieldPlanService` 513 lines, `FieldTicketService` 199 lines,
+  `FieldPlanPrograms`, `FieldPlanCropGroups`, FD-CIC calculator) — no gap, verified by reading
+  `FieldTicketService.cs` in full (crop-year window matching with year-wraparound, contract-vs-BL-date
+  branching, cross-record double-counting prevention) before confirming `FieldPlanServiceTests.cs` (950
+  lines) actually exercises it directly (`h.Tickets.ForRecordAsync(...)`), not just as an injected
+  dependency. Same discipline on the FD-CIC golden-case tests (`FdCicGoldenCaseTests.cs` against USDA's
+  own Excel pack) and the TDisc calculator.
+- **Client field-plan surface** — mostly well covered (every program def, calculator, store, and the
+  FD-CIC intake/review/recordkeeping/mass-balance-ledger files all have matching specs), but found two
+  real gaps in the coordinating components that compose them — see Critical/High below. Both are new
+  code on this feature, not aged debt.
+- **Self-help panel (578)** — mostly well covered (`help-panel.component`, `help-panel-state.service`,
+  `help-panel.service`, `help-match`, `help-text`, the FAQ-drift spec all have specs), but the
+  troubleshooter and spotlight components that shipped alongside them do not — see High/Low below.
+
+New findings opened this pass (4): `test-gaps.field-season-dialog-untested` (high),
+`test-gaps.program-enrollment-card-untested` (high), `test-gaps.help-troubleshooter-untested` (medium),
+`test-gaps.help-spotlight-positioning-untested` (low). No previously-resolved finding was re-opened;
+the 11 prior findings were not re-verified against source this pass beyond confirming none of the new
+commits touched their files (out of scope per the context-discipline budget — the 2026-10-20 pass had
+already verified all 11 directly).
 
 ## Reconciliation (2026-10-20)
 
@@ -99,6 +136,16 @@ Re-verified all 6 findings directly against current source/test files (not from 
 - Each converter's doc comment describes a specific historical bug (a CST user seeing a note 5 hours off; ODS ship dates rolling back a day) it exists to prevent. The sibling `CalendarDateJsonConverter` has a dedicated test file; these two do not.
 - **Suggested fix:** Mirror `CalendarDateJsonConverterTests.cs` for both converters — round-trip Utc/Local/Unspecified Kind inputs and assert the emitted string format.
 
+### FieldSeasonDialogComponent, the core 45Z/field-plan editing dialog, has zero test coverage (`test-gaps.field-season-dialog-untested`)
+- **Files:** `features/customers/components/field-plan/field-season-dialog.component.ts`
+- 228-line production dialog orchestrating the field-plan store, the FD-CIC API, the feedstock report service and toasts: copy-from/copy-to across a producer's fields (with a JSON-diff check deciding silent-copy vs confirm-first), the confirm-reopen flow that unlocks a confirmed CI, review gating, and PDF report generation. Every sibling file in the same feature directory has a spec; this coordinating dialog, shipped with the 45Z go-live, does not.
+- **Suggested fix:** Characterize the copy-confirmation branch (`pickCopySource`'s has-inputs check) and `confirmReopen` first — both mutate confirmed program state.
+
+### ProgramEnrollmentCardComponent's CI-ladder grouping and Mass Balance Ledger export logic has zero test coverage (`test-gaps.program-enrollment-card-untested`)
+- **Files:** `features/customers/components/field-plan/programs/program-enrollment-card.component.ts`
+- Groups scored fields by crop into a CI ladder (lowest-CI-first, running bushel totals), colors each field at-or-below/above a typed target, and filters+exports confirmed fields as the Mass Balance Ledger CSV — the artifact used for 45Z compliance documentation. No spec despite the grouping/sorting/filtering logic.
+- **Suggested fix:** Start with `downloadLedger`'s Documented-status filter and the `groups` computed's sort — both would misstate or mis-scope a compliance document if they regressed silently.
+
 ## Medium
 
 ### UsageAggregationBackgroundService's day-rollover and interval-gating logic has zero test coverage (`test-gaps.usage-aggregation-background-service-untested`)
@@ -111,6 +158,18 @@ Re-verified all 6 findings directly against current source/test files (not from 
 - **Files:** `features/usage-dashboard/pages/user-usage-detail/user-usage-detail.component.ts`
 - `recentActivityByFeature` partitions activity into a Map with an "other" fallback bucket, `currentTabRecentActivity`/`activeTabLabel` derive from the active tab, and `maxDaily`/`maxScreenMinutes` compute chart-driving aggregates with explicit empty-data floors — none of it tested, while the parent dashboard and sibling manager-filter component both shipped specs in the same feature branch.
 - **Suggested fix:** Mirror `usage-dashboard.component.spec.ts`'s pattern; prioritize the "other" fallback bucket and the empty-data floor cases.
+
+### HelpTroubleshooterComponent's producer-lookup branching and trade-unit-switch logic has zero test coverage (`test-gaps.help-troubleshooter-untested`)
+- **Files:** `shared/components/help-panel/help-troubleshooter.component.ts`
+- The "a producer isn't showing up" troubleshooter's `lookUp()` has five outcomes (in-selection, other-trade-unit with a `canSwitch` flag, not-added, not-found, error) from two sequential API calls, and `switchTo()` has a documented fragile edge case around raw-vs-trimmed trade-unit code comparison. No spec exists — the same risk class (authorization-adjacent scoping with untested branches) as the now-resolved `entitlement-service-fail-open-path-untested` finding, recurring in new code.
+- **Suggested fix:** Table-test `lookUp()`'s five outcomes with mocked `searchCustomers`/`searchOdsCustomers` responses; add one case for the padded-code comparison in `switchTo()`.
+
+## Low
+
+### HelpSpotlightComponent's element-finding and tooltip-positioning math has zero test coverage (`test-gaps.help-spotlight-positioning-untested`)
+- **Files:** `shared/components/help-panel/help-spotlight.component.ts`
+- Exported helpers (`visibleAnchor`, `anchorRect`) and the `tipY` above/below flip are directly testable pure/DOM-measurement logic with documented fragility (a component host can report an empty box around block children), but have no spec. Lowest priority this pass since the component degrades gracefully on failure (times out back to the panel rather than hanging).
+- **Suggested fix:** Unit test `anchorRect`'s children-union fallback and `tipY`'s flip threshold directly; both are exported and need no component harness.
 
 ## Weak-test sweep
 

@@ -272,6 +272,24 @@ public class FieldPlanServiceTests
         Assert.Equal("FIELD_PLAN_FIELD_ON_ROW", sameRow.ErrorCode);
     }
 
+    [Fact]
+    public async Task AddSeason_RefusesASecondRowOfTheSameCrop_ButNotAnotherCrop()
+    {
+        // A second corn row (dryland, product code YCNG) is still corn: the field's tickets would count twice.
+        const int DrylandCornRow = 13;
+        var h = New();
+        h.Db.PlantingIntentions.Add(new PlantingIntention { Id = DrylandCornRow, CustomerId = Tobin, TradeUnit = "2190", PlantingYear = 2026, Crop = "YCNG", Type = "Dryland", Acres = 300, CreatedBy = "x" });
+        await h.Db.SaveChangesAsync();
+        await CornField(h);
+        await h.Service.AddSeasonAsync(new CreateFieldSeasonRequest { FieldKey = "TATOB43", PlantingIntentionId = WheatRow, Year = 2026, CropLabel = "Wheat", Acres = 10 }, default);
+
+        var secondCorn = await Assert.ThrowsAsync<BusinessException>(() => h.Service.AddSeasonAsync(
+            new CreateFieldSeasonRequest { FieldKey = "TATOB43", PlantingIntentionId = DrylandCornRow, Year = 2026, CropLabel = "Dryland Corn", Acres = 10 }, default));
+
+        Assert.Equal("FIELD_PLAN_FIELD_ON_ROW", secondCorn.ErrorCode);
+        Assert.Contains("Irrigated Corn", secondCorn.Message);
+    }
+
     // ── Records ─────────────────────────────────────────────────────────────
 
     [Fact]

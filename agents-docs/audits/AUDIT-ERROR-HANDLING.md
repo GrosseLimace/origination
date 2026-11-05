@@ -3,8 +3,36 @@
 Style guide: `style-guides/error-handling.md`
 Scope: exception flow and API error contracts across `api/GrainOriginatorPortal.Api`, and `client/` error handling
 
-**Findings:** 9 total — 0 open, 8 resolved, 1 accepted
-**Opened:** 2026-09-19 | **Last verified:** 2026-10-20
+**Findings:** 10 total — 1 open, 8 resolved, 1 accepted
+**Opened:** 2026-09-19 | **Last verified:** 2026-11-05
+
+## Reconciliation note (2026-11-05)
+
+Calibration re-run, scoped to `error-handling` only. Re-verified all previously-resolved findings
+against current `HEAD` (no regressions — see below) and sampled new ground: a 36-file grep of
+`catch (Exception ...)` across `Services/`, `Controllers/`, and `Infrastructure/Repositories/`
+(empty catch blocks, `throw ex;`, silent swallows — none found), the resilience pipelines for the
+Nominatim/Graph/CTRM `HttpClient`s and all four `DbContext` registrations (`EnableRetryOnFailure`,
+correctly paired with `CreateExecutionStrategy()` in the one place with an explicit transaction),
+and the `[Authorize]`/JWT-bearer-driven 401/403 path, which hadn't been examined in prior passes.
+
+One new finding opened:
+
+- **`error-handling.authz-short-circuit-missing-standard-envelope`** (medium) — ASP.NET Core's
+  authorization middleware short-circuits on a failed `[Authorize]` check without throwing, so
+  `GlobalExceptionHandler` (which only catches thrown exceptions via `app.UseExceptionHandler()`)
+  never runs for these 401/403s. `AuthorizationAuditResultHandler.cs` adds the required audit log
+  line but explicitly documents that it "delegates to the default implementation so the response
+  is written exactly as before" — i.e. the framework's bare response, not the app's standard
+  envelope. This is the same class of bug the team already fixed once for model-validation 400s
+  (`ModelValidationEnvelopeTests.cs` pins that fix); the fix was never extended to the 401/403
+  short-circuit path. See `AUDIT-TRACKING.json` for full detail and suggested fix.
+
+Also re-verified, no change: `client/src/app/core/errors/api-error.ts`'s typed `ApiError` contract
+is unchanged and still the sole error type `api.service.ts` throws; the catalog/lookup endpoints
+(`EntitlementsController.GetCatalog`, `NotesController.GetMentionCatalog`) still set `Degraded =
+true` rather than failing open silently; `GlobalExceptionHandler.cs` and
+`GlobalExceptionHandlerTests.cs` are unchanged.
 
 ## Reconciliation note (2026-10-20)
 
@@ -40,7 +68,9 @@ Six of the original nine findings were fixed on `fix_AuditPhase1Findings` and me
 
 ## Open
 
-None.
+### `[Authorize]`-driven 401/403 responses skip the standard `ApiErrorResponse` envelope (`error-handling.authz-short-circuit-missing-standard-envelope`) — medium
+- **Files:** `Program.cs`, `Middleware/AuthorizationAuditResultHandler.cs`, `Middleware/GlobalExceptionHandler.cs`, `client/src/app/core/services/api.service.ts`
+- See the 2026-11-05 reconciliation note above and `AUDIT-TRACKING.json` for full detail, evidence, and suggested fix.
 
 ## Accepted
 
@@ -61,4 +91,16 @@ None.
 
 ## Overall health
 
-Both the .NET and Angular sides are now a well-built foundation with no open findings. `GlobalExceptionHandler` correctly maps all exception categories to status/log-level/structured fields (`{TraceId}`, `{ErrorCode}`, `{ErrorCategory}`) per §4.1/§4.2, sets `Retry-After` on 429/503, exposes exception `Debug` detail only in Development, and is covered by `GlobalExceptionHandlerTests.cs`. `/health/live` and `/health/ready` are both wired in `Program.cs` per §8. The Angular client now has a typed `ApiError` contract (`category`/`code`/`details`/`traceId`) that `api.service.ts` is the sole thrower of, and the catalog/lookup endpoints that intentionally fail open to 200 now carry a `Degraded` flag so the client can distinguish "nothing to show" from "the lookup failed." The only remaining non-open item is the `accepted` disposition on inconsistent client-side retry coverage, which is a deliberate product call rather than a gap.
+Both the .NET and Angular sides remain a well-built foundation, with one new open finding this
+pass. `GlobalExceptionHandler` correctly maps all exception categories to status/log-level/structured
+fields (`{TraceId}`, `{ErrorCode}`, `{ErrorCategory}`) per §4.1/§4.2, sets `Retry-After` on 429/503,
+exposes exception `Debug` detail only in Development, and is covered by `GlobalExceptionHandlerTests.cs`.
+`/health/live` and `/health/ready` are both wired in `Program.cs` per §8. The Angular client has a
+typed `ApiError` contract (`category`/`code`/`details`/`traceId`) that `api.service.ts` is the sole
+thrower of, and the catalog/lookup endpoints that intentionally fail open to 200 carry a `Degraded`
+flag so the client can distinguish "nothing to show" from "the lookup failed." EF Core transient-fault
+retry (`EnableRetryOnFailure`) is configured on every `DbContext`, correctly paired with an execution
+strategy in the one place with an explicit transaction. The remaining gap: the app fixed the
+framework-default-response-shape problem for model-validation 400s but never extended that fix to
+the `[Authorize]` 401/403 short-circuit path (see Open, above). The `accepted` disposition on
+inconsistent client-side retry coverage remains a deliberate product call rather than a gap.
