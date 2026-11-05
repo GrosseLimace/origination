@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TestBed, ComponentFixture } from '@angular/core/testing';
-import { Type } from '@angular/core';
-import { FieldTicket, OfficialResult } from '@models';
+import { Type, WritableSignal } from '@angular/core';
+import { FieldProgramRecord, FieldTicket, OfficialResult } from '@models';
 import { downloadCsv } from '@shared/utils/csv';
 import { FieldPlanStore } from '../store/field-plan.store';
 import { ProgramIntake, SustainabilityProgramDef } from './program-def';
@@ -72,7 +72,10 @@ describe('ProgramEnrollmentCardComponent (the per-producer program card)', () =>
       bushels: tickets.reduce((sum, t) => sum + (t.netBushels ?? 0), 0), tickets,
       documentedBy: 'tess.tester@example.test', documentedAt: '2026-11-03T15:00:00Z',
     };
-    store.records.update(rs => rs.map(r => (r.id === ids[name] ? { ...r, status: 'Locked', official } : r)));
+    // The store only exposes readonly views, and the in-memory confirm() accepts the real 45Z program only,
+    // so the test writes the result into the store's private records directly.
+    (store as unknown as { _records: WritableSignal<FieldProgramRecord[]> })._records
+      .update(rs => rs.map(r => (r.id === ids[name] ? { ...r, status: 'Locked', official } : r)));
   }
 
   function render(programKey = CI_PROGRAM.key, withProducer: { code: string; name: string } | null = producer): void {
