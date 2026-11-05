@@ -267,9 +267,11 @@ describe('FdCicReviewComponent', () => {
     expect(noTill.estimateTillage()).toBe('NoTill');
     expect(noTill.tDiscResult()?.designation).toBe('RT');
   });
-describe('saving the Biofuel Feedstock Report to Doc Store', () => {
-    const savedDoc = { id: 'doc-1', fileName: 'r.pdf', contentType: 'application/pdf', size: 10, uploadedAt: '2026-11-04T00:00:00Z', documentType: 'FeedstockReport' as const };
+describe('saving the Biofuel Feedstock Report and Mass Balance Ledger to Doc Store', () => {
+    const savedDoc = { id: 'doc-1', fileName: 'r.pdf', contentType: 'application/pdf', size: 10, uploadedAt: '2026-11-04T00:00:00Z', documentType: 'FeedstockReport' as const, status: 'Current' as const };
+    const savedLedger = { ...savedDoc, id: 'ledger-1', fileName: 'l.csv', contentType: 'text/csv', documentType: 'MassBalanceLedger' as const };
     let saveReport: ReturnType<typeof vi.fn>;
+    let saveLedger: ReturnType<typeof vi.fn>;
 
     beforeEach(async () => {
       // Doc Store is on with the API field plan; here the in-memory store stands in, so switch it on by hand.
@@ -277,32 +279,50 @@ describe('saving the Biofuel Feedstock Report to Doc Store', () => {
       fixture.componentRef.setInput('producer', { code: 'PENKA', name: 'Penka Farms' });
       vi.spyOn(TestBed.inject(FeedstockReportService), 'blob').mockResolvedValue(new Blob(['%PDF-1.7'], { type: 'application/pdf' }));
       saveReport = vi.fn().mockResolvedValue(savedDoc);
+      saveLedger = vi.fn().mockResolvedValue(savedLedger);
       vi.spyOn(TestBed.inject(FieldPlanDocumentsService), 'saveReport').mockImplementation(saveReport);
+      vi.spyOn(TestBed.inject(FieldPlanDocumentsService), 'saveLedger').mockImplementation(saveLedger);
       review.reviewed.set(true);
       await vi.waitFor(() => expect(review.blocker()).toBeNull());
     });
 
-    it('should save the report when the CI is confirmed, without anyone downloading it', async () => {
+    it('should save the report and the field\'s ledger when the CI is confirmed, without anyone downloading them', async () => {
       await review.confirm();
 
       expect(saveReport).toHaveBeenCalledTimes(1);
       expect(saveReport.mock.calls[0][0]).toBe(recordId);
       expect(saveReport.mock.calls[0][2]).toMatch(/^45Z-Biofuel-Feedstock-Report_PENKA_.*.pdf$/);
       expect(review.confirmed()?.reportDocumentId).toBe('doc-1');
+
+      expect(saveLedger).toHaveBeenCalledTimes(1);
+      expect(saveLedger.mock.calls[0][0]).toBe(recordId);
+      expect(saveLedger.mock.calls[0][2]).toMatch(/^45Z-Mass-Balance-Ledger_PENKA_\d{4}_\d{8}\.csv$/);
+      const text = await (saveLedger.mock.calls[0][1] as Blob).text();
+      // A byte-order mark first, as the Download button saves it, so Excel reads it as UTF-8.
+      expect(text.charCodeAt(0)).toBe(0xfeff);
+      const csv = text.slice(1);
+      expect(csv.split('\r\n')[0]).toBe('Producer code,Producer name,Split ID,Field,Enrollment ID,Crop year,Commodity,Acres,Confirmed bushels,Tickets,CI (g CO2e/bu),Tillage,USDA version,Confirmed by,Confirmed at');
+      expect(csv.split('\r\n')[1]).toMatch(/^PENKA,Penka Farms,/);
+      expect(review.confirmed()?.ledgerDocumentId).toBe('ledger-1');
+      expect(review.unsavedDocuments()).toBe('');
     });
 
-    it('should keep the CI confirmed when the save fails, say why, and save on retry', async () => {
-      saveReport.mockRejectedValueOnce(new ApiError({ status: 503, message: 'Doc Store is not answering.' }));
+    it('should keep the CI confirmed when a save fails, say why, and save only what\'s missing on retry', async () => {
+      saveLedger.mockRejectedValueOnce(new ApiError({ status: 503, message: 'Doc Store is not answering.' }));
 
       await review.confirm();
 
       expect(review.confirmed()?.status).toBe('Documented');
-      expect(review.confirmed()?.reportDocumentId).toBeUndefined();
+      expect(review.confirmed()?.reportDocumentId).toBe('doc-1');
+      expect(review.confirmed()?.ledgerDocumentId).toBeUndefined();
+      expect(review.unsavedDocuments()).toBe('Mass Balance Ledger');
       expect(review.reportSaveError()).toBe('Doc Store is not answering.');
 
       await review.saveReport();
 
-      expect(review.confirmed()?.reportDocumentId).toBe('doc-1');
+      expect(saveReport).toHaveBeenCalledTimes(1);
+      expect(saveLedger).toHaveBeenCalledTimes(2);
+      expect(review.confirmed()?.ledgerDocumentId).toBe('ledger-1');
       expect(review.reportSaveError()).toBeNull();
     });
 
@@ -311,6 +331,7 @@ describe('saving the Biofuel Feedstock Report to Doc Store', () => {
       await review.saveReport();
 
       expect(saveReport).toHaveBeenCalledTimes(1);
+      expect(saveLedger).toHaveBeenCalledTimes(1);
     });
   });
 });

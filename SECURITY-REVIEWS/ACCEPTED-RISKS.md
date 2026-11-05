@@ -453,6 +453,16 @@ and type for an upload). Files are PDF/PNG/JPEG decided by content, up to 10 MB,
 only be saved for a confirmed field, once per confirmation. Nothing is updated or deleted. Every save is
 audit-logged (`AUDIT_UPLOAD`, `AUDIT_SAVE_REPORT`). The reads are under AR-02 (same date).
 
+_Update (2026-11-05, later) — ledger, archive and version history._ B. Cozart's request for H. Collins: three more
+routes under the same decision. `POST /api/field-plan/records/{id}/ledger` saves a confirmed field's Mass Balance
+Ledger (CSV), once per confirmation, as the report is; the server only accepts a UTF-8 file that starts with the
+ledger's header row. `POST .../customer/{customerId}/documents/{documentId}/archive` (optional reason, at most 500
+characters) and `.../restore` change only the row's status; the file in Doc Store is never changed or deleted.
+Confirming a field again marks its previous report and ledger Overwritten. The row records who changed the status
+and when, and every change is audit-logged (`AUDIT_SAVE_LEDGER`, `AUDIT_OVERWRITE`, `AUDIT_ARCHIVE`, `AUDIT_RESTORE`).
+A document id from another producer is a 404, as for downloads. So "nothing is updated" above now means: no file and
+no metadata; only the status columns change.
+
 ---
 
 ## AR-02 — Customer-scoped reads not restricted by trade-unit entitlement

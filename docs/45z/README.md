@@ -152,7 +152,7 @@ result.
 
   An estimate is never copied into it. Screens say "confirmed".
 - **Unlocking a confirmed field** moves both its estimate and its confirmed CI into the record's history, with the reason. The field can then be reviewed again.
-- **`reportDocumentId`** is added once the confirmation's Biofuel Feedstock Report is in Doc Store (see [45Z documents in Doc Store](#45z-documents-in-doc-store)).
+- **`reportDocumentId`** and **`ledgerDocumentId`** are added once the confirmation's Biofuel Feedstock Report and Mass Balance Ledger are in Doc Store (see [45Z documents in Doc Store](#45z-documents-in-doc-store)).
 - **Still open:** whether an official CI will need more than the review (evidence, a verifier, sign-off).
 
 ## USDA T-DISC
@@ -225,25 +225,43 @@ Asked for by H. Collins on 2026-11-04, after the Doc Store team (Jesse, Charlie)
 access in Dev and QA. **Doc Store has no screens for end users**, so Origination is the UI for its
 **Sustainability-45z** category (Charlie, 2026-11-05). Doc Store (repo `IT/docstore`) files each document with
 free-form JSON metadata, but **it can't list a category's documents by metadata**: its search is full-text and
-returns no metadata. So Origination keeps a row per document in **`dbo.FieldPlanDocument`** (migration
-`20261105151619_AddFieldPlanDocument`; review SQL [scripts/field-plan-AddFieldPlanDocument.sql](../../scripts/field-plan-AddFieldPlanDocument.sql)).
+returns no metadata. So Origination keeps a row per document in **`dbo.FieldPlanDocument`** (migrations
+`20261105151619_AddFieldPlanDocument` and `20261105210201_AddFieldPlanDocumentVersions`; review SQL
+[scripts/field-plan-AddFieldPlanDocument.sql](../../scripts/field-plan-AddFieldPlanDocument.sql) then
+[scripts/field-plan-AddFieldPlanDocumentVersions.sql](../../scripts/field-plan-AddFieldPlanDocumentVersions.sql)).
 The dialog lists from that table and downloads are checked against it; Doc Store holds the file and the same
 values as metadata for anyone reading it outside the app.
 
-- **Confirming a field's CI saves its Biofuel Feedstock Report.** It's the confirmation that saves it, not a
-  download. After `confirm` succeeds the browser builds the same PDF and sends it to
-  `POST api/field-plan/records/{id}/report`. The server checks that the field is confirmed and sets the metadata
-  itself. It then writes the document's row and puts the document id on the official result (`reportDocumentId`), so a second save of the same
-  confirmation returns the first document. Step 5 of the review shows "saved to Doc Store", or "not saved" with
-  the reason and **Save it now**. A failed save never undoes the confirmation. If a field is unlocked and
-  confirmed again, it gets a new report and the old one stays in Doc Store.
+- **Per field and year:** the Biofuel Feedstock Report (PDF) and the field's **45Z Mass Balance Ledger** (CSV, the
+  same one-row file as the review's Download button). **Per year:** the producer attestation and other supporting
+  documents.
+- **Confirming a field's CI saves its report and ledger.** It's the confirmation that saves them, not a
+  download. After `confirm` succeeds the browser builds the same PDF and CSV and sends them to
+  `POST api/field-plan/records/{id}/report` and `.../ledger`. The server checks that the field is confirmed and sets the metadata
+  itself. It then writes each document's row and puts the document id on the official result (`reportDocumentId`,
+  `ledgerDocumentId`), so a second save of the same confirmation returns the first document. Step 5 of the review
+  shows "saved to Doc Store", or which one wasn't saved with the reason and **Save it now** (which saves only what's
+  missing). A failed save never undoes the confirmation.
+- **Overwritten and archived.** Nothing is deleted from Doc Store; only the row's `Status` changes:
+  - **Overwritten**: a field unlocked and confirmed again gets a new report and ledger, and its previous current
+    ones become Overwritten (with `ReplacedByDocStoreId`, who and when).
+  - **Archived**: an originator sets any current document aside, with an optional reason (e.g. no longer relevant to
+    the year). It can be restored, unless the field has a newer current report or ledger (archive that one first),
+    so a field never has two current ones. An archived report isn't overwritten later; it stays Archived.
+  - Uploading another attestation doesn't replace the first; archive the old one.
 - **"📄 45Z documents"** on the 45Z card's summary line (per producer and crop year; visible without opening the
   card) opens a dialog. With no 45Z fields that year yet, a slim 45Z line shows just this button, so the signed
-  attestation can be uploaded before any field or CI. The dialog:
-  - lists the producer's signed **annual attestation** first, then each field's **Biofuel Feedstock Report**,
-    then **other supporting documents**;
-  - can be filtered by type and, for reports, by field;
-  - has View (PDF and images, in a new tab) and Download.
+  attestation can be uploaded before any field or CI. The dialog has two tabs:
+  - **Current documents** (the crop year): the signed **annual attestation** first, then each field's **Biofuel
+    Feedstock Report** and **45Z Mass Balance Ledger**, each named by field, split and year, then **other supporting
+    documents**. Filter by type and, for reports and ledgers, by field. Upload and **Archive** are here.
+  - **Version history** (every year): the overwritten and archived documents, marked as such with when, who and
+    the archive reason. Filter by year (starts on the dialog's), type, field (reports and ledgers) and status.
+    **Restore** for archived ones.
+  - On both, the file name or **View** opens the document inside the dialog: a PDF in the browser's own viewer (an
+    iframe on a `blob:` URL, as Contract Workspace does; the SPA CSP's `frame-src` allows `blob:`), with Print and
+    Download; a ledger as a table (`programs/fd-cic/csv-table.ts`). A browser set to download PDFs gets a plain
+    message and Download.
   The attestation is signed outside the app and uploaded here. The app still captures no attestation data
   (05d86c08); it only keeps the file.
 - **Routes** (`FieldPlanController`, any signed-in originator, as the rest of the field plan, AR-01/AR-02):
@@ -251,18 +269,25 @@ values as metadata for anyone reading it outside the app.
   | Route | Does |
   |---|---|
   | `POST records/{id}/report` | Saves a confirmed field's report |
-  | `GET customer/{customerId}/documents?year=` | Lists the producer's documents |
+  | `POST records/{id}/ledger` | Saves a confirmed field's Mass Balance Ledger |
+  | `GET customer/{customerId}/documents?year=` | Lists the producer's documents, every status (no `year`: all years) |
   | `POST customer/{customerId}/documents` | Uploads an attestation or other document (form: `year`, `documentType` = `ProducerAttestation` or `Other`, `file`) |
   | `GET customer/{customerId}/documents/{documentId}` | Downloads one document |
+  | `POST customer/{customerId}/documents/{documentId}/archive` | Archives a current document (body: optional `note`, up to 500 characters) |
+  | `POST customer/{customerId}/documents/{documentId}/restore` | Restores an archived document |
 
 - **Metadata the server sets** (`DocStoreMetadata`):
-  - on every document: `documentType`, `customerId`, `producerCode` (CTRM), `cropYear`, and `uploadedBy`/`uploadedByName`. Doc Store itself only sees the managed identity, so the originator is recorded here.
-  - on reports also: `splitId`, `commodity` (the crop row's code), `fieldProgramRecordId` and `confirmedAt`.
+  - on every document: `documentType` (`ProducerAttestation`, `FeedstockReport`, `MassBalanceLedger` or `Other`), `customerId`, `producerCode` (CTRM), `cropYear`, and `uploadedBy`/`uploadedByName`. Doc Store itself only sees the managed identity, so the originator is recorded here.
+  - on reports and ledgers also: `splitId`, `fieldName`, `commodity` (the crop row's code), `fieldProgramRecordId` and `confirmedAt`.
+  - The status (overwritten, archived) is only in the table; Doc Store's metadata isn't changed after upload.
 - **Checks:**
-  - Files must be PDF, PNG or JPEG, up to 10 MB. The type is decided by the file's first bytes, never by its name or the browser, and the file name is rebuilt to match.
+  - Uploads must be PDF, PNG or JPEG, up to 10 MB. The type is decided by the file's first bytes, never by its name or the browser, and the file name is rebuilt to match.
+  - A ledger must be UTF-8 text starting with the ledger's header row, with at least one row (`text/csv`). **The
+    Sustainability-45z category has to allow `text/csv`** (ask Charlie; until then the ledger save says so in step 5).
   - A download whose document has no `FieldPlanDocument` row for the route's producer is a 404, so one producer's id can't fetch another's file. The file is served with the row's type and name, not Doc Store's.
   - If the row can't be written after Doc Store took the file, the error is logged as `FIELD_PLAN_DOCUMENT_ORPHANED` with the Doc Store id, for clean-up.
-  - Uploads, report saves and downloads are audit-logged (`AUDIT_UPLOAD`, `AUDIT_SAVE_REPORT`, `AUDIT_DOWNLOAD`).
+  - Uploads, saves, status changes and downloads are audit-logged (`AUDIT_UPLOAD`, `AUDIT_SAVE_REPORT`,
+    `AUDIT_SAVE_LEDGER`, `AUDIT_OVERWRITE`, `AUDIT_ARCHIVE`, `AUDIT_RESTORE`, `AUDIT_DOWNLOAD`).
 - **Configuration** (`DocStore` in appsettings): `Mode` is one of:
   - `""`: off. Uploads, report saves and downloads answer 503 `DOC_STORE_NOT_CONFIGURED`.
   - `InMemory`: a stand-in that forgets on restart. Local development only; the API refuses to start with it elsewhere.

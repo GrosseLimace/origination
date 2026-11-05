@@ -425,23 +425,53 @@ export class FdCicReviewComponent implements OnInit {
     if (this.confirmed()) await this.saveReport();
   }
 
-  /** Saves the confirmed field's Biofuel Feedstock Report to Doc Store; once per confirmation (the server keeps the id). */
+  /** What confirming saves to Doc Store and hasn't been saved yet, by name, for the status line in step 5. */
+  readonly unsavedDocuments = computed(() => {
+    const o = this.confirmed();
+    if (!o) return '';
+    const names = [o.reportDocumentId ? null : 'Biofuel Feedstock Report', o.ledgerDocumentId ? null : 'Mass Balance Ledger'].filter(n => n);
+    return names.join(' and ');
+  });
+
+  /**
+   * Saves the confirmed field's Biofuel Feedstock Report (PDF) and Mass Balance Ledger (CSV) to Doc Store, each
+   * once per confirmation (the server keeps the ids), so a retry saves only what's missing. A newer confirmation's
+   * pair marks the field's previous pair Overwritten on the server.
+   */
   async saveReport(): Promise<void> {
-    if (!this.docStoreEnabled || this.reportSaving() || this.confirmed()?.reportDocumentId) return;
-    const report = this.buildReport();
-    if (!report) {
-      this.reportSaveError.set('Open this review from the producer\'s page to build the report.');
+    const o = this.confirmed();
+    if (!this.docStoreEnabled || this.reportSaving() || !o || (o.reportDocumentId && o.ledgerDocumentId)) return;
+    const report = this.buildReport(), ledger = this.buildLedger();
+    if (!report || !ledger) {
+      this.reportSaveError.set('Open this review from the producer\'s page to build the report and ledger.');
       return;
     }
     this.reportSaving.set(true);
     this.reportSaveError.set(null);
+    const failures = new Set<string>();
+    const reason = (e: unknown, fallback: string) => failures.add(e instanceof ApiError && e.message ? e.message : fallback);
     try {
-      const doc = await this.documents.saveReport(this.recordId(), await this.reports.blob(report), report.fileName);
-      this.store.reportSaved(this.recordId(), doc.id);
-    } catch (e) {
-      this.reportSaveError.set(e instanceof ApiError ? e.message : 'The report couldn\'t be built.');
+      if (!o.reportDocumentId) {
+        try {
+          const doc = await this.documents.saveReport(this.recordId(), await this.reports.blob(report), report.fileName);
+          this.store.reportSaved(this.recordId(), doc.id);
+        } catch (e) {
+          reason(e, 'The report couldn\'t be built.');
+        }
+      }
+      if (!o.ledgerDocumentId) {
+        try {
+          // With a byte-order mark, as the Download button saves it, so Excel reads it as UTF-8.
+          const csv = new Blob([String.fromCharCode(0xfeff), ledger.csv], { type: 'text/csv' });
+          const doc = await this.documents.saveLedger(this.recordId(), csv, ledger.fileName);
+          this.store.ledgerSaved(this.recordId(), doc.id);
+        } catch (e) {
+          reason(e, 'The ledger couldn\'t be saved.');
+        }
+      }
     } finally {
       this.reportSaving.set(false);
+      if (failures.size) this.reportSaveError.set([...failures].join(' '));
     }
   }
 
@@ -457,9 +487,15 @@ export class FdCicReviewComponent implements OnInit {
   }
 
   downloadLedger(): void {
+    const ledger = this.buildLedger();
+    if (ledger) downloadCsv(ledger.csv, ledger.fileName);
+  }
+
+  /** This field's Mass Balance Ledger: the same one-row file as the Download button and the Doc Store copy. */
+  private buildLedger(): { csv: string; fileName: string } | null {
     const p = this.producer(), r = this.record(), s = this.season(), f = this.field();
-    if (!p || !r || !s || !f) return;
+    if (!p || !r || !s || !f) return null;
     const csv = ledgerCsv(p, [{ field: f, season: s, record: r, enrollmentId: this.store.enrollmentIdOf(r) }]);
-    downloadCsv(csv, ledgerFileName(p.code, s.year, new Date()));
+    return { csv, fileName: ledgerFileName(p.code, s.year, new Date()) };
   }
 }

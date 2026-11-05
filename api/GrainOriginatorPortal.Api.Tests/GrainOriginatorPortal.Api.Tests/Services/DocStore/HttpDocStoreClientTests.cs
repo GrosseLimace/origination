@@ -114,6 +114,13 @@ public class HttpDocStoreClientTests
     }
 
     [Fact]
+    public void Refusal_OfTheLedgerCsv_DoesntOfferAPdfInstead()
+    {
+        Assert.Equal("Doc Store isn't set up to take CSV files for 45Z documents yet. Ask IT to allow CSV for the Sustainability-45z category.",
+            HttpDocStoreClient.Refusal("Content type 'text/csv' is not allowed for category 'Sustainability-45z'.", "Sustainability-45z"));
+    }
+
+    [Fact]
     public async Task Upload_NoAccessToTheCategory_IsA502ThatNamesTheCategory()
     {
         var (client, _, _) = New((_, _) => new HttpResponseMessage(HttpStatusCode.Forbidden));

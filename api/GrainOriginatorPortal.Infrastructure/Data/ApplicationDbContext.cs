@@ -1371,6 +1371,13 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedByName).HasColumnName("CreatedByName").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.FieldName).HasColumnName("FieldName").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.Status).HasColumnName("Status").HasMaxLength(20).HasDefaultValue(FieldPlanDocument.Current).IsRequired();
+            entity.Property(e => e.StatusChangedAt).HasColumnName("StatusChangedAt").IsRequired(false);
+            entity.Property(e => e.StatusChangedBy).HasColumnName("StatusChangedBy").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.StatusChangedByName).HasColumnName("StatusChangedByName").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.StatusNote).HasColumnName("StatusNote").HasMaxLength(500).IsRequired(false);
+            entity.Property(e => e.ReplacedByDocStoreId).HasColumnName("ReplacedByDocStoreId").HasMaxLength(36).IsRequired(false);
 
             entity.HasOne<Customer>()
                   .WithMany()

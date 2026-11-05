@@ -82,6 +82,11 @@ public class FieldPlanRepository : IFieldPlanRepository
     public Task<FieldPlanDocument?> GetDocumentAsync(long customerId, string docStoreId, CancellationToken cancellationToken) =>
         _db.FieldPlanDocuments.FirstOrDefaultAsync(d => d.CustomerId == customerId && d.DocStoreId == docStoreId, cancellationToken);
 
+    public Task<List<FieldPlanDocument>> GetCurrentRecordDocumentsAsync(int fieldProgramRecordId, string documentType, CancellationToken cancellationToken) =>
+        _db.FieldPlanDocuments
+            .Where(d => d.FieldProgramRecordId == fieldProgramRecordId && d.DocumentType == documentType && d.Status == FieldPlanDocument.Current)
+            .ToListAsync(cancellationToken);
+
     public void Add<T>(T entity) where T : class => _db.Add(entity);
 
     public Task SaveChangesAsync(CancellationToken cancellationToken) => _db.SaveChangesAsync(cancellationToken);

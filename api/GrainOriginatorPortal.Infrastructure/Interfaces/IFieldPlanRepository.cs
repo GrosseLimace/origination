@@ -54,6 +54,9 @@ public interface IFieldPlanRepository
     /// <summary>The producer's document with this Doc Store id; null when it's another producer's or doesn't exist.</summary>
     Task<FieldPlanDocument?> GetDocumentAsync(long customerId, string docStoreId, CancellationToken cancellationToken);
 
+    /// <summary>The current (not overwritten or archived) documents of one type saved from a field's 45Z record.</summary>
+    Task<List<FieldPlanDocument>> GetCurrentRecordDocumentsAsync(int fieldProgramRecordId, string documentType, CancellationToken cancellationToken);
+
     void Add<T>(T entity) where T : class;
 
     Task SaveChangesAsync(CancellationToken cancellationToken);
