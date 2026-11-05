@@ -1,5 +1,43 @@
 [
   {
+    "version": "2026.11.1",
+    "releasedOn": "2026-11-05",
+    "title": "45Z carbon intensity, field by field",
+    "summary": "Break a producer's planting intentions into fields, estimate each field's 45Z carbon intensity (CI) score, and confirm it with the producer after harvest.",
+    "items": [
+      {
+        "group": "Planting Intentions",
+        "kind": "added",
+        "text": "Each crop row now has a Fields line. Click Add field, then enter the field's CTRM split ID and a name. The fields break down the row's total acres."
+      },
+      {
+        "group": "45Z",
+        "kind": "added",
+        "text": "Add the 45Z program to a field and enter its farming practices: yield, nitrogen, cover crop, tillage and manure. The field gets an estimated CI score from USDA's calculator, which updates as you type."
+      },
+      {
+        "group": "45Z",
+        "kind": "added",
+        "text": "Already entered the same practices on another field? Use Copy to other fields… instead of typing them again."
+      },
+      {
+        "group": "45Z",
+        "kind": "added",
+        "text": "After harvest, open Confirm CI Score and work through it with the producer: check the inputs, confirm the tillage with USDA's T-DISC check, pick the field's CTRM tickets and enter the actual yield, then confirm. The confirmed CI is the field's official 45Z result."
+      },
+      {
+        "group": "45Z",
+        "kind": "added",
+        "text": "Download the Biofuel Feedstock Report (PDF) for a confirmed field, or the Mass Balance Ledger (CSV) for the producer."
+      },
+      {
+        "group": "45Z",
+        "kind": "added",
+        "text": "A confirmed CI is locked. To change it, use Unlock to correct… and give a reason; the earlier result is kept in its history."
+      }
+    ]
+  },
+  {
     "version": "2026.10.4",
     "releasedOn": "2026-10-22",
     "title": "Producers straight from CTRM, and help inside the app",
