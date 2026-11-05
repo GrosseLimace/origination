@@ -137,4 +137,60 @@ describe('AppInsightsService', () => {
     // The message can echo account details, so it is never sent.
     expect(JSON.stringify(sent)).not.toContain('scoular.com');
   });
+
+  describe('trackHandledError (errors a screen caught itself)', () => {
+    const sentErrors = () => sdk.instance.trackException.mock.calls.map(c => c[0] as { exception: Error; properties: Record<string, string> });
+
+    it('sends a code error, tagged as handled and with where it happened', async () => {
+      const svc = create(CONNECTION_STRING);
+      await svc.start('CEgr');
+
+      svc.trackHandledError('[BidSheet] export failed', new TypeError('x is undefined'));
+
+      expect(sentErrors()).toHaveLength(1);
+      expect(sentErrors()[0].exception.message).toBe('x is undefined');
+      expect(sentErrors()[0].properties).toEqual({ handled: 'true', where: '[BidSheet] export failed' });
+    });
+
+    it('skips an API error that came back with a status, which the server already recorded', async () => {
+      const svc = create(CONNECTION_STRING);
+      await svc.start('CEgr');
+
+      svc.trackHandledError('Failed to save print layout', Object.assign(new Error('Server error'), { status: 500 }));
+      svc.trackHandledError('Failed to save print layout', Object.assign(new Error('Not found'), { status: 404 }));
+
+      expect(sdk.instance.trackException).not.toHaveBeenCalled();
+    });
+
+    it('sends a request that never got an answer (status 0), which the server never saw', async () => {
+      const svc = create(CONNECTION_STRING);
+      await svc.start('CEgr');
+
+      svc.trackHandledError('Failed to load bid sheet preference', Object.assign(new Error('Http failure response: 0 Unknown Error'), { status: 0 }));
+
+      expect(sentErrors()).toHaveLength(1);
+    });
+
+    it('sends the same error from the same place at most once a minute', async () => {
+      vi.useFakeTimers();
+      try {
+        const svc = create(CONNECTION_STRING);
+        await svc.start('CEgr');
+        const fail = () => svc.trackHandledError('[BidSheet] auto-save bids failed', new Error('boom'));
+
+        fail(); fail(); fail();
+        expect(sentErrors()).toHaveLength(1);
+        // A different place, or a different message, is its own error.
+        svc.trackHandledError('[BidSheet] save bids failed', new Error('boom'));
+        svc.trackHandledError('[BidSheet] auto-save bids failed', new Error('other'));
+        expect(sentErrors()).toHaveLength(3);
+
+        vi.advanceTimersByTime(60_001);
+        fail();
+        expect(sentErrors()).toHaveLength(4);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
 });

@@ -58,6 +58,15 @@ describe('FieldPlanStore', () => {
 
   afterEach(() => vi.useRealTimers());
 
+  // Audit 2026-11-05: the lists were public WritableSignals, so any component could change them without
+  // the save that goes with it. Only the store's own methods may write them now.
+  it('should expose its fields, seasons and records read-only', () => {
+    for (const list of [store.fields, store.seasons, store.records]) {
+      expect('set' in list).toBe(false);
+      expect('update' in list).toBe(false);
+    }
+  });
+
   describe('fields and seasons', () => {
     it('should key a field by its CTRM split ID, once, and reuse it on another crop row', async () => {
       expect(north).toMatchObject({ fieldKey: 'TATOB28', splitId: 'TATOB28', name: 'PENKA #1 IRR', splitPercent: 100 });

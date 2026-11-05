@@ -186,9 +186,9 @@ public class CustomerRepository : ICustomerRepository
             .Distinct(StringComparer.Ordinal)
             .ToList();
         var existing = await _appContext.Customers.AsNoTracking()
-            // Trim() on the column, symmetric with AssignTradeUnitsAsync: SQL Server ignores only
-            // trailing spaces in '=', so a stored leading space would otherwise escape the dedupe.
-            .Where(c => candidateIds.Contains(c.Id) || (c.ScoularId != null && candidateCodes.Contains(c.ScoularId.Trim())))
+            // The stored code is compared as-is so IX_Customer_ScoularId can be used: every writer trims it,
+            // and migration TrimCustomerScoularIds cleaned what was stored before that (audit 2026-11-05).
+            .Where(c => candidateIds.Contains(c.Id) || (c.ScoularId != null && candidateCodes.Contains(c.ScoularId)))
             .Select(c => new { c.Id, c.ScoularId })
             .ToListAsync(cancellationToken);
         var existingIds = existing.Select(e => e.Id).ToHashSet();
@@ -769,14 +769,14 @@ public class CustomerRepository : ICustomerRepository
             // The sync may already hold this producer under another id (a CTRM-minted 5e15+N row,
             // or any row carrying the same ScoularId). Adopt that row rather than insert a second
             // customer: a second row would split the producer's notes, contacts and saved lists.
-            // Tie-break shared with the ODS sync adoption (C3): active first, then lowest id. Trim() on the
-            // column for the InMemory provider (SQL Server ignores trailing spaces in '=' anyway);
-            // the case variants likewise only matter there (the SQL collation ignores case).
+            // Tie-break shared with the ODS sync adoption (C3): active first, then lowest id. The stored code
+            // is compared as-is (every writer trims it); the case variants only matter for the InMemory
+            // provider (the SQL collation ignores case).
             var codeVariants = ScoularIdQueryVariants(candidate.ScoularId).ToList();
             var heldByCode = codeVariants.Count == 0
                 ? null
                 : await _appContext.Customers
-                    .Where(c => c.ScoularId != null && codeVariants.Contains(c.ScoularId.Trim()))
+                    .Where(c => c.ScoularId != null && codeVariants.Contains(c.ScoularId))
                     .OrderByDescending(c => c.IsActive)
                     .ThenBy(c => c.Id)
                     .FirstOrDefaultAsync(cancellationToken);

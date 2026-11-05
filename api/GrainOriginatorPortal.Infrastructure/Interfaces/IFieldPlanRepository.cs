@@ -57,6 +57,9 @@ public interface IFieldPlanRepository
     /// <summary>The current (not overwritten or archived) documents of one type saved from a field's 45Z record.</summary>
     Task<List<FieldPlanDocument>> GetCurrentRecordDocumentsAsync(int fieldProgramRecordId, string documentType, CancellationToken cancellationToken);
 
+    /// <summary>The commodity code of each crop row in one query, deleted rows included; ids that don't exist are absent.</summary>
+    Task<Dictionary<int, string?>> GetPlantingIntentionCropsAsync(IReadOnlyCollection<int> plantingIntentionIds, CancellationToken cancellationToken);
+
     void Add<T>(T entity) where T : class;
 
     Task SaveChangesAsync(CancellationToken cancellationToken);

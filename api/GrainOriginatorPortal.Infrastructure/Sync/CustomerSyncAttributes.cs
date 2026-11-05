@@ -38,7 +38,8 @@ public sealed class OdsCustomerSyncAttributes : CustomerSyncAttributes
     {
         var source = _source;
         target.Name                  = source.CustomerName ?? string.Empty;
-        target.ScoularId             = source.ScoularId;
+        // Trimmed like every other writer, so lookups can compare the indexed column directly.
+        target.ScoularId             = source.ScoularId?.Trim();
         target.IndustryCode1         = source.IndustryCode1;
         target.IndustryCode2         = source.IndustryCode2;
         target.NopIdNumber           = OdsValues.NormaliseNopId(source.NopIdNumber);

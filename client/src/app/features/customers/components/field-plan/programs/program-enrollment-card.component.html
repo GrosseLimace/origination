@@ -1,0 +1,117 @@
+@if (program(); as p) {
+@if (records().length) {
+<div class="rounded-lg border border-scoular-green-accessible/40 dark:border-scoular-green/40 bg-white dark:bg-gray-800">
+  <!-- One short line: program, ID, and each crop's CI range and bushels; the documents button stays visible when folded -->
+  <div class="flex items-center gap-2 pr-3">
+  <button type="button" class="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 bg-transparent border-0 px-4 py-2.5 text-left text-sm" (click)="open = !open">
+    <span class="w-3 text-gray-400">{{ open ? '▾' : '▸' }}</span>
+    <span class="font-semibold text-gray-900 dark:text-white">🌱 {{ p.shortLabel }} · {{ year() }}</span>
+    <span class="text-xs text-gray-600 dark:text-gray-300">{{ records().length }} field{{ records().length === 1 ? '' : 's' }}</span>
+    @if (confirmedCount()) { <span class="text-xs text-gray-500 dark:text-gray-400">{{ confirmedCount() }} of {{ records().length }} confirmed</span> }
+    @for (g of groups(); track g.group) {
+      <span class="text-gray-800 dark:text-gray-100">
+        <span class="font-semibold">{{ g.group }} {{ g.range }} {{ g.unitShort }}</span>
+        <span class="text-gray-600 dark:text-gray-300"> · {{ g.bushels | number:'1.0-0' }} bu</span>
+      </span>
+    }
+  </button>
+  @if (documentsEnabled && p.key === fdCicKey) {
+    <button type="button" class="h-8 shrink-0 rounded-md px-3 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible"
+            (click)="documentsOpen.set(true)" data-testid="open-45z-documents">📄 45Z documents</button>
+  }
+  </div>
+
+  @if (open) {
+    <div class="space-y-5 border-t border-gray-100 dark:border-gray-700 px-4 py-4 text-sm">
+      @if (p.official; as o) {
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <p class="text-xs text-gray-500 dark:text-gray-400">Planning estimates from the {{ p.shortLabel }} calculator. {{ o.requirementsNote }}</p>
+          @if (confirmedCount() && producer()) {
+            <button type="button" class="h-8 rounded-md px-3 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible"
+                    (click)="downloadLedger()">Download Mass Balance Ledger · {{ confirmedCount() }} field{{ confirmedCount() === 1 ? '' : 's' }}</button>
+          }
+        </div>
+      }
+      <!-- Bushels by CI, one ladder per crop -->
+      @for (g of groups(); track g.group) {
+        <div>
+          <div class="flex flex-wrap items-end justify-between gap-2">
+            <div class="font-medium text-gray-900 dark:text-white">{{ g.group }} · bushels by CI</div>
+            <label class="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">At or below
+              <input type="number" min="0" class="ci-input ci-compact !w-24 text-right" placeholder="target"
+                     [ngModel]="targets()[g.group] ?? null" (ngModelChange)="setTarget(g.group, $event)" [attr.aria-label]="g.group + ' CI target'" />
+              {{ g.unitShort }}
+              @if (targetResult(g); as t) {
+                <span class="ml-1 font-medium text-gray-900 dark:text-white">→ {{ t.bushels | number:'1.0-0' }} bu from {{ t.fields }} field{{ t.fields === 1 ? '' : 's' }}</span>
+              }
+            </label>
+          </div>
+          <table class="mt-1 w-full text-left">
+            <thead class="text-xs uppercase text-gray-500 dark:text-gray-400">
+              <tr><th class="py-1 text-right pr-4">CI {{ g.unitShort }}</th><th>Field</th><th>Enrollment ID</th><th class="text-right">Acres</th><th class="text-right">Bushels</th><th class="text-right">At or below this CI</th>@if (p.official) { <th class="text-right">Confirmed</th> }</tr>
+            </thead>
+            <tbody>
+              @for (row of g.ladder; track row.item.recordId) {
+                <tr class="border-t border-gray-100 dark:border-gray-700">
+                  <td class="py-1 pr-4 text-right tabular-nums">
+                    <!-- Against the typed target only: green at or below it, red above. No target, no colour. -->
+                    @switch (targetSide(g.group, row.value)) {
+                      @case ('at-or-below') {
+                        <div class="font-semibold text-green-700 dark:text-green-400" [title]="'At or below the ' + (targets()[g.group] | number) + ' target'">{{ row.value | number:'1.0-0' }}</div>
+                      }
+                      @case ('above') {
+                        <div class="font-semibold text-red-700 dark:text-red-400" [title]="'Above the ' + (targets()[g.group] | number) + ' target'">{{ row.value | number:'1.0-0' }}</div>
+                      }
+                      @default {
+                        <div class="font-semibold text-gray-900 dark:text-white">{{ row.value | number:'1.0-0' }}</div>
+                      }
+                    }
+                    <!-- Confirmed after the review; otherwise locked, or actual or projected by the yield the score used. -->
+                    <div class="whitespace-nowrap text-xs text-gray-500">{{ row.item.confirmed ? 'confirmed' : 'estimate · ' + (row.item.status === 'Locked' ? 'locked' : row.item.result.projected ? 'projected' : 'actual') }}</div>
+                  </td>
+                  <td class="text-gray-900 dark:text-white">{{ row.item.fieldName }}</td>
+                  <td class="whitespace-nowrap text-gray-600 dark:text-gray-300">{{ row.item.enrollmentId }}</td>
+                  <td class="text-right text-gray-600 dark:text-gray-300">{{ row.item.acres | number }}</td>
+                  <td class="text-right tabular-nums text-gray-600 dark:text-gray-300">
+                    @if (row.item.result.bushels !== null) {
+                      {{ row.bushels | number:'1.0-0' }}@if (row.item.result.projected) { <span class="text-xs text-gray-500"> projected</span> }
+                    } @else { <span class="text-gray-400">no yield</span> }
+                  </td>
+                  <td class="text-right tabular-nums text-gray-900 dark:text-white">{{ row.atOrBelow | number:'1.0-0' }}</td>
+                  @if (p.official) { <td class="text-right text-xs text-gray-500 dark:text-gray-400">{{ row.item.official }}</td> }
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+
+      @if (unscored().length) {
+        <div>
+          <div class="font-medium text-gray-900 dark:text-white">Not scored yet</div>
+          <ul class="mt-1 space-y-0.5 text-gray-600 dark:text-gray-300">
+            @for (r of unscored(); track r.recordId) {
+              <li>{{ r.fieldName }} ({{ r.enrollmentId }}) · {{ r.cropLabel }} · {{ r.acres | number }} ac ·
+                <span class="text-amber-700 dark:text-amber-400">{{ r.scoreNote ?? 'needs inputs' }}</span></li>
+            }
+          </ul>
+        </div>
+      }
+    </div>
+  }
+</div>
+} @else if (documentsEnabled && p.key === fdCicKey) {
+<!-- No 45Z fields this year yet: the producer's signed attestation can still be uploaded -->
+<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 px-4 py-2 text-sm">
+  <span>
+    <span class="font-semibold text-gray-900 dark:text-white">🌱 {{ p.shortLabel }} · {{ year() }}</span>
+    <span class="ml-2 text-xs text-gray-500 dark:text-gray-400">No 45Z fields yet. The producer's signed attestation can be uploaded now.</span>
+  </span>
+  <button type="button" class="h-8 shrink-0 rounded-md px-3 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible"
+          (click)="documentsOpen.set(true)" data-testid="open-45z-documents">📄 45Z documents</button>
+</div>
+}
+@if (documentsOpen()) {
+  <app-fd-cic-documents-dialog [customerId]="customerId()" [year]="year()" [producerName]="producer()?.name ?? ''" (close)="documentsOpen.set(false)" />
+}
+}

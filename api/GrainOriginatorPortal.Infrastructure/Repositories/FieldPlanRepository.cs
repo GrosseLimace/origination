@@ -87,6 +87,10 @@ public class FieldPlanRepository : IFieldPlanRepository
             .Where(d => d.FieldProgramRecordId == fieldProgramRecordId && d.DocumentType == documentType && d.Status == FieldPlanDocument.Current)
             .ToListAsync(cancellationToken);
 
+    public Task<Dictionary<int, string?>> GetPlantingIntentionCropsAsync(IReadOnlyCollection<int> plantingIntentionIds, CancellationToken cancellationToken) =>
+        _db.PlantingIntentions.IgnoreQueryFilters().Where(p => plantingIntentionIds.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id, p => (string?)p.Crop, cancellationToken);
+
     public void Add<T>(T entity) where T : class => _db.Add(entity);
 
     public Task SaveChangesAsync(CancellationToken cancellationToken) => _db.SaveChangesAsync(cancellationToken);
