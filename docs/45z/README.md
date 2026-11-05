@@ -237,7 +237,9 @@ values as metadata for anyone reading it outside the app.
   confirmation returns the first document. Step 5 of the review shows "saved to Doc Store", or "not saved" with
   the reason and **Save it now**. A failed save never undoes the confirmation. If a field is unlocked and
   confirmed again, it gets a new report and the old one stays in Doc Store.
-- **"📄 45Z documents"** on the 45Z card (per producer and crop year) opens a dialog that:
+- **"📄 45Z documents"** on the 45Z card's summary line (per producer and crop year; visible without opening the
+  card) opens a dialog. With no 45Z fields that year yet, a slim 45Z line shows just this button, so the signed
+  attestation can be uploaded before any field or CI. The dialog:
   - lists the producer's signed **annual attestation** first, then each field's **Biofuel Feedstock Report**,
     then **other supporting documents**;
   - can be filtered by type and, for reports, by field;
