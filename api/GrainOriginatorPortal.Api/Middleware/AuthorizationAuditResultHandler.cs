@@ -2,6 +2,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 
+// Project namespaces
+using GrainOriginatorPortal.Api.Models.Responses;
+
 namespace GrainOriginatorPortal.Api.Middleware;
 
 /// <summary>
@@ -18,8 +21,14 @@ namespace GrainOriginatorPortal.Api.Middleware;
 /// <para>
 /// Replacing the default <see cref="IAuthorizationMiddlewareResultHandler"/> is the framework's
 /// supported hook for this: it runs on the authorization decision itself, before the short-circuit,
-/// and then delegates to the default implementation so the response is written exactly as before.
-/// Logging only — it never changes an allow/deny outcome.
+/// and then delegates to the default implementation, which sets the 401/403 and its headers.
+/// It never changes an allow/deny outcome.
+/// </para>
+/// <para>
+/// The default implementation sends an empty body, so a 401/403 was the one API error without the
+/// standard <see cref="ApiErrorResponse"/> envelope (error-handling.md §2, audit 2026-11-05). After
+/// delegating, this writes that envelope with the same trace id the log line carries, unless
+/// something has already started the response.
 /// </para>
 /// </remarks>
 public class AuthorizationAuditResultHandler : IAuthorizationMiddlewareResultHandler
@@ -63,5 +72,25 @@ public class AuthorizationAuditResultHandler : IAuthorizationMiddlewareResultHan
         }
 
         await _default.HandleAsync(next, context, policy, authorizeResult);
+
+        if (!authorizeResult.Succeeded && !context.Response.HasStarted
+            && context.Response.StatusCode is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden)
+        {
+            var unauthenticated = context.Response.StatusCode == StatusCodes.Status401Unauthorized;
+            await context.Response.WriteAsJsonAsync(new ApiErrorResponse
+            {
+                Error = new ApiErrorBody
+                {
+                    Code = unauthenticated ? "AUTH_REQUIRED" : "ACCESS_DENIED",
+                    // The 403 text is the client's own fallback wording, so users see exactly what they did before.
+                    Message = unauthenticated
+                        ? "Authentication required. Please sign in again."
+                        : "Access denied: you are not authorized for this resource.",
+                    TraceId = context.Items[CorrelationIdMiddleware.ItemsKey]?.ToString() ?? context.TraceIdentifier,
+                    Timestamp = DateTime.UtcNow.ToString("O"),
+                    Instance = context.Request.Path.Value,
+                },
+            }, context.RequestAborted);
+        }
     }
 }
