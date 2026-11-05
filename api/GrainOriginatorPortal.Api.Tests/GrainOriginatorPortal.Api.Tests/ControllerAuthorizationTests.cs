@@ -23,6 +23,7 @@ public class ControllerAuthorizationTests
         yield return new object[] { typeof(BarchartController) };
         yield return new object[] { typeof(BarchartIngestController) };
         yield return new object[] { typeof(BidSheetController) };
+        yield return new object[] { typeof(ClientTelemetryController) };
         yield return new object[] { typeof(CommoditiesController) };
         yield return new object[] { typeof(ContractsController) };
         yield return new object[] { typeof(CustomersController) };
@@ -36,6 +37,7 @@ public class ControllerAuthorizationTests
         yield return new object[] { typeof(CtrmSplitsController) };
         yield return new object[] { typeof(FieldPlanController) };
         yield return new object[] { typeof(GeocodeController) };
+        yield return new object[] { typeof(HelpController) };
         yield return new object[] { typeof(MeController) };
         yield return new object[] { typeof(NotesController) };
         yield return new object[] { typeof(PlantingIntentionsController) };
@@ -44,6 +46,8 @@ public class ControllerAuthorizationTests
         yield return new object[] { typeof(RemindersController) };
         yield return new object[] { typeof(SavedListsController) };
         yield return new object[] { typeof(StoredGrainController) };
+        yield return new object[] { typeof(TDiscController) };
+        yield return new object[] { typeof(TeamsChannelsController) };
         yield return new object[] { typeof(TicketsController) };
         yield return new object[] { typeof(TradeUnitsController) };
         yield return new object[] { typeof(UsageDashboardController) };
@@ -68,6 +72,28 @@ public class ControllerAuthorizationTests
     {
         Assert.True(typeof(ControllerBase).IsAssignableFrom(controllerType),
             $"{controllerType.Name} must inherit from ControllerBase.");
+    }
+
+    /// <summary>
+    /// The list above is kept by hand, and four controllers (ClientTelemetry, Help, TDisc,
+    /// TeamsChannels) went unchecked because nobody added them (audit 2026-11-05). There is no
+    /// fallback require-authenticated policy, so a controller missing from the list would go public
+    /// silently if its [Authorize] were dropped. This fails the build the moment a new controller
+    /// appears in the API assembly without being added above.
+    /// </summary>
+    [Fact]
+    public void EveryControllerInTheApi_IsCoveredByTheAuthorizeCheck()
+    {
+        var listed = AllControllerTypes().Select(row => (Type)row[0]).ToHashSet();
+        var unlisted = typeof(BarchartController).Assembly.GetTypes()
+            .Where(t => t is { IsClass: true, IsAbstract: false } && typeof(ControllerBase).IsAssignableFrom(t))
+            .Where(t => !listed.Contains(t))
+            .Select(t => t.Name)
+            .OrderBy(n => n)
+            .ToList();
+
+        Assert.True(unlisted.Count == 0,
+            "Add these controllers to AllControllerTypes(): " + string.Join(", ", unlisted));
     }
 
     /// <summary>

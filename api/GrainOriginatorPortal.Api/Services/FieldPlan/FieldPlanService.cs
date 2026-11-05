@@ -158,14 +158,13 @@ public sealed class FieldPlanService : IFieldPlanService
         // One field grows a crop once a year: a second row of the same crop would claim its tickets twice.
         // The crop is the row's commodity code first, as the ticket lookup reads it, then its label.
         var group = await CropGroupAsync(request.PlantingIntentionId, request.CropLabel, ct);
-        ProducerFieldSeason? sameCrop = null;
-        foreach (var s in await _repository.GetSeasonsForFieldAsync(field.Id, request.Year, ct))
-            if (s.PlantingIntentionId == request.PlantingIntentionId
-                || (group is not null && await CropGroupAsync(s.PlantingIntentionId, s.CropLabel, ct) == group))
-            {
-                sameCrop = s;
-                break;
-            }
+        var seasons = await _repository.GetSeasonsForFieldAsync(field.Id, request.Year, ct);
+        // Every existing row's crop in one query, not one per season (audit 2026-11-05).
+        var crops = group is null || seasons.Count == 0 ? null
+            : await _repository.GetPlantingIntentionCropsAsync(seasons.Select(s => s.PlantingIntentionId).Distinct().ToList(), ct);
+        var sameCrop = seasons.FirstOrDefault(s => s.PlantingIntentionId == request.PlantingIntentionId
+            || (crops is not null
+                && (FieldPlanCropGroups.For(crops.GetValueOrDefault(s.PlantingIntentionId)) ?? FieldPlanCropGroups.ForLabel(s.CropLabel)) == group));
         if (sameCrop is not null)
             throw new BusinessException($"{field.Name} is already on the {sameCrop.CropLabel} row for {request.Year}.", "FIELD_PLAN_FIELD_ON_ROW", StatusCodes.Status409Conflict);
 

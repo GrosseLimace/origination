@@ -45,6 +45,9 @@ public interface IFieldPlanRepository
     /// <summary>The crop row's commodity code (PlantingIntention.Crop, e.g. "YC"), deleted rows included; null when it doesn't exist.</summary>
     Task<string?> GetPlantingIntentionCropAsync(int plantingIntentionId, CancellationToken cancellationToken);
 
+    /// <summary>The commodity code of each crop row in one query, deleted rows included; ids that don't exist are absent.</summary>
+    Task<Dictionary<int, string?>> GetPlantingIntentionCropsAsync(IReadOnlyCollection<int> plantingIntentionIds, CancellationToken cancellationToken);
+
     void Add<T>(T entity) where T : class;
 
     Task SaveChangesAsync(CancellationToken cancellationToken);

@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { CommonModule, NgComponentOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -96,12 +96,25 @@ export class FieldSeasonDialogComponent {
       const f = this.field();
       if (f?.fieldKey !== this.draftField?.fieldKey) this.draftField = f ? { ...f } : null;
     });
+    // Open on startProgram once per season. Reading the store here would re-run this on every record
+    // change, so removing that program put it straight back (audit 2026-11-05) — hence untracked, and
+    // the season+program it was applied to is remembered.
     effect(() => {
       const key = this.startProgram();
-      if (key && this.season() && !this.store.find(this.seasonId(), key)) this.addProgram(key);
-      else if (key) this.activeKey.set(key);
+      const season = this.season();
+      if (!key) return;
+      if (!season) { this.activeKey.set(key); return; }
+      const applied = `${season.id}|${key}`;
+      if (applied === this._startApplied) return;
+      this._startApplied = applied;
+      untracked(() => {
+        if (this.store.find(this.seasonId(), key)) this.activeKey.set(key);
+        else this.addProgram(key);
+      });
     });
   }
+
+  private _startApplied: string | null = null;
 
   saveSeason(): void {
     if (this.draftSeason && !this.seasonLocked()) {

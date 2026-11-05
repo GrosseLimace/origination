@@ -3,8 +3,40 @@
 Style guide: `style-guides/logging.md`
 Scope: structured logging/correlation across `api/GrainOriginatorPortal.Api`, App Insights/Log Analytics posture, and `client/` error/telemetry handling. This pass also reviewed the new CTRM GraphQL integration (`Services/Ctrm`, `Infrastructure/Ctrm`) merged since the last pass.
 
-**Findings:** 10 total — 7 resolved, 3 accepted, 0 open
-**Opened:** 2026-09-19 | **Last verified:** 2026-10-20 (reconciliation pass)
+**Findings:** 11 total — 7 resolved, 3 accepted, 1 open
+**Opened:** 2026-09-19 | **Last verified:** 2026-11-05 (reconciliation pass)
+
+## Reconciliation notes (2026-11-05)
+
+Covered the large `feature_CustomersFromGraphQL` merge train (222 commits / 334 files: customer-sync
+moving off ODS onto CTRM GraphQL as the source of truth, plus the new FD-CIC program and Help features
+merged in the same window) since the 2026-10-20 pass. Given the size of that diff, sampled rather than
+read exhaustively: the new background-job surface (highest-risk area per this guide's §6/§7.2) and a
+representative slice of new/touched frontend error-handling call sites.
+
+**Backend — no new findings.** `CustomerSyncService.cs`, `OdsCustomerSyncSource.cs`,
+`CtrmCustomerSyncSource.cs`, `CustomerSyncBackgroundService.cs`, and
+`CustomerSyncDiagnosticsController.cs` (the new customer-sync subsystem) are instrumented consistently
+with the existing discipline credited below: structured message templates with named placeholders,
+elapsed-ms timing on each phase (source load, grouping, save), and `CustomerSyncBackgroundService`
+correctly wraps each run in `_logger.BeginScope` with a fresh `TraceId`, matching the per-run-scope
+pattern fixed via PR #615 and already credited for `CtrmKeepWarmService`. No accidental re-introduction
+of the per-run-correlation gap this guide's accepted finding already covers for the other two
+background services.
+
+**Frontend — one new finding (high, open).** Re-verified all 10 prior findings are unchanged (`main.ts`
+bootstrap logging, `api.service.ts`'s traceId read, `app-insights.service.ts` itself, etc.) — all still
+in the state the 2026-10-20 pass described. Separately, grepping `AppInsightsService|trackException|
+trackEvent` across `client/src` showed its only call site outside the service's own file is
+`global-error.handler.ts`, which is wired to Angular's `ErrorHandler` and therefore only sees
+*unhandled* exceptions. New and touched code since the last pass handles a large number of its own
+errors inside `.subscribe({ error: ... })`/try-catch — which never reaches `ErrorHandler` — logging
+only to `console`, and in `bid-sheet.component.ts`/`home-background-failures.ts` that console call is
+itself gated behind `isDevMode()`, so in production those failures (auto-save bids, export, BarChart
+catalog loads, preference load/save) produce zero trail anywhere. Recorded as
+`logging.handled-frontend-errors-bypass-app-insights`. This is the same class of gap as the resolved
+`logging.client-side-telemetry-missing` finding, reappearing piecemeal because new caught-error paths
+weren't threaded through to the telemetry service that now exists.
 
 ## Reconciliation notes (2026-10-20)
 
@@ -62,23 +94,27 @@ New this pass: the branch history since 2026-09-21 (`650fae20` and earlier merge
 
 Re-verified all 8 prior findings against current repo state rather than re-auditing from scratch. Three were confirmed fixed by `fix_AuditPhase1Findings` (PR #615, merged 2026-09-21): the correlation-id validation, the frontend traceId surfacing, and (partially) the background-job run scopes. One status changed from the bulk `chore(audit)` pass: `logging.background-job-runs-lack-correlation-id` was marked `resolved` there, but the fix only touched 2 of the 3 named files — `UsageTrackingBackgroundService.cs` still has no per-run scope — so it's reopened here at `low`. Everything else (the critical client-telemetry gap, the bootstrap-logging gap, the unverified App Insights wiring, the undocumented sampling/dashboards, and the accepted UPN logging) is unchanged since 2026-09-19.
 
-## Critical — open
+## High — open
+
+### Explicitly-caught frontend errors never reach Application Insights, only console — some not even that in production (`logging.handled-frontend-errors-bypass-app-insights`)
+- **Files:** `client/src/app/features/bid-sheet/pages/bid-sheet/bid-sheet.component.ts`, `client/src/app/features/customers/pages/home/home-background-failures.ts`, `client/src/app/features/customers/components/planting-intentions-table/planting-intentions-table.component.ts`, `client/src/app/core/services/user-trade-units.service.ts`, `client/src/app/features/customers/pages/home/home.component.ts`, `client/src/app/features/customers/pages/home/home-notes.store.ts`, `client/src/app/features/customers/pages/home/home-saved-lists.store.ts`, `client/src/app/features/customers/pages/home/home-planting.store.ts`
+- New: `AppInsightsService.trackException`'s only call site outside its own file is `global-error.handler.ts`, which Angular only invokes for *unhandled* exceptions. New/touched code since 2026-10-20 (customer-sync merge train) widely handles its own errors in `.subscribe({ error: ... })`/try-catch, which never reaches `ErrorHandler`. 19 such sites in `bid-sheet.component.ts` plus `home-background-failures.report()` gate their console call behind `isDevMode()`, so in production these failures (auto-save, export, catalog load, preference load/save) leave zero trail anywhere; the other files log unconditionally to console but still never reach telemetry, so support can't search for them after the fact.
+- **Related findings:** `logging.client-side-telemetry-missing`, `logging.bootstrap-failure-not-logged`
+- **Suggested fix:** Inject `AppInsightsService` into these caught-error paths and call `trackException(err, { context: '...' })` alongside the existing console/toast handling; for `bid-sheet.component.ts`, also drop the `isDevMode()` guard or replace it with the `trackException` call so production isn't silent.
+
+## Critical — resolved
 
 ### Angular client has no error/telemetry logging service at all, contradicting the team's own mandatory pattern (`logging.client-side-telemetry-missing`)
 - **Files:** `client/src/main.ts`, `client/src/app/core/handlers/global-error.handler.ts`, `client/src/app/app.component.ts`, `client/package.json`, `developer-docs/CLAUDE.md`
-- Re-verified: `client/package.json` still has no `@microsoft/applicationinsights-*` dependency, no `app-insights.service.ts` exists anywhere under `client/src`, and `ErrorHandler` is still bound to `GlobalErrorHandler` (console-only in dev, silent in prod). `developer-docs/CLAUDE.md` still documents client-side Application Insights as required for any MSAL Angular SPA — this repo doesn't have it.
-- **Related findings:** `angular.production-bootstrap-failures-swallowed`
-- **Suggested fix:** Implement the `AppInsightsService`/`AppInsightsErrorHandler`/MSAL-telemetry-forwarder pattern already specified in `developer-docs/CLAUDE.md`, wire it into `main.ts`'s providers, and add the connection string plus CSP allow-list entries per environment — or, if the team has decided this isn't worth building, amend `developer-docs/CLAUDE.md` so it stops mandating a pattern that doesn't exist.
+- Fixed 2026-10-13 (`9d6c3469`, "report browser errors to Application Insights"): `app-insights.service.ts` now exists, `GlobalErrorHandler` calls `trackException` on every unhandled error, MSAL failures are forwarded as events, and `@microsoft/applicationinsights-web` is a declared client dependency. Verified directly in the current files; `last_verified` carried forward correctly in `AUDIT-TRACKING.json` even though this prose section had drifted and still listed it as open until this pass corrected it.
+- **Related findings:** `angular.production-bootstrap-failures-swallowed`, `logging.handled-frontend-errors-bypass-app-insights` (the follow-on gap: the service exists but many *caught* errors still don't call it)
 
-## High — open
+## High — resolved
 
 ### Production Angular bootstrap failures produce zero diagnostic trail (`logging.bootstrap-failure-not-logged`)
 - **Files:** `client/src/main.ts`
-- Re-verified: `main.ts:117-121`'s `bootstrapApplication(...).catch` handler still gates `console.error` behind `if (!environment.production)`. Combined with the missing client-side telemetry client, a prod bootstrap failure (bad provider factory, MSAL init throw, etc.) still renders a blank page with no console entry, no App Insights exception, nothing.
+- Re-verified: `main.ts`'s `bootstrapApplication(...).catch` handler now always logs and shows a static fallback screen instead of gating behind `!environment.production`, per the "Overall health" note below. This prose section had drifted and still listed it as open until this pass corrected it; `AUDIT-TRACKING.json` already had it marked `resolved`.
 - **Related findings:** `angular.production-bootstrap-failures-swallowed`, `logging.client-side-telemetry-missing`
-- **Suggested fix:** Always log the bootstrap error (drop the non-production guard) and, once client-side telemetry exists, call `trackException` there unconditionally since DI-provided services aren't available yet.
-
-## High — resolved
 
 ### Unvalidated inbound X-Correlation-Id is trusted as the structured-log TraceId for every log line (`logging.correlation-id-unvalidated`)
 - **Files:** `Middleware/CorrelationIdMiddleware.cs`, `Middleware/RequestContextMiddleware.cs`, `Middleware/SecurityAuditMiddleware.cs`, `Middleware/GlobalExceptionHandler.cs`, `Middleware/CorrelationIdOutboundHandler.cs`, `Program.cs`
@@ -125,4 +161,4 @@ Re-verified all 8 prior findings against current repo state rather than re-audit
 
 ## Overall health
 
-Structured logging discipline within the .NET API remains genuinely good: consistent `ILogger<T>` usage, message templates with named placeholders, sensible level selection, a real `TraceId`/`ServiceName`/`Operation`/`UserId` scope threaded through every request (with input validation on the inbound correlation id), and dedicated security-audit logging for 401/403. The CTRM GraphQL integration and the newer BarChart feed subsystem both continue that discipline — structured error codes/categories, dependency-call durations now logged as `{DurationMs}`, CTRM's own correlation id captured and surfaced in failure details, careful separation of retryable server-side timeouts from real failures, and warnings (never silent empty results) on every read that doesn't complete. The front half of the stack, previously the weak point, has also closed out: the Angular SPA now reports unhandled exceptions, MSAL failures, and page views to Application Insights (`AppInsightsService`, resolved 2026-10-13, with two follow-up CSP/console-noise fixes on 2026-10-14/15), and a production bootstrap failure now always logs and shows a static fallback screen instead of a blank page. All 10 findings opened against this domain are now either resolved or formally accepted; the three accepted items (unverified codeless App Insights attach, two background services intentionally without per-run scope, and UPN logged as the user identifier — recorded as AR-09) are documented tradeoffs, not defects. The main residual gap is verification rather than code: whether the backend's `BeginScope` fields actually surface as Log Analytics custom dimensions, and production's own sampling/retention settings, still require direct Azure access this repo-only review cannot provide.
+Structured logging discipline within the .NET API remains genuinely good: consistent `ILogger<T>` usage, message templates with named placeholders, sensible level selection, a real `TraceId`/`ServiceName`/`Operation`/`UserId` scope threaded through every request (with input validation on the inbound correlation id), and dedicated security-audit logging for 401/403. The CTRM GraphQL integration and the newer BarChart feed subsystem both continue that discipline — structured error codes/categories, dependency-call durations now logged as `{DurationMs}`, CTRM's own correlation id captured and surfaced in failure details, careful separation of retryable server-side timeouts from real failures, and warnings (never silent empty results) on every read that doesn't complete. The new customer-sync subsystem (CTRM GraphQL replacing ODS as the customer source) continues it too — structured timing on every phase and a correctly-scoped per-run `BeginScope` in `CustomerSyncBackgroundService`. The front half of the stack, previously the weak point, has also substantially closed out: the Angular SPA now reports unhandled exceptions, MSAL failures, and page views to Application Insights (`AppInsightsService`, resolved 2026-10-13, with two follow-up CSP/console-noise fixes on 2026-10-14/15), and a production bootstrap failure now always logs and shows a static fallback screen instead of a blank page. What hasn't closed out: new caught-error paths (RxJS `subscribe({ error })`, try/catch) added since then don't call into that service at all — only `GlobalErrorHandler`'s *unhandled*-exception path does — so a growing set of explicitly-handled frontend failures, some gated behind `isDevMode()` and therefore invisible in prod entirely, never reach telemetry (`logging.handled-frontend-errors-bypass-app-insights`, new, high, open). Of the 11 findings opened against this domain, 7 are resolved, 3 are formally accepted documented tradeoffs (unverified codeless App Insights attach, two background services intentionally without per-run scope, and UPN logged as the user identifier — recorded as AR-09), and 1 is open. The main residual verification gap is unchanged: whether the backend's `BeginScope` fields actually surface as Log Analytics custom dimensions, and production's own sampling/retention settings, still require direct Azure access this repo-only review cannot provide.
