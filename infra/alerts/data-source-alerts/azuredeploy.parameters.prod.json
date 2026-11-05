@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentLabel": { "value": "Prod" },
+    "environmentTag": { "value": "Prod" },
+    "appInsightsName": { "value": "appi-origination-eus" },
+    "nameSuffix": { "value": "origination-eus" },
+    "alertEmailAddresses": { "value": [ "CEgr@scoular.com", "HCollins@scoular.com" ] }
+  }
+}

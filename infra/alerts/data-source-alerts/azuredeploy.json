@@ -1,0 +1,180 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Emails the dev team when Origination stops getting data: CTRM GraphQL failing, the ODS or Origination SQL database failing, or the nightly CustomerSync aborting. Log search alerts on the environment's App Insights. See infra/alerts/README.md."
+  },
+  "parameters": {
+    "environmentLabel": {
+      "type": "string",
+      "allowedValues": [ "Dev", "QA", "Prod" ],
+      "metadata": { "description": "Shown in the alert name and email subject, so the team can tell which environment fired." }
+    },
+    "environmentTag": {
+      "type": "string",
+      "metadata": { "description": "Value for the Environment tag (matches the Logic App templates: Dev, QA, Prod)." }
+    },
+    "appInsightsName": {
+      "type": "string",
+      "metadata": { "description": "The environment's App Insights component, in this resource group (appi-origination-<env>-eus)." }
+    },
+    "nameSuffix": {
+      "type": "string",
+      "metadata": { "description": "Appended to resource names, e.g. origination-qa-eus." }
+    },
+    "alertEmailAddresses": {
+      "type": "array",
+      "minLength": 1,
+      "metadata": { "description": "The dev team: who gets the alert and the all-clear emails." }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": { "description": "Log search alert rules must sit in the same region as the App Insights they query." }
+    }
+  },
+  "variables": {
+    "appInsightsId": "[resourceId('Microsoft.Insights/components', parameters('appInsightsName'))]",
+    "actionGroupName": "[concat('ag-devteam-', parameters('nameSuffix'))]",
+    "actionGroupId": "[resourceId('Microsoft.Insights/actionGroups', concat('ag-devteam-', parameters('nameSuffix')))]",
+    "tags": {
+      "Application": "Origination",
+      "CreatedBy": "CEgr",
+      "CreationDate": "2026-11-05",
+      "DataClassification": "Confidential",
+      "Environment": "[parameters('environmentTag')]",
+      "Owner": "CEgr@scoular.com",
+      "IaC": "True",
+      "Team": "Full Stack Development"
+    },
+    "ctrmQuery": "let calls = toscalar(dependencies | where name == 'POST /internal/graphql' | summarize sum(itemCount));\ntraces\n| where message startswith 'CTRM read failed'\n| summarize failedReads = sum(itemCount)\n| extend ctrmCalls = coalesce(calls, 0)\n| extend failedPct = round(100.0 * failedReads / max_of(ctrmCalls, failedReads, 1), 0)\n| where failedReads >= 5 and failedPct >= 10",
+    "databaseQuery": "union exceptions, traces\n| extend code = tostring(customDimensions.ErrorCode)\n| where code endswith 'DB_UNAVAILABLE' or code in ('INFRASTRUCTURE_DATABASE_UNAVAILABLE', 'ENTITLEMENTS_UNAVAILABLE')\n    or type has 'SqlException' or innermostType has 'SqlException'\n| summarize failedRequests = dcount(operation_Id)\n| where failedRequests >= 3",
+    "customerSyncQuery": "union traces, exceptions\n| where severityLevel >= 3\n| extend text = coalesce(tostring(customDimensions.FormattedMessage), message, outerMessage)\n| where text has 'CustomerSync' and (text has 'aborted' or text has 'cycle failed')\n| project timestamp, text"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/actionGroups",
+      "apiVersion": "2023-01-01",
+      "name": "[variables('actionGroupName')]",
+      "location": "Global",
+      "tags": "[variables('tags')]",
+      "properties": {
+        "groupShortName": "OrigDevTeam",
+        "enabled": true,
+        "copy": [
+          {
+            "name": "emailReceivers",
+            "count": "[length(parameters('alertEmailAddresses'))]",
+            "input": {
+              "name": "[concat('email-', copyIndex('emailReceivers'))]",
+              "emailAddress": "[parameters('alertEmailAddresses')[copyIndex('emailReceivers')]]",
+              "useCommonAlertSchema": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-12-01",
+      "name": "[concat('alert-ctrm-failing-', parameters('nameSuffix'))]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "kind": "LogAlert",
+      "dependsOn": [ "[variables('actionGroupId')]" ],
+      "properties": {
+        "displayName": "[concat('Origination ', parameters('environmentLabel'), ': CTRM GraphQL is failing')]",
+        "description": "At least 5 CTRM reads failed and at least 10% of CTRM GraphQL calls failed in the last 30 minutes, so contracts, tickets, pricing or customers are not loading. Usually the CTRM gateway or DB2, not our code: infra/alerts/README.md has the one-call probe that tells the two apart and who to contact. App Insights traces starting 'CTRM read failed' carry the status and CTRM correlationId. A second email arrives when it clears.",
+        "severity": 1,
+        "enabled": true,
+        "scopes": [ "[variables('appInsightsId')]" ],
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT30M",
+        "criteria": {
+          "allOf": [
+            {
+              "query": "[variables('ctrmQuery')]",
+              "timeAggregation": "Total",
+              "metricMeasureColumn": "failedReads",
+              "operator": "GreaterThanOrEqual",
+              "threshold": 5,
+              "failingPeriods": { "numberOfEvaluationPeriods": 1, "minFailingPeriodsToAlert": 1 }
+            }
+          ]
+        },
+        "autoMitigate": true,
+        "actions": { "actionGroups": [ "[variables('actionGroupId')]" ] }
+      }
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-12-01",
+      "name": "[concat('alert-database-failing-', parameters('nameSuffix'))]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "kind": "LogAlert",
+      "dependsOn": [ "[variables('actionGroupId')]" ],
+      "properties": {
+        "displayName": "[concat('Origination ', parameters('environmentLabel'), ': database is failing')]",
+        "description": "At least 3 requests or jobs hit a SQL failure in the last 15 minutes: the ODS views or the Origination app database (customers, contracts, tickets, entitlements, notes) are timing out, refusing connections, or missing a view or column. Check App Insights exceptions of type SqlException and the ErrorCode on the InfrastructureException. A second email arrives when it clears.",
+        "severity": 1,
+        "enabled": true,
+        "scopes": [ "[variables('appInsightsId')]" ],
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT15M",
+        "criteria": {
+          "allOf": [
+            {
+              "query": "[variables('databaseQuery')]",
+              "timeAggregation": "Total",
+              "metricMeasureColumn": "failedRequests",
+              "operator": "GreaterThanOrEqual",
+              "threshold": 3,
+              "failingPeriods": { "numberOfEvaluationPeriods": 1, "minFailingPeriodsToAlert": 1 }
+            }
+          ]
+        },
+        "autoMitigate": true,
+        "actions": { "actionGroups": [ "[variables('actionGroupId')]" ] }
+      }
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-12-01",
+      "name": "[concat('alert-customersync-failed-', parameters('nameSuffix'))]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "kind": "LogAlert",
+      "dependsOn": [ "[variables('actionGroupId')]" ],
+      "properties": {
+        "displayName": "[concat('Origination ', parameters('environmentLabel'), ': CustomerSync did not run')]",
+        "description": "The customer sync aborted or failed, so nothing was written and the producer list stays as it was until the next good run (07:00 UTC daily, and 60 seconds after every app start). Aborts from the mass-deactivation guard are on purpose; follow docs/operations/OUTAGE-RECOVERY-PLAYBOOK.md. This alert does not auto-resolve: close it once a run succeeds.",
+        "severity": 2,
+        "enabled": true,
+        "scopes": [ "[variables('appInsightsId')]" ],
+        "evaluationFrequency": "PT15M",
+        "windowSize": "PT30M",
+        "criteria": {
+          "allOf": [
+            {
+              "query": "[variables('customerSyncQuery')]",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "failingPeriods": { "numberOfEvaluationPeriods": 1, "minFailingPeriodsToAlert": 1 }
+            }
+          ]
+        },
+        "autoMitigate": false,
+        "muteActionsDuration": "PT1H",
+        "actions": { "actionGroups": [ "[variables('actionGroupId')]" ] }
+      }
+    }
+  ],
+  "outputs": {
+    "actionGroupId": {
+      "type": "string",
+      "value": "[variables('actionGroupId')]"
+    }
+  }
+}
