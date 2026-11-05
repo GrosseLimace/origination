@@ -52,10 +52,10 @@ export const environment = {
     ],
   },
   // 45Z field data + carbon intensity. Scores come from the USDA FD-CIC API (api/fd-cic);
-  // On locally, in DEV and in QA (QA from 2026-11-04, for testing). Must stay false in PROD until go-live.
+  // on in every environment (45Z go-live).
   carbonIntensityEnabled: true,
-  // Plan by field: durable producer fields roll up into planting intentions. PROTOTYPE: in-memory
-  // mock data; the roll-up is simulated and never writes an intention. On in DEV and QA, false in PROD.
+  // Plan by field: a producer's fields under each crop row, their acres breaking down the row's total.
+  // On in every environment (45Z go-live).
   fieldPlanningEnabled: true,
   // Where the field plan is kept: 'memory' (in the browser; a reload starts over) or 'api' (api/field-plan,
   // the database). 'memory' until this environment's deploy has created the field-plan tables, then 'api'.
