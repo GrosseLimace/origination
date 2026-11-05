@@ -55,8 +55,9 @@ interface CardField {
     @if (program(); as p) {
     @if (records().length) {
     <div class="rounded-lg border border-scoular-green-accessible/40 dark:border-scoular-green/40 bg-white dark:bg-gray-800">
-      <!-- One short line: program, ID, and each crop's CI range and bushels -->
-      <button type="button" class="flex w-full flex-wrap items-center gap-x-3 gap-y-1 bg-transparent border-0 px-4 py-2.5 text-left text-sm" (click)="open = !open">
+      <!-- One short line: program, ID, and each crop's CI range and bushels; the documents button stays visible when folded -->
+      <div class="flex items-center gap-2 pr-3">
+      <button type="button" class="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 bg-transparent border-0 px-4 py-2.5 text-left text-sm" (click)="open = !open">
         <span class="w-3 text-gray-400">{{ open ? '▾' : '▸' }}</span>
         <span class="font-semibold text-gray-900 dark:text-white">🌱 {{ p.shortLabel }} · {{ year() }}</span>
         <span class="text-xs text-gray-600 dark:text-gray-300">{{ records().length }} field{{ records().length === 1 ? '' : 's' }}</span>
@@ -68,22 +69,21 @@ interface CardField {
           </span>
         }
       </button>
+      @if (documentsEnabled && p.key === fdCicKey) {
+        <button type="button" class="h-8 shrink-0 rounded-md px-3 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible"
+                (click)="documentsOpen.set(true)" data-testid="open-45z-documents">📄 45Z documents</button>
+      }
+      </div>
 
       @if (open) {
         <div class="space-y-5 border-t border-gray-100 dark:border-gray-700 px-4 py-4 text-sm">
           @if (p.official; as o) {
             <div class="flex flex-wrap items-center justify-between gap-2">
               <p class="text-xs text-gray-500 dark:text-gray-400">Planning estimates from the {{ p.shortLabel }} calculator. {{ o.requirementsNote }}</p>
-              <div class="flex flex-wrap gap-2">
-                @if (documentsEnabled && p.key === fdCicKey) {
-                  <button type="button" class="h-8 rounded-md px-3 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible"
-                          (click)="documentsOpen.set(true)" data-testid="open-45z-documents">📄 45Z documents</button>
-                }
-                @if (confirmedCount() && producer()) {
-                  <button type="button" class="h-8 rounded-md px-3 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible"
-                          (click)="downloadLedger()">Download Mass Balance Ledger · {{ confirmedCount() }} field{{ confirmedCount() === 1 ? '' : 's' }}</button>
-                }
-              </div>
+              @if (confirmedCount() && producer()) {
+                <button type="button" class="h-8 rounded-md px-3 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible"
+                        (click)="downloadLedger()">Download Mass Balance Ledger · {{ confirmedCount() }} field{{ confirmedCount() === 1 ? '' : 's' }}</button>
+              }
             </div>
           }
           <!-- Bushels by CI, one ladder per crop -->
@@ -154,9 +154,19 @@ interface CardField {
         </div>
       }
     </div>
+    } @else if (documentsEnabled && p.key === fdCicKey) {
+    <!-- No 45Z fields this year yet: the producer's signed attestation can still be uploaded -->
+    <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 px-4 py-2 text-sm">
+      <span>
+        <span class="font-semibold text-gray-900 dark:text-white">🌱 {{ p.shortLabel }} · {{ year() }}</span>
+        <span class="ml-2 text-xs text-gray-500 dark:text-gray-400">No 45Z fields yet. The producer's signed attestation can be uploaded now.</span>
+      </span>
+      <button type="button" class="h-8 shrink-0 rounded-md px-3 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible"
+              (click)="documentsOpen.set(true)" data-testid="open-45z-documents">📄 45Z documents</button>
+    </div>
+    }
     @if (documentsOpen()) {
       <app-fd-cic-documents-dialog [customerId]="customerId()" [year]="year()" [producerName]="producer()?.name ?? ''" (close)="documentsOpen.set(false)" />
-    }
     }
     }
   `,
