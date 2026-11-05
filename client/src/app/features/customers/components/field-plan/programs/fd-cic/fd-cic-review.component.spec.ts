@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FdCicApiService } from '@core/services/fd-cic-api.service';
 import { TDiscApiService } from '@core/services/tdisc-api.service';
 import { FdCicData, FieldTickets, TDiscPass } from '@models';
@@ -11,6 +11,9 @@ import { createFdCicProgram } from './fd-cic.program';
 import { fakeFdCicApi } from './fd-cic.testing';
 import { FdCicReviewComponent, yieldFromTickets } from './fd-cic-review.component';
 import { ticketMatchLabel } from './review/review-ticket-table.component';
+import { FeedstockReportService } from './feedstock-report.service';
+import { FieldPlanDocumentsService } from '../../store/field-plan-documents.service';
+import { ApiError } from '@core/errors/api-error';
 
 describe('yieldFromTickets (the review\'s suggested actual yield)', () => {
   it('should be the included bushels over the field\'s acres, to one decimal', () => {
@@ -30,6 +33,7 @@ describe('FdCicReviewComponent', () => {
   const program = createFdCicProgram(api);
   let store: FieldPlanStore;
   let review: FdCicReviewComponent;
+  let fixture: ComponentFixture<FdCicReviewComponent>;
   let recordId: string;
 
   /** Two weighed tickets and one with no bushel figure. */
@@ -60,7 +64,7 @@ describe('FdCicReviewComponent', () => {
     recordId = record.id;
     store.updateRecord(record.id, { ...(record.data as FdCicData), expectedYield: 200, syntheticN: 180 });
 
-    const fixture = TestBed.createComponent(FdCicReviewComponent);
+    fixture = TestBed.createComponent(FdCicReviewComponent);
     fixture.componentRef.setInput('recordId', record.id);
     fixture.detectChanges();
     review = fixture.componentInstance;
@@ -262,5 +266,51 @@ describe('FdCicReviewComponent', () => {
     expect(data.tDiscPasses).toEqual(reducedTillPasses);
     expect(noTill.estimateTillage()).toBe('NoTill');
     expect(noTill.tDiscResult()?.designation).toBe('RT');
+  });
+describe('saving the Biofuel Feedstock Report to Doc Store', () => {
+    const savedDoc = { id: 'doc-1', fileName: 'r.pdf', contentType: 'application/pdf', size: 10, uploadedAt: '2026-11-04T00:00:00Z', documentType: 'FeedstockReport' as const };
+    let saveReport: ReturnType<typeof vi.fn>;
+
+    beforeEach(async () => {
+      // Doc Store is on with the API field plan; here the in-memory store stands in, so switch it on by hand.
+      (review as unknown as { docStoreEnabled: boolean }).docStoreEnabled = true;
+      fixture.componentRef.setInput('producer', { code: 'PENKA', name: 'Penka Farms' });
+      vi.spyOn(TestBed.inject(FeedstockReportService), 'blob').mockResolvedValue(new Blob(['%PDF-1.7'], { type: 'application/pdf' }));
+      saveReport = vi.fn().mockResolvedValue(savedDoc);
+      vi.spyOn(TestBed.inject(FieldPlanDocumentsService), 'saveReport').mockImplementation(saveReport);
+      review.reviewed.set(true);
+      await vi.waitFor(() => expect(review.blocker()).toBeNull());
+    });
+
+    it('should save the report when the CI is confirmed, without anyone downloading it', async () => {
+      await review.confirm();
+
+      expect(saveReport).toHaveBeenCalledTimes(1);
+      expect(saveReport.mock.calls[0][0]).toBe(recordId);
+      expect(saveReport.mock.calls[0][2]).toMatch(/^45Z-Biofuel-Feedstock-Report_PENKA_.*.pdf$/);
+      expect(review.confirmed()?.reportDocumentId).toBe('doc-1');
+    });
+
+    it('should keep the CI confirmed when the save fails, say why, and save on retry', async () => {
+      saveReport.mockRejectedValueOnce(new ApiError({ status: 503, message: 'Doc Store is not answering.' }));
+
+      await review.confirm();
+
+      expect(review.confirmed()?.status).toBe('Documented');
+      expect(review.confirmed()?.reportDocumentId).toBeUndefined();
+      expect(review.reportSaveError()).toBe('Doc Store is not answering.');
+
+      await review.saveReport();
+
+      expect(review.confirmed()?.reportDocumentId).toBe('doc-1');
+      expect(review.reportSaveError()).toBeNull();
+    });
+
+    it('should not save the same confirmation twice', async () => {
+      await review.confirm();
+      await review.saveReport();
+
+      expect(saveReport).toHaveBeenCalledTimes(1);
+    });
   });
 });

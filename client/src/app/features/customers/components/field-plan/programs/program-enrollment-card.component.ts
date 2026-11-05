@@ -8,6 +8,9 @@ import { FieldResult } from './program-def';
 import { LadderRow, atOrBelowTarget, ciLadder } from './ci-ladder';
 import { downloadCsv } from '@shared/utils/csv';
 import { ledgerCsv, ledgerFileName } from './fd-cic/mass-balance-ledger';
+import { FdCicDocumentsDialogComponent } from './fd-cic/fd-cic-documents-dialog.component';
+import { FD_CIC_PROGRAM_KEY } from './fd-cic/fd-cic.program';
+import { FieldPlanDocumentsService } from '../store/field-plan-documents.service';
 
 /** One field in the card: its program record's acres and status, plus its score and bushels. */
 interface CardField {
@@ -46,7 +49,7 @@ interface CardField {
 @Component({
   selector: 'app-program-enrollment-card',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, FdCicDocumentsDialogComponent],
   styleUrl: '../field-plan.css',
   template: `
     @if (program(); as p) {
@@ -71,10 +74,16 @@ interface CardField {
           @if (p.official; as o) {
             <div class="flex flex-wrap items-center justify-between gap-2">
               <p class="text-xs text-gray-500 dark:text-gray-400">Planning estimates from the {{ p.shortLabel }} calculator. {{ o.requirementsNote }}</p>
-              @if (confirmedCount() && producer()) {
-                <button type="button" class="h-8 rounded-md px-3 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible"
-                        (click)="downloadLedger()">Download Mass Balance Ledger · {{ confirmedCount() }} field{{ confirmedCount() === 1 ? '' : 's' }}</button>
-              }
+              <div class="flex flex-wrap gap-2">
+                @if (documentsEnabled && p.key === fdCicKey) {
+                  <button type="button" class="h-8 rounded-md px-3 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible"
+                          (click)="documentsOpen.set(true)" data-testid="open-45z-documents">📄 45Z documents</button>
+                }
+                @if (confirmedCount() && producer()) {
+                  <button type="button" class="h-8 rounded-md px-3 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible"
+                          (click)="downloadLedger()">Download Mass Balance Ledger · {{ confirmedCount() }} field{{ confirmedCount() === 1 ? '' : 's' }}</button>
+                }
+              </div>
             </div>
           }
           <!-- Bushels by CI, one ladder per crop -->
@@ -145,6 +154,9 @@ interface CardField {
         </div>
       }
     </div>
+    @if (documentsOpen()) {
+      <app-fd-cic-documents-dialog [customerId]="customerId()" [year]="year()" [producerName]="producer()?.name ?? ''" (close)="documentsOpen.set(false)" />
+    }
     }
     }
   `,
@@ -194,6 +206,11 @@ export class ProgramEnrollmentCardComponent {
   });
 
   readonly confirmedCount = computed(() => this.records().filter(r => r.confirmed).length);
+
+  /** 45Z documents in Doc Store (attestation, Biofuel Feedstock Reports) for the producer and year; needs the API field plan. */
+  readonly documentsEnabled = inject(FieldPlanDocumentsService).enabled;
+  readonly fdCicKey = FD_CIC_PROGRAM_KEY;
+  readonly documentsOpen = signal(false);
 
   /** The Mass Balance Ledger: one row per confirmed field, with its confirmed bushels and CI. */
   downloadLedger(): void {

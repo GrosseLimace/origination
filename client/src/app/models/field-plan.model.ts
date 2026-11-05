@@ -136,6 +136,29 @@ export interface OfficialResult {
   } | null;
   /** 45Z confirmed CI: the producer's recordkeeping requirements were reviewed with them. */
   recordkeepingAcknowledged?: boolean;
+  /** 45Z confirmed CI: the Doc Store id of this confirmation's Biofuel Feedstock Report; absent until it's saved. */
+  reportDocumentId?: string;
+}
+
+/** What a 45Z document in Doc Store is. Only the two upload types can be uploaded; the report is saved by confirming. */
+export type FieldPlanDocumentType = 'FeedstockReport' | 'ProducerAttestation' | 'Other';
+export type FieldPlanUploadType = Exclude<FieldPlanDocumentType, 'FeedstockReport'>;
+
+/** One of a producer's 45Z documents in Doc Store (api/field-plan/customer/{id}/documents). */
+export interface FieldPlanDocument {
+  id: string;
+  fileName: string;
+  contentType: string;
+  size: number;
+  uploadedAt: string;
+  /** The originator's display name. */
+  uploadedBy?: string | null;
+  documentType: FieldPlanDocumentType;
+  cropYear?: number | null;
+  /** The field, for a Biofuel Feedstock Report. */
+  splitId?: string | null;
+  commodity?: string | null;
+  fieldProgramRecordId?: number | null;
 }
 
 /** One delivery (a CTRM ticket's detail row for the field's split), as reviewed, confirmed and exported. */

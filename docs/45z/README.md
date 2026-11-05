@@ -152,7 +152,8 @@ result.
 
   An estimate is never copied into it. Screens say "confirmed".
 - **Unlocking a confirmed field** moves both its estimate and its confirmed CI into the record's history, with the reason. The field can then be reviewed again.
-- **Still open:** whether an official CI will need more than the review (evidence, a verifier, sign-off). `requirements` and `evidence` on the official result are kept for that.
+- **`reportDocumentId`** is added once the confirmation's Biofuel Feedstock Report is in Doc Store (see [45Z documents in Doc Store](#45z-documents-in-doc-store)).
+- **Still open:** whether an official CI will need more than the review (evidence, a verifier, sign-off).
 
 ## USDA T-DISC
 
@@ -217,6 +218,66 @@ Built in the browser: content in `programs/fd-cic/feedstock-report.ts` (tested),
 - Columns: producer code and name, split ID, field, enrollment ID, crop year, commodity, acres, confirmed bushels, tickets (count), CI (g CO2e/bu), tillage, USDA version, confirmed by (the originator's name; their sign-in on a field confirmed before names were kept) and at.
 - Built in the browser (`programs/fd-cic/mass-balance-ledger.ts`), with spreadsheet formula injection guarded (`shared/utils/csv.ts`).
 - File name: `45Z-Mass-Balance-Ledger_{producer}_{year}_{yyyymmdd}.csv`.
+
+## 45Z documents in Doc Store
+
+Asked for by H. Collins on 2026-11-04, after the Doc Store team (Jesse, Charlie) gave the app's managed identity
+access in Dev and QA. **Doc Store has no screens for end users**, so Origination is the UI for its
+**Sustainability-45z** category (Charlie, 2026-11-05). Doc Store (repo `IT/docstore`) files each document with
+free-form JSON metadata, but **it can't list a category's documents by metadata**: its search is full-text and
+returns no metadata. So Origination keeps a row per document in **`dbo.FieldPlanDocument`** (migration
+`20261105151619_AddFieldPlanDocument`; review SQL [scripts/field-plan-AddFieldPlanDocument.sql](../../scripts/field-plan-AddFieldPlanDocument.sql)).
+The dialog lists from that table and downloads are checked against it; Doc Store holds the file and the same
+values as metadata for anyone reading it outside the app.
+
+- **Confirming a field's CI saves its Biofuel Feedstock Report.** It's the confirmation that saves it, not a
+  download. After `confirm` succeeds the browser builds the same PDF and sends it to
+  `POST api/field-plan/records/{id}/report`. The server checks that the field is confirmed and sets the metadata
+  itself. It then writes the document's row and puts the document id on the official result (`reportDocumentId`), so a second save of the same
+  confirmation returns the first document. Step 5 of the review shows "saved to Doc Store", or "not saved" with
+  the reason and **Save it now**. A failed save never undoes the confirmation. If a field is unlocked and
+  confirmed again, it gets a new report and the old one stays in Doc Store.
+- **"📄 45Z documents"** on the 45Z card (per producer and crop year) opens a dialog that:
+  - lists the producer's signed **annual attestation** first, then each field's **Biofuel Feedstock Report**,
+    then **other supporting documents**;
+  - can be filtered by type and, for reports, by field;
+  - has View (PDF and images, in a new tab) and Download.
+  The attestation is signed outside the app and uploaded here. The app still captures no attestation data
+  (05d86c08); it only keeps the file.
+- **Routes** (`FieldPlanController`, any signed-in originator, as the rest of the field plan, AR-01/AR-02):
+
+  | Route | Does |
+  |---|---|
+  | `POST records/{id}/report` | Saves a confirmed field's report |
+  | `GET customer/{customerId}/documents?year=` | Lists the producer's documents |
+  | `POST customer/{customerId}/documents` | Uploads an attestation or other document (form: `year`, `documentType` = `ProducerAttestation` or `Other`, `file`) |
+  | `GET customer/{customerId}/documents/{documentId}` | Downloads one document |
+
+- **Metadata the server sets** (`DocStoreMetadata`):
+  - on every document: `documentType`, `customerId`, `producerCode` (CTRM), `cropYear`, and `uploadedBy`/`uploadedByName`. Doc Store itself only sees the managed identity, so the originator is recorded here.
+  - on reports also: `splitId`, `commodity` (the crop row's code), `fieldProgramRecordId` and `confirmedAt`.
+- **Checks:**
+  - Files must be PDF, PNG or JPEG, up to 10 MB. The type is decided by the file's first bytes, never by its name or the browser, and the file name is rebuilt to match.
+  - A download whose document has no `FieldPlanDocument` row for the route's producer is a 404, so one producer's id can't fetch another's file. The file is served with the row's type and name, not Doc Store's.
+  - If the row can't be written after Doc Store took the file, the error is logged as `FIELD_PLAN_DOCUMENT_ORPHANED` with the Doc Store id, for clean-up.
+  - Uploads, report saves and downloads are audit-logged (`AUDIT_UPLOAD`, `AUDIT_SAVE_REPORT`, `AUDIT_DOWNLOAD`).
+- **Configuration** (`DocStore` in appsettings): `Mode` is one of:
+  - `""`: off. Uploads, report saves and downloads answer 503 `DOC_STORE_NOT_CONFIGURED`.
+  - `InMemory`: a stand-in that forgets on restart. Local development only; the API refuses to start with it elsewhere.
+  - `Http` (`HttpDocStoreClient`): Doc Store through APIM. `POST {BaseUrl}/documents` with the file base64-encoded
+    in JSON plus `categoryCode` and `metadata`; `GET {BaseUrl}/documents/{id}/content?deliveryMethod=proxy`. Token for
+    `Scope` from the App Service managed identity, or your own `az login` on a laptop. Uploads aren't retried (Doc
+    Store doesn't refuse duplicates). Without `BaseUrl` and `Scope` it stays off.
+
+  | Environment | BaseUrl | Scope |
+  |---|---|---|
+  | Dev | `https://apidev.scoular.com/internal/docstore/v1` | `api://f7f91201-60a7-483b-b9fe-cc540e539879/.default` |
+  | QA | `https://apiqa.scoular.com/internal/docstore/v1` | `api://f9577a19-eac4-45f8-997d-e956d6154430/.default` |
+  | PROD | `https://api.scoular.com/internal/docstore/v1` | `api://e34afd6c-d7bd-4c06-8ac2-f0e0718fe3e3/.default` |
+
+  From Doc Store's `docs/API-USAGE-GUIDE.md`; they aren't secrets. **PROD needs the managed identity granted the
+  category by the Doc Store team before go-live** (Dev and QA were granted 2026-11-04).
+- **The screens follow `fieldPlanBackend`**: documents need `'api'` (`FieldPlanDocumentsService.enabled`).
 
 **Checked on QA (2026-11-03):** `tickets(customerId: "TATOB43")` returns nothing, because a split ID isn't a ticket customer. TATOBIN's tickets carry the split in `combinedCustomerId`: TATOB43 has 5 rows in the 2024-25 window, all TATOBIN's, and TATOB02's rows are TATOBIN's, PARKROR's and TAYLSAE's. Not yet checked: that PROD's API has `combinedCustomerId`.
 

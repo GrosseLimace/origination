@@ -64,8 +64,23 @@ public class FieldPlanRepository : IFieldPlanRepository
     public Task<bool> CustomerExistsAsync(long customerId, CancellationToken cancellationToken) =>
         _db.Customers.AnyAsync(c => c.Id == customerId, cancellationToken);
 
+    public async Task<(bool Exists, string? ScoularId)> GetCustomerCodeAsync(long customerId, CancellationToken cancellationToken)
+    {
+        var row = await _db.Customers.Where(c => c.Id == customerId).Select(c => new { c.ScoularId }).FirstOrDefaultAsync(cancellationToken);
+        return (row is not null, row?.ScoularId);
+    }
+
     public Task<string?> GetPlantingIntentionCropAsync(int plantingIntentionId, CancellationToken cancellationToken) =>
         _db.PlantingIntentions.IgnoreQueryFilters().Where(p => p.Id == plantingIntentionId).Select(p => p.Crop).FirstOrDefaultAsync(cancellationToken);
+
+    public Task<List<FieldPlanDocument>> GetDocumentsAsync(long customerId, int? cropYear, CancellationToken cancellationToken) =>
+        _db.FieldPlanDocuments
+            .Where(d => d.CustomerId == customerId && (cropYear == null || d.CropYear == cropYear))
+            .OrderByDescending(d => d.CreatedAt).ThenByDescending(d => d.Id)
+            .ToListAsync(cancellationToken);
+
+    public Task<FieldPlanDocument?> GetDocumentAsync(long customerId, string docStoreId, CancellationToken cancellationToken) =>
+        _db.FieldPlanDocuments.FirstOrDefaultAsync(d => d.CustomerId == customerId && d.DocStoreId == docStoreId, cancellationToken);
 
     public void Add<T>(T entity) where T : class => _db.Add(entity);
 
