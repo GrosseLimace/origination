@@ -6,7 +6,7 @@ notes live in [docs/application-context/](docs/application-context/), operations
 [agents-docs/audits/AUDIT-TRACKING.json](agents-docs/audits/AUDIT-TRACKING.json).
 
 ## Software Bill of Materials (SBOM)
-Last Updated: 2026-11-02
+Last Updated: 2026-11-04
 
 Direct dependencies plus the transitive packages pinned for security. This is the compact copy
 company policy asks for here; [README.md](README.md#software-bill-of-materials-sbom) has the same
@@ -76,5 +76,6 @@ rows with the security notes behind each pin. Update BOTH in the same commit as 
 | ip-address | ≥10.7.4 <11 | MIT | IP address parser |
 | @hono/node-server | ≥2.1.3 <3 | MIT | Node adapter for hono |
 | glob (under cacache, @npmcli/package-json) | ≥14.0.2 <15 | BlueOak-1.0.0 | File globbing (npm internals) |
+| minimatch (requests for 7–10 only) | ≥11.0.1 <12 | BlueOak-1.0.0 | Glob matching (dev tooling) |
 | dompurify | ≥3.4.17 <4 | (MIT OR Apache-2.0) | HTML sanitizer |
 | piscina | ≥5.3.2 <6 | MIT | Worker-thread pool |

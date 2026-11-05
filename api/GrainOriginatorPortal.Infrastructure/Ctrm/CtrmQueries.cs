@@ -244,12 +244,16 @@ public static class CtrmQueries
     /// <para>Deliberately no <c>ticketType</c> argument, though the API now accepts one: it takes a single
     /// value and the app shows two types (U and P), so it cannot express our filter. Measured against live
     /// data it would also drop nothing - every detail row came back type U.</para>
+    ///
+    /// <para>Deliberately no <c>totalCount</c>, here and in every other ticket document (2026-11-04). Serving it
+    /// costs the CTRM team a count query for every page we fetch, and the only thing it ever decided was how many
+    /// pages <see cref="CtrmTicketReader"/> requested at once; the walk now pages on <c>hasNextPage</c> alone.
+    /// The team may stop computing it for <c>tickets</c> once this is in PROD, so do not add it back.</para>
     /// </remarks>
     public const string TicketsByCustomer = """
         query ($customerId: String, $from: Date, $to: Date, $skip: Int, $take: Int) {
           tickets(skip: $skip, take: $take, blDateFrom: $from, blDateTo: $to, customerId: $customerId,
                   excludeCancelled: true, excludeConsolidated: true) {
-            totalCount
             pageInfo { skip take hasNextPage hasPreviousPage }
             items {
         """ + TicketProjection + """
@@ -274,7 +278,6 @@ public static class CtrmQueries
         query ($customerId: String, $from: Date, $to: Date, $skip: Int, $take: Int) {
           tickets(skip: $skip, take: $take, blDateFrom: $from, blDateTo: $to, customerId: $customerId,
                   excludeCancelled: true, excludeConsolidated: true) {
-            totalCount
             pageInfo { skip take hasNextPage hasPreviousPage }
             items {
         """ + SplitTicketProjection + """
@@ -316,7 +319,6 @@ public static class CtrmQueries
           tickets(skip: $skip, take: $take, blDateFrom: $from, blDateTo: $to,
                   contractNumbers: $contractNumbers,
                   excludeCancelled: true, excludeConsolidated: true) {
-            totalCount
             pageInfo { skip take hasNextPage hasPreviousPage }
             items {
         """ + TicketProjection + """
@@ -433,7 +435,6 @@ public static class CtrmQueries
           tickets(skip: $skip, take: $take, blDateFrom: $from, blDateTo: $to,
                   customerIds: $customerIds,
                   excludeCancelled: true, excludeConsolidated: true) {
-            totalCount
             pageInfo { skip take hasNextPage hasPreviousPage }
             items {
         """ + TicketProjection + """
