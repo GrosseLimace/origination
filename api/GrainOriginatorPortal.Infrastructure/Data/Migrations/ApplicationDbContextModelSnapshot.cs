@@ -1699,6 +1699,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("nvarchar(30)")
                         .HasColumnName("DocumentType");
 
+                    b.Property<string>("FieldName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("FieldName");
+
                     b.Property<int?>("FieldProgramRecordId")
                         .HasColumnType("int")
                         .HasColumnName("FieldProgramRecordId");
@@ -1709,6 +1714,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("nvarchar(255)")
                         .HasColumnName("FileName");
 
+                    b.Property<string>("ReplacedByDocStoreId")
+                        .HasMaxLength(36)
+                        .HasColumnType("nvarchar(36)")
+                        .HasColumnName("ReplacedByDocStoreId");
+
                     b.Property<long>("SizeBytes")
                         .HasColumnType("bigint")
                         .HasColumnName("SizeBytes");
@@ -1717,6 +1727,33 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)")
                         .HasColumnName("SplitId");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("Current")
+                        .HasColumnName("Status");
+
+                    b.Property<DateTime?>("StatusChangedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("StatusChangedAt");
+
+                    b.Property<string>("StatusChangedBy")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("StatusChangedBy");
+
+                    b.Property<string>("StatusChangedByName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("StatusChangedByName");
+
+                    b.Property<string>("StatusNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("StatusNote");
 
                     b.HasKey("Id");
 

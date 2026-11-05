@@ -147,6 +147,20 @@ public class FieldPlanController : ControllerBase
     public async Task<ActionResult<FieldPlanDocumentResponse>> SaveReport(int id, IFormFile file, CancellationToken ct) =>
         Ok(await _documents.SaveReportAsync(id, file, ct));
 
+    /// <summary>
+    /// Saves a confirmed field's Mass Balance Ledger (CSV) to Doc Store, as <see cref="SaveReport"/> does the report.
+    /// A newer confirmation's ledger marks the field's previous one Overwritten.
+    /// </summary>
+    [HttpPost("records/{id:int}/ledger")]
+    [RequestSizeLimit(MaxUploadRequestBytes)]
+    [RequestFormLimits(MultipartBodyLengthLimit = MaxUploadRequestBytes)]
+    [ProducesResponseType(typeof(FieldPlanDocumentResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status503ServiceUnavailable)]
+    public async Task<ActionResult<FieldPlanDocumentResponse>> SaveLedger(int id, IFormFile file, CancellationToken ct) =>
+        Ok(await _documents.SaveLedgerAsync(id, file, ct));
+
     /// <summary>The producer's 45Z documents, for one crop year or all.</summary>
     [HttpGet("customer/{customerId:long}/documents")]
     [ProducesResponseType(typeof(IReadOnlyList<FieldPlanDocumentResponse>), StatusCodes.Status200OK)]
@@ -175,6 +189,24 @@ public class FieldPlanController : ControllerBase
         // Attachment, never inline: the browser saves or hands it to a viewer rather than rendering it on our origin.
         return File(doc.Content, doc.ContentType, doc.FileName);
     }
+
+    /// <summary>Archives one of the producer's current 45Z documents, with an optional reason. It stays in the version history.</summary>
+    [HttpPost("customer/{customerId:long}/documents/{documentId}/archive")]
+    [ProducesResponseType(typeof(FieldPlanDocumentResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<FieldPlanDocumentResponse>> ArchiveDocument(long customerId, [StringLength(200)] string documentId,
+        [FromBody] ArchiveFieldPlanDocumentRequest? request, CancellationToken ct) =>
+        Ok(await _documents.ArchiveAsync(customerId, documentId, request?.Note, ct));
+
+    /// <summary>Restores one of the producer's archived 45Z documents to current.</summary>
+    [HttpPost("customer/{customerId:long}/documents/{documentId}/restore")]
+    [ProducesResponseType(typeof(FieldPlanDocumentResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<FieldPlanDocumentResponse>> RestoreDocument(long customerId, [StringLength(200)] string documentId, CancellationToken ct) =>
+        Ok(await _documents.RestoreAsync(customerId, documentId, ct));
 
     /// <summary>The file limit (DocStore:MaxFileBytes, 10 MB) plus room for the multipart form around it.</summary>
     private const long MaxUploadRequestBytes = 11 * 1024 * 1024;

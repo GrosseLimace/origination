@@ -73,10 +73,6 @@ public class FieldPlanRepository : IFieldPlanRepository
     public Task<string?> GetPlantingIntentionCropAsync(int plantingIntentionId, CancellationToken cancellationToken) =>
         _db.PlantingIntentions.IgnoreQueryFilters().Where(p => p.Id == plantingIntentionId).Select(p => p.Crop).FirstOrDefaultAsync(cancellationToken);
 
-    public Task<Dictionary<int, string?>> GetPlantingIntentionCropsAsync(IReadOnlyCollection<int> plantingIntentionIds, CancellationToken cancellationToken) =>
-        _db.PlantingIntentions.IgnoreQueryFilters().Where(p => plantingIntentionIds.Contains(p.Id))
-            .ToDictionaryAsync(p => p.Id, p => (string?)p.Crop, cancellationToken);
-
     public Task<List<FieldPlanDocument>> GetDocumentsAsync(long customerId, int? cropYear, CancellationToken cancellationToken) =>
         _db.FieldPlanDocuments
             .Where(d => d.CustomerId == customerId && (cropYear == null || d.CropYear == cropYear))
@@ -85,6 +81,15 @@ public class FieldPlanRepository : IFieldPlanRepository
 
     public Task<FieldPlanDocument?> GetDocumentAsync(long customerId, string docStoreId, CancellationToken cancellationToken) =>
         _db.FieldPlanDocuments.FirstOrDefaultAsync(d => d.CustomerId == customerId && d.DocStoreId == docStoreId, cancellationToken);
+
+    public Task<List<FieldPlanDocument>> GetCurrentRecordDocumentsAsync(int fieldProgramRecordId, string documentType, CancellationToken cancellationToken) =>
+        _db.FieldPlanDocuments
+            .Where(d => d.FieldProgramRecordId == fieldProgramRecordId && d.DocumentType == documentType && d.Status == FieldPlanDocument.Current)
+            .ToListAsync(cancellationToken);
+
+    public Task<Dictionary<int, string?>> GetPlantingIntentionCropsAsync(IReadOnlyCollection<int> plantingIntentionIds, CancellationToken cancellationToken) =>
+        _db.PlantingIntentions.IgnoreQueryFilters().Where(p => plantingIntentionIds.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id, p => (string?)p.Crop, cancellationToken);
 
     public void Add<T>(T entity) where T : class => _db.Add(entity);
 

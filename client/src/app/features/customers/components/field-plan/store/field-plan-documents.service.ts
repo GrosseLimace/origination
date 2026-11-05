@@ -39,6 +39,25 @@ export class FieldPlanDocumentsService {
     return this.send(this.http.post<FieldPlanDocument>(`${this.base}/records/${encodeURIComponent(recordId)}/report`, form));
   }
 
+  /** Saves a confirmed field's Mass Balance Ledger (CSV); a repeat for the same confirmation returns the first. */
+  saveLedger(recordId: string, csv: Blob, fileName: string): Promise<FieldPlanDocument> {
+    const form = new FormData();
+    form.append('file', csv, fileName);
+    return this.send(this.http.post<FieldPlanDocument>(`${this.base}/records/${encodeURIComponent(recordId)}/ledger`, form));
+  }
+
+  /** Sets a current document aside, with an optional reason. It stays in the version history. */
+  archive(customerId: number, documentId: string, note: string | null): Promise<FieldPlanDocument> {
+    return this.send(this.http.post<FieldPlanDocument>(
+      `${this.base}/customer/${customerId}/documents/${encodeURIComponent(documentId)}/archive`, { note }));
+  }
+
+  /** Brings an archived document back to current. */
+  restore(customerId: number, documentId: string): Promise<FieldPlanDocument> {
+    return this.send(this.http.post<FieldPlanDocument>(
+      `${this.base}/customer/${customerId}/documents/${encodeURIComponent(documentId)}/restore`, {}));
+  }
+
   /** The document's bytes, for opening or saving in the browser. */
   async content(customerId: number, documentId: string): Promise<Blob> {
     return this.send(this.http.get(`${this.base}/customer/${customerId}/documents/${encodeURIComponent(documentId)}`, { responseType: 'blob' }));

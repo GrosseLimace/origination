@@ -148,9 +148,12 @@ public sealed class HttpDocStoreClient : IDocStoreClient
             "application/pdf" => "PDF",
             "image/png" => "PNG",
             "image/jpeg" or "image/jpg" => "JPEG",
+            "text/csv" => "CSV",
             var other => other,
         };
-        return $"Doc Store isn't set up to take {kind} files for 45Z documents yet. Upload a PDF, or ask IT to allow {kind} for the {category} category.";
+        // A CSV is only ever the Mass Balance Ledger, saved by confirming: there's no PDF to offer instead.
+        var instead = kind == "CSV" ? "Ask" : "Upload a PDF, or ask";
+        return $"Doc Store isn't set up to take {kind} files for 45Z documents yet. {instead} IT to allow {kind} for the {category} category.";
     }
 
     /// <summary>Doc Store answers a refusal as plain text, <c>{ "error": "…" }</c> or <c>{ "errors": [ … ] }</c>.</summary>

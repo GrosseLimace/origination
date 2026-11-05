@@ -314,6 +314,11 @@ export class FieldPlanStore {
     if (record?.official) this.putRecord({ ...record, official: { ...record.official, reportDocumentId: documentId } });
   }
 
+  ledgerSaved(recordId: string, documentId: string): void {
+    const record = this.record(recordId);
+    if (record?.official) this.putRecord({ ...record, official: { ...record.official, ledgerDocumentId: documentId } });
+  }
+
   // ── Copying inputs between fields (same producer, program and year) ────────
 
   /**

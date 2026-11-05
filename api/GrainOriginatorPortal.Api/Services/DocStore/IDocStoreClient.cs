@@ -37,6 +37,7 @@ public static class DocStoreMetadata
     public const string ProducerCode = "producerCode";
     public const string CropYear = "cropYear";
     public const string SplitId = "splitId";
+    public const string FieldName = "fieldName";
     public const string Commodity = "commodity";
     public const string FieldProgramRecordId = "fieldProgramRecordId";
     /// <summary>When the CI the report shows was confirmed (Official.documentedAt), so a re-confirmed field's reports stay apart.</summary>
