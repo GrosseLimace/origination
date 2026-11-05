@@ -444,6 +444,15 @@ _Update (2026-11-03):_ the enrollment routes (`POST /api/field-plan/enrollments`
 `DropProgramEnrollment`): 45Z only calculates and confirms a CI and no producer attestation is captured, so the
 "attested enrollment blocks unlocking" safeguard no longer exists. The routes above are the whole surface.
 
+_Update (2026-11-05) — 45Z documents in Doc Store._ Owner decision (H. Collins, Teams, 2026-11-05: "Any
+originator can see it"): any originator may add a producer's 45Z documents. Routes: `POST /api/field-plan/records/{id}/report`
+(saves a confirmed field's Biofuel Feedstock Report) and `POST /api/field-plan/customer/{customerId}/documents`
+(uploads a signed producer attestation or other document). Mitigations: the server sets every Doc Store metadata
+value and the `dbo.FieldPlanDocument` row from its own data, and the request supplies only the file (plus the year
+and type for an upload). Files are PDF/PNG/JPEG decided by content, up to 10 MB, with names rebuilt. A report can
+only be saved for a confirmed field, once per confirmation. Nothing is updated or deleted. Every save is
+audit-logged (`AUDIT_UPLOAD`, `AUDIT_SAVE_REPORT`). The reads are under AR-02 (same date).
+
 ---
 
 ## AR-02 — Customer-scoped reads not restricted by trade-unit entitlement
@@ -842,6 +851,19 @@ reject it and require the code change. Whoever gets that answer: record it on th
 producer's fields, seasons and program records; enrollments were removed 2026-11-03), `GET /api/field-plan/records/{id}/tickets` (the field's CTRM
 tickets, the same data the producer's Tickets tab already shows any originator) and
 `GET /api/ctrm-splits/customer/{customerId}` (the producer's CTRM splits) are open to every originator.
+
+**Update (2026-11-05) — 45Z documents added to this entry.** Owner decision (H. Collins, Teams, 2026-11-05:
+"Any originator can see it"): `GET /api/field-plan/customer/{customerId}/documents` (a producer's 45Z
+documents for a crop year) and `GET /api/field-plan/customer/{customerId}/documents/{documentId}` (opens
+one) are open to every originator. **Open question: a signed producer attestation may carry personal
+details.** Legal hasn't reviewed the attestation (H. Collins and C. Horner, 2026-11-05), and C. Horner will
+pass on Legal's answer. If Legal says attestations hold personal information that shouldn't be shared, these
+two routes get a code change, not a wider acceptance (for example, attestations visible only to the
+producer's trade units or a named group). Record that answer here with a date. Mitigations meanwhile:
+- A download is checked against the route's producer through `dbo.FieldPlanDocument`, so another producer's
+  document id is a 404.
+- Files are served with the type decided at upload, so the browser only renders PDF or an image.
+- Every download is audit-logged (`AUDIT_DOWNLOAD`), and Doc Store keeps its own access log.
 
 ---
 
