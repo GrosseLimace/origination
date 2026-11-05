@@ -2,8 +2,57 @@
 
 Scope: EF Core query patterns and repositories under `api/`, Angular change-detection/template patterns under `client/`, SQL indexing
 
-**Findings:** 11 total — 1 open (low), 7 resolved (1 critical, 1 high, 3 medium, 2 low), 2 wont_fix (low), 1 accepted (low)
-**Opened:** 2026-09-19 | **Last verified:** 2026-10-20
+**Findings:** 14 total — 3 open (1 medium, 2 low), 7 resolved (1 critical, 1 high, 4 medium, 1 low), 2 wont_fix (low), 2 accepted (low)
+**Opened:** 2026-09-19 | **Last verified:** 2026-11-05
+
+## Reconciliation (2026-11-05)
+
+Ran as a bounded, single-domain Code Quality Dashboard calibration pass (sampling, not an
+exhaustive re-read of the repo). See `skills/perf-review/SKILL.md` for the checklist followed.
+
+**Doc/tracker drift noted, not introduced by this pass:** the one item this document's 2026-10-20
+section listed as "Open" — `performance.ods-customer-search-unindexed-wildcard-scan` — was in fact
+moved to `accepted` in `AUDIT-TRACKING.json` the same day (2026-10-20), per its own
+`resolution_notes`: the fix would require an index on `base.vw_CurrentCustomers`, which lives in the
+ODS database outside this app's read-only pipeline, so it's a request to the data team rather than a
+code change; the owner accepted the bounded, already-mitigated cost instead. This document just
+hadn't been refreshed against that since. Moved to Accepted below.
+
+Spot-checked a sample of previously-resolved findings against current code rather than re-deriving
+all 14: `CustomerRepository.SearchAsync`'s batched enrichment helpers (eSign/ACH/trade-units/acres/
+linked-producers, all single `WHERE id IN (...)` queries grouped in memory), `TicketRepository`/
+`CtrmTicketRepository.PopulateElevatorLocations` (batched by distinct location key), and OnPush
+coverage (confirmed via `ChangeDetectionStrategy.OnPush` present across every sampled component,
+147 occurrences across 63 files) — all still hold, no regressions.
+
+Sampled areas not previously covered in depth: the `FieldPlan` service/repository pair, the
+`CustomerSyncService` dormant-trade-unit "bring-back" pass, `UsageDashboardService`'s rollup/raw
+window split, and the `build-list` feature's component (the largest list-rendering surface in the
+client, with its own deliberate render-batching signal). Three new findings opened, all low/medium
+and all inferred-risk (no App Insights/Query Store access from this run to convert any of them into
+measured, confirmed bottlenecks):
+
+- **`performance.field-season-crop-group-n-plus-one`** (medium, open) — `FieldPlanService.AddSeasonAsync`
+  calls an uncached `CropGroupAsync` (→ `GetPlantingIntentionCropAsync`, a real EF query) once per
+  existing season on the field inside a loop, instead of batching the lookup by distinct
+  `PlantingIntentionId` before the loop.
+- **`performance.customer-sync-per-producer-open-activity-query`** (low, open) — the dormant-TU
+  "bring-back" pass in `CustomerSyncService` queries `GetOpenActivityTradeUnitsAsync` once per
+  distinct producer in a loop, in a background sync job; the surrounding comment argues the set is
+  deliberately small, but nothing enforces that, and the rest of `CustomerRepository` already
+  batches equivalent lookups by id.
+- **`performance.build-list-template-per-row-impure-calls`** (low, open) — `build-list.component.html`
+  calls several non-pure helper methods (`getInitials`, `getFormattedLocation`,
+  `binSiteGrainSummary`, `formatLastBid`) and re-slices an array directly inside `@for` row
+  bindings. Real-world impact is substantially reduced by the app's existing OnPush + zoneless
+  change detection (`provideZonelessChangeDetection()` in `main.ts`) and this component's own
+  `renderLimit`/`renderedCustomers` computed-signal batching, which caps how many rows are actually
+  in the DOM — kept as a minor, inferred-only finding rather than discarded.
+
+Other areas sampled with no new findings: `UsageDashboardService`'s rollup/raw window split is a
+deliberate anti-over-fetching design (long ranges hit pre-aggregated rollups; only the unrolled tail
+reads raw events), no blocking `Task.Result`/`.Wait()` calls were found on any hot path, and no
+Angular service was found issuing HTTP calls in a loop.
 
 ## Reconciliation (2026-10-20)
 
@@ -40,7 +89,7 @@ post-dates every finding already on file:
   diffs via dictionaries in memory, and saves once; no per-customer round trips in the loop bodies.
 - **CTRM customer-onboarding search** (new 2026-10-14) — one new finding, see below.
 
-### New finding (low, open)
+### New finding (low, open at the time — see 2026-11-05 reconciliation above for current status)
 
 **`performance.ods-customer-search-unindexed-wildcard-scan`** — Onboarding search
 (`CustomerRepository.BuildOdsSearchSql`) runs a leading-wildcard `LIKE` across 3 columns, ANDed per
@@ -94,9 +143,17 @@ The remaining 3 open findings (contracts-table OnPush/memoization gap, template 
 
 ## Open
 
-### Onboarding search against the ODS customer master runs a leading-wildcard LIKE scan with no supporting index (`performance.ods-customer-search-unindexed-wildcard-scan`) — low
-- **Files:** `CustomerRepository.cs`, `CustomersController.cs`, `customer-list.component.ts`
-- See "New finding" above.
+### FieldPlanService.AddSeasonAsync issues one DB round trip per existing season to resolve crop groups, instead of batching (`performance.field-season-crop-group-n-plus-one`) — medium
+- **Files:** `FieldPlanService.cs`, `FieldPlanRepository.cs`
+- See "New finding" in the 2026-11-05 reconciliation above.
+
+### CustomerSyncService's dormant-TU bring-back pass queries open activity once per distinct producer in a loop (`performance.customer-sync-per-producer-open-activity-query`) — low
+- **Files:** `CustomerSyncService.cs`, `CustomerRepository.cs`
+- See "New finding" in the 2026-11-05 reconciliation above.
+
+### build-list.component.html calls non-pure helper methods and re-slices arrays directly in @for row bindings (`performance.build-list-template-per-row-impure-calls`) — low
+- **Files:** `build-list.component.html`, `build-list.component.ts`
+- See "New finding" in the 2026-11-05 reconciliation above.
 
 ## Resolved
 
@@ -139,16 +196,23 @@ The remaining 3 open findings (contracts-table OnPush/memoization gap, template 
 ### ProducerDetails upsert deletes and reinserts all child rows instead of diffing (`performance.producerdetails-child-table-rebuild-on-every-save`) — low, accepted
 - Row counts per customer are small; not a throughput risk today. Related to the rejected re-fetch finding above.
 
+### Onboarding search against the ODS customer master runs a leading-wildcard LIKE scan with no supporting index (`performance.ods-customer-search-unindexed-wildcard-scan`) — low, accepted
+- **Files:** `CustomerRepository.cs`, `CustomersController.cs`, `customer-list.component.ts`
+- Accepted 2026-10-20: the fix (an index or full-text predicate on `base.vw_CurrentCustomers`) lives in the ODS database, which this app only reads through a read-only context — out of this repo's control, so it's a request to the data team rather than a code change. The cost stays bounded by the existing 3-char minimum, zero-results-only client gating, and debounce. Revisit if it ever shows up in Query Store.
+
 ## Overall health
 
 The codebase shows clear, sustained signs of deliberate perf work across every pass so far: batched
 EF queries with in-memory dictionary joins, `AsNoTracking` on read paths, contract-scoped ticket
 loading with documented before/after context, memoized delivery-stats caching, and — as of
-2026-10-13/14 — every Angular component in the client is now `OnPush` with `computed()`-memoized
+2026-10-13/14 — every Angular component in the client is `OnPush` with `computed()`-memoized
 per-row lookups, closing out what had been the longest-standing open cluster (contracts-table,
 template function calls, and the OnPush coverage gap). The BarChart/Bid Sheet work that shipped
 since then (ingest pipeline, catalog search, the ~4,000-pin clustered map) extends the same
-batching and memoization discipline rather than regressing it. The one open item from this pass is
-a low-severity, already-mitigated inferred risk (ODS onboarding search's non-sargable wildcard
-scan) rather than a proven bottleneck. No sync-over-async, missing-pagination, or bundle-bloat
-issues were found in production code this pass either.
+batching and memoization discipline rather than regressing it. The customer-search/enrichment
+pipeline, ticket/elevator-location enrichment, and usage-dashboard rollup/raw split sampled in the
+2026-11-05 pass all show the same discipline. The three new findings from that pass are modest in
+scope (one bounded N+1 in a field-plan write path, one background-job per-producer loop the author
+already deliberately bounded, and one frontend per-row template-call pattern already mitigated by
+OnPush + zoneless CD + render batching) rather than signs of regression. No sync-over-async,
+missing-pagination, or bundle-bloat issues were found in the areas sampled this pass either.

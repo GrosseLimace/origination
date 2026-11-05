@@ -84,6 +84,20 @@ public class CustomerSyncAttributesTests
         Assert.Equal("1234567890", target.NopIdNumber);
     }
 
+    // Lookups compare dbo.Customer.ScoularId as stored (audit 2026-11-05), so the ODS path trims it
+    // like the CTRM path and onboarding do.
+    [Fact]
+    public void Ods_ApplyTo_TrimsTheScoularId()
+    {
+        var view = FullView();
+        view.ScoularId = "  SMITFAR ";
+        var target = new Customer();
+
+        new OdsCustomerSyncAttributes(view).ApplyTo(target);
+
+        Assert.Equal("SMITFAR", target.ScoularId);
+    }
+
     [Fact]
     public void Ctrm_ApplyTo_SetsTheNineStage1Columns_Trimmed()
     {

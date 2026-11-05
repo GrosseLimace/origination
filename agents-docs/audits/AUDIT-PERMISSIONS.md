@@ -4,8 +4,65 @@ Style guide: `style-guides/permissions-model.md`
 Scope: ASP.NET Core authorization, trade-unit entitlement scoping, Angular permission checks,
 `SECURITY-REVIEWS/ACCEPTED-RISKS.md`, `docs/application-context/SECURITY-MODEL.md`
 
-**Findings:** 0 open — 0 critical, 0 high, 0 medium, 0 low (6 resolved/accepted to date)
-**Opened:** 2026-09-19 | **Last verified:** 2026-10-20
+**Findings:** 1 open — 0 critical, 0 high, 1 medium, 0 low (6 resolved/accepted to date)
+**Opened:** 2026-09-19 | **Last verified:** 2026-11-05
+
+## Reconciliation notes (2026-11-05 pass)
+
+Reviewed every commit touching permission-relevant files since the 2026-10-20 pass (~45 commits:
+field-plan/45Z feature build-out, bid-sheet sharing, CTRM managed-identity auth change, help panel,
+Teams channel picker, dependency pins) against `style-guides/permissions-model.md`'s enforcement,
+naming, and testing requirements:
+
+- **New finding — `permissions.controller-authorize-regression-test-missing-4-controllers` (medium,
+  open).** `ControllerAuthorizationTests.AllControllerTypes()` is this app's regression net for "no
+  endpoint ships without [Authorize]." Diffing the `Controllers/` directory (35 real controllers)
+  against the test's hand-maintained `typeof(...)` list (30 entries) found 4 gaps:
+  `TeamsChannelsController` (added 2026-09-14), `ClientTelemetryController` (2026-10-13),
+  `HelpController` (2026-10-14), and `TDiscController` (2026-11-03, this pass's new 45Z T-DISC
+  controller). Read each file directly: all 4 currently carry `[Authorize]`, so there is no live
+  unauthenticated endpoint today. But the test provides zero protection for these 4 — if `[Authorize]`
+  were ever dropped from one of them, nothing would catch it. Notably, the `TeamsChannelsController`
+  gap predates every prior permissions pass back to 2026-09-19, and the 2026-10-20 pass explicitly
+  reviewed `ClientTelemetryController` and called it "properly gated, no new finding" without checking
+  whether the regression test actually covered it. Filed as medium (same bar as the other
+  test-coverage-gap findings already resolved in this tracker, e.g.
+  `stored-grain-service-untested-entitlement-scoping`). Suggested fix: add the 4 missing entries, and
+  consider replacing the hand-maintained list with reflection over `ControllerBase`-derived types so
+  this can't recur.
+- **Field-plan / 45Z feature (largest change set this pass) — correctly follows the documented
+  deviation pattern, not a new gap.** `FieldPlanController`'s own doc comment states it is "open to any
+  signed-in originator, like planting intentions: no per-producer object-level authorization by
+  design," citing AR-01 and AR-02. Checked `SECURITY-REVIEWS/ACCEPTED-RISKS.md` directly rather than
+  trusting the comment: the field-plan routes (`/api/field-plan/fields`, `/seasons`, `/records`,
+  `/records/{id}/confirm` etc., and the `GET /api/field-plan/customer/{customerId}` /
+  `/records/{id}/tickets` reads) are listed in AR-01/AR-02 as of the 2026-11-03 update — including the
+  enrollment-routes removal note. This is exactly the registry-citation discipline the
+  now-resolved `storedgrain-customer-route-missing-from-ar02-registry` finding was about; this time
+  the team did it themselves. No finding.
+- **`FdCicController` (new, 2026-11-03) and `TDiscController` (new, 2026-11-03) — reference/calculator
+  endpoints, no customer-scoped data.** Both only expose USDA reference tables (versions, states,
+  counties, crop/tillage options) and score caller-submitted inputs; neither reads or returns another
+  user's or customer's stored data, so there is no object-level-authorization surface to scope.
+  `[Authorize]` present on both (see the `ControllerAuthorizationTests` finding above for why that
+  alone isn't a complete guarantee going forward).
+- **Bid-sheet sharing (`SetSheetSharesAsync`, commit range around "taking yourself off a shared sheet")
+  — deliberate, documented, not a gap.** `BidSheetService.SetSheetSharesAsync` lets any sheet member
+  (not just the owner) widen who the sheet is shared with; the method's own comment explains this is
+  the accepted trade for a shared working list, that every share is stamped with `SharedBy` for
+  traceability, and that the owner discovers widening by looking. Consistent with this app's existing
+  pattern of documenting authorization trade-offs inline rather than silently allowing them.
+- **CTRM managed-identity change (`fc854518`, `d368968f`, `2f0eb3bf`) — authentication, not
+  application-layer authorization.** Switches how the API's own outbound call to the CTRM GraphQL API
+  authenticates (developer's `az login` locally vs. the App Service managed identity in Azure); does
+  not change what any end user of this app is permitted to do. Out of this audit's scope per
+  §1.3 of the style guide (authentication vs. authorization).
+- Previously-resolved and previously-accepted findings (`enforce-trade-unit-access-silent-noop`,
+  `stored-grain-service-untested-entitlement-scoping`,
+  `storedgrain-customer-route-missing-from-ar02-registry`,
+  `accepted-risks-countersignature-banner-contradicts-ar10`,
+  `access-control-risk-acceptances-lack-independent-signoff`, `no-rbac-permission-data-model`,
+  `role-change-audit-trail-gap`) re-checked against the current tree: no regressions, all still hold.
 
 ## Reconciliation notes (2026-10-20 pass)
 

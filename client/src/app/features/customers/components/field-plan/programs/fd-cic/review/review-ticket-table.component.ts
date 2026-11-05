@@ -26,67 +26,7 @@ function ticketMatchTitle(t: FieldTicket): string {
   standalone: true,
   imports: [DatePipe, DecimalPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-<div class="mt-2 overflow-x-auto">
-  <table class="min-w-full text-sm">
-    <thead>
-      <tr class="text-left text-xs text-gray-500 dark:text-gray-400">
-        @if (pick()) {
-          <th class="py-1 pr-2 w-6"><input type="checkbox" [checked]="allIncluded()" [indeterminate]="someIncluded()" [disabled]="!anyCountable()" (change)="toggleAll.emit()" aria-label="Include every ticket" /></th>
-        }
-        <th class="py-1 pr-3 font-medium">Ticket #</th>
-        <th class="py-1 pr-3 font-medium">Customer</th>
-        <th class="py-1 pr-3 font-medium">BL date</th>
-        <th class="py-1 pr-3 font-medium">Location</th>
-        <th class="py-1 pr-3 font-medium">Contract</th>
-        <th class="py-1 pr-3 text-right font-medium">Net bu</th>
-        <th class="py-1 font-medium">Status</th>
-      </tr>
-    </thead>
-    <tbody>
-      @for (tk of rows(); track tk.ticketKey) {
-        <tr class="border-t border-gray-100 dark:border-gray-800" [class.opacity-40]="pick() && excluded().has(tk.ticketKey)">
-          @if (pick()) {
-            <td class="py-1.5 pr-2"><input type="checkbox" [checked]="!excluded().has(tk.ticketKey)" (change)="toggle.emit(tk.ticketKey)" [attr.aria-label]="'Include ticket ' + tk.ticketNumber + (tk.customerCode ? ' for ' + tk.customerCode : '')" /></td>
-          }
-          <td class="py-1.5 pr-3 font-medium text-gray-900 dark:text-white">{{ tk.ticketNumber }}</td>
-          <td class="py-1.5 pr-3 whitespace-nowrap">{{ tk.customerCode ?? '—' }}</td>
-          <td class="py-1.5 pr-3 whitespace-nowrap">{{ tk.blDate | date:'MM/dd/yy' }}</td>
-          <td class="py-1.5 pr-3">{{ tk.location ?? '—' }}</td>
-          <td class="py-1.5 pr-3 whitespace-nowrap">
-            {{ tk.contractNumber ?? '—' }}
-            <span class="ml-1 rounded px-1.5 py-0.5 text-[11px]" [title]="matchTitle(tk)"
-                  [class]="isAdded(tk) ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'">
-              {{ matchLabel(tk) }}</span>
-            @if (pick() && tk.cropYearMatch === 'other') {
-              <button type="button" class="ml-1 text-xs underline bg-transparent border-0 p-0 text-gray-500 dark:text-gray-400"
-                      (click)="removeAdded.emit(tk.ticketKey)" [attr.aria-label]="'Remove added ticket ' + tk.ticketNumber">remove</button>
-            }
-          </td>
-          <td class="py-1.5 pr-3 text-right tabular-nums">{{ tk.netBushels !== null ? (tk.netBushels | number:'1.0-0') : '?' }}</td>
-          <td class="py-1.5 whitespace-nowrap">
-            @if (tk.settled) {
-              <span class="rounded-full px-2 py-0.5 text-xs bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">Settled{{ tk.settledDate ? ' ' + (tk.settledDate | date:'MM/dd') : '' }}</span>
-            } @else {
-              <span class="rounded-full px-2 py-0.5 text-xs bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200">Open</span>
-            }
-          </td>
-        </tr>
-      }
-    </tbody>
-    <tfoot>
-      <tr class="border-t-2 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white">
-        @if (pick()) { <td></td> }
-        <td class="py-1.5 pr-3 text-xs text-gray-500 dark:text-gray-400" colspan="5">
-          {{ pick() ? includedCount() + ' of ' + rows().length + ' included' : rows().length + ' ticket' + (rows().length === 1 ? '' : 's') }}
-        </td>
-        <td class="py-1.5 pr-3 text-right font-semibold tabular-nums">{{ bushels() | number:'1.0-0' }}</td>
-        <td></td>
-      </tr>
-    </tfoot>
-  </table>
-</div>
-`,
+  templateUrl: './review-ticket-table.component.html',
 })
 export class ReviewTicketTableComponent {
   readonly rows = input.required<readonly FieldTicket[]>();
