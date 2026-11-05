@@ -2,8 +2,62 @@
 
 Scope: dead code, duplication, and stale artifacts across `api/`, `client/`, `scripts/`, and `SECURITY-REVIEWS/scripts/`
 
-**Findings:** 29 total — 1 open (medium), 1 wont_fix, 1 accepted, 26 resolved
-**Opened:** 2026-09-19 | **Last verified:** 2026-10-20
+**Findings:** 29 total — 0 open, 1 wont_fix, 1 accepted, 27 resolved
+**Opened:** 2026-09-19 | **Last verified:** 2026-11-05
+
+## 2026-11-05 reconciliation
+
+This doc had drifted from `AUDIT-TRACKING.json`: the "Open (1)" section below still listed
+`clean-slop.customer-print-report-duplicates-pricing-status-logic` as open, but the tracker already
+recorded it `resolved` on 2026-10-20 — the same day it was opened. Re-verified directly against the
+tree rather than trusting either source: `customer-print-report.component.ts`'s `getPricingInfo`
+(line 185) now delegates to `contractPricingInfo(...)` imported from the new
+`shared/utils/contract-pricing-status.ts`, and `contracts-table.component.ts` delegates to the same
+util (commit `a38784a5`, "one pricing-status rule for the Contracts tab and the print report"). The
+LOADING state and float-tolerance guard that only `contracts-table` had before are now shared by both
+call sites. Closing this out; the tracker's own "Open (1)" count below is corrected to zero.
+
+Reviewed the ~96 commits / 282 files merged into `api/` and `client/src` since the 2026-10-20 pass —
+almost entirely one large feature (Field Sustainability Programs / 45Z clean-fuel credit: USDA FD-CIC
+scoring, T-DISC tillage rating, feedstock/mass-balance reporting, a `field-plan` Angular feature area,
+and the matching `FieldPlan`/`FdCic` API services, repository, and migration), plus two CTRM
+keep-warm/pagination perf fixes. Swept the new feature for the same four categories as prior passes:
+
+- **Dead infrastructure:** no `TODO`/`FIXME`/`HACK` markers and no commented-out code blocks anywhere
+  under the new `field-plan`, `FieldPlan`, or `FdCic` directories. No `console.log`/`console.debug`
+  leftovers, no empty catch blocks.
+- **Phantom patterns:** `SustainabilityProgramDef` (`program-def.ts`) currently has exactly one
+  implementation (45Z), which on its own would be a single-impl-interface flag — but its doc comments
+  explicitly frame it as the extension seam for programs beyond 45Z ("45Z first, others later"; "tests
+  provide their own list to prove the host code is generic"), matching this repo's established pattern
+  of deliberate DI/extension seams rather than AI ceremony (same call made for the 56 single-impl
+  `Interfaces/`/`I*.cs` seams in earlier passes). Not flagged.
+- **Copy-paste drift:** `FieldPlanCropGroups.cs` and `FieldPlanTDisc.cs` each intentionally port a rule
+  the client also has (crop-code grouping from `crop-group-match.ts`; tillage-to-T-DISC mapping from
+  `fd-cic-tdisc.ts`) — but unlike the print-report case above, both are explicitly commented as
+  deliberate ports with a test keeping the two sides in sync, which is this repo's established safe
+  pattern for client/server duplication. `tools/tdisc-extract` imports `tools/fdcic-extract`'s
+  `xlsx.mjs`/`stable-json.mjs` rather than cloning them. The three sibling `review/*.component.ts`
+  files (T-DISC, recordkeeping, ticket table) share no duplicated formatting logic. Client-side CI
+  scoring calls the API (`FdCicApiService`) rather than reimplementing the calculation, so there's no
+  client/server scoring drift risk to begin with.
+- **Comment noise:** every non-obvious method in the new services carries a WHY comment consistent
+  with the rest of this codebase's standard; no stale or restating comments found in the sampled files.
+
+No new clean-slop findings from this pass. The feature area is large but comes out clean on this
+sweep's categories; see "What was checked" below for the exact file list sampled.
+
+## What was checked (2026-11-05)
+
+- Re-verified: `customer-print-report.component.ts`, `contracts-table.component.ts`,
+  `shared/utils/contract-pricing-status.ts`.
+- New feature, sampled: `Controllers/FieldPlanController.cs`, `Controllers/FdCicController.cs`,
+  `Services/FieldPlan/*.cs` (5 files), `Services/FdCic/*.cs` (6 files),
+  `Infrastructure/Repositories/FieldPlanRepository.cs`, `Infrastructure/Interfaces/IFieldPlanRepository.cs`,
+  `client/.../field-plan/**` (components, `programs/`, `programs/fd-cic/`, `programs/fd-cic/review/`,
+  `store/`), `tools/fdcic-extract/*`, `tools/tdisc-extract/*`.
+- Not re-read in full: the FD-CIC golden-case test fixtures and the USDA data-pack content files
+  (`Content/FdCic/`) — verification data, out of scope for slop review.
 
 ## 2026-10-20 reconciliation
 
@@ -60,15 +114,13 @@ Re-verified the two findings still open from the 2026-09-21 pass (dead Farms API
 
 Also reviewed the new CTRM GraphQL integration (`Services/Ctrm/`, `Infrastructure/Ctrm/`, `CtrmKeepWarmService.cs` — roughly 5,300 lines across 16 files) merged since the last pass, since it's the only material change to the repo in that window. It's well-engineered: nearly every non-obvious method carries a WHY comment (e.g. `ContractRepositorySwitch`'s doc comment explains *why* the source flag is read per-call instead of captured at construction), and the `ContractRepositorySwitch`/`TicketRepositorySwitch` pair's structural duplication is deliberate and explicitly cross-referenced in their doc comments, not slop. Found two new copy-paste-drift findings instead: the same `ReadInt`/`ReadBool` config-parsing helper is independently reimplemented six times across the vertical (and the copies have already started to diverge — different `CultureInfo` handling, one dropped the fallback parameter), and `ResolveScoularIdAsync` is duplicated near-verbatim between the Contract and Ticket repositories. Both were subsequently fixed the same day — see `AUDIT-TRACKING.json` (`clean-slop.ctrm-config-reader-duplicated-six-times`, `clean-slop.ctrm-resolve-scoularid-duplicated`) for resolution detail.
 
-## Open (1)
-
-See the "2026-10-20 reconciliation" section above for `clean-slop.customer-print-report-duplicates-pricing-status-logic` (medium).
-
 ## 2026-09-21 reconciliation
 
 Independently re-verified all 23 findings against the current repo state (not just the tracker's prior "Fixed on branch fix_AuditPhase1Findings" notes) by reading or grepping every file each finding names. All 19 prior "resolved" claims held up under direct inspection — most were fixed by outright deletion (`qa-setup.sql`, `migrate-bid-sheet.sql`, the six stale `Scripts/` files, `CheckMbpLocationCoverage.sql`, `admin.guard.ts`, the footer/tabs/textarea components, the duplicate `customer-map` folder, `core/services/index.ts`) or by call sites being repointed at the surviving shared implementation (`buildLbsPerBushelMap`, `IRequestContextService`, `IGeocodeService`, `formatAccountingMoney`, `toSavedListPayload`). Two are notable because the actual fix took a different shape than the suggested one: `commodityRowClass()` was kept and the dashboard call site was changed to use it (rather than deleting the wrapper), and the customers-signal drift bug was fixed by adding the missing `appState.setCustomers(...)` call rather than removing the duplicate local signal entirely. The two still-open items (dead Farms API vertical, disagreeing commodity taxonomies) were re-confirmed unchanged and still require a product decision, not a mechanical cleanup. `wont_fix` and `accepted` items are unchanged. No corrections to prior status were needed and no new clean-slop findings were added in this pass; see `AUDIT-TRACKING.json` for per-finding re-verification notes.
 
-## Resolved (26)
+## Resolved (27)
+
+- **`clean-slop.customer-print-report-duplicates-pricing-status-logic`** (medium) — `contractPricingInfo` extracted to `shared/utils/contract-pricing-status.ts` (commit `a38784a5`); both `contracts-table` and `customer-print-report` delegate to it, so the print report now gets the LOADING state and float-tolerance guard it previously lacked. Resolved same day as opened (2026-10-20); this doc's own "Open" section hadn't been updated to match until the 2026-11-05 pass caught the drift.
 
 19 fixed on branch `fix_AuditPhase1Findings`, merged to main 2026-09-21 via PR #615, and independently re-confirmed 2026-09-21 by reading the current file contents (not just trusting the merge). 2 more (the CTRM config-reader and ResolveScoularIdAsync duplication) fixed same-day on 2026-09-28 — see that section above. The 2026-10-13 pass added 2 more resolved same-day (`dead-commented-pricing-logic`, `orphaned-api-service-methods`) plus a third (`dead-confirm-dialog`, fixed same day in commit `7c7769d6`). 2 more — `dead-farms-api-vertical` and `duplicated-commodity-taxonomy` — were long-open items finally resolved 2026-10-13/14 at the product owner's direction; see the 2026-10-20 reconciliation note above for how each was verified.
 
@@ -112,4 +164,4 @@ Independently re-verified all 23 findings against the current repo state (not ju
 
 ## Verification
 
-No build/tests run in the 2026-10-13 or 2026-10-20 passes (out of scope per the invoking instructions — a separate baseline step covers it). All 2026-10-20 findings are read-only observations; no source files were modified.
+No build/tests run in the 2026-10-13, 2026-10-20, or 2026-11-05 passes (out of scope per the invoking instructions — a separate baseline step covers it). All findings from those passes are read-only observations; no source files were modified.
