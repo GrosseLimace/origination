@@ -8,7 +8,6 @@
     "environmentLabel": {
       "type": "string",
       "allowedValues": [
-        "Dev",
         "QA",
         "Prod"
       ],
@@ -19,7 +18,7 @@
     "environmentTag": {
       "type": "string",
       "metadata": {
-        "description": "Value for the Environment tag (matches the Logic App templates: Dev, QA, Prod)."
+        "description": "Value for the Environment tag (matches the Logic App templates: QA, Prod)."
       }
     },
     "appInsightsName": {
@@ -154,7 +153,7 @@
       ],
       "properties": {
         "displayName": "[concat('Origination ', parameters('environmentLabel'), ': database is failing')]",
-        "description": "At least 3 requests or jobs hit a SQL failure in the last 15 minutes: the ODS views or the Origination app database (customers, contracts, tickets, entitlements, notes) are timing out, refusing connections, or missing a view or column. Check App Insights exceptions of type SqlException and the ErrorCode on the InfrastructureException. A second email arrives when it clears.",
+        "description": "At least 3 requests or jobs hit a SQL failure in the last 15 minutes: the ODS views, the Origination app database (customers, contracts, tickets, notes) or the TradeUnitPreferences database (who may see which trade units) are timing out, refusing connections, or missing a view or column. Check App Insights exceptions of type SqlException and the ErrorCode on the InfrastructureException. A second email arrives when it clears.",
         "severity": 1,
         "enabled": true,
         "scopes": [

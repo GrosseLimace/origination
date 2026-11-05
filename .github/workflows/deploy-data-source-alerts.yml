@@ -2,16 +2,16 @@ name: Data Source Alerts Deploy
 
 on:
   # Manual-only, matching the Logic App and workbook deploy workflows. Trigger from the Actions tab (Run workflow).
-  # One workflow for all three environments: the template and rules are identical, only the parameters file and
-  # target resource group differ.
+  # One workflow for QA and PROD: the template and rules are identical, only the parameters file and target
+  # resource group differ. Dev is left out on purpose: it shares the CTRM Test gateway with QA, so a Test outage
+  # would email twice, and Dev restarts often enough to trip the database alert after deploys.
   workflow_dispatch:
     inputs:
       environment:
         description: 'Which environment to deploy the alerts to'
         type: choice
-        default: dev
+        default: qa
         options:
-          - dev
           - qa
           - prod
       mode:

@@ -1,13 +1,14 @@
 # Data source alerts
 
-Emails the dev team when Origination stops getting data. These are log search alerts on each environment's
+Emails the dev team when Origination stops getting data. These are log search alerts on the QA and PROD
 App Insights (`appi-origination-<env>-eus`), so they need no app change: they read the failure lines the
-API already writes.
+API already writes. **Dev is left out on purpose:** it shares the CTRM Test gateway with QA, so a Test outage
+would email twice, and Dev restarts often enough to trip the database alert after deploys (see Limits).
 
 | Alert | Fires when | Checked | Clears |
 |---|---|---|---|
 | **CTRM GraphQL is failing** | 5 or more `CTRM read failed` lines **and** 10% or more of CTRM GraphQL calls failed in the last 30 minutes. The email says whose side (below) | every 5 min | by itself, with an all-clear email |
-| **Database is failing** | 3 or more requests or jobs hit a SQL failure in the last 15 minutes (ODS views or the Origination DB: connection, timeout, missing view/column, `*_DB_UNAVAILABLE`) | every 5 min | by itself, with an all-clear email |
+| **Database is failing** | 3 or more requests or jobs hit a SQL failure in the last 15 minutes (ODS views, the Origination DB or the TradeUnitPreferences DB: connection, timeout, missing view/column, `*_DB_UNAVAILABLE`) | every 5 min | by itself, with an all-clear email |
 | **CustomerSync did not run** | the customer sync logged an abort or a failed cycle (07:00 UTC daily, and 60 s after every app start) | every 15 min | close it by hand once a run succeeds; repeat emails muted for 1 hour |
 
 Recipients (the dev team: Caden, Hope, Bailey) are the `alertEmailAddresses` list in each `azuredeploy.parameters.<env>.json`. To add someone,
@@ -51,9 +52,12 @@ read **CTRM side**; Dev on 2026-10-06, when the gateway could not be reached, re
 
 ### Limits
 
-- They see failures only when something calls the data source. Overnight in Dev and QA that is just the
+- They see failures only when something calls the data source. Overnight in QA that is just the
   07:00 UTC CustomerSync (CTRM keep-warm is off), so an outage that starts at night is caught at 07:00 UTC
   or at the first sign-in.
+- In the first 30 seconds after the app restarts, lookups in the TradeUnitPreferences database (who may see
+  which trade units) sometimes time out. If 3 or more people sign in during those seconds, the database alert
+  fires and clears itself 15 minutes later. Seen once in Dev and never in QA over 30 days.
 - Data that stops refreshing without any error (for example an ODS table that is simply not updated)
   does not trip any of these.
 - App Insights ingestion adds 2–5 minutes, so expect the email 5–10 minutes after failures start.
@@ -74,16 +78,10 @@ For the Test gateway (Dev and QA) ask Titus to check the CTRM Test GraphQL gatew
 
 ### Deploy
 
-Run **Data Source Alerts Deploy** from the Actions tab, pick the environment, `what-if` first, then
-`create`. It uses that environment's OIDC identity (Monitoring Contributor on the resource group).
-
-Local preview against Dev (read-only):
-
-```bash
-az deployment group what-if -g rg-origination-dev-eus --subscription scoular-apps-nonprod \
-  --template-file infra/alerts/data-source-alerts/azuredeploy.json \
-  --parameters @infra/alerts/data-source-alerts/azuredeploy.parameters.dev.json
-```
+Run **Data Source Alerts Deploy** from the Actions tab, pick `qa` or `prod`, `what-if` first, then
+`create`. It uses that environment's OIDC identity (Monitoring Contributor on the resource group). The
+workflow's what-if step is the preview: personal accounts cannot run what-if against the QA or PROD
+resource groups.
 
 After the first deploy, open the action group `ag-devteam-<env>` in the portal and use **Test action group**
 to confirm the emails arrive. New recipients may get a one-time Azure Monitor email asking them to confirm
