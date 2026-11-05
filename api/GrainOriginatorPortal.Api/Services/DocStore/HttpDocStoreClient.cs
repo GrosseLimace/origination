@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Azure.Core;
 using Azure.Identity;
 using GrainOriginatorPortal.Api.Exceptions;
@@ -123,7 +124,7 @@ public sealed class HttpDocStoreClient : IDocStoreClient
         return response.StatusCode switch
         {
             HttpStatusCode.BadRequest or HttpStatusCode.RequestEntityTooLarge or HttpStatusCode.UnsupportedMediaType =>
-                new ValidationException("file", "Doc Store refused the file. " + Reason(detail)),
+                new ValidationException("file", Refusal(Reason(detail), _options.Category)),
             HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden =>
                 new InfrastructureException($"Doc Store refused Origination's access to the {_options.Category} category.",
                     "DOC_STORE_FORBIDDEN", StatusCodes.Status502BadGateway),
@@ -132,6 +133,24 @@ public sealed class HttpDocStoreClient : IDocStoreClient
             _ => new InfrastructureException("Doc Store had a problem. Try again in a minute.", "DOC_STORE_FAILED",
                 StatusCodes.Status502BadGateway),
         };
+    }
+
+    /// <summary>
+    /// What the originator reads. A file type the category doesn't take gets one plain sentence (Doc Store's own
+    /// message lists every allowed MIME type, which doesn't fit a toast); anything else keeps Doc Store's reason.
+    /// </summary>
+    internal static string Refusal(string reason, string category)
+    {
+        var match = Regex.Match(reason, @"Content type '(?<type>[^']+)' is not allowed for category");
+        if (!match.Success) return ("Doc Store refused the file. " + reason).Trim();
+        var kind = match.Groups["type"].Value switch
+        {
+            "application/pdf" => "PDF",
+            "image/png" => "PNG",
+            "image/jpeg" or "image/jpg" => "JPEG",
+            var other => other,
+        };
+        return $"Doc Store isn't set up to take {kind} files for 45Z documents yet. Upload a PDF, or ask IT to allow {kind} for the {category} category.";
     }
 
     /// <summary>Doc Store answers a refusal as plain text, <c>{ "error": "…" }</c> or <c>{ "errors": [ … ] }</c>.</summary>

@@ -102,6 +102,18 @@ public class HttpDocStoreClientTests
     }
 
     [Fact]
+    public async Task Upload_AFileTypeTheCategoryDoesntTake_IsOnePlainSentence()
+    {
+        // Doc Store's own message, as seen on Dev 2026-11-05 (it goes on to list every allowed MIME type).
+        var (client, _, _) = New((_, _) => Json(HttpStatusCode.BadRequest,
+            "\"Content type 'image/png' is not allowed for category 'Sustainability-45z'. Allowed types: application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/tiff\""));
+
+        var ex = await Assert.ThrowsAsync<ValidationException>(() => client.UploadAsync(Upload(), default));
+
+        Assert.Equal("Doc Store isn't set up to take PNG files for 45Z documents yet. Upload a PDF, or ask IT to allow PNG for the Sustainability-45z category.", ex.Errors["file"][0]);
+    }
+
+    [Fact]
     public async Task Upload_NoAccessToTheCategory_IsA502ThatNamesTheCategory()
     {
         var (client, _, _) = New((_, _) => new HttpResponseMessage(HttpStatusCode.Forbidden));
