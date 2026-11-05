@@ -3086,15 +3086,15 @@
         "client/src/app/features/customers/pages/home/home-planting.store.ts"
       ],
       "suggested_fix": "Inject AppInsightsService (already providedIn: 'root') into these caught-error paths and call trackException(err, { context: '<what failed>' }) alongside the existing console/toast handling, instead of adding a new reporting mechanism. For bid-sheet.component.ts specifically, also drop the isDevMode() guard on the console call or replace it outright with the trackException call, since right now production gets zero trail for any of these 19 failure points.",
-      "related_findings": [
-        "logging.client-side-telemetry-missing",
-        "logging.bootstrap-failure-not-logged"
-      ],
       "opened_in": {
         "date": "2026-11-05"
       },
       "last_verified": "2026-11-05",
-      "notes": "[2026-11-05] Found during logging reconciliation pass covering the 222-commit / 334-file feature_CustomersFromGraphQL merge train plus the FD-CIC and Help features merged since the 2026-10-20 pass. Backend logging on the new CustomerSync feature (CustomerSyncService, OdsCustomerSyncSource, CtrmCustomerSyncSource, CustomerSyncBackgroundService, CustomerSyncDiagnosticsController) was reviewed and is consistent with the existing discipline — structured fields, elapsed-ms timing, and CustomerSyncBackgroundService correctly uses _logger.BeginScope with a per-run TraceId per the pattern fixed in PR #615. This finding is frontend-only. Confirmed via grep that AppInsightsService/trackException/trackEvent has no call sites outside app-insights.service.ts, its spec, global-error.handler.ts (+spec), and app.component.ts (+spec) — i.e. nothing in features/ or core/services (other than the handler) ever reports to it."
+      "notes": "[2026-11-05] Found during logging reconciliation pass covering the 222-commit / 334-file feature_CustomersFromGraphQL merge train plus the FD-CIC and Help features merged since the 2026-10-20 pass. Backend logging on the new CustomerSync feature (CustomerSyncService, OdsCustomerSyncSource, CtrmCustomerSyncSource, CustomerSyncBackgroundService, CustomerSyncDiagnosticsController) was reviewed and is consistent with the existing discipline — structured fields, elapsed-ms timing, and CustomerSyncBackgroundService correctly uses _logger.BeginScope with a per-run TraceId per the pattern fixed in PR #615. This finding is frontend-only. Confirmed via grep that AppInsightsService/trackException/trackEvent has no call sites outside app-insights.service.ts, its spec, global-error.handler.ts (+spec), and app.component.ts (+spec) — i.e. nothing in features/ or core/services (other than the handler) ever reports to it. [2026-11-05] Verified against main: trackException has one caller (GlobalErrorHandler). Severity overstated: browser AJAX/fetch tracking is off by design (app-insights.service.ts) because the server records every API request incl. failures, so the gap is client-only failures (network, timeouts, catch-block code errors, non-Origination calls). Reviewer recommends medium.",
+      "related_findings": [
+        "logging.client-side-telemetry-missing",
+        "logging.bootstrap-failure-not-logged"
+      ]
     },
     {
       "id": "clean-slop.ctrm-config-reader-duplicated-six-times",
@@ -3750,7 +3750,9 @@
       "id": "angular.field-plan-inline-templates-violate-style-guide",
       "audit": "angular",
       "severity": "medium",
+      "status": "resolved",
       "title": "New field-plan components use inline template strings instead of templateUrl",
+      "description": "style-guides/angular.md Component Best Practices #8 requires templateUrl except for very simple, single-element templates. All five new field-plan components (added across the 45Z feature work) use inline template literals instead, several running 50-100+ lines (program-enrollment-card.component.ts has a ~100-line inline template with a nested table, switch blocks, and multiple @for loops). This is standards drift in a feature that just shipped to QA/PROD, not a one-off exception.",
       "files": [
         "client/src/app/features/customers/components/field-plan/ci-preview-panel.component.ts",
         "client/src/app/features/customers/components/field-plan/programs/program-enrollment-card.component.ts",
@@ -3758,33 +3760,50 @@
         "client/src/app/features/customers/components/field-plan/programs/fd-cic/review/review-tdisc.component.ts",
         "client/src/app/features/customers/components/field-plan/programs/fd-cic/review/review-ticket-table.component.ts"
       ],
-      "detail": "style-guides/angular.md Component Best Practices #8 requires templateUrl except for very simple, single-element templates. All five new field-plan components (added across the 45Z feature work) use inline template literals instead, several running 50-100+ lines (program-enrollment-card.component.ts has a ~100-line inline template with a nested table, switch blocks, and multiple @for loops). This is standards drift in a feature that just shipped to QA/PROD, not a one-off exception.",
-      "status": "open"
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05: the five templates moved verbatim into sibling .html files via templateUrl. ng build before/after is byte-identical (0 of 58 output files differ), with all five components present in the bundle."
     },
     {
       "id": "angular.field-plan-store-raw-writable-signals",
       "audit": "angular",
       "severity": "medium",
+      "status": "open",
       "title": "FieldPlanStore exposes fields/seasons/records as raw WritableSignal, not asReadonly()",
+      "description": "fields, seasons, and records (lines 60-62) are declared `readonly fields = signal<...>([])` etc. The readonly modifier only blocks reassigning the property on FieldPlanStore itself; the signal instance returned is still a full WritableSignal, so any injecting component can call store.fields.set(...) or .update(...) directly, bypassing the store class own debounced-save/reload consistency guarantee documented at the top of the file (\"the screen never shows something that wasnt kept\"). No current caller does this, but nothing in the type system prevents it. Same anti-pattern already flagged for the Home page-stores (see angular.home-stores-raw-signals-no-asreadonly); this is a second, independent instance in the newer field-plan feature. Fix: expose via .asReadonly() and keep mutation methods private to the store.",
       "files": [
         "client/src/app/features/customers/components/field-plan/store/field-plan.store.ts"
       ],
-      "detail": "fields, seasons, and records (lines 60-62) are declared `readonly fields = signal<...>([])` etc. The readonly modifier only blocks reassigning the property on FieldPlanStore itself; the signal instance returned is still a full WritableSignal, so any injecting component can call store.fields.set(...) or .update(...) directly, bypassing the store class own debounced-save/reload consistency guarantee documented at the top of the file (\"the screen never shows something that wasnt kept\"). No current caller does this, but nothing in the type system prevents it. Same anti-pattern already flagged for the Home page-stores (see angular.home-stores-raw-signals-no-asreadonly); this is a second, independent instance in the newer field-plan feature. Fix: expose via .asReadonly() and keep mutation methods private to the store.",
-      "status": "open"
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] Verified: field-plan.store.ts:60-62 are public signal(); no code outside the store writes them today."
     },
     {
       "id": "angular.45z-dialog-and-card-shipped-untested",
       "audit": "angular",
       "severity": "high",
+      "status": "open",
       "title": "Core 45Z UI components (field-season dialog, enrollment card) have zero test coverage as the feature ships to PROD",
+      "description": "Commit c5483372 (2026-11-05) turned 45Z on in QA and PROD. FieldSeasonDialogComponent (228 lines) owns program add/remove, copy-from/copy-to with a confirm-before-replace branch, unlock-with-reason, and PDF report generation — all with no .spec.ts. ProgramEnrollmentCardComponent (249 lines) computes the CI ladder grouping, per-group target comparisons, and the Mass Balance Ledger CSV export shown to originators — also with no .spec.ts. review-recordkeeping.component.ts and review-ticket-table.component.ts (the review flow ticket table/recordkeeping checklist) are likewise untested, unlike their sibling review-tdisc.component.ts which does have a spec. This mirrors the already-tracked god-component test gap, but calls out specifically the components that just went live in production this run.",
       "files": [
         "client/src/app/features/customers/components/field-plan/field-season-dialog.component.ts",
         "client/src/app/features/customers/components/field-plan/programs/program-enrollment-card.component.ts",
         "client/src/app/features/customers/components/field-plan/programs/fd-cic/review/review-recordkeeping.component.ts",
         "client/src/app/features/customers/components/field-plan/programs/fd-cic/review/review-ticket-table.component.ts"
       ],
-      "detail": "Commit c5483372 (2026-11-05) turned 45Z on in QA and PROD. FieldSeasonDialogComponent (228 lines) owns program add/remove, copy-from/copy-to with a confirm-before-replace branch, unlock-with-reason, and PDF report generation — all with no .spec.ts. ProgramEnrollmentCardComponent (249 lines) computes the CI ladder grouping, per-group target comparisons, and the Mass Balance Ledger CSV export shown to originators — also with no .spec.ts. review-recordkeeping.component.ts and review-ticket-table.component.ts (the review flow ticket table/recordkeeping checklist) are likewise untested, unlike their sibling review-tdisc.component.ts which does have a spec. This mirrors the already-tracked god-component test gap, but calls out specifically the components that just went live in production this run.",
-      "status": "open"
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] Verified: none of the four components had a spec or was referenced by one. test-gaps.field-season-dialog-untested and test-gaps.program-enrollment-card-untested are duplicates of this finding."
     },
     {
       "id": "sql.scoularid-trim-defeats-index-seek",
@@ -3801,13 +3820,13 @@
         "date": "2026-11-05"
       },
       "last_verified": "2026-11-05",
-      "notes": "[2026-11-05] New finding this pass (sql domain re-audit). candidateCodes is bounded (one page of onboarding-search candidates), so the practical impact today is a scan of a small set rather than a full-table scan; severity reflects standards drift plus future risk as Customer grows, not a confirmed live performance incident."
+      "notes": "[2026-11-05] New finding this pass (sql domain re-audit). candidateCodes is bounded (one page of onboarding-search candidates), so the practical impact today is a scan of a small set rather than a full-table scan; severity reflects standards drift plus future risk as Customer grows, not a confirmed live performance incident. [2026-11-05] Verified: CustomerRepository.cs:191 (also 201, 779). Trim is deliberate (trailing-space codes); the predicate also ORs on Id; onboarding search, whose sibling scan was accepted 2026-10-20. Reviewer recommends low; fix = trim stored data first, then drop Trim() (order matters)."
     },
     {
       "id": "sql.esignenrollment-guid-column-not-uniqueidentifier",
       "audit": "sql",
       "severity": "low",
-      "status": "open",
+      "status": "accepted",
       "title": "ESignEnrollment GUID column is nvarchar(255) instead of uniqueidentifier, and both it and eSignEnabled break PascalCase column naming",
       "description": "In ApplicationDbContextModelSnapshot.cs, ESignEnrollment has a CLR property named \"Guild\" (read as a typo for \"Guid\") mapped via HasColumnName to a DB column literally named \"GUID\", typed nvarchar(255) rather than uniqueidentifier. The same entity also maps ESignEnabled to column name \"eSignEnabled\" (camelCase). The style guide requires PascalCase object/column names and uniqueidentifier for GUID-shaped values; this table violates both one case at a time rather than by a documented, deliberate deviation.",
       "files": [
@@ -3818,13 +3837,14 @@
         "date": "2026-11-05"
       },
       "last_verified": "2026-11-05",
-      "notes": "[2026-11-05] New finding this pass (sql domain re-audit). Not re-verified against a live database; based on the EF model snapshot only. Low severity because it is cosmetic/standards drift on a table that otherwise functions correctly, not a correctness or security issue."
+      "notes": "[2026-11-05] New finding this pass (sql domain re-audit). Not re-verified against a live database; based on the EF model snapshot only. Low severity because it is cosmetic/standards drift on a table that otherwise functions correctly, not a correctness or security issue.",
+      "resolution_notes": "Accepted 2026-11-05: dbo.ESignEnrollment is owned by the eSign system, not this app. No migration creates it and no app code writes it; Origination only reads it for the eSign badge. Its column types and names are eSign's to change, and altering them could break the process that populates it."
     },
     {
       "id": "sql.latlong-type-inconsistent-across-tables",
       "audit": "sql",
       "severity": "low",
-      "status": "open",
+      "status": "accepted",
       "title": "Latitude/Longitude modeled as float on BarchartInstrument but decimal(18,15) on ProducerBinSite",
       "description": "The same logical concept (a geographic coordinate pair) is typed float in dbo.BarchartInstrument (fed by the Barchart ingest) and decimal(18,15) in dbo.ProducerBinSite (per _VerifySchema.sql and the model snapshot; ProducerBinSite was explicitly widened from decimal(9,6) to decimal(18,15) in migration 20261007152343_WidenProducerBinSiteCoordinatePrecision). Nothing documents why the two tables diverge in representation, which risks silent precision-loss bugs if a value ever moves between the two without conversion.",
       "files": [
@@ -3836,7 +3856,8 @@
         "date": "2026-11-05"
       },
       "last_verified": "2026-11-05",
-      "notes": "[2026-11-05] New finding this pass (sql domain re-audit). Low severity / standards-drift only — no evidence of an actual cross-table comparison or join on these columns today."
+      "notes": "[2026-11-05] New finding this pass (sql domain re-audit). Low severity / standards-drift only — no evidence of an actual cross-table comparison or join on these columns today.",
+      "resolution_notes": "Accepted 2026-11-05: ProducerBinSite stores coordinates as decimal(18,15) (widened in 20261007152343_WidenProducerBinSiteCoordinatePrecision so bin pins keep full precision); BarchartInstrument and the other coordinate tables use float, as the Barchart feed delivers. Both are far more precise than a map pin needs and values are never copied between the tables, so converting either live table would be risk for no gain. This note is the documentation the finding asked for."
     },
     {
       "id": "error-handling.authz-short-circuit-missing-standard-envelope",
@@ -3856,13 +3877,13 @@
         "date": "2026-11-05"
       },
       "last_verified": "2026-11-05",
-      "notes": "[2026-11-05] New finding (error-handling domain audit). Verified by reading AuthorizationAuditResultHandler.cs's own doc comment ('Logging only — it never changes an allow/deny outcome' / delegates to default handler), confirming no response-body override exists for the 401/403 short-circuit path, and cross-checking that the team already fixed the identical framework-default-response-shape problem for model-validation 400s (ModelValidationEnvelopeTests.cs)."
+      "notes": "[2026-11-05] New finding (error-handling domain audit). Verified by reading AuthorizationAuditResultHandler.cs's own doc comment ('Logging only — it never changes an allow/deny outcome' / delegates to default handler), confirming no response-body override exists for the 401/403 short-circuit path, and cross-checking that the team already fixed the identical framework-default-response-shape problem for model-validation 400s (ModelValidationEnvelopeTests.cs). [2026-11-05] Verified: AuthorizationAuditResultHandler logs then defers to the default handler (empty 401/403 body). Client already handles empty bodies (api.service.ts). Reviewer recommends low."
     },
     {
       "id": "permissions.controller-authorize-regression-test-missing-4-controllers",
       "audit": "permissions",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "ControllerAuthorizationTests' AllControllerTypes() omits 4 of the API's 35 controllers, so [Authorize] removal from any of them would go undetected",
       "description": "ControllerAuthorizationTests.cs exists specifically as a regression net: 'a failing test here means an endpoint was accidentally left unauthenticated.' Its AllControllerTypes() theory data currently lists 30 controllers, but the Controllers/ directory has 35 real controllers (36 files minus the static DiagnosticsEnvironmentGate helper, which isn't a controller). Diffing the directory listing against the test's typeof(...) entries shows 4 missing: TeamsChannelsController (added 2026-09-14, feat(notes) @-mention), ClientTelemetryController (added 2026-10-13, feat(telemetry)), HelpController (added 2026-10-14, feat(help)), and TDiscController (added 2026-11-03, feat(field-plan) 45Z T-DISC). All 4 currently carry [Authorize] (manually verified by reading each file), so there is no live vulnerability today -- but the whole point of this test is to catch a future accidental removal, and for these 4 it provides zero protection. TeamsChannelsController's gap predates every prior permissions-audit pass (first opened 2026-09-19), meaning this is the fourth consecutive reconciliation pass to not catch it; ClientTelemetryController and HelpController were each noted as 'properly gated, no new finding' in the 2026-10-20 pass without checking whether they were added to this specific regression test.",
       "files": [
@@ -3877,7 +3898,12 @@
         "date": "2026-11-05"
       },
       "last_verified": "2026-11-05",
-      "notes": "[2026-11-05] New finding (permissions domain audit). Found by diffing `ls Controllers/*.cs` against the test file's typeof(...) entries; confirmed all 4 omitted controllers carry [Authorize] today by reading each file directly, so this is a test-coverage gap in the regression net, not an active unauthenticated endpoint."
+      "notes": "[2026-11-05] New finding (permissions domain audit). Found by diffing `ls Controllers/*.cs` against the test file's typeof(...) entries; confirmed all 4 omitted controllers carry [Authorize] today by reading each file directly, so this is a test-coverage gap in the regression net, not an active unauthenticated endpoint.",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05: the test listed 31 of 35 controllers (the finding said 30). Added ClientTelemetry, Help, TDisc and TeamsChannels (all four already carried [Authorize]) and a guard test, EveryControllerInTheApi_IsCoveredByTheAuthorizeCheck, that reflects over the API assembly and fails naming any controller missing from the list. Proven by deleting TDisc from the list: the guard failed and named it."
     },
     {
       "id": "performance.field-season-crop-group-n-plus-one",
@@ -3895,13 +3921,13 @@
         "date": "2026-11-05"
       },
       "last_verified": "2026-11-05",
-      "notes": "[2026-11-05] New finding (performance domain audit). Confirmed by reading GetPlantingIntentionCropAsync's implementation directly -- it is an uncached FirstOrDefaultAsync, so every loop iteration is a genuine round trip. Impact is bounded by how many seasons a field typically carries per year (usually small), so flagged medium rather than high; this is an inferred risk from code inspection, not a measured trace."
+      "notes": "[2026-11-05] New finding (performance domain audit). Confirmed by reading GetPlantingIntentionCropAsync's implementation directly -- it is an uncached FirstOrDefaultAsync, so every loop iteration is a genuine round trip. Impact is bounded by how many seasons a field typically carries per year (usually small), so flagged medium rather than high; this is an inferred risk from code inspection, not a measured trace. [2026-11-05] Verified: FieldPlanService.cs:161-167. A field holds one crop a year, so 0-2 extra queries per AddSeason. Reviewer recommends low."
     },
     {
       "id": "performance.customer-sync-per-producer-open-activity-query",
       "audit": "performance",
       "severity": "low",
-      "status": "open",
+      "status": "accepted",
       "title": "CustomerSyncService's dormant-TU bring-back pass queries open activity once per distinct producer in a loop",
       "description": "CustomerSyncService.cs:393-398, inside the 'bring-back pass for user-removed dormant TUs', loops over `deactivatedRows.Select(r => r.CustomerId).Distinct()` and calls `await customerRepository.GetOpenActivityTradeUnitsAsync(cust.ScoularId, cancellationToken)` once per distinct producer, rather than a single batched query across all affected ScoularIds. The surrounding comment explicitly argues this is fine because the set is 'small' and 'scoped to just the affected producers,' which is a reasonable tradeoff for a background sync job, but it is still a per-item outbound DB call in a loop and would scale linearly with the number of dormant-TU producers reactivated in a given sync run.",
       "files": [
@@ -3913,13 +3939,14 @@
         "date": "2026-11-05"
       },
       "last_verified": "2026-11-05",
-      "notes": "[2026-11-05] New finding (performance domain audit). This is a background CustomerSyncBackgroundService path, not a request-latency path, so severity is low despite being a textbook N+1 shape; flagged because the comment's 'small set' assumption isn't enforced anywhere and the fix (batch by ScoularId) mirrors a pattern already used elsewhere in the same repository class."
+      "notes": "[2026-11-05] New finding (performance domain audit). This is a background CustomerSyncBackgroundService path, not a request-latency path, so severity is low despite being a textbook N+1 shape; flagged because the comment's 'small set' assumption isn't enforced anywhere and the fix (batch by ScoularId) mirrors a pattern already used elsewhere in the same repository class.",
+      "resolution_notes": "Accepted 2026-11-05: deliberate and documented in place (CustomerSyncService.cs, comment above the loop). It runs only for producers whose dormant trade unit a user removed — a small set — in a background job no user waits on. Batching it would touch the customer sync, which can deactivate customers, to save milliseconds overnight."
     },
     {
       "id": "performance.build-list-template-per-row-impure-calls",
       "audit": "performance",
       "severity": "low",
-      "status": "open",
+      "status": "wont_fix",
       "title": "build-list.component.html calls non-pure helper methods and re-slices arrays directly in @for row bindings",
       "description": "build-list.component.html's producer-results @for loop (`@for (customer of rendered; track customer.id)`, ~line 1632) calls `getInitials(customer.name)` (1662), `getFormattedLocation(customer)` (1693), and per-bin-site `binSiteGrainSummary(site)` (1769) / `formatLastBid(g.lastBid)` (1789) directly as template method calls, and a nested bin-sites loop recomputes `(allSites ? siteGroups : siteGroups.slice(0, binSitesVisible))` (line 1745) inline on every change-detection pass rather than through a memoized signal. None of these are pure template bindings, so each re-evaluates on every CD run that touches this component. Impact is mitigated by the app already using OnPush change detection and zoneless CD app-wide (main.ts: provideZonelessChangeDetection), and by this component's own renderLimit/renderedCustomers computed-signal batching (lines 439-441) which caps how many rows are actually in the DOM at once -- so this is a minor, inferred risk rather than a confirmed bottleneck.",
       "files": [
@@ -3931,51 +3958,72 @@
         "date": "2026-11-05"
       },
       "last_verified": "2026-11-05",
-      "notes": "[2026-11-05] New finding (performance domain audit). Verified OnPush is set on this component and the app bootstraps with provideZonelessChangeDetection() in main.ts, and that renderedCustomers is a computed signal batching the DOM-visible slice (renderLimit), which together substantially reduce the real-world impact of the per-row impure calls flagged here. Kept as a low-severity, inferred-only finding rather than discarded, since the pattern still recomputes per visible row on every CD run of this component."
+      "notes": "[2026-11-05] New finding (performance domain audit). Verified OnPush is set on this component and the app bootstraps with provideZonelessChangeDetection() in main.ts, and that renderedCustomers is a computed signal batching the DOM-visible slice (renderLimit), which together substantially reduce the real-world impact of the per-row impure calls flagged here. Kept as a low-severity, inferred-only finding rather than discarded, since the pattern still recomputes per visible row on every CD run of this component.",
+      "resolution_notes": "Won't fix 2026-11-05: BuildListComponent is OnPush, so the template is re-evaluated only when its inputs/signals change, and rows render in batches (renderLimit). The helpers are cheap string formatting. Revisit only if profiling shows Build-a-List rendering cost."
     },
     {
       "id": "test-gaps.field-season-dialog-untested",
       "audit": "test-gaps",
       "severity": "high",
+      "status": "open",
       "title": "FieldSeasonDialogComponent, the core 45Z/field-plan editing dialog, has zero test coverage",
+      "description": "228-line production dialog (not prototype scaffolding) that orchestrates FieldPlanStore, FdCicApiService, FeedstockReportService and ToastService: copy-from/copy-to across a producer's fields (with a JSON-diff check that decides whether to confirm-before-overwrite or copy silently), the confirmReopen flow that unlocks a confirmed CI, canReview gating on frozen/preview state, and PDF report generation. This shipped as part of the 45Z feature that was just turned on in QA/PROD (c5483372); every sibling field-plan file in this directory (ci-preview-panel, crop-fields-panel, field-plan-wording) has a spec, but this coordinating dialog does not. A regression in the copy-confirmation branch or the reopen flow would silently corrupt or skip a producer's program data with no CI signal.",
       "files": [
         "client/src/app/features/customers/components/field-plan/field-season-dialog.component.ts"
       ],
-      "detail": "228-line production dialog (not prototype scaffolding) that orchestrates FieldPlanStore, FdCicApiService, FeedstockReportService and ToastService: copy-from/copy-to across a producer's fields (with a JSON-diff check that decides whether to confirm-before-overwrite or copy silently), the confirmReopen flow that unlocks a confirmed CI, canReview gating on frozen/preview state, and PDF report generation. This shipped as part of the 45Z feature that was just turned on in QA/PROD (c5483372); every sibling field-plan file in this directory (ci-preview-panel, crop-fields-panel, field-plan-wording) has a spec, but this coordinating dialog does not. A regression in the copy-confirmation branch or the reopen flow would silently corrupt or skip a producer's program data with no CI signal.",
-      "status": "open"
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] Verified (no spec). Duplicate of angular.45z-dialog-and-card-shipped-untested."
     },
     {
       "id": "test-gaps.program-enrollment-card-untested",
       "audit": "test-gaps",
       "severity": "high",
+      "status": "open",
       "title": "ProgramEnrollmentCardComponent's CI-ladder grouping and Mass Balance Ledger export logic has zero test coverage",
+      "description": "249-line component computing the producer-facing 45Z summary: groups scored fields by crop into a CI ladder (ciLadder, sorted lowest-CI-first with running bushel totals), compares each field's CI against a user-typed target to color it at-or-below/above, and filters+exports confirmed fields as the Mass Balance Ledger CSV (downloadLedger). This is the view originators use to judge compliance against downstream CI targets and the artifact handed off for 45Z tax-credit documentation. No spec exists despite the non-trivial grouping/sorting/filtering logic; a bug in ladder ordering or the Documented-status filter in downloadLedger would misstate CI figures or omit/include the wrong fields in the ledger with no CI signal.",
       "files": [
         "client/src/app/features/customers/components/field-plan/programs/program-enrollment-card.component.ts"
       ],
-      "detail": "249-line component computing the producer-facing 45Z summary: groups scored fields by crop into a CI ladder (ciLadder, sorted lowest-CI-first with running bushel totals), compares each field's CI against a user-typed target to color it at-or-below/above, and filters+exports confirmed fields as the Mass Balance Ledger CSV (downloadLedger). This is the view originators use to judge compliance against downstream CI targets and the artifact handed off for 45Z tax-credit documentation. No spec exists despite the non-trivial grouping/sorting/filtering logic; a bug in ladder ordering or the Documented-status filter in downloadLedger would misstate CI figures or omit/include the wrong fields in the ledger with no CI signal.",
-      "status": "open"
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] Verified (no spec). Duplicate of angular.45z-dialog-and-card-shipped-untested."
     },
     {
       "id": "test-gaps.help-troubleshooter-untested",
       "audit": "test-gaps",
       "severity": "medium",
+      "status": "open",
       "title": "HelpTroubleshooterComponent's producer-lookup branching and trade-unit-switch logic has zero test coverage",
+      "description": "The in-app \"a producer isn't showing up\" troubleshooter's lookUp() has five distinct outcomes (in-selection, other-trade-unit with a canSwitch flag, not-added, not-found, error) derived from two sequential API calls, and switchTo() has a documented fragile edge case (raw vs trimmed trade-unit code comparison: \"a trimmed copy of a padded code would show as unselected and be pruned\"). No spec exists. This sits next to the entitlement/trade-unit scoping logic that already has a tracked high-severity gap (test-gaps.entitlement-service-fail-open-path-untested, now resolved) -- the same risk class (authorization-adjacent scoping with untested branches) recurring in a new component.",
       "files": [
         "client/src/app/shared/components/help-panel/help-troubleshooter.component.ts"
       ],
-      "detail": "The in-app \"a producer isn't showing up\" troubleshooter's lookUp() has five distinct outcomes (in-selection, other-trade-unit with a canSwitch flag, not-added, not-found, error) derived from two sequential API calls, and switchTo() has a documented fragile edge case (raw vs trimmed trade-unit code comparison: \"a trimmed copy of a padded code would show as unselected and be pruned\"). No spec exists. This sits next to the entitlement/trade-unit scoping logic that already has a tracked high-severity gap (test-gaps.entitlement-service-fail-open-path-untested, now resolved) -- the same risk class (authorization-adjacent scoping with untested branches) recurring in a new component.",
-      "status": "open"
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] Verified: no spec and not referenced by one."
     },
     {
       "id": "test-gaps.help-spotlight-positioning-untested",
       "audit": "test-gaps",
       "severity": "low",
+      "status": "open",
       "title": "HelpSpotlightComponent's element-finding and tooltip-positioning math has zero test coverage",
+      "description": "Exported module-level helpers (visibleAnchor, anchorRect) and component methods (tipY's above/below flip when there's no room underneath, the find-with-timeout retry loop in follow()) are all directly testable pure/DOM-measurement logic with documented fragility (\"a component host is display:inline by default and can report an empty box around block children\"), but have no spec. Lowest priority of this pass's findings since it degrades gracefully (follow() times out and returns to the panel rather than hanging), but a regression in anchorRect's children-union fallback would silently highlight nothing or the wrong region.",
       "files": [
         "client/src/app/shared/components/help-panel/help-spotlight.component.ts"
       ],
-      "detail": "Exported module-level helpers (visibleAnchor, anchorRect) and component methods (tipY's above/below flip when there's no room underneath, the find-with-timeout retry loop in follow()) are all directly testable pure/DOM-measurement logic with documented fragility (\"a component host is display:inline by default and can report an empty box around block children\"), but have no spec. Lowest priority of this pass's findings since it degrades gracefully (follow() times out and returns to the panel rather than hanging), but a regression in anchorRect's children-union fallback would silently highlight nothing or the wrong region.",
-      "status": "open"
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] Verified: no spec and not referenced by one."
     }
   ]
 }
