@@ -54,9 +54,9 @@ export const environment = {
       'https://auth.msft.communication.azure.com/Teams.ManageChats',
     ],
   },
-  // 45Z field data + carbon intensity: ON in QA from 2026-11-04 for testing (scores from api/fd-cic and api/tdisc). Still off in PROD.
+  // 45Z field data + carbon intensity: on (45Z go-live). Scores come from the USDA FD-CIC and T-DISC APIs (api/fd-cic, api/tdisc).
   carbonIntensityEnabled: true,
-  // Plan by field: ON in QA from 2026-11-04 for testing. Still off in PROD.
+  // Plan by field: on (45Z go-live).
   fieldPlanningEnabled: true,
   // Where the field plan is kept: 'memory' (in the browser; a reload starts over) or 'api' (api/field-plan,
   // the database). 'memory' until this environment's deploy has created the field-plan tables, then 'api'.
