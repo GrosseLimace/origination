@@ -3072,7 +3072,7 @@
       "id": "logging.handled-frontend-errors-bypass-app-insights",
       "audit": "logging",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "title": "Explicitly-caught frontend errors (RxJS subscribe `error:` callbacks, try/catch) never reach Application Insights, only console — and several are console-only in production too",
       "description": "AppInsightsService.trackException is called from exactly one place in the whole client app: GlobalErrorHandler.handleError, which only fires for *unhandled* exceptions Angular's zone catches. Since the 2026-10-20 pass, a large volume of new/touched code handles its own errors inside `.subscribe({ error: ... })` or try/catch — which means they never reach GlobalErrorHandler, so they never reach AppInsightsService, regardless of how the catch block logs. Two distinct severities of this showed up: (1) in bid-sheet.component.ts (19 occurrences) and home-background-failures.ts, the catch block is gated behind `if (isDevMode()) console.error/warn(...)`, so in production these failures (auto-save bids failing, export failing, BarChart catalog load failing, bid-sheet preference load/save failing) produce literally nothing anywhere — no console line, no telemetry, nothing; (2) in planting-intentions-table.component.ts, user-trade-units.service.ts, home.component.ts, home-notes.store.ts, home-saved-lists.store.ts, and home-planting.store.ts, the console.error/warn call is unconditional so it does reach the browser console in prod, but still never reaches Application Insights, so support has no way to search for these failures after the fact. This is the same class of gap as the now-resolved logging.client-side-telemetry-missing finding, reappearing piecemeal in new code that didn't thread the telemetry service through to its own caught-error paths. Matches style-guide guidance in section 8.1 ('failed API calls when the frontend is the best diagnostic source' should be captured) and section 3's 'log for action' principle (a caught save/export failure a user is actively reporting should be discoverable, not silent).",
       "files": [
@@ -3094,7 +3094,12 @@
       "related_findings": [
         "logging.client-side-telemetry-missing",
         "logging.bootstrap-failure-not-logged"
-      ]
+      ],
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05_behavior: AppInsightsService.trackHandledError sends handled errors the server cannot see (code errors, status 0) and skips HTTP errors with a status (already recorded server-side), at most once a minute per place+message. Screens call it through HandledErrorReporter, which resolves App Insights lazily like GlobalErrorHandler (injecting it directly broke 263 screen tests that lack MSAL). Bid Sheet's 19 dev-only console lines report through it; HomeBackgroundFailures keeps its console line and toast throttle and also sends. 7 new tests; Bid Sheet/Home/App Insights specs green."
     },
     {
       "id": "clean-slop.ctrm-config-reader-duplicated-six-times",
@@ -3774,7 +3779,7 @@
       "id": "angular.field-plan-store-raw-writable-signals",
       "audit": "angular",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "FieldPlanStore exposes fields/seasons/records as raw WritableSignal, not asReadonly()",
       "description": "fields, seasons, and records (lines 60-62) are declared `readonly fields = signal<...>([])` etc. The readonly modifier only blocks reassigning the property on FieldPlanStore itself; the signal instance returned is still a full WritableSignal, so any injecting component can call store.fields.set(...) or .update(...) directly, bypassing the store class own debounced-save/reload consistency guarantee documented at the top of the file (\"the screen never shows something that wasnt kept\"). No current caller does this, but nothing in the type system prevents it. Same anti-pattern already flagged for the Home page-stores (see angular.home-stores-raw-signals-no-asreadonly); this is a second, independent instance in the newer field-plan feature. Fix: expose via .asReadonly() and keep mutation methods private to the store.",
       "files": [
@@ -3784,7 +3789,12 @@
         "date": "2026-11-05"
       },
       "last_verified": "2026-11-05",
-      "notes": "[2026-11-05] Verified: field-plan.store.ts:60-62 are public signal(); no code outside the store writes them today."
+      "notes": "[2026-11-05] Verified: field-plan.store.ts:60-62 are public signal(); no code outside the store writes them today.",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05_behavior: fields/seasons/records are private signals with public asReadonly() views; the store's 13 writes go to the private ones. Nothing outside the store wrote to them. New store test (public lists have no set/update) fails on the old store. program-enrollment-card spec now writes the private _records for its confirmed-field setup. 146 field-plan tests green."
     },
     {
       "id": "angular.45z-dialog-and-card-shipped-untested",
@@ -3814,7 +3824,7 @@
       "id": "sql.scoularid-trim-defeats-index-seek",
       "audit": "sql",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "LINQ Trim() on indexed Customer.ScoularId prevents an index seek in the ODS onboarding dedupe",
       "description": "CustomerRepository.SearchOdsAsync builds `.Where(c => candidateIds.Contains(c.Id) || (c.ScoularId != null && candidateCodes.Contains(c.ScoularId.Trim())))`. Customer.ScoularId carries a supporting index (IX_Customer_ScoularId per the model snapshot), but wrapping the column in Trim() before the comparison is translated to SQL as a function over the indexed column, which the style guide explicitly calls out as an anti-pattern (\"Avoid functions on indexed columns\") because it forces a scan instead of a seek. The comment at line 189 acknowledges the Trim() is there to match SQL Server's trailing-space-insensitive comparison semantics, so the fix has to preserve that behavior (e.g. compare against a computed/persisted trimmed column, or push the trim into the stored data instead of the query).",
       "files": [
@@ -3825,7 +3835,12 @@
         "date": "2026-11-05"
       },
       "last_verified": "2026-11-05",
-      "notes": "[2026-11-05] New finding this pass (sql domain re-audit). candidateCodes is bounded (one page of onboarding-search candidates), so the practical impact today is a scan of a small set rather than a full-table scan; severity reflects standards drift plus future risk as Customer grows, not a confirmed live performance incident. [2026-11-05] Verified: CustomerRepository.cs:191 (also 201, 779). Trim is deliberate (trailing-space codes); the predicate also ORs on Id; onboarding search, whose sibling scan was accepted 2026-10-20. Reviewer recommends low; fix = trim stored data first, then drop Trim() (order matters)."
+      "notes": "[2026-11-05] New finding this pass (sql domain re-audit). candidateCodes is bounded (one page of onboarding-search candidates), so the practical impact today is a scan of a small set rather than a full-table scan; severity reflects standards drift plus future risk as Customer grows, not a confirmed live performance incident. [2026-11-05] Verified: CustomerRepository.cs:191 (also 201, 779). Trim is deliberate (trailing-space codes); the predicate also ORs on Id; onboarding search, whose sibling scan was accepted 2026-10-20. Reviewer recommends low; fix = trim stored data first, then drop Trim() (order matters).",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05_behavior: migration TrimCustomerScoularIds trims padded dbo.Customer.ScoularId (found by DATALENGTH, since '<>' ignores trailing spaces); the ODS sync path now trims like CTRM and onboarding; the two SQL lookups compare the stored code directly. Deploy workflows apply migrations before deploying, so data is clean first. Dev had 0 padded of 16,776 (read-only count). Migration SQL pinned by tests; ODS trim test fails on the old writer."
     },
     {
       "id": "sql.esignenrollment-guid-column-not-uniqueidentifier",
@@ -3868,7 +3883,7 @@
       "id": "error-handling.authz-short-circuit-missing-standard-envelope",
       "audit": "error-handling",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "[Authorize]-driven 401/403 responses skip the standard ApiErrorResponse envelope",
       "description": "style-guide error-handling.md §2 requires every API error response to use the standard { error: { code, message, traceId, timestamp, ... } } envelope with 'No exceptions'. GlobalExceptionHandler.cs builds that envelope correctly for every exception thrown in app code (NotFoundException, ValidationException, BusinessException, ForbiddenException, InfrastructureException, and the unhandled-exception fallback), and Program.cs's ApiBehaviorOptions override (covered by ModelValidationEnvelopeTests.cs) already fixed this exact class of bug for [ApiController] model-validation 400s, which previously fell back to the framework's RFC7807 ValidationProblemDetails shape instead. The same fix was never applied to 401/403: when ASP.NET Core's authorization middleware short-circuits a request on a failed [Authorize] check (missing/expired bearer token -> Challenge, or authenticated-but-denied -> Forbid), it never throws, so GlobalExceptionHandler (registered via app.UseExceptionHandler(), which only catches thrown exceptions) never runs. AuthorizationAuditResultHandler.cs (the custom IAuthorizationMiddlewareResultHandler) explicitly documents this: it adds the §8.1 audit log line for the 401/403 and then 'delegates to the default implementation so the response is written exactly as before' -- i.e. logging only, response body unchanged. [Authorize] is used in 57 places across 35 controllers (including role/policy-gated ones like UsageDashboardController), so this is the routine path for auth failures, not an edge case. The practical effect: a caller who hits a protected endpoint without a valid token, or without the right role/policy, gets a 401/403 with no code/traceId/timestamp -- unlike every other error path in the API -- so they have no correlation id to quote to support and no machine-readable code to branch on. client/src/app/core/services/api.service.ts already works around the gap with hardcoded fallback messages ('Access denied: you are not authorized...', 'Your session has expired...') precisely because error.error?.error?.message is absent on these responses, which is itself evidence the contract gap is real and already causing friction.",
       "files": [
@@ -3882,7 +3897,12 @@
         "date": "2026-11-05"
       },
       "last_verified": "2026-11-05",
-      "notes": "[2026-11-05] New finding (error-handling domain audit). Verified by reading AuthorizationAuditResultHandler.cs's own doc comment ('Logging only — it never changes an allow/deny outcome' / delegates to default handler), confirming no response-body override exists for the 401/403 short-circuit path, and cross-checking that the team already fixed the identical framework-default-response-shape problem for model-validation 400s (ModelValidationEnvelopeTests.cs). [2026-11-05] Verified: AuthorizationAuditResultHandler logs then defers to the default handler (empty 401/403 body). Client already handles empty bodies (api.service.ts). Reviewer recommends low."
+      "notes": "[2026-11-05] New finding (error-handling domain audit). Verified by reading AuthorizationAuditResultHandler.cs's own doc comment ('Logging only — it never changes an allow/deny outcome' / delegates to default handler), confirming no response-body override exists for the 401/403 short-circuit path, and cross-checking that the team already fixed the identical framework-default-response-shape problem for model-validation 400s (ModelValidationEnvelopeTests.cs). [2026-11-05] Verified: AuthorizationAuditResultHandler logs then defers to the default handler (empty 401/403 body). Client already handles empty bodies (api.service.ts). Reviewer recommends low.",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05_behavior: AuthorizationAuditResultHandler writes the ApiErrorResponse envelope after the default handler sets 401/403 (AUTH_REQUIRED / ACCESS_DENIED, the log line's trace id), unless the response has started. The 403 message is the client's existing fallback text, so the toast is unchanged. AuthorizationAuditResultHandlerTests (3): the two envelope tests fail on the old handler."
     },
     {
       "id": "permissions.controller-authorize-regression-test-missing-4-controllers",
@@ -3914,7 +3934,7 @@
       "id": "performance.field-season-crop-group-n-plus-one",
       "audit": "performance",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "FieldPlanService.AddSeasonAsync issues one DB round trip per existing season to resolve crop groups, instead of batching",
       "description": "AddSeasonAsync (FieldPlanService.cs:160-168) first resolves the new request's crop group with one CropGroupAsync call, then loops over every season already on the field (`await _repository.GetSeasonsForFieldAsync(...)`) and calls `await CropGroupAsync(s.PlantingIntentionId, s.CropLabel, ct)` inside the loop for each one that doesn't already match by PlantingIntentionId. CropGroupAsync (line 443-444) calls `_repository.GetPlantingIntentionCropAsync`, which is a real EF query (FieldPlanRepository.cs:67-68: `_db.PlantingIntentions.Where(p => p.Id == id).Select(p => p.Crop).FirstOrDefaultAsync`) -- not cached. So adding a field season issues up to N extra single-row DB queries, where N is the number of seasons already on that field for the year, instead of a single batched lookup keyed by the distinct PlantingIntentionIds already in scope.",
       "files": [
@@ -3926,7 +3946,12 @@
         "date": "2026-11-05"
       },
       "last_verified": "2026-11-05",
-      "notes": "[2026-11-05] New finding (performance domain audit). Confirmed by reading GetPlantingIntentionCropAsync's implementation directly -- it is an uncached FirstOrDefaultAsync, so every loop iteration is a genuine round trip. Impact is bounded by how many seasons a field typically carries per year (usually small), so flagged medium rather than high; this is an inferred risk from code inspection, not a measured trace. [2026-11-05] Verified: FieldPlanService.cs:161-167. A field holds one crop a year, so 0-2 extra queries per AddSeason. Reviewer recommends low."
+      "notes": "[2026-11-05] New finding (performance domain audit). Confirmed by reading GetPlantingIntentionCropAsync's implementation directly -- it is an uncached FirstOrDefaultAsync, so every loop iteration is a genuine round trip. Impact is bounded by how many seasons a field typically carries per year (usually small), so flagged medium rather than high; this is an inferred risk from code inspection, not a measured trace. [2026-11-05] Verified: FieldPlanService.cs:161-167. A field holds one crop a year, so 0-2 extra queries per AddSeason. Reviewer recommends low.",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05_behavior: AddSeasonAsync loads every existing row's crop with one new repository call (GetPlantingIntentionCropsAsync) and picks the first match exactly as the loop did; no query when the new row has no crop group or the field has no seasons. New test (second corn row refused, wheat allowed) passes on both the old loop and the new code, proving behaviour is unchanged."
     },
     {
       "id": "performance.customer-sync-per-producer-open-activity-query",
@@ -4054,7 +4079,7 @@
       "id": "code-review.field-season-dialog-startprogram-readds-removed-program",
       "audit": "code-review",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "title": "Field-season dialog opened on a program (startProgram) re-adds that program as soon as it is removed",
       "description": "FieldSeasonDialogComponent constructor: the second effect reads startProgram(), season() and store.find(seasonId, key), and calls addProgram(key) when the program is not on the season. Because store.find reads the store's records signal, the effect re-runs after removeProgram() removes the record, finds it missing, and adds it straight back (as a new, empty record). crop-fields-panel passes [startProgram]=\"openProgram\", so this is reachable from the real screen: open a field's dialog onto its program, click Remove from this field, and the program reappears. Opening the dialog without startProgram removes normally.",
       "files": [
@@ -4066,7 +4091,12 @@
         "detected_by": "manual"
       },
       "last_verified": "2026-11-05",
-      "notes": "[2026-11-05] Found while writing field-season-dialog.component.spec.ts for the audit remediation. Reproduced with a throwaway test on main 7e9a316a: opened with startProgram = a test program -> season has [program]; after removeProgram() -> season still has [program]. Control (program added by hand, no startProgram) -> removal sticks. Not fixed on the remediation branch: it changes dialog behaviour, so it waits for the owner."
+      "notes": "[2026-11-05] Found while writing field-season-dialog.component.spec.ts for the audit remediation. Reproduced with a throwaway test on main 7e9a316a: opened with startProgram = a test program -> season has [program]; after removeProgram() -> season still has [program]. Control (program added by hand, no startProgram) -> removal sticks. Not fixed on the remediation branch: it changes dialog behaviour, so it waits for the owner.",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05_behavior: startProgram is applied once per season+program — the store read and addProgram run untracked, and the applied pair is remembered — so removing the program no longer re-triggers the effect. Regression spec (opened on a program, removed -> no programs, nothing active) fails on the old code; all 14 dialog tests pass."
     }
   ]
 }
