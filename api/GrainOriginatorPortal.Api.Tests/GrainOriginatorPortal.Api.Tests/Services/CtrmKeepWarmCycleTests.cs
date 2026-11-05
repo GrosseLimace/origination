@@ -69,7 +69,10 @@ public class CtrmKeepWarmCycleTests
         }
     }
 
-    private static (CtrmKeepWarmService Sut, FakeReads Reads, CtrmWarmRegistry Registry) Build(params string[][] activeSets)
+    /// <param name="warmTicketHistory">Whether the cycle includes the three-year ticket walk. Off in
+    /// production since 2026-11-04; the failure-isolation tests switch it on so the ticket read's own
+    /// failure path stays covered.</param>
+    private static (CtrmKeepWarmService Sut, FakeReads Reads, CtrmWarmRegistry Registry) Build(bool warmTicketHistory, params string[][] activeSets)
     {
         var registry = new CtrmWarmRegistry();
         foreach (var set in activeSets) registry.Touch(set, DateTime.UtcNow);
@@ -79,6 +82,7 @@ public class CtrmKeepWarmCycleTests
             ["Ctrm:Source"] = "ctrm",
             ["Ctrm:KeepWarmForHours"] = "2",
             ["Ctrm:KeepWarmFailureBackoffMinutes"] = "15",
+            ["Ctrm:KeepWarmTicketHistory"] = warmTicketHistory ? "true" : "false",
             ["Ctrm:RecentTicketDays"] = "30",
         }).Build();
         var sut = new CtrmKeepWarmService(registry, reads, config, new Mock<ILogger<CtrmKeepWarmService>>().Object);
@@ -92,7 +96,7 @@ public class CtrmKeepWarmCycleTests
     [Fact]
     public async Task EverySetIsWarmedWhenEveryReadSucceeds()
     {
-        var (sut, reads, _) = Build(SetA, SetB, SetC);
+        var (sut, reads, _) = Build(true, SetA, SetB, SetC);
 
         await sut.WarmActiveSetsAsync(CancellationToken.None);
 
@@ -104,7 +108,7 @@ public class CtrmKeepWarmCycleTests
     [Fact]
     public async Task ASetWhoseReadThrowsDoesNotStopTheSetsAfterIt()
     {
-        var (sut, reads, _) = Build(SetC, SetB, SetA); // warm order: A, B, C
+        var (sut, reads, _) = Build(true, SetC, SetB, SetA); // warm order: A, B, C
         reads.ThrowFor.Add(K(SetB));
 
         await sut.WarmActiveSetsAsync(CancellationToken.None);
@@ -119,7 +123,7 @@ public class CtrmKeepWarmCycleTests
     [Fact]
     public async Task AFailedContractReadSkipsThatSetsTicketAndSpotLoadReadsOnly()
     {
-        var (sut, reads, _) = Build(SetC, SetB, SetA);
+        var (sut, reads, _) = Build(true, SetC, SetB, SetA);
         reads.ContractsFailFor.Add(K(SetB));
 
         await sut.WarmActiveSetsAsync(CancellationToken.None);
@@ -133,7 +137,7 @@ public class CtrmKeepWarmCycleTests
     [Fact]
     public async Task AFailedTicketReadStillSkipsSpotLoadsForThatSet()
     {
-        var (sut, reads, _) = Build(SetB);
+        var (sut, reads, _) = Build(true, SetB);
         reads.TicketsFailFor.Add(K(SetB));
 
         await sut.WarmActiveSetsAsync(CancellationToken.None);
@@ -148,7 +152,7 @@ public class CtrmKeepWarmCycleTests
     {
         // While the gateway is slow, re-walking a set that just timed out only queues more work
         // behind the queries the server is still running; the back-off is what prevents that.
-        var (sut, reads, _) = Build(SetC, SetB, SetA);
+        var (sut, reads, _) = Build(true, SetC, SetB, SetA);
         reads.ContractsFailFor.Add(K(SetB));
 
         await sut.WarmActiveSetsAsync(CancellationToken.None);
@@ -163,7 +167,7 @@ public class CtrmKeepWarmCycleTests
     [Fact]
     public async Task AFailedSetStaysBackedOffEvenIfTheGatewayRecoversInsideTheWindow()
     {
-        var (sut, reads, _) = Build(SetB);
+        var (sut, reads, _) = Build(true, SetB);
         reads.ContractsFailFor.Add(K(SetB));
         await sut.WarmActiveSetsAsync(CancellationToken.None);   // fails, backed off for 15 min
 
@@ -180,10 +184,44 @@ public class CtrmKeepWarmCycleTests
     [Fact]
     public async Task NothingIsReadWhenNoSetIsActive()
     {
-        var (sut, reads, _) = Build();
+        var (sut, reads, _) = Build(false);
 
         await sut.WarmActiveSetsAsync(CancellationToken.None);
 
         Assert.Empty(reads.ContractCalls);
+    }
+
+    [Fact]
+    public async Task TheTicketHistoryIsLeftAloneUnlessSwitchedOn()
+    {
+        // The default since 2026-11-04. The three-year ticket walk was the bulk of keep-warm's load on the
+        // CTRM database and only Build-a-List reads it, so a cycle warms contracts and Spot Loads and
+        // nothing else; the key absent must behave the same as false.
+        var (sut, reads, _) = Build(false, SetA, SetB);
+
+        await sut.WarmActiveSetsAsync(CancellationToken.None);
+
+        Assert.Equal(2, reads.ContractCalls.Count);
+        Assert.Empty(reads.TicketCalls);
+        Assert.Equal(2, reads.SpotLoadCalls.Count);
+    }
+
+    [Fact]
+    public async Task TheTicketHistoryIsLeftAloneWhenTheKeyIsAbsent()
+    {
+        var registry = new CtrmWarmRegistry();
+        registry.Touch(SetA, DateTime.UtcNow);
+        var reads = new FakeReads();
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Ctrm:Source"] = "ctrm",
+        }).Build();
+        var sut = new CtrmKeepWarmService(registry, reads, config, new Mock<ILogger<CtrmKeepWarmService>>().Object);
+
+        await sut.WarmActiveSetsAsync(CancellationToken.None);
+
+        Assert.Single(reads.ContractCalls);
+        Assert.Empty(reads.TicketCalls);
+        Assert.Single(reads.SpotLoadCalls);
     }
 }

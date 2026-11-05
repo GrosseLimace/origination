@@ -271,9 +271,12 @@ public sealed class CtrmTicketRepository : ITicketRepository
     /// <para>The open-contract set comes from the same cached full-history contract read the contract list
     /// uses, so the two prompts cannot disagree about which contracts are open.</para>
     ///
-    /// <para>Timing: both reads are cached per producer set and served stale-while-refreshing, and the
-    /// home-page contract load kicks them off, so a prompt normally answers from memory. A cold first prompt
-    /// waits on the walk - tens of seconds for a mid-size trade unit - once per session.</para>
+    /// <para>Timing: both reads are cached per producer set and served stale-while-refreshing. The home-page
+    /// load warms the contracts; the tickets are requested by Build-a-List itself when the page opens, and
+    /// since 2026-11-04 nothing pre-fetches them earlier - the walk is the heaviest CTRM read and these
+    /// prompts are its only reader. So a prompt typed after the page has settled answers from memory, and a
+    /// cold first prompt waits on the walk - tens of seconds to a few minutes depending on the trade unit -
+    /// once per session.</para>
     /// </remarks>
     public async Task<List<Ticket>> GetAsync(List<string>? tradeUnits, CancellationToken cancellationToken)
     {
