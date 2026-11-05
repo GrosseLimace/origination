@@ -95,4 +95,55 @@ describe('FdCicDocumentsDialogComponent', () => {
     expect(dialog.viewable(doc({ contentType: 'image/jpeg' }))).toBe(true);
     expect(dialog.viewable(doc({ contentType: 'text/html' }))).toBe(false);
   });
+
+  describe('View', () => {
+    const el = () => fixture.nativeElement as HTMLElement;
+    let created: Blob[];
+
+    beforeEach(() => {
+      created = [];
+      URL.createObjectURL = vi.fn((b: Blob) => { created.push(b); return `blob:doc-${created.length}`; });
+      URL.revokeObjectURL = vi.fn();
+      service.content.mockResolvedValue(new Blob(['%PDF-1.7']));
+    });
+
+    it('should show the document inside the dialog, typed from the allow-list, and go back to the list', async () => {
+      await dialog.view(attestation);
+      fixture.detectChanges();
+
+      expect(service.content).toHaveBeenCalledWith(260843, 'a1');
+      expect(created[0].type).toBe('application/pdf');
+      expect(el().querySelector('[data-testid="document-viewer"]')).not.toBeNull();
+      expect(el().querySelector('iframe')!.src).toBe('blob:doc-1');
+
+      dialog.closeViewer();
+      fixture.detectChanges();
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:doc-1');
+      expect(el().querySelector('iframe')).toBeNull();
+      expect(el().textContent).toContain('Producer attestation');
+    });
+
+    it('should say so, and offer Download, when the browser is set to download PDFs rather than show them', async () => {
+      Object.defineProperty(navigator, 'pdfViewerEnabled', { value: false, configurable: true });
+      try {
+        await dialog.view(attestation);
+        fixture.detectChanges();
+
+        expect(el().querySelector('iframe')).toBeNull();
+        expect(el().textContent).toContain('set to download PDFs');
+        expect([...el().querySelectorAll('button')].some(b => b.textContent?.trim() === 'Download')).toBe(true);
+      } finally {
+        Object.defineProperty(navigator, 'pdfViewerEnabled', { value: true, configurable: true });
+      }
+    });
+
+    it('should stay on the list and say why when the document can\'t be fetched', async () => {
+      service.content.mockRejectedValue(new ApiError({ status: 404, message: 'Document not found.' }));
+
+      await dialog.view(attestation);
+
+      expect(dialog.viewing()).toBeNull();
+      expect(toast.error).toHaveBeenCalledWith('Document not found.');
+    });
+  });
 });

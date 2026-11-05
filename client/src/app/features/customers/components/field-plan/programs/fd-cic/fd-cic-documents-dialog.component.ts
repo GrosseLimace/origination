@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, ElementRef, OnInit, computed, inject, input, output, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, OnDestroy, OnInit, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DialogComponent, DialogContentComponent, DialogDescriptionComponent, DialogFooterComponent, DialogHeaderComponent, DialogTitleComponent } from '@shared/components/dialog/dialog.component';
@@ -19,14 +19,20 @@ const UPLOAD_TYPES: { value: FieldPlanUploadType; label: string }[] = [
   { value: 'Other', label: 'Other supporting document' },
 ];
 
-/** What the browser may show in a tab; anything else is only downloaded. The server accepts only these. */
+/** What can be shown in the dialog; anything else is only downloaded. The server accepts only these. */
 const VIEWABLE = new Set(['application/pdf', 'image/png', 'image/jpeg']);
+
+/** A document open in the viewer: its file as a blob URL, typed from the allow-list. */
+interface Viewing { doc: FieldPlanDocument; url: string; pdf: boolean }
 
 /**
  * A producer's 45Z documents for a crop year, kept in Doc Store (category Sustainability-45z): the signed annual
  * attestation, each confirmed field's Biofuel Feedstock Report, and other supporting documents. Doc Store has no
  * screens of its own, so this is where originators see and add them. Reports arrive by confirming a field's CI;
  * only attestations and other documents are uploaded here.
+ *
+ * View shows the document inside the dialog (not a new tab, which a browser set to download PDFs leaves blank),
+ * with Print and Download. A browser that won't show PDFs at all gets a plain message and Download instead.
  */
 @Component({
   selector: 'app-fd-cic-documents-dialog',
@@ -41,20 +47,43 @@ const VIEWABLE = new Set(['application/pdf', 'image/png', 'image/jpeg']);
       </app-dialog-header>
 
       <app-dialog-content>
+        @if (viewing(); as v) {
+          <!-- The viewer: the document inside the dialog, with Back, Print and Download -->
+          <div class="flex flex-col gap-3 text-sm" data-testid="document-viewer">
+            <div class="flex flex-wrap items-center gap-2">
+              <button type="button" class="h-8 rounded-md px-3 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible" (click)="closeViewer()">← Back to documents</button>
+              <span class="font-medium text-gray-900 dark:text-white break-all">{{ v.doc.fileName }}</span>
+              <span class="ml-auto flex gap-2">
+                @if (canShow(v)) {
+                  <button type="button" class="h-8 rounded-md px-3 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible" (click)="print()">Print</button>
+                }
+                <button type="button" class="h-8 rounded-md px-3 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green border-0" (click)="save(v)">Download</button>
+              </span>
+            </div>
+            @if (canShow(v)) {
+              <iframe #viewer [title]="v.doc.fileName" class="h-[70vh] w-full rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50"></iframe>
+            } @else {
+              <p class="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-900/20 p-3 text-amber-900 dark:text-amber-200" role="status">
+                This browser is set to download PDFs rather than show them, so this one can't be shown here. Use Download to open it.
+              </p>
+            }
+          </div>
+        } @else {
         <div class="space-y-5 text-sm">
           <!-- Upload: the producer's signed attestation (done outside the app) or another document -->
-          <form class="flex flex-wrap items-end gap-2 rounded-md border border-gray-200 dark:border-gray-700 p-3" (submit)="$event.preventDefault(); upload()">
+          <form class="flex flex-wrap items-end gap-3 rounded-md border border-gray-200 dark:border-gray-700 p-3" (submit)="$event.preventDefault(); upload()">
             <label class="flex flex-col gap-1 text-xs text-gray-600 dark:text-gray-300">Type
-              <select class="h-8 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 text-sm"
+              <select class="h-9 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 text-sm"
                       [ngModel]="uploadType()" (ngModelChange)="uploadType.set($event)" name="uploadType">
                 @for (t of uploadTypes; track t.value) { <option [value]="t.value">{{ t.label }}</option> }
               </select>
             </label>
             <label class="flex flex-col gap-1 text-xs text-gray-600 dark:text-gray-300">File
-              <input #fileInput type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" class="text-sm"
+              <input #fileInput type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
+                     class="text-sm text-gray-700 dark:text-gray-200 cursor-pointer file:mr-3 file:h-9 file:cursor-pointer file:rounded-md file:border file:border-solid file:border-scoular-green-accessible file:bg-white dark:file:bg-gray-800 file:px-4 file:text-sm file:font-medium file:text-scoular-green-accessible hover:file:bg-scoular-green-accessible hover:file:text-white"
                      (change)="chosen.set(fileInput.files?.[0] ?? null)" data-testid="documents-file" />
             </label>
-            <button type="submit" class="h-8 rounded-md px-3 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-50 border-0"
+            <button type="submit" class="h-9 rounded-md px-4 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-50 border-0"
                     [disabled]="!chosen() || uploading()">{{ uploading() ? 'Uploading…' : 'Upload' }}</button>
           </form>
 
@@ -95,9 +124,9 @@ const VIEWABLE = new Set(['application/pdf', 'image/png', 'image/jpeg']);
                         <span class="text-xs text-gray-500 dark:text-gray-400">{{ d.uploadedAt | date:'MM/dd/yy h:mm a' }}{{ d.uploadedBy ? ' · ' + d.uploadedBy : '' }} · {{ size(d.size) }}</span>
                         <span class="ml-auto flex gap-2">
                           @if (viewable(d)) {
-                            <button type="button" class="h-7 rounded-md px-2 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible" (click)="open(d, true)">View</button>
+                            <button type="button" class="h-7 rounded-md px-2 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible" [disabled]="opening()" (click)="view(d)">View</button>
                           }
-                          <button type="button" class="h-7 rounded-md px-2 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible" (click)="open(d, false)">Download</button>
+                          <button type="button" class="h-7 rounded-md px-2 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible" [disabled]="opening()" (click)="download(d)">Download</button>
                         </span>
                       </li>
                     }
@@ -109,6 +138,7 @@ const VIEWABLE = new Set(['application/pdf', 'image/png', 'image/jpeg']);
             }
           }
         </div>
+        }
       </app-dialog-content>
 
       <app-dialog-footer>
@@ -117,7 +147,7 @@ const VIEWABLE = new Set(['application/pdf', 'image/png', 'image/jpeg']);
     </app-dialog>
   `,
 })
-export class FdCicDocumentsDialogComponent implements OnInit {
+export class FdCicDocumentsDialogComponent implements OnInit, OnDestroy {
   private readonly service = inject(FieldPlanDocumentsService);
   private readonly toast = inject(ToastService);
 
@@ -127,6 +157,7 @@ export class FdCicDocumentsDialogComponent implements OnInit {
   readonly close = output<void>();
 
   private readonly fileInput = viewChild<ElementRef<HTMLInputElement>>('fileInput');
+  private readonly viewerFrame = viewChild<ElementRef<HTMLIFrameElement>>('viewer');
 
   readonly sections = SECTIONS;
   readonly uploadTypes = UPLOAD_TYPES;
@@ -139,6 +170,8 @@ export class FdCicDocumentsDialogComponent implements OnInit {
   readonly uploading = signal(false);
   readonly typeFilter = signal<FieldPlanDocumentType | ''>('');
   readonly splitFilter = signal('');
+  readonly opening = signal(false);
+  readonly viewing = signal<Viewing | null>(null);
 
   readonly splitIds = computed(() =>
     [...new Set(this.documents().map(d => d.splitId).filter((s): s is string => !!s))].sort());
@@ -151,8 +184,21 @@ export class FdCicDocumentsDialogComponent implements OnInit {
     }));
   });
 
+  constructor() {
+    // The frame's src is set here rather than bound: it's a blob URL this component made from an allow-listed
+    // type, so it needs no sanitizer bypass (the SPA's CSP frame-src allows blob: for this).
+    effect(() => {
+      const frame = this.viewerFrame()?.nativeElement, v = this.viewing();
+      if (frame && v && frame.src !== v.url) frame.src = v.url;
+    });
+  }
+
   ngOnInit(): void {
     void this.load();
+  }
+
+  ngOnDestroy(): void {
+    this.closeViewer();
   }
 
   async load(): Promise<void> {
@@ -189,33 +235,71 @@ export class FdCicDocumentsDialogComponent implements OnInit {
     return VIEWABLE.has(d.contentType);
   }
 
-  /** Opens the document in a new tab (PDF and images only) or saves it. */
-  async open(d: FieldPlanDocument, view: boolean): Promise<void> {
-    // Opened before the await, so the browser treats it as the click's own window rather than a popup.
-    const tab = view ? window.open('', '_blank') : null;
+  /** Whether the viewer can show it: images always; a PDF only where the browser's PDF viewer is on. */
+  canShow(v: Viewing): boolean {
+    return !v.pdf || navigator.pdfViewerEnabled !== false;
+  }
+
+  /** Opens the document in the dialog's viewer. */
+  async view(d: FieldPlanDocument): Promise<void> {
+    const url = await this.fetchUrl(d);
+    if (!url) return;
+    this.closeViewer();
+    this.viewing.set({ doc: d, url, pdf: d.contentType === 'application/pdf' });
+  }
+
+  /** Saves the document without opening it. */
+  async download(d: FieldPlanDocument): Promise<void> {
+    const url = await this.fetchUrl(d);
+    if (!url) return;
+    this.saveAs(url, d.fileName);
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+
+  save(v: Viewing): void {
+    this.saveAs(v.url, v.doc.fileName);
+  }
+
+  print(): void {
+    const frame = this.viewerFrame()?.nativeElement.contentWindow;
     try {
-      const blob = await this.service.content(this.customerId(), d.id);
-      // Typed from the allow-list, never from what came back, so the tab can only ever render PDF or an image.
-      const typed = new Blob([blob], { type: VIEWABLE.has(d.contentType) ? d.contentType : 'application/octet-stream' });
-      const url = URL.createObjectURL(typed);
-      if (tab) {
-        tab.opener = null;
-        tab.location.href = url;
-      } else {
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = d.fileName;
-        a.click();
-      }
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (e) {
-      tab?.close();
-      this.toast.error(this.messageOf(e, 'The document couldn\'t be opened.'));
+      frame?.focus();
+      frame?.print();
+    } catch {
+      this.toast.error('This browser won\'t print from here. Use Download, then print the file.');
     }
+  }
+
+  closeViewer(): void {
+    const v = this.viewing();
+    if (v) URL.revokeObjectURL(v.url);
+    this.viewing.set(null);
   }
 
   size(bytes: number): string {
     return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+
+  /** The document as a blob URL, typed from the allow-list, never from what came back. */
+  private async fetchUrl(d: FieldPlanDocument): Promise<string | null> {
+    if (this.opening()) return null;
+    this.opening.set(true);
+    try {
+      const blob = await this.service.content(this.customerId(), d.id);
+      return URL.createObjectURL(new Blob([blob], { type: VIEWABLE.has(d.contentType) ? d.contentType : 'application/octet-stream' }));
+    } catch (e) {
+      this.toast.error(this.messageOf(e, 'The document couldn\'t be opened.'));
+      return null;
+    } finally {
+      this.opening.set(false);
+    }
+  }
+
+  private saveAs(url: string, fileName: string): void {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.click();
   }
 
   private messageOf(e: unknown, fallback: string): string {
