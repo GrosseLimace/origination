@@ -248,7 +248,10 @@ values as metadata for anyone reading it outside the app.
   - **Archived**: an originator sets any current document aside, with an optional reason (e.g. no longer relevant to
     the year). It can be restored, unless the field has a newer current report or ledger (archive that one first),
     so a field never has two current ones. An archived report isn't overwritten later; it stays Archived.
-  - Uploading another attestation doesn't replace the first; archive the old one.
+  - **One current attestation a year** (B. Cozart, 2026-11-05): uploading a new producer attestation archives the
+    year's current one in the same save (reason "Replaced by a newer producer attestation.", `ReplacedByDocStoreId`
+    set), and the upload form says so first. It can be restored only after the newer one is archived. Other
+    supporting documents just add up.
 - **"📄 45Z documents"** on the 45Z card's summary line (per producer and crop year; visible without opening the
   card) opens a dialog. With no 45Z fields that year yet, a slim 45Z line shows just this button, so the signed
   attestation can be uploaded before any field or CI. The dialog has two tabs:

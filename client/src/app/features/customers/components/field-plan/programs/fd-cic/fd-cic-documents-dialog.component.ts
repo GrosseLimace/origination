@@ -25,6 +25,9 @@ const UPLOAD_TYPES: { value: FieldPlanUploadType; label: string }[] = [
   { value: 'Other', label: 'Other supporting document' },
 ];
 
+/** The archive reason the server gives an attestation replaced by a newer upload (FieldPlanDocumentService.AttestationReplacedNote). */
+const ATTESTATION_REPLACED = 'Replaced by a newer producer attestation.';
+
 /** What can be shown in the dialog; anything else is only downloaded. The server accepts only these. */
 const VIEWABLE = new Set(['application/pdf', 'image/png', 'image/jpeg', 'text/csv']);
 
@@ -130,6 +133,11 @@ const SELECT = 'h-7 rounded-md border border-gray-300 dark:border-gray-600 bg-wh
               </label>
               <button type="submit" class="h-9 rounded-md px-4 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-50 border-0"
                       [disabled]="!chosen() || uploading()">{{ uploading() ? 'Uploading…' : 'Upload' }}</button>
+              @if (replacedAttestation(); as old) {
+                <p class="basis-full text-xs text-amber-800 dark:text-amber-300" data-testid="attestation-replaces">
+                  This replaces {{ old.fileName }} as the {{ year() }} attestation. The old one is archived and stays in Version history.
+                </p>
+              }
             </form>
 
             <!-- Filter -->
@@ -305,6 +313,11 @@ export class FdCicDocumentsDialogComponent implements OnInit, OnDestroy {
   readonly current = computed(() => this.documents().filter(d => d.status === 'Current' && d.cropYear === this.year()));
   readonly history = computed(() => this.documents().filter(d => d.status !== 'Current'));
 
+  /** The year's current attestation that an attestation upload would replace (and the server would archive). */
+  readonly replacedAttestation = computed(() => this.uploadType() === 'ProducerAttestation'
+    ? this.current().find(d => d.documentType === 'ProducerAttestation') ?? null
+    : null);
+
   /** This year's fields with a current report or ledger, for the Field filter. */
   readonly fields = computed(() => fieldsOf(this.current()));
 
@@ -372,12 +385,18 @@ export class FdCicDocumentsDialogComponent implements OnInit, OnDestroy {
     if (!file || this.uploading()) return;
     this.uploading.set(true);
     try {
+      const replaced = this.replacedAttestation();
       const doc = await this.service.upload(this.customerId(), this.year(), this.uploadType(), file);
-      this.documents.update(ds => [doc, ...ds]);
+      // The server archived the year's previous attestation in the same save; show it that way without reloading.
+      this.documents.update(ds => [doc, ...ds.map(d => replaced && d.id === replaced.id
+        ? { ...d, status: 'Archived' as const, statusChangedAt: doc.uploadedAt, statusChangedBy: doc.uploadedBy, statusNote: ATTESTATION_REPLACED, replacedById: doc.id }
+        : d)]);
       this.chosen.set(null);
       const el = this.fileInput()?.nativeElement;
       if (el) el.value = '';
-      this.toast.success(`${doc.fileName} saved to Doc Store.`);
+      this.toast.success(replaced
+        ? `${doc.fileName} saved to Doc Store. The previous attestation is archived in Version history.`
+        : `${doc.fileName} saved to Doc Store.`);
     } catch (e) {
       this.toast.error(this.messageOf(e, 'The document couldn\'t be uploaded.'));
     } finally {

@@ -278,6 +278,30 @@ public class FieldPlanDocumentServiceTests
     }
 
     [Fact]
+    public async Task Upload_ANewAttestation_ArchivesTheYearsCurrentOne_AndLeavesOtherYearsAndDocumentsAlone()
+    {
+        var h = New();
+        var first = await h.Service.UploadAsync(Tobin, 2026, "ProducerAttestation", File(Pdf, "attestation.pdf"), default);
+        var lastYear = await h.Service.UploadAsync(Tobin, 2025, "ProducerAttestation", File(Pdf, "attestation-2025.pdf"), default);
+        var other = await h.Service.UploadAsync(Tobin, 2026, "Other", File(Pdf, "map.pdf"), default);
+        var theirs = await h.Service.UploadAsync(Other, 2026, "ProducerAttestation", File(Pdf, "theirs.pdf"), default);
+
+        var second = await h.Service.UploadAsync(Tobin, 2026, "ProducerAttestation", File(Pdf, "attestation-signed.pdf"), default);
+
+        var docs = (await h.Service.ListAsync(Tobin, null, default)).ToDictionary(d => d.Id);
+        Assert.Equal(("Archived", FieldPlanDocumentService.AttestationReplacedNote, second.Id, "Tess Tester"),
+            (docs[first.Id].Status, docs[first.Id].StatusNote, docs[first.Id].ReplacedById, docs[first.Id].StatusChangedBy));
+        Assert.Equal(["Current", "Current", "Current"], new[] { second.Id, lastYear.Id, other.Id }.Select(id => docs[id].Status));
+        Assert.Equal("Current", (await h.Service.ListAsync(Other, 2026, default)).Single(d => d.Id == theirs.Id).Status);
+
+        // The replaced one can't come back over the newer one; archive that first.
+        await Assert.ThrowsAsync<BusinessException>(() => h.Service.RestoreAsync(Tobin, first.Id, default));
+        await h.Service.ArchiveAsync(Tobin, second.Id, "Signed for the wrong year", default);
+        var restored = await h.Service.RestoreAsync(Tobin, first.Id, default);
+        Assert.Equal(("Current", null, null), (restored.Status, restored.StatusNote, restored.ReplacedById));
+    }
+
+    [Fact]
     public async Task Restore_AFieldsArchivedReport_IsRefusedWhileANewerOneIsCurrent()
     {
         var h = New();

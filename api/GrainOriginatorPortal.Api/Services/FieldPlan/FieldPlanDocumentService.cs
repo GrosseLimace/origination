@@ -89,13 +89,30 @@ public sealed class FieldPlanDocumentService : IFieldPlanDocumentService
         var (exists, producerCode) = await _repository.GetCustomerCodeAsync(customerId, ct);
         if (!exists) throw new NotFoundException("Producer", customerId);
         var (content, contentType, extension) = await ReadAsync(file, ct);
+        // A producer has one current attestation a year: a new one archives the one it replaces (decision B. Cozart, 2026-11-05).
+        var replaced = type == ProducerAttestation ? await CurrentAttestationsAsync(customerId, cropYear, ct) : [];
 
         var metadata = Metadata(type, customerId, producerCode, cropYear);
         var doc = await _docStore.UploadAsync(new DocStoreUpload(FileName(file.FileName, extension), contentType, content, metadata), ct);
+        foreach (var old in replaced)
+        {
+            SetStatus(old, FieldPlanDocument.Archived, AttestationReplacedNote);
+            old.ReplacedByDocStoreId = doc.Id;
+        }
+        // One save: the new row and the previous attestation's Archived land together.
         var row = await RecordAsync(doc, contentType, type, customerId, cropYear, null, null, null, null, ct);
         Audit("AUDIT_UPLOAD", type, doc.Id, customerId);
+        foreach (var old in replaced) Audit("AUDIT_ARCHIVE", old.DocumentType, old.DocStoreId, customerId);
         return ToResponse(row);
     }
+
+    /// <summary>The archive reason on an attestation replaced by a newer upload.</summary>
+    internal const string AttestationReplacedNote = "Replaced by a newer producer attestation.";
+
+    /// <summary>The producer's current attestations for the year (tracked, so a status change is saved with the next save).</summary>
+    private async Task<List<FieldPlanDocument>> CurrentAttestationsAsync(long customerId, int cropYear, CancellationToken ct) =>
+        (await _repository.GetDocumentsAsync(customerId, cropYear, ct))
+            .Where(d => d.DocumentType == ProducerAttestation && d.Status == FieldPlanDocument.Current).ToList();
 
     /// <summary>Saves a confirmed field's Biofuel Feedstock Report (PDF). See <see cref="SaveConfirmationAsync"/>.</summary>
     public Task<FieldPlanDocumentResponse> SaveReportAsync(int recordId, IFormFile file, CancellationToken ct) =>
@@ -183,7 +200,12 @@ public sealed class FieldPlanDocumentService : IFieldPlanDocumentService
             throw new BusinessException(
                 $"This field has a newer {(row.DocumentType == MassBalanceLedger ? Ledger.Label : Report.Label)}. Archive that one first to restore this one.",
                 "FIELD_PLAN_DOCUMENT_HAS_NEWER");
+        if (row.DocumentType == ProducerAttestation && (await CurrentAttestationsAsync(customerId, row.CropYear, ct)).Count > 0)
+            throw new BusinessException(
+                $"{row.CropYear} has a newer producer attestation. Archive that one first to restore this one.",
+                "FIELD_PLAN_DOCUMENT_HAS_NEWER");
         SetStatus(row, FieldPlanDocument.Current, null);
+        row.ReplacedByDocStoreId = null;
         await _repository.SaveChangesAsync(ct);
         Audit("AUDIT_RESTORE", row.DocumentType, row.DocStoreId, customerId);
         return ToResponse(row);

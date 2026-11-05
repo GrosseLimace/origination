@@ -87,18 +87,34 @@ describe('FdCicDocumentsDialogComponent', () => {
     expect(dialog.visibleSections().map(s => s.type)).toEqual(['MassBalanceLedger']);
   });
 
-  it('should upload a signed attestation for the producer and year and show it', async () => {
+  it('should upload a signed attestation for the year, replacing the current one, which goes to the version history as archived', async () => {
+    fixture.detectChanges();
+    expect(el().querySelector('[data-testid="attestation-replaces"]')!.textContent).toContain('This replaces attestation.pdf as the 2026 attestation');
     const file = new File(['%PDF-1.7'], 'signed.pdf', { type: 'application/pdf' });
-    const saved = doc({ id: 'a2', fileName: 'signed.pdf', documentType: 'ProducerAttestation' });
+    const saved = doc({ id: 'a2', fileName: 'signed.pdf', documentType: 'ProducerAttestation', uploadedAt: '2026-11-05T16:00:00Z' });
     service.upload.mockResolvedValue(saved);
     dialog.chosen.set(file);
 
     await dialog.upload();
 
     expect(service.upload).toHaveBeenCalledWith(260843, 2026, 'ProducerAttestation', file);
-    expect(ids(section('ProducerAttestation').docs)).toEqual(['a2', 'a1']);
+    expect(ids(section('ProducerAttestation').docs)).toEqual(['a2']);
+    const old = dialog.history().find(d => d.id === 'a1')!;
+    expect([old.status, old.replacedById, old.statusNote]).toEqual(['Archived', 'a2', 'Replaced by a newer producer attestation.']);
     expect(dialog.chosen()).toBeNull();
-    expect(toast.success).toHaveBeenCalled();
+    expect(toast.success).toHaveBeenCalledWith('signed.pdf saved to Doc Store. The previous attestation is archived in Version history.');
+  });
+
+  it('should add another supporting document without replacing anything', async () => {
+    dialog.uploadType.set('Other');
+    expect(dialog.replacedAttestation()).toBeNull();
+    service.upload.mockResolvedValue(doc({ id: 'o1', fileName: 'map.pdf' }));
+    dialog.chosen.set(new File(['%PDF-1.7'], 'map.pdf'));
+
+    await dialog.upload();
+
+    expect(ids(section('Other').docs)).toEqual(['o1']);
+    expect(ids(section('ProducerAttestation').docs)).toEqual(['a1']);
   });
 
   it('should show the server\'s reason when an upload is refused, and keep the file chosen', async () => {
