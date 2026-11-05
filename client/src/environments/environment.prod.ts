@@ -54,14 +54,14 @@ export const environment = {
   // app but silently fails to create the Outlook event, which is worse than the feature being
   // absent: the user believes they have been reminded.
   remindersEnabled: true,
-  // 45Z field data + carbon intensity: prototype only, not released here.
-  carbonIntensityEnabled: false,
-  // Plan by field: prototype only, not released here.
-  fieldPlanningEnabled: false,
+  // 45Z field data + carbon intensity: on (45Z go-live). Scores come from the USDA FD-CIC and T-DISC APIs (api/fd-cic, api/tdisc).
+  carbonIntensityEnabled: true,
+  // Plan by field: on (45Z go-live).
+  fieldPlanningEnabled: true,
   // Where the field plan is kept: 'memory' (in the browser; a reload starts over) or 'api' (api/field-plan,
   // the database). 'memory' until this environment's deploy has created the field-plan tables, then 'api'.
   // Split IDs are typed by hand until CTRM's splits query is live (SPLITS-GRAPHQL). See docs/application-context/Field Plan - Database Plan.md.
-  fieldPlanBackend: 'memory' as 'memory' | 'api',
+  fieldPlanBackend: 'api' as 'memory' | 'api',
   // Trade Unit Preferences app (users manage their own trade-unit / group assignments there;
   // this app only reads the result). Opened from the profile menu in a popup window.
   tradeUnitPreferencesUrl: 'https://tradeunitprefs.scoular.com/my-preferences',
