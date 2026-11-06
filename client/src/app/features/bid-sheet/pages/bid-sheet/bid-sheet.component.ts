@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, effect, HostListener, inject, signal, computed, viewChild, ElementRef, isDevMode } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, effect, HostListener, inject, signal, computed, viewChild, ElementRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -16,6 +16,7 @@ import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
+import { HandledErrorReporter } from '@core/services/handled-error-reporter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { BidSheet, BidSheetEntry, BidSheetLayoutUpdate, BidSheetLocation, BidSheetLocationBid, BidSheetShare, BidSheetShareType, Elevator, Commodity } from '@models';
 import type { EntitlementPerson, EntitlementTradeUnit, EntitlementTradeUnitGroup } from '@features/daily-digest/models/entitlements-catalog.model';
@@ -126,6 +127,7 @@ export class BidSheetComponent {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
   private readonly toastService = inject(ToastService);
+  private readonly handledErrors = inject(HandledErrorReporter);
   private readonly usageTracking = inject(UsageTrackingService);
 
   // --- Filters ---
@@ -1693,7 +1695,7 @@ export class BidSheetComponent {
       },
       error: (err) => {
         this.sheetsLoaded.set(true);
-        if (isDevMode()) console.error('[BidSheet] failed to load sheets', err);
+        this.handledErrors.report('[BidSheet] failed to load sheets', err);
         if (!alreadyShown(err)) this.toastService.error('Failed to load bid sheets');
       }
     });
@@ -1850,7 +1852,7 @@ export class BidSheetComponent {
       tradeUnitKey: BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear,
       selectedBidSheetIds: JSON.stringify(ids)
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      error: (err) => { if (isDevMode()) console.warn('Failed to save the open bid sheets', err); }
+      error: (err) => { this.handledErrors.report('Failed to save the open bid sheets', err); }
     });
   }
 
@@ -2212,7 +2214,7 @@ export class BidSheetComponent {
           this._loadSheets(BidSheetComponent.parseSheetIds(pref?.selectedBidSheetIds));
         },
         // A failed preference load must not block the screen from showing sheets at all.
-        error: (err) => { if (isDevMode()) console.warn('Failed to load bid sheet preference', err); this._loadSheets([]); }
+        error: (err) => { this.handledErrors.report('Failed to load bid sheet preference', err); this._loadSheets([]); }
       });
   }
 
@@ -2226,7 +2228,7 @@ export class BidSheetComponent {
     const priceMode = this.priceMode();
     this.apiService.setBidSheetPreference({ tradeUnitKey: BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear, priceMode })
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save bid sheet preference', err); } });
+      .subscribe({ error: (err) => { this.handledErrors.report('Failed to save bid sheet preference', err); } });
   }
 
   /** Pixel width of the side panel when open. */
@@ -2872,7 +2874,7 @@ export class BidSheetComponent {
         // optimistic update above just resolves to the same row.
         this.apiService.addBidSheetLocation(sheetId, saved.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
           next: (sheet) => this._applySheet(sheet),
-          error: (err) => { if (isDevMode()) console.warn('Failed to link the new location to the sheet', err); }
+          error: (err) => { this.handledErrors.report('Failed to link the new location to the sheet', err); }
         });
 
         // Sync map/panel with the server in the background. Pass NO onLoaded callback: the grid is
@@ -2883,7 +2885,7 @@ export class BidSheetComponent {
       },
       error: (err) => {
         this.addLocationSaving.set(false);
-        if (isDevMode()) console.error('[BidSheet] add location failed', err);
+        this.handledErrors.report('[BidSheet] add location failed', err);
         if (!alreadyShown(err)) this.toastService.error(this._errorToast(err, "Failed to add location"));
       }
     });
@@ -3026,7 +3028,7 @@ export class BidSheetComponent {
           this.catalogLocations.set(rows);
           this._renderCatalogMarkers();
         },
-        error: (err) => { if (isDevMode()) console.warn('Failed to load the BarChart catalog for this view', err); }
+        error: (err) => { this.handledErrors.report('Failed to load the BarChart catalog for this view', err); }
       });
       return;
     }
@@ -3044,7 +3046,7 @@ export class BidSheetComponent {
             this.catalogLocations.set(rows);
             this._renderCatalogMarkers();
           },
-          error: (err) => { if (isDevMode()) console.warn('Failed to load the BarChart catalog for this view', err); }
+          error: (err) => { this.handledErrors.report('Failed to load the BarChart catalog for this view', err); }
         });
       return;
     }
@@ -3057,7 +3059,7 @@ export class BidSheetComponent {
           this.catalogLocations.set(rows);
           this._renderCatalogMarkers();
         },
-        error: (err) => { if (isDevMode()) console.warn('Failed to load the BarChart catalog for this view', err); }
+        error: (err) => { this.handledErrors.report('Failed to load the BarChart catalog for this view', err); }
       });
       return;
     }
@@ -3073,7 +3075,7 @@ export class BidSheetComponent {
         }));
         this._renderCatalogMarkers();
       },
-      error: (err) => { if (isDevMode()) console.warn('Failed to load the BarChart catalog for this view', err); }
+      error: (err) => { this.handledErrors.report('Failed to load the BarChart catalog for this view', err); }
     });
   }
 
@@ -3278,7 +3280,7 @@ export class BidSheetComponent {
           shown: false
         })),
         catchError((err: unknown) => {
-          if (isDevMode()) console.error('[BidSheet] failed to add location to sheet', err);
+          this.handledErrors.report('[BidSheet] failed to add location to sheet', err);
           return of({ sheet: null as BidSheet | null, location: null as BidSheetLocation | null, duplicate: false, failed: true, shown: alreadyShown(err) });
         })
       );
@@ -3295,7 +3297,7 @@ export class BidSheetComponent {
             switchMap(created => linkToSheet(created.id)),
             catchError((err: unknown) => {
               const duplicate = (err as { status?: number })?.status === 400;
-              if (!duplicate && isDevMode()) console.error('[BidSheet] barchart create failed', err);
+              if (!duplicate) this.handledErrors.report('[BidSheet] barchart create failed', err);
               return of({ sheet: null as BidSheet | null, location: null as BidSheetLocation | null, duplicate, failed: !duplicate, shown: alreadyShown(err) });
             })
           ));
@@ -3346,7 +3348,7 @@ export class BidSheetComponent {
       this._loadAllMapLocations();
       this.apiService.getBidSheet(sheetId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (sheet) => this._applySheet(sheet),
-        error: (err) => { if (isDevMode()) console.warn('Failed to refresh the sheet after a batch add', err); }
+        error: (err) => { this.handledErrors.report('Failed to refresh the sheet after a batch add', err); }
       });
     });
   }
@@ -3629,7 +3631,7 @@ export class BidSheetComponent {
     const payload = BidSheetComponent.serialiseSelectedColumns(this.selectedColumns());
     this.apiService.setBidSheetPreference({ ...this._panelPrefFields(key), selectedColumns: payload })
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save selected columns', err); } });
+      .subscribe({ error: (err) => { this.handledErrors.report('Failed to save selected columns', err); } });
   }
 
   /**
@@ -3820,7 +3822,7 @@ export class BidSheetComponent {
           this._autoSaving = false;
           this._autoSaveRerun = false;
           this._pendingOnDone = null;
-          if (isDevMode()) console.error('[BidSheet] auto-save bids failed', err);
+          this.handledErrors.report('[BidSheet] auto-save bids failed', err);
           if (!alreadyShown(err)) this.toastService.error(this._errorToast(err, "Failed to save bids"));
           // Deliberately NOT calling onDone — preserves the edit and aborts any pending navigation.
         }
@@ -3988,7 +3990,7 @@ export class BidSheetComponent {
         },
         error: (err) => {
           this.editBidsSaving.set(false);
-          if (isDevMode()) console.error('[BidSheet] save bids failed', err);
+          this.handledErrors.report('[BidSheet] save bids failed', err);
           if (!alreadyShown(err)) this.toastService.error(this._errorToast(err, "Failed to save bids"));
         }
       });
@@ -4321,7 +4323,7 @@ export class BidSheetComponent {
       this.usageTracking.postClickEvent('interaction', 'bidsheet', 'exported-excel');
       this.toastService.success(`Exported "${sheetName}"`);
     } catch (err) {
-      if (isDevMode()) console.error('[BidSheet] export failed', err);
+      this.handledErrors.report('[BidSheet] export failed', err);
       this.toastService.error('Failed to export the bid sheet');
     } finally {
       this.exporting.set(false);
@@ -4348,7 +4350,7 @@ export class BidSheetComponent {
     const cropYear = this.selectedYear() || null;
     this.apiService.setBidSheetPreference({ tradeUnitKey: this.preferenceKey(), cropCode, month, cropYear, printLayout: layout })
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save print layout', err); } });
+      .subscribe({ error: (err) => { this.handledErrors.report('Failed to save print layout', err); } });
   }
 
   closePrintDialog(): void {
@@ -5751,7 +5753,7 @@ export class BidSheetComponent {
 
         this.apiService.addBidSheetLocation(sheetId, saved.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
           next: (sheet) => this._applySheet(sheet),
-          error: (err) => { if (isDevMode()) console.warn('Failed to link the new location to the sheet', err); }
+          error: (err) => { this.handledErrors.report('Failed to link the new location to the sheet', err); }
         });
         this._loadAllMapLocations();
         this._loadCatalogLocations(); // drops it from the catalog layer now that it has a placement

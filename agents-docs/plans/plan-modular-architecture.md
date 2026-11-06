@@ -317,7 +317,7 @@ services.AddOptions<AuthorizationOptions>().PostConfigure(options =>
 
 - **Test:** every `Permission:*` policy contains every requirement of the default policy, so a permission policy can never be weaker than the default (eTMS has the same test). The test changes the default policy after `AddAccess` to prove the copy happens last.
 - **Test:** every `[RequirePermission]` names a catalog permission. One that doesn't has no policy, and its endpoint would fail with a 500 on first use.
-- **The 403.** A missing permission gets the standard error envelope with code `AUTHZ_PERMISSION_DENIED` and each missing permission in `details`, never the permissions the caller holds (style guide §7.1). `AuthorizationAuditResultHandler`, which already logs every framework denial, writes it and logs `AUTHZ_PERMISSION_DENIED` with the permissions. Other 403s keep the framework's empty body and the `ACCESS_DENIED` log.
+- **The 403.** A missing permission gets the standard error envelope with code `AUTHZ_PERMISSION_DENIED` and each missing permission in `details`, never the permissions the caller holds (style guide §7.1). `AuthorizationAuditResultHandler`, which already logs every framework denial, writes it and logs `AUTHZ_PERMISSION_DENIED` with the permissions. Any other refusal gets the same envelope with `AUTH_REQUIRED` (401) or `ACCESS_DENIED` (403), which main added on 2026-11-05, and that code in the log.
 - **Wrong person.** The handler refuses if it is asked about any principal other than the request's caller, because `IPermissionService` only answers for the caller.
 
 ```csharp

@@ -61,20 +61,6 @@ public class ControllerAuthorizationTests
         yield return new object[] { typeof(WhatsNewController) };
     }
 
-    [Fact]
-    public void TheListAbove_CoversEveryController()
-    {
-        // The checks below only see controllers in the list, and controllers now live in more than one folder.
-        var listed = AllControllerTypes().Select(row => (Type)row[0]).ToHashSet();
-        var missing = typeof(MeController).Assembly.GetTypes()
-            .Where(t => t is { IsClass: true, IsAbstract: false } && typeof(ControllerBase).IsAssignableFrom(t))
-            .Where(t => !listed.Contains(t))
-            .Select(t => t.FullName)
-            .ToArray();
-
-        Assert.True(missing.Length == 0, $"Add to AllControllerTypes: {string.Join(", ", missing)}");
-    }
-
     [Theory]
     [MemberData(nameof(AllControllerTypes))]
     public void Controller_HasAuthorizeAttribute(Type controllerType)
@@ -90,6 +76,28 @@ public class ControllerAuthorizationTests
     {
         Assert.True(typeof(ControllerBase).IsAssignableFrom(controllerType),
             $"{controllerType.Name} must inherit from ControllerBase.");
+    }
+
+    /// <summary>
+    /// The list above is kept by hand, and four controllers (ClientTelemetry, Help, TDisc,
+    /// TeamsChannels) went unchecked because nobody added them (audit 2026-11-05). There is no
+    /// fallback require-authenticated policy, so a controller missing from the list would go public
+    /// silently if its [Authorize] were dropped. This fails the build the moment a new controller
+    /// appears in the API assembly without being added above.
+    /// </summary>
+    [Fact]
+    public void EveryControllerInTheApi_IsCoveredByTheAuthorizeCheck()
+    {
+        var listed = AllControllerTypes().Select(row => (Type)row[0]).ToHashSet();
+        var unlisted = typeof(BarchartController).Assembly.GetTypes()
+            .Where(t => t is { IsClass: true, IsAbstract: false } && typeof(ControllerBase).IsAssignableFrom(t))
+            .Where(t => !listed.Contains(t))
+            .Select(t => t.Name)
+            .OrderBy(n => n)
+            .ToList();
+
+        Assert.True(unlisted.Count == 0,
+            "Add these controllers to AllControllerTypes(): " + string.Join(", ", unlisted));
     }
 
     /// <summary>

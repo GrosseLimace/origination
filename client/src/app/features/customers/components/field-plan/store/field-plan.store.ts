@@ -58,9 +58,14 @@ export class FieldPlanStore {
   private readonly registry = inject(ProgramRegistry);
   private readonly toast = inject(ToastService);
 
-  readonly fields = signal<ProducerField[]>([]);
-  readonly seasons = signal<FieldSeason[]>([]);
-  readonly records = signal<FieldProgramRecord[]>([]);
+  // Written only here; everything outside reads the readonly views (audit 2026-11-05), so no component
+  // can change the store's data without going through a method that also saves it.
+  private readonly _fields = signal<ProducerField[]>([]);
+  private readonly _seasons = signal<FieldSeason[]>([]);
+  private readonly _records = signal<FieldProgramRecord[]>([]);
+  readonly fields = this._fields.asReadonly();
+  readonly seasons = this._seasons.asReadonly();
+  readonly records = this._records.asReadonly();
 
   private readonly _load = signal<ReadonlyMap<number, LoadState>>(new Map());
   private readonly _loadRequest = new Map<number, number>();
@@ -162,7 +167,7 @@ export class FieldPlanStore {
   updateField(field: ProducerField): void {
     if (!this.field(field.fieldKey)) return;
     const next = { ...field };
-    this.fields.update(fs => fs.map(f => (f.fieldKey === next.fieldKey ? next : f)));
+    this._fields.update(fs => fs.map(f => (f.fieldKey === next.fieldKey ? next : f)));
     this.queue(`field:${next.fieldKey}`, next.customerId, () => this.backend.updateField(this.field(next.fieldKey) ?? next));
   }
 
@@ -171,7 +176,7 @@ export class FieldPlanStore {
     const customerId = this.customerOfSeason(season.id);
     if (customerId === undefined || this.hasLocked(season.id)) return;
     const next = { ...season };
-    this.seasons.update(ss => ss.map(s => (s.id === next.id ? next : s)));
+    this._seasons.update(ss => ss.map(s => (s.id === next.id ? next : s)));
     this.queue(`season:${next.id}`, customerId, () => this.backend.updateSeason(this.season(next.id) ?? next));
   }
 
@@ -183,7 +188,7 @@ export class FieldPlanStore {
     if (!current || !season || customerId === undefined || current.status === 'Locked') return;
     const next: FieldProgramRecord = { ...current, data };
     next.status = this.statusOf(next, season);
-    this.records.update(rs => rs.map(r => (r.id === id ? next : r)));
+    this._records.update(rs => rs.map(r => (r.id === id ? next : r)));
     this.queue(`record:${id}`, customerId, () => {
       const latest = this.record(id) ?? next;
       return this.backend.updateRecord(id, latest.data, latest.status);
@@ -207,7 +212,7 @@ export class FieldPlanStore {
     if (existing?.customerId === field.customerId) return existing;
     return this.write('add the field', async () => {
       const created = await this.backend.createField(field);
-      this.fields.update(fs => [...fs.filter(f => f.fieldKey !== created.fieldKey), created]);
+      this._fields.update(fs => [...fs.filter(f => f.fieldKey !== created.fieldKey), created]);
       return created;
     });
   }
@@ -216,7 +221,7 @@ export class FieldPlanStore {
   async addSeason(fieldKey: string, intentionId: number, year: number, cropLabel: string, acres: number): Promise<FieldSeason | undefined> {
     return this.write('add the field to this crop', async () => {
       const created = await this.backend.addSeason({ fieldKey, plantingIntentionId: intentionId, year, cropLabel, acres });
-      this.seasons.update(ss => [...ss, created]);
+      this._seasons.update(ss => [...ss, created]);
       return created;
     });
   }
@@ -226,8 +231,8 @@ export class FieldPlanStore {
     if (this.hasLocked(seasonId)) return false;
     return (await this.write('remove the field', async () => {
       await this.backend.removeSeason(seasonId);
-      this.records.update(rs => rs.filter(r => r.seasonId !== seasonId));
-      this.seasons.update(ss => ss.filter(s => s.id !== seasonId));
+      this._records.update(rs => rs.filter(r => r.seasonId !== seasonId));
+      this._seasons.update(ss => ss.filter(s => s.id !== seasonId));
       return true;
     })) ?? false;
   }
@@ -263,7 +268,7 @@ export class FieldPlanStore {
 
     return this.write('add the program', async () => {
       const record = await this.backend.addRecord(draft);
-      this.records.update(rs => [...rs.filter(r => r.id !== record.id), record]);
+      this._records.update(rs => [...rs.filter(r => r.id !== record.id), record]);
       return record;
     });
   }
@@ -274,7 +279,7 @@ export class FieldPlanStore {
     if (!current || current.status === 'Locked') return;
     await this.write('remove the program', async () => {
       await this.backend.removeRecord(id);
-      this.records.update(rs => rs.filter(r => r.id !== id));
+      this._records.update(rs => rs.filter(r => r.id !== id));
     });
   }
 
@@ -442,15 +447,15 @@ export class FieldPlanStore {
   }
 
   private putRecord(record: FieldProgramRecord): void {
-    this.records.update(rs => rs.map(r => (r.id === record.id ? record : r)));
+    this._records.update(rs => rs.map(r => (r.id === record.id ? record : r)));
   }
 
   private replaceCustomer(customerId: number, snapshot: FieldPlanSnapshot): void {
     const keys = new Set(this.fields().filter(f => f.customerId === customerId).map(f => f.fieldKey));
     const seasonIds = new Set(this.seasons().filter(s => keys.has(s.fieldKey)).map(s => s.id));
-    this.fields.update(fs => [...fs.filter(f => f.customerId !== customerId), ...snapshot.fields]);
-    this.seasons.update(ss => [...ss.filter(s => !keys.has(s.fieldKey)), ...snapshot.seasons]);
-    this.records.update(rs => [...rs.filter(r => !seasonIds.has(r.seasonId)), ...snapshot.records]);
+    this._fields.update(fs => [...fs.filter(f => f.customerId !== customerId), ...snapshot.fields]);
+    this._seasons.update(ss => [...ss.filter(s => !keys.has(s.fieldKey)), ...snapshot.seasons]);
+    this._records.update(rs => [...rs.filter(r => !seasonIds.has(r.seasonId)), ...snapshot.records]);
   }
 
   private setLoad(customerId: number, state: LoadState): void {

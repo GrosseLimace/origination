@@ -3,33 +3,50 @@
 Style guide: `style-guides/sql.md`
 Scope: `api/GrainOriginatorPortal.Api/Scripts`, `api/GrainOriginatorPortal.Infrastructure/Data` (migrations, `ApplicationDbContext`, repositories), `scripts/`, `SECURITY-REVIEWS/scripts/`
 
-**Findings:** 19 total — 0 open, 6 accepted, 1 won't-fix, 12 resolved
-**Opened:** 2026-09-19 | **Last verified:** 2026-10-20
+**Findings:** 22 total — 3 open, 6 accepted, 1 won't-fix, 12 resolved
+**Opened:** 2026-09-19 | **Last verified:** 2026-11-05
 
 ## What was checked this pass
 
-This pass found **no new migrations since 2026-10-13** (`20261013163045_RestrictCustomerTradeUnitDeleteAndValidateCustomerFks` is still the newest file on disk), so the schema surface is unchanged from the last reconciliation. The actual work this pass was discovering and fixing a **drift between `AUDIT-TRACKING.json` and this file**: the JSON already recorded five findings as `resolved`/`accepted` (with dates and resolution notes from 2026-10-13/14), but this markdown's `## Open` section still listed all five as open, unchanged since the 2026-09-28 pass. That made the file self-contradictory — the header said "Last verified: 2026-10-13" while the body described a pre-fix world.
+The schema surface **did move** since the last reconciliation (2026-10-13/2026-10-20): five new migrations have landed —
+`20261020171105_ConvertYearlyBidsToFuturesMonth`, `20261022142931_ExcludeNotesWithoutTradeUnitFromRecap`,
+`20261029193914_AddFieldPlanTables`, `20261103215107_DropProgramEnrollment`, and
+`20261103220955_AddFieldSeasonUniqueRow` (the field-plan feature: `ProducerField`, `ProgramEnrollment` created
+then dropped the same week, `ProducerFieldSeason`, `FieldProgramRecord`). Read each in full:
 
-Re-verified all five directly against the current working tree (not just trusting the JSON):
+- `AddFieldPlanTables` — all four new tables have explicit PKs, FK-column indexes (`IX_ProducerField_CustomerId`,
+  `IX_ProducerFieldSeason_PlantingIntentionId`, `IX_ProducerFieldSeason_ProducerFieldId`), and a filtered unique
+  index (`UQ_FieldProgramRecord_Season_Program ... WHERE IsDeleted = 0`) consistent with the codebase's existing
+  soft-delete pattern. No issues.
+- `DropProgramEnrollment` / `AddFieldSeasonUniqueRow` — clean, well-commented, reversible (or explicitly and
+  justifiably not). No issues.
+- `ConvertYearlyBidsToFuturesMonth` — a data-only migration with unusually thorough production-measurement
+  commentary; each `UPDATE`/`DELETE` is naturally idempotent (its own `WHERE` becomes false after the first run).
+  No issues.
 
-- **`sql.customertradeunit-cascade-delete-breaks-pattern`** — confirmed `ApplicationDbContextModelSnapshot.cs` and migration `20261013163045` show the `CustomerTradeUnit`→`Customer` FK re-added without a cascade override (default `NoAction`), matching every sibling FK to `Customer`. Resolved, confirmed.
-- **`sql.nocheck-foreign-keys-never-revalidated`** — confirmed migration `20261013163045` contains the `WITH CHECK CHECK CONSTRAINT` statements for all three previously-untrusted FKs (`Notes`, `ProducerDetails`, `ProducerPlantingIntentions`). Resolved, confirmed.
-- **`sql.ambiguous-displayname-join-createdby-backfill`** — read `SECURITY-REVIEWS/scripts/B4_migrate_createdby.sql` in full; every `CreatedBy`/`ModifiedBy` join now carries the `GROUP BY ... HAVING COUNT(DISTINCT UserId) = 1` guard, across all nine table joins (Notes, ProducerPlantingIntentions, ProducerDetails, SavedLists, three Dashboard* tables, two BidSheet* tables). Resolved, confirmed.
-- **`sql.fromsqlraw-interpolated-string`** — read `CustomerRepository.cs` in full; `BuildSearchSql`/`BuildOdsSearchSql` are the only place the WHERE text is assembled, and only fixed fragments plus generated parameter names (`@w{i}`, `@d{i}`, `@tradeUnits`) are interpolated — every typed value is a `SqlParameter` built via `SqlSanitization.SanitizeCsv`'s allow-list regex. Resolved, confirmed.
-- **`sql.hardcoded-location-data-duplicated`** — no change to `PopulateMbpLocationSynonym.sql` since the 2026-10-14 acceptance. Accepted, confirmed (was mis-listed as Open).
+Also re-sampled (not previously covered in this depth) the raw-SQL repository seam beyond `CustomerRepository`:
+`ContractRepository`, `TicketRepository` `FromSqlInterpolated` call sites — confirmed the same safe pattern
+(only fixed fragments, generated parameter names, and `SanitizeCsv`/`SanitizeIdentifierCsv`-sanitized CSVs are
+interpolated; every caller-typed value still travels as a parameter). No new injection-shaped findings.
 
-Also independently re-derived, from a fresh read rather than relying on the tracker:
+Three new, non-security findings opened this pass (see Open below) from a closer read of the EF model snapshot:
+a function-on-indexed-column performance smell in the ODS onboarding dedupe, a naming/type standards violation
+on `ESignEnrollment`'s GUID column, and a cross-table type inconsistency for latitude/longitude. None are
+regressions — all three predate this week's migrations and were simply not caught in prior passes.
 
-- Every FK-bearing table sampled (`CustomerTradeUnit`, `ProducerPlantingIntentions`, `Notes`, `ProducerDetails`) has a supporting index on its FK column(s) in the current model snapshot.
-- `CustomerRepository`, `ContractRepository`, `TicketRepository`, `UsageRepository` raw-SQL call sites (`FromSqlRaw`, `FromSqlInterpolated`, `ExecuteSqlRawAsync`) all parameterize caller-controlled values correctly; the only interpolated text is fixed SQL fragments, generated parameter names, or `OdsConstants`/private-const values that never carry user input.
-- Sampled ops scripts (`CheckCustomerFkOrphans.sql`, `Drop-BidSheetPreGlobalSnapshots.sql`, `Restore-ElapsedBidMonths.sql`, `planting-intentions-trade-unit-audit.sql`) are read-only or guarded by `@DryRun`/idempotency checks, with no new issues.
-- Did not inspect a live database (Dev/QA/Prod) this pass either — same blind spot as every prior pass.
-
-No new findings were opened this pass.
+Did not inspect a live database (Dev/QA/Prod) this pass — same blind spot as every prior pass.
 
 ## Open
 
-None. All previously-open findings are either resolved or accepted (see below) as of 2026-10-13/14, confirmed again 2026-10-20.
+- **`sql.scoularid-trim-defeats-index-seek`** (medium) — `CustomerRepository.SearchOdsAsync` wraps the indexed
+  `Customer.ScoularId` column in `.Trim()` inside a LINQ predicate, which the style guide flags as an anti-pattern
+  (function on an indexed column defeats the seek). Candidate set is bounded today (one page of onboarding
+  search results), so this is standards drift with headroom risk rather than a confirmed live slow query.
+- **`sql.esignenrollment-guid-column-not-uniqueidentifier`** (low) — `ESignEnrollment`'s GUID-shaped column is
+  `nvarchar(255)` named `GUID` (CLR property `Guild`, likely a typo), and `eSignEnabled` breaks PascalCase
+  column naming. Cosmetic/standards drift, not a correctness issue.
+- **`sql.latlong-type-inconsistent-across-tables`** (low) — `BarchartInstrument.Latitude/Longitude` are `float`
+  while `ProducerBinSite.Latitude/Longitude` are `decimal(18,15)`; no documented reason for the divergence.
 
 ## Accepted (real, deliberately not fixed — see `docs/application-context/STYLE-DEVIATIONS.md`)
 

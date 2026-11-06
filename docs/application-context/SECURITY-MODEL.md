@@ -119,8 +119,8 @@ There is no role check anywhere in code: no `RequireRole`, no `IsInRole`, and no
 
 - **A missing permission** gets a 403 with code `AUTHZ_PERMISSION_DENIED`. Its `details` name each
   missing permission, never what the caller holds. `AuthorizationAuditResultHandler` writes the
-  response and logs the same code with the permissions. Other 403s keep the empty body and the
-  `ACCESS_DENIED` log.
+  response and logs the same code with the permissions. Any other refusal gets the same envelope
+  with code `AUTH_REQUIRED` (401) or `ACCESS_DENIED` (403), and that code in the log.
 - **The grants fail closed.** Each instance caches every role's grants for about five minutes, with
   a last-known-good copy. With no copy at all, a permission check returns
   **503 `ACCESS_GRANTS_UNAVAILABLE`**, as do `/api/me/permissions` and the access map. An

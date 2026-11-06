@@ -1074,7 +1074,7 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-28",
+      "last_verified": "2026-11-05",
       "notes": "[2026-09-21] Re-verified: CorrelationIdMiddleware.IsWellFormed() now rejects anything over 64 chars or outside [A-Za-z0-9-_.:], falling back to Activity.TraceId or a fresh GUID. Fixed on branch fix_AuditPhase1Findings, merged to main 2026-09-21 via PR #615. Still resolved.\n[2026-09-28] Re-verified during weekly reconciliation pass: unchanged. Also reviewed the new CTRM GraphQL integration (Services/Ctrm, Infrastructure/Ctrm) merged since the last pass; findings from that review recorded separately."
     },
     {
@@ -1098,7 +1098,7 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
+      "last_verified": "2026-11-05",
       "notes": "[2026-09-21] Re-verified: client/package.json still has no @microsoft/applicationinsights-* dependency, no app-insights.service.ts exists anywhere under client/src, and ErrorHandler is still bound to GlobalErrorHandler (console-only in dev, silent in prod). Still the audit's only open critical; unchanged since 2026-09-19. Needs the same decision as before: implement client App Insights, or amend developer-docs/CLAUDE.md to stop mandating it.\n[2026-09-28] Re-verified during weekly reconciliation pass: unchanged. Also reviewed the new CTRM GraphQL integration (Services/Ctrm, Infrastructure/Ctrm) merged since the last pass; findings from that review recorded separately.\n[2026-10-13] Re-verified during logging reconciliation pass (release_2026-10-13 merge: Bin Sites & Grain on Farm, Usage Dashboard manager-for-all, CTRM trade-unit contract read made default). Unchanged. Also reviewed the new BarchartIngestService/BarchartIngestController subsystem and the new LogSanitizer middleware (added to fix a QA-flagged CWE-117 log-forging finding via CRLF-stripping on request-supplied values before they reach RequestContextMiddleware/SecurityAuditMiddleware) — both are well-instrumented per the style guide (structured DurationMs-equivalent fields, payload size logged instead of payload body, audit table for vendor-call accounting, sanitized inputs) and introduced no new logging gaps.",
       "resolved_in": {
         "date": "2026-10-13",
@@ -1124,7 +1124,7 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
+      "last_verified": "2026-11-05",
       "notes": "[2026-09-21] Re-verified: main.ts:117-121 catch still gates console.error behind 'if (!environment.production)', so a prod bootstrap failure still produces zero diagnostic trail (blank page, nothing in console, nothing in telemetry since none exists). Unchanged since 2026-09-19; still blocked on the same decision as logging.client-side-telemetry-missing.\n[2026-09-28] Re-verified during weekly reconciliation pass: unchanged. Also reviewed the new CTRM GraphQL integration (Services/Ctrm, Infrastructure/Ctrm) merged since the last pass; findings from that review recorded separately.\n[2026-10-13] Re-verified during logging reconciliation pass (release_2026-10-13 merge: Bin Sites & Grain on Farm, Usage Dashboard manager-for-all, CTRM trade-unit contract read made default). Unchanged. Also reviewed the new BarchartIngestService/BarchartIngestController subsystem and the new LogSanitizer middleware (added to fix a QA-flagged CWE-117 log-forging finding via CRLF-stripping on request-supplied values before they reach RequestContextMiddleware/SecurityAuditMiddleware) — both are well-instrumented per the style guide (structured DurationMs-equivalent fields, payload size logged instead of payload body, audit table for vendor-call accounting, sanitized inputs) and introduced no new logging gaps.",
       "resolved_in": {
         "date": "2026-10-13",
@@ -1148,7 +1148,7 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
+      "last_verified": "2026-11-05",
       "notes": "[2026-09-21] Re-verified: GrainOriginatorPortal.Api.csproj and Program.cs still have no Application Insights, OpenTelemetry, or Serilog package reference. Codeless attach remains the documented, deliberate choice (developer-docs/CLAUDE.md); whether BeginScope fields actually surface as Log Analytics custom dimensions is still an unverified KQL check, not a code defect. Recorded in STYLE-DEVIATIONS.md. Unchanged, still accepted.\n[2026-09-28] Re-verified during weekly reconciliation pass: unchanged. Also reviewed the new CTRM GraphQL integration (Services/Ctrm, Infrastructure/Ctrm) merged since the last pass; findings from that review recorded separately.\n[2026-10-13] Re-verified during logging reconciliation pass (release_2026-10-13 merge: Bin Sites & Grain on Farm, Usage Dashboard manager-for-all, CTRM trade-unit contract read made default). Unchanged. Also reviewed the new BarchartIngestService/BarchartIngestController subsystem and the new LogSanitizer middleware (added to fix a QA-flagged CWE-117 log-forging finding via CRLF-stripping on request-supplied values before they reach RequestContextMiddleware/SecurityAuditMiddleware) — both are well-instrumented per the style guide (structured DurationMs-equivalent fields, payload size logged instead of payload body, audit table for vendor-call accounting, sanitized inputs) and introduced no new logging gaps."
     },
     {
@@ -1166,7 +1166,7 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-09-28",
+      "last_verified": "2026-11-05",
       "notes": "[2026-09-21] Re-verified: ApiService.handleError (api.service.ts:117-118) now reads errObj.traceId and attaches it to the thrown Error. Fixed on branch fix_AuditPhase1Findings, merged to main 2026-09-21 via PR #615. Still resolved.\n[2026-09-28] Re-verified during weekly reconciliation pass: unchanged. Also reviewed the new CTRM GraphQL integration (Services/Ctrm, Infrastructure/Ctrm) merged since the last pass; findings from that review recorded separately."
     },
     {
@@ -1183,7 +1183,7 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
+      "last_verified": "2026-11-05",
       "notes": "[2026-09-21] Re-verified: developer-docs/START-HERE.md still only mentions generic platform-level Smart Detection; no file documents an app-specific sampling percentage, saved KQL queries, a dashboard/workbook, or alert-to-on-call mapping. Unchanged since 2026-09-19, still outstanding.\n[2026-09-28] Re-verified during weekly reconciliation pass: unchanged. Also reviewed the new CTRM GraphQL integration (Services/Ctrm, Infrastructure/Ctrm) merged since the last pass; findings from that review recorded separately.\n[2026-10-13] Re-verified during logging reconciliation pass (release_2026-10-13 merge: Bin Sites & Grain on Farm, Usage Dashboard manager-for-all, CTRM trade-unit contract read made default). Unchanged. Also reviewed the new BarchartIngestService/BarchartIngestController subsystem and the new LogSanitizer middleware (added to fix a QA-flagged CWE-117 log-forging finding via CRLF-stripping on request-supplied values before they reach RequestContextMiddleware/SecurityAuditMiddleware) — both are well-instrumented per the style guide (structured DurationMs-equivalent fields, payload size logged instead of payload body, audit table for vendor-call accounting, sanitized inputs) and introduced no new logging gaps.",
       "resolved_in": {
         "date": "2026-10-13",
@@ -1207,7 +1207,7 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
+      "last_verified": "2026-11-05",
       "notes": "[2026-09-21] Re-verified and status corrected from resolved to open: CustomerSyncBackgroundService and UsageAggregationBackgroundService now wrap each run in _logger.BeginScope(...RunId...) (fixed via PR #615), but UsageTrackingBackgroundService — one of the three files this finding names — still has no per-run scope; its ExecuteAsync logs (start/stop/batch errors) carry no RunId. The fix was only 2/3 applied.\n[2026-09-21] Re-run reopened this as 2/3 applied. Verified: the third service was skipped on purpose (PR #615) with the reasoning recorded in code. Recorded as accepted rather than open.\n[2026-09-28] Re-verified during weekly reconciliation pass: unchanged. Also reviewed the new CTRM GraphQL integration (Services/Ctrm, Infrastructure/Ctrm) merged since the last pass; findings from that review recorded separately.\n[2026-10-13] Re-verified during logging reconciliation pass (release_2026-10-13 merge: Bin Sites & Grain on Farm, Usage Dashboard manager-for-all, CTRM trade-unit contract read made default). Unchanged. Also reviewed the new BarchartIngestService/BarchartIngestController subsystem and the new LogSanitizer middleware (added to fix a QA-flagged CWE-117 log-forging finding via CRLF-stripping on request-supplied values before they reach RequestContextMiddleware/SecurityAuditMiddleware) — both are well-instrumented per the style guide (structured DurationMs-equivalent fields, payload size logged instead of payload body, audit table for vendor-call accounting, sanitized inputs) and introduced no new logging gaps.",
       "accepted_rationale": "Per-run scope is applied to the two scheduled jobs (CustomerSyncBackgroundService, UsageAggregationBackgroundService). UsageTrackingBackgroundService is deliberately excluded and says so in a comment at the top of ExecuteAsync: it is a continuous 5-second flush loop (~17k iterations/day) that logs nothing but errors, so a per-flush id would add Log Analytics cardinality without answering a question anyone asks; its error lines already carry batch context."
     },
@@ -1225,7 +1225,7 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-13",
+      "last_verified": "2026-11-05",
       "notes": "[2026-09-21] Re-verified: RequestContextMiddleware still resolves preferred_username (UPN) into the UserId scope field on every request. Formally accepted and recorded as AR-09 in SECURITY-REVIEWS/ACCEPTED-RISKS.md (Low, CWE-532, accepted 2026-09-21, review 2027-09-21). Unchanged, still accepted.\n[2026-09-28] Re-verified during weekly reconciliation pass: unchanged. Also reviewed the new CTRM GraphQL integration (Services/Ctrm, Infrastructure/Ctrm) merged since the last pass; findings from that review recorded separately.\n[2026-10-13] Re-verified during logging reconciliation pass (release_2026-10-13 merge: Bin Sites & Grain on Farm, Usage Dashboard manager-for-all, CTRM trade-unit contract read made default). Unchanged. Also reviewed the new BarchartIngestService/BarchartIngestController subsystem and the new LogSanitizer middleware (added to fix a QA-flagged CWE-117 log-forging finding via CRLF-stripping on request-supplied values before they reach RequestContextMiddleware/SecurityAuditMiddleware) — both are well-instrumented per the style guide (structured DurationMs-equivalent fields, payload size logged instead of payload body, audit table for vendor-call accounting, sanitized inputs) and introduced no new logging gaps."
     },
     {
@@ -3040,7 +3040,7 @@
       "opened_in": {
         "date": "2026-09-28"
       },
-      "last_verified": "2026-09-28",
+      "last_verified": "2026-11-05",
       "notes": "[2026-09-28] Found during logging reconciliation while reviewing the CTRM GraphQL integration merged since the 2026-09-21 pass (feature_CtrmGraphQlSpike). Confirmed via grep: ContractsMs/TicketsMs are set in CtrmProvenance.cs and read only in CtrmProvenanceMiddleware.cs (header, non-prod) and DiagnosticsController.cs (manual endpoint) — no _logger call in the Ctrm/ directory references either property.",
       "resolved_in": {
         "date": "2026-09-28",
@@ -3065,13 +3065,46 @@
       "opened_in": {
         "date": "2026-09-28"
       },
-      "last_verified": "2026-09-28",
+      "last_verified": "2026-11-05",
       "notes": "[2026-09-28] Found during logging reconciliation while reviewing the CTRM GraphQL integration. Verified CtrmKeepWarmService.cs has no BeginScope call anywhere in the file, unlike the two background services already fixed for this pattern via PR #615.",
       "resolved_in": {
         "date": "2026-09-28",
         "detected_by": "manual"
       },
       "resolution_notes": "WarmActiveSetsAsync now opens an ILogger scope per cycle carrying ServiceName, Operation (CtrmKeepWarm.Cycle), a fresh TraceId and the set count, matching the fields CustomerSyncBackgroundService and UsageAggregationBackgroundService already use and the fields RequestContextMiddleware puts on HTTP requests. Every warning and the closing summary in a cycle now share one filterable id. Done alongside the keep-warm test work since it is the same method; it was not in the batch originally picked."
+    },
+    {
+      "id": "logging.handled-frontend-errors-bypass-app-insights",
+      "audit": "logging",
+      "severity": "high",
+      "status": "resolved",
+      "title": "Explicitly-caught frontend errors (RxJS subscribe `error:` callbacks, try/catch) never reach Application Insights, only console — and several are console-only in production too",
+      "description": "AppInsightsService.trackException is called from exactly one place in the whole client app: GlobalErrorHandler.handleError, which only fires for *unhandled* exceptions Angular's zone catches. Since the 2026-10-20 pass, a large volume of new/touched code handles its own errors inside `.subscribe({ error: ... })` or try/catch — which means they never reach GlobalErrorHandler, so they never reach AppInsightsService, regardless of how the catch block logs. Two distinct severities of this showed up: (1) in bid-sheet.component.ts (19 occurrences) and home-background-failures.ts, the catch block is gated behind `if (isDevMode()) console.error/warn(...)`, so in production these failures (auto-save bids failing, export failing, BarChart catalog load failing, bid-sheet preference load/save failing) produce literally nothing anywhere — no console line, no telemetry, nothing; (2) in planting-intentions-table.component.ts, user-trade-units.service.ts, home.component.ts, home-notes.store.ts, home-saved-lists.store.ts, and home-planting.store.ts, the console.error/warn call is unconditional so it does reach the browser console in prod, but still never reaches Application Insights, so support has no way to search for these failures after the fact. This is the same class of gap as the now-resolved logging.client-side-telemetry-missing finding, reappearing piecemeal in new code that didn't thread the telemetry service through to its own caught-error paths. Matches style-guide guidance in section 8.1 ('failed API calls when the frontend is the best diagnostic source' should be captured) and section 3's 'log for action' principle (a caught save/export failure a user is actively reporting should be discoverable, not silent).",
+      "files": [
+        "client/src/app/features/bid-sheet/pages/bid-sheet/bid-sheet.component.ts",
+        "client/src/app/features/customers/pages/home/home-background-failures.ts",
+        "client/src/app/features/customers/components/planting-intentions-table/planting-intentions-table.component.ts",
+        "client/src/app/core/services/user-trade-units.service.ts",
+        "client/src/app/features/customers/pages/home/home.component.ts",
+        "client/src/app/features/customers/pages/home/home-notes.store.ts",
+        "client/src/app/features/customers/pages/home/home-saved-lists.store.ts",
+        "client/src/app/features/customers/pages/home/home-planting.store.ts"
+      ],
+      "suggested_fix": "Inject AppInsightsService (already providedIn: 'root') into these caught-error paths and call trackException(err, { context: '<what failed>' }) alongside the existing console/toast handling, instead of adding a new reporting mechanism. For bid-sheet.component.ts specifically, also drop the isDevMode() guard on the console call or replace it outright with the trackException call, since right now production gets zero trail for any of these 19 failure points.",
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] Found during logging reconciliation pass covering the 222-commit / 334-file feature_CustomersFromGraphQL merge train plus the FD-CIC and Help features merged since the 2026-10-20 pass. Backend logging on the new CustomerSync feature (CustomerSyncService, OdsCustomerSyncSource, CtrmCustomerSyncSource, CustomerSyncBackgroundService, CustomerSyncDiagnosticsController) was reviewed and is consistent with the existing discipline — structured fields, elapsed-ms timing, and CustomerSyncBackgroundService correctly uses _logger.BeginScope with a per-run TraceId per the pattern fixed in PR #615. This finding is frontend-only. Confirmed via grep that AppInsightsService/trackException/trackEvent has no call sites outside app-insights.service.ts, its spec, global-error.handler.ts (+spec), and app.component.ts (+spec) — i.e. nothing in features/ or core/services (other than the handler) ever reports to it. [2026-11-05] Verified against main: trackException has one caller (GlobalErrorHandler). Severity overstated: browser AJAX/fetch tracking is off by design (app-insights.service.ts) because the server records every API request incl. failures, so the gap is client-only failures (network, timeouts, catch-block code errors, non-Origination calls). Reviewer recommends medium.",
+      "related_findings": [
+        "logging.client-side-telemetry-missing",
+        "logging.bootstrap-failure-not-logged"
+      ],
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05_behavior: AppInsightsService.trackHandledError sends handled errors the server cannot see (code errors, status 0) and skips HTTP errors with a status (already recorded server-side), at most once a minute per place+message. Screens call it through HandledErrorReporter, which resolves App Insights lazily like GlobalErrorHandler (injecting it directly broke 263 screen tests that lack MSAL). Bid Sheet's 19 dev-only console lines report through it; HomeBackgroundFailures keeps its console line and toast throttle and also sends. 7 new tests; Bid Sheet/Home/App Insights specs green."
     },
     {
       "id": "clean-slop.ctrm-config-reader-duplicated-six-times",
@@ -3695,8 +3728,8 @@
       "opened_in": {
         "date": "2026-10-20"
       },
-      "last_verified": "2026-10-20",
-      "notes": "[2026-10-20] Opened during the clean-slop reconciliation pass. Confirmed by reading both methods in full: logic is otherwise identical (same PTC branches, same sequence/quantity math) except for the two guards contracts-table has and customer-print-report lacks.",
+      "last_verified": "2026-11-05",
+      "notes": "[2026-10-20] Opened during the clean-slop reconciliation pass. Confirmed by reading both methods in full: logic is otherwise identical (same PTC branches, same sequence/quantity math) except for the two guards contracts-table has and customer-print-report lacks. [2026-11-05] Re-verified: AUDIT-CLEAN-SLOP.md had drifted and still listed this as open even though this record already said resolved; corrected the doc to match the tracker.",
       "resolved_in": {
         "date": "2026-10-20",
         "detected_by": "manual"
@@ -3722,6 +3755,353 @@
       "last_verified": "2026-10-20",
       "notes": "[2026-10-20] Found during the performance reconciliation pass while sampling code added since the last performance audit (2026-10-14): the BarChart catalog/picker subsystem and the Bid Sheet map clustering were also reviewed and found already well-optimized (batched price lookups, computed()-memoized bid lookups, marker clustering for the ~4,000-pin catalog layer, bulk diff-based CustomerSyncService with no per-row DB calls). All 9 other performance findings already on file (tickets-table, contracts-table, angular-template-function-calls, angular-onpush-coverage-gap, usage-dashboard scope caching, bidsheet-reconcile N+1, producer-details re-fetch, grouptradeunits index, producerdetails child-table rebuild, ctrm-read-ahead-gating) remain resolved/wont_fix/accepted on spot-check; no regressions found in the sampled code.",
       "resolution_notes": "Accepted 2026-10-20 (owner asked for every finding to be fixed; this one cannot be fixed in this repo). The fix the finding suggests is an index or full-text predicate on base.vw_CurrentCustomers, which lives in the ODS database: this app reads it through the read-only OriginationDbContext and its pipeline never changes ODS objects, so an index is a request to the data team, not a code change. The cost is bounded as the finding says: the server ignores terms under 3 characters (CustomersController.MinOdsSearchLength), the client only falls back to it when the primary search found nothing, and it is debounced with stale requests cancelled. Correction to the finding: the query is not new on 2026-10-14; it has existed since 2026-06-16 (1ecbd4c6) and was only moved into BuildOdsSearchSql on 2026-10-14 with its text unchanged. Revisit if it ever shows in Query Store."
+    },
+    {
+      "id": "angular.field-plan-inline-templates-violate-style-guide",
+      "audit": "angular",
+      "severity": "medium",
+      "status": "resolved",
+      "title": "New field-plan components use inline template strings instead of templateUrl",
+      "description": "style-guides/angular.md Component Best Practices #8 requires templateUrl except for very simple, single-element templates. All five new field-plan components (added across the 45Z feature work) use inline template literals instead, several running 50-100+ lines (program-enrollment-card.component.ts has a ~100-line inline template with a nested table, switch blocks, and multiple @for loops). This is standards drift in a feature that just shipped to QA/PROD, not a one-off exception.",
+      "files": [
+        "client/src/app/features/customers/components/field-plan/ci-preview-panel.component.ts",
+        "client/src/app/features/customers/components/field-plan/programs/program-enrollment-card.component.ts",
+        "client/src/app/features/customers/components/field-plan/programs/fd-cic/review/review-recordkeeping.component.ts",
+        "client/src/app/features/customers/components/field-plan/programs/fd-cic/review/review-tdisc.component.ts",
+        "client/src/app/features/customers/components/field-plan/programs/fd-cic/review/review-ticket-table.component.ts"
+      ],
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05: the five templates moved verbatim into sibling .html files via templateUrl. ng build before/after is byte-identical (0 of 58 output files differ), with all five components present in the bundle."
+    },
+    {
+      "id": "angular.field-plan-store-raw-writable-signals",
+      "audit": "angular",
+      "severity": "medium",
+      "status": "resolved",
+      "title": "FieldPlanStore exposes fields/seasons/records as raw WritableSignal, not asReadonly()",
+      "description": "fields, seasons, and records (lines 60-62) are declared `readonly fields = signal<...>([])` etc. The readonly modifier only blocks reassigning the property on FieldPlanStore itself; the signal instance returned is still a full WritableSignal, so any injecting component can call store.fields.set(...) or .update(...) directly, bypassing the store class own debounced-save/reload consistency guarantee documented at the top of the file (\"the screen never shows something that wasnt kept\"). No current caller does this, but nothing in the type system prevents it. Same anti-pattern already flagged for the Home page-stores (see angular.home-stores-raw-signals-no-asreadonly); this is a second, independent instance in the newer field-plan feature. Fix: expose via .asReadonly() and keep mutation methods private to the store.",
+      "files": [
+        "client/src/app/features/customers/components/field-plan/store/field-plan.store.ts"
+      ],
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] Verified: field-plan.store.ts:60-62 are public signal(); no code outside the store writes them today.",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05_behavior: fields/seasons/records are private signals with public asReadonly() views; the store's 13 writes go to the private ones. Nothing outside the store wrote to them. New store test (public lists have no set/update) fails on the old store. program-enrollment-card spec now writes the private _records for its confirmed-field setup. 146 field-plan tests green."
+    },
+    {
+      "id": "angular.45z-dialog-and-card-shipped-untested",
+      "audit": "angular",
+      "severity": "high",
+      "status": "resolved",
+      "title": "Core 45Z UI components (field-season dialog, enrollment card) have zero test coverage as the feature ships to PROD",
+      "description": "Commit c5483372 (2026-11-05) turned 45Z on in QA and PROD. FieldSeasonDialogComponent (228 lines) owns program add/remove, copy-from/copy-to with a confirm-before-replace branch, unlock-with-reason, and PDF report generation — all with no .spec.ts. ProgramEnrollmentCardComponent (249 lines) computes the CI ladder grouping, per-group target comparisons, and the Mass Balance Ledger CSV export shown to originators — also with no .spec.ts. review-recordkeeping.component.ts and review-ticket-table.component.ts (the review flow ticket table/recordkeeping checklist) are likewise untested, unlike their sibling review-tdisc.component.ts which does have a spec. This mirrors the already-tracked god-component test gap, but calls out specifically the components that just went live in production this run.",
+      "files": [
+        "client/src/app/features/customers/components/field-plan/field-season-dialog.component.ts",
+        "client/src/app/features/customers/components/field-plan/programs/program-enrollment-card.component.ts",
+        "client/src/app/features/customers/components/field-plan/programs/fd-cic/review/review-recordkeeping.component.ts",
+        "client/src/app/features/customers/components/field-plan/programs/fd-cic/review/review-ticket-table.component.ts"
+      ],
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] Verified: none of the four components had a spec or was referenced by one. test-gaps.field-season-dialog-untested and test-gaps.program-enrollment-card-untested are duplicates of this finding.",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05 (test-only): field-season-dialog.component.spec.ts (13 tests), program-enrollment-card.component.spec.ts (10), review-ticket-table.component.spec.ts (6), review-recordkeeping.component.spec.ts (3). Each was checked to fail when a key expected value is changed. Writing them surfaced a real defect, logged separately as code-review.field-season-dialog-startprogram-readds-removed-program."
+    },
+    {
+      "id": "sql.scoularid-trim-defeats-index-seek",
+      "audit": "sql",
+      "severity": "medium",
+      "status": "resolved",
+      "title": "LINQ Trim() on indexed Customer.ScoularId prevents an index seek in the ODS onboarding dedupe",
+      "description": "CustomerRepository.SearchOdsAsync builds `.Where(c => candidateIds.Contains(c.Id) || (c.ScoularId != null && candidateCodes.Contains(c.ScoularId.Trim())))`. Customer.ScoularId carries a supporting index (IX_Customer_ScoularId per the model snapshot), but wrapping the column in Trim() before the comparison is translated to SQL as a function over the indexed column, which the style guide explicitly calls out as an anti-pattern (\"Avoid functions on indexed columns\") because it forces a scan instead of a seek. The comment at line 189 acknowledges the Trim() is there to match SQL Server's trailing-space-insensitive comparison semantics, so the fix has to preserve that behavior (e.g. compare against a computed/persisted trimmed column, or push the trim into the stored data instead of the query).",
+      "files": [
+        "api/GrainOriginatorPortal.Infrastructure/Repositories/CustomerRepository.cs"
+      ],
+      "suggested_fix": "Either enforce trimmed ScoularId at write time (so the query can compare the raw column), or add a computed/persisted column with a supporting index for the trimmed value, so the WHERE clause no longer wraps the indexed column in a function.",
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] New finding this pass (sql domain re-audit). candidateCodes is bounded (one page of onboarding-search candidates), so the practical impact today is a scan of a small set rather than a full-table scan; severity reflects standards drift plus future risk as Customer grows, not a confirmed live performance incident. [2026-11-05] Verified: CustomerRepository.cs:191 (also 201, 779). Trim is deliberate (trailing-space codes); the predicate also ORs on Id; onboarding search, whose sibling scan was accepted 2026-10-20. Reviewer recommends low; fix = trim stored data first, then drop Trim() (order matters).",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05_behavior: migration TrimCustomerScoularIds trims padded dbo.Customer.ScoularId (found by DATALENGTH, since '<>' ignores trailing spaces); the ODS sync path now trims like CTRM and onboarding; the two SQL lookups compare the stored code directly. Deploy workflows apply migrations before deploying, so data is clean first. Dev had 0 padded of 16,776 (read-only count). Migration SQL pinned by tests; ODS trim test fails on the old writer."
+    },
+    {
+      "id": "sql.esignenrollment-guid-column-not-uniqueidentifier",
+      "audit": "sql",
+      "severity": "low",
+      "status": "accepted",
+      "title": "ESignEnrollment GUID column is nvarchar(255) instead of uniqueidentifier, and both it and eSignEnabled break PascalCase column naming",
+      "description": "In ApplicationDbContextModelSnapshot.cs, ESignEnrollment has a CLR property named \"Guild\" (read as a typo for \"Guid\") mapped via HasColumnName to a DB column literally named \"GUID\", typed nvarchar(255) rather than uniqueidentifier. The same entity also maps ESignEnabled to column name \"eSignEnabled\" (camelCase). The style guide requires PascalCase object/column names and uniqueidentifier for GUID-shaped values; this table violates both one case at a time rather than by a documented, deliberate deviation.",
+      "files": [
+        "api/GrainOriginatorPortal.Infrastructure/Data/Migrations/ApplicationDbContextModelSnapshot.cs"
+      ],
+      "suggested_fix": "If the column truly carries a GUID, migrate it to uniqueidentifier and rename both the CLR property (Guild -> Guid) and the DB column (GUID -> Guid) in a dedicated migration; rename eSignEnabled -> ESignEnabled at the same time. Confirm first whether any external consumer reads this table by its current column names before renaming.",
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] New finding this pass (sql domain re-audit). Not re-verified against a live database; based on the EF model snapshot only. Low severity because it is cosmetic/standards drift on a table that otherwise functions correctly, not a correctness or security issue.",
+      "resolution_notes": "Accepted 2026-11-05: dbo.ESignEnrollment is owned by the eSign system, not this app. No migration creates it and no app code writes it; Origination only reads it for the eSign badge. Its column types and names are eSign's to change, and altering them could break the process that populates it."
+    },
+    {
+      "id": "sql.latlong-type-inconsistent-across-tables",
+      "audit": "sql",
+      "severity": "low",
+      "status": "accepted",
+      "title": "Latitude/Longitude modeled as float on BarchartInstrument but decimal(18,15) on ProducerBinSite",
+      "description": "The same logical concept (a geographic coordinate pair) is typed float in dbo.BarchartInstrument (fed by the Barchart ingest) and decimal(18,15) in dbo.ProducerBinSite (per _VerifySchema.sql and the model snapshot; ProducerBinSite was explicitly widened from decimal(9,6) to decimal(18,15) in migration 20261007152343_WidenProducerBinSiteCoordinatePrecision). Nothing documents why the two tables diverge in representation, which risks silent precision-loss bugs if a value ever moves between the two without conversion.",
+      "files": [
+        "api/GrainOriginatorPortal.Infrastructure/Data/Migrations/ApplicationDbContextModelSnapshot.cs",
+        "scripts/_VerifySchema.sql"
+      ],
+      "suggested_fix": "Document why Barchart-sourced coordinates stay float (likely: faithful mirror of the vendor feed) while producer-entered coordinates use decimal; if there is no real reason, standardize on one representation for new tables going forward.",
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] New finding this pass (sql domain re-audit). Low severity / standards-drift only — no evidence of an actual cross-table comparison or join on these columns today.",
+      "resolution_notes": "Accepted 2026-11-05: ProducerBinSite stores coordinates as decimal(18,15) (widened in 20261007152343_WidenProducerBinSiteCoordinatePrecision so bin pins keep full precision); BarchartInstrument and the other coordinate tables use float, as the Barchart feed delivers. Both are far more precise than a map pin needs and values are never copied between the tables, so converting either live table would be risk for no gain. This note is the documentation the finding asked for."
+    },
+    {
+      "id": "error-handling.authz-short-circuit-missing-standard-envelope",
+      "audit": "error-handling",
+      "severity": "medium",
+      "status": "resolved",
+      "title": "[Authorize]-driven 401/403 responses skip the standard ApiErrorResponse envelope",
+      "description": "style-guide error-handling.md §2 requires every API error response to use the standard { error: { code, message, traceId, timestamp, ... } } envelope with 'No exceptions'. GlobalExceptionHandler.cs builds that envelope correctly for every exception thrown in app code (NotFoundException, ValidationException, BusinessException, ForbiddenException, InfrastructureException, and the unhandled-exception fallback), and Program.cs's ApiBehaviorOptions override (covered by ModelValidationEnvelopeTests.cs) already fixed this exact class of bug for [ApiController] model-validation 400s, which previously fell back to the framework's RFC7807 ValidationProblemDetails shape instead. The same fix was never applied to 401/403: when ASP.NET Core's authorization middleware short-circuits a request on a failed [Authorize] check (missing/expired bearer token -> Challenge, or authenticated-but-denied -> Forbid), it never throws, so GlobalExceptionHandler (registered via app.UseExceptionHandler(), which only catches thrown exceptions) never runs. AuthorizationAuditResultHandler.cs (the custom IAuthorizationMiddlewareResultHandler) explicitly documents this: it adds the §8.1 audit log line for the 401/403 and then 'delegates to the default implementation so the response is written exactly as before' -- i.e. logging only, response body unchanged. [Authorize] is used in 57 places across 35 controllers (including role/policy-gated ones like UsageDashboardController), so this is the routine path for auth failures, not an edge case. The practical effect: a caller who hits a protected endpoint without a valid token, or without the right role/policy, gets a 401/403 with no code/traceId/timestamp -- unlike every other error path in the API -- so they have no correlation id to quote to support and no machine-readable code to branch on. client/src/app/core/services/api.service.ts already works around the gap with hardcoded fallback messages ('Access denied: you are not authorized...', 'Your session has expired...') precisely because error.error?.error?.message is absent on these responses, which is itself evidence the contract gap is real and already causing friction.",
+      "files": [
+        "api/GrainOriginatorPortal.Api/Program.cs",
+        "api/GrainOriginatorPortal.Api/Middleware/AuthorizationAuditResultHandler.cs",
+        "api/GrainOriginatorPortal.Api/Middleware/GlobalExceptionHandler.cs",
+        "client/src/app/core/services/api.service.ts"
+      ],
+      "suggested_fix": "Write the standard ApiErrorResponse envelope at the same point the audit log line is added, rather than delegating straight to the default handler: in AuthorizationAuditResultHandler.HandleAsync, when Challenged or Forbidden, build the same ApiErrorResponse the GlobalExceptionHandler would (AUTH_REQUIRED/401 or AUTHORIZATION_FORBIDDEN/403, with traceId/timestamp/instance) and write it to the response instead of calling the default handler for those two cases. Mirror the existing JwtBearerEvents.OnAuthenticationFailed pattern (Program.cs ~line 174) for where to source the traceId. Add a test alongside ModelValidationEnvelopeTests.cs / GlobalExceptionHandlerTests.cs asserting a denied [Authorize] request's body matches the standard envelope shape, the same way model-validation 400s are pinned today.",
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] New finding (error-handling domain audit). Verified by reading AuthorizationAuditResultHandler.cs's own doc comment ('Logging only — it never changes an allow/deny outcome' / delegates to default handler), confirming no response-body override exists for the 401/403 short-circuit path, and cross-checking that the team already fixed the identical framework-default-response-shape problem for model-validation 400s (ModelValidationEnvelopeTests.cs). [2026-11-05] Verified: AuthorizationAuditResultHandler logs then defers to the default handler (empty 401/403 body). Client already handles empty bodies (api.service.ts). Reviewer recommends low.",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05_behavior: AuthorizationAuditResultHandler writes the ApiErrorResponse envelope after the default handler sets 401/403 (AUTH_REQUIRED / ACCESS_DENIED, the log line's trace id), unless the response has started. The 403 message is the client's existing fallback text, so the toast is unchanged. AuthorizationAuditResultHandlerTests (3): the two envelope tests fail on the old handler."
+    },
+    {
+      "id": "permissions.controller-authorize-regression-test-missing-4-controllers",
+      "audit": "permissions",
+      "severity": "medium",
+      "status": "resolved",
+      "title": "ControllerAuthorizationTests' AllControllerTypes() omits 4 of the API's 35 controllers, so [Authorize] removal from any of them would go undetected",
+      "description": "ControllerAuthorizationTests.cs exists specifically as a regression net: 'a failing test here means an endpoint was accidentally left unauthenticated.' Its AllControllerTypes() theory data currently lists 30 controllers, but the Controllers/ directory has 35 real controllers (36 files minus the static DiagnosticsEnvironmentGate helper, which isn't a controller). Diffing the directory listing against the test's typeof(...) entries shows 4 missing: TeamsChannelsController (added 2026-09-14, feat(notes) @-mention), ClientTelemetryController (added 2026-10-13, feat(telemetry)), HelpController (added 2026-10-14, feat(help)), and TDiscController (added 2026-11-03, feat(field-plan) 45Z T-DISC). All 4 currently carry [Authorize] (manually verified by reading each file), so there is no live vulnerability today -- but the whole point of this test is to catch a future accidental removal, and for these 4 it provides zero protection. TeamsChannelsController's gap predates every prior permissions-audit pass (first opened 2026-09-19), meaning this is the fourth consecutive reconciliation pass to not catch it; ClientTelemetryController and HelpController were each noted as 'properly gated, no new finding' in the 2026-10-20 pass without checking whether they were added to this specific regression test.",
+      "files": [
+        "api/GrainOriginatorPortal.Api.Tests/GrainOriginatorPortal.Api.Tests/ControllerAuthorizationTests.cs",
+        "api/GrainOriginatorPortal.Api/Controllers/TeamsChannelsController.cs",
+        "api/GrainOriginatorPortal.Api/Controllers/ClientTelemetryController.cs",
+        "api/GrainOriginatorPortal.Api/Controllers/HelpController.cs",
+        "api/GrainOriginatorPortal.Api/Controllers/TDiscController.cs"
+      ],
+      "suggested_fix": "Add the 4 missing `yield return new object[] { typeof(...) };` lines to AllControllerTypes() in ControllerAuthorizationTests.cs. Consider replacing the hand-maintained list with reflection over all ControllerBase-derived types in the Controllers assembly/namespace so new controllers are covered automatically and this class of gap can't recur.",
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] New finding (permissions domain audit). Found by diffing `ls Controllers/*.cs` against the test file's typeof(...) entries; confirmed all 4 omitted controllers carry [Authorize] today by reading each file directly, so this is a test-coverage gap in the regression net, not an active unauthenticated endpoint.",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05: the test listed 31 of 35 controllers (the finding said 30). Added ClientTelemetry, Help, TDisc and TeamsChannels (all four already carried [Authorize]) and a guard test, EveryControllerInTheApi_IsCoveredByTheAuthorizeCheck, that reflects over the API assembly and fails naming any controller missing from the list. Proven by deleting TDisc from the list: the guard failed and named it."
+    },
+    {
+      "id": "performance.field-season-crop-group-n-plus-one",
+      "audit": "performance",
+      "severity": "medium",
+      "status": "resolved",
+      "title": "FieldPlanService.AddSeasonAsync issues one DB round trip per existing season to resolve crop groups, instead of batching",
+      "description": "AddSeasonAsync (FieldPlanService.cs:160-168) first resolves the new request's crop group with one CropGroupAsync call, then loops over every season already on the field (`await _repository.GetSeasonsForFieldAsync(...)`) and calls `await CropGroupAsync(s.PlantingIntentionId, s.CropLabel, ct)` inside the loop for each one that doesn't already match by PlantingIntentionId. CropGroupAsync (line 443-444) calls `_repository.GetPlantingIntentionCropAsync`, which is a real EF query (FieldPlanRepository.cs:67-68: `_db.PlantingIntentions.Where(p => p.Id == id).Select(p => p.Crop).FirstOrDefaultAsync`) -- not cached. So adding a field season issues up to N extra single-row DB queries, where N is the number of seasons already on that field for the year, instead of a single batched lookup keyed by the distinct PlantingIntentionIds already in scope.",
+      "files": [
+        "api/GrainOriginatorPortal.Api/Services/FieldPlan/FieldPlanService.cs",
+        "api/GrainOriginatorPortal.Infrastructure/Repositories/FieldPlanRepository.cs"
+      ],
+      "suggested_fix": "Batch-resolve crop groups for all seasons' PlantingIntentionIds (including the new request's) in a single `WHERE Id IN (...)` query before the loop, building an in-memory Id->crop dictionary, then do the comparison in-memory instead of awaiting CropGroupAsync per iteration.",
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] New finding (performance domain audit). Confirmed by reading GetPlantingIntentionCropAsync's implementation directly -- it is an uncached FirstOrDefaultAsync, so every loop iteration is a genuine round trip. Impact is bounded by how many seasons a field typically carries per year (usually small), so flagged medium rather than high; this is an inferred risk from code inspection, not a measured trace. [2026-11-05] Verified: FieldPlanService.cs:161-167. A field holds one crop a year, so 0-2 extra queries per AddSeason. Reviewer recommends low.",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05_behavior: AddSeasonAsync loads every existing row's crop with one new repository call (GetPlantingIntentionCropsAsync) and picks the first match exactly as the loop did; no query when the new row has no crop group or the field has no seasons. New test (second corn row refused, wheat allowed) passes on both the old loop and the new code, proving behaviour is unchanged."
+    },
+    {
+      "id": "performance.customer-sync-per-producer-open-activity-query",
+      "audit": "performance",
+      "severity": "low",
+      "status": "accepted",
+      "title": "CustomerSyncService's dormant-TU bring-back pass queries open activity once per distinct producer in a loop",
+      "description": "CustomerSyncService.cs:393-398, inside the 'bring-back pass for user-removed dormant TUs', loops over `deactivatedRows.Select(r => r.CustomerId).Distinct()` and calls `await customerRepository.GetOpenActivityTradeUnitsAsync(cust.ScoularId, cancellationToken)` once per distinct producer, rather than a single batched query across all affected ScoularIds. The surrounding comment explicitly argues this is fine because the set is 'small' and 'scoped to just the affected producers,' which is a reasonable tradeoff for a background sync job, but it is still a per-item outbound DB call in a loop and would scale linearly with the number of dormant-TU producers reactivated in a given sync run.",
+      "files": [
+        "api/GrainOriginatorPortal.Api/Services/CustomerSyncService.cs",
+        "api/GrainOriginatorPortal.Infrastructure/Repositories/CustomerRepository.cs"
+      ],
+      "suggested_fix": "If GetOpenActivityTradeUnitsAsync's query can be expressed as an IN-based batch (ScoularId -> set of open TUs) similar to the other enrichment helpers in CustomerRepository (EnrichCustomersWithTradeUnitsAsync etc.), replace the per-producer loop with one batched call and group the results in memory. Low priority since this runs in a background sync, not a user-latency path, and the author already bounded the set deliberately.",
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] New finding (performance domain audit). This is a background CustomerSyncBackgroundService path, not a request-latency path, so severity is low despite being a textbook N+1 shape; flagged because the comment's 'small set' assumption isn't enforced anywhere and the fix (batch by ScoularId) mirrors a pattern already used elsewhere in the same repository class.",
+      "resolution_notes": "Accepted 2026-11-05: deliberate and documented in place (CustomerSyncService.cs, comment above the loop). It runs only for producers whose dormant trade unit a user removed — a small set — in a background job no user waits on. Batching it would touch the customer sync, which can deactivate customers, to save milliseconds overnight."
+    },
+    {
+      "id": "performance.build-list-template-per-row-impure-calls",
+      "audit": "performance",
+      "severity": "low",
+      "status": "wont_fix",
+      "title": "build-list.component.html calls non-pure helper methods and re-slices arrays directly in @for row bindings",
+      "description": "build-list.component.html's producer-results @for loop (`@for (customer of rendered; track customer.id)`, ~line 1632) calls `getInitials(customer.name)` (1662), `getFormattedLocation(customer)` (1693), and per-bin-site `binSiteGrainSummary(site)` (1769) / `formatLastBid(g.lastBid)` (1789) directly as template method calls, and a nested bin-sites loop recomputes `(allSites ? siteGroups : siteGroups.slice(0, binSitesVisible))` (line 1745) inline on every change-detection pass rather than through a memoized signal. None of these are pure template bindings, so each re-evaluates on every CD run that touches this component. Impact is mitigated by the app already using OnPush change detection and zoneless CD app-wide (main.ts: provideZonelessChangeDetection), and by this component's own renderLimit/renderedCustomers computed-signal batching (lines 439-441) which caps how many rows are actually in the DOM at once -- so this is a minor, inferred risk rather than a confirmed bottleneck.",
+      "files": [
+        "client/src/app/features/build-list/pages/build-list/build-list.component.html",
+        "client/src/app/features/build-list/pages/build-list/build-list.component.ts"
+      ],
+      "suggested_fix": "If profiling ever shows this component's CD passes are expensive, convert getInitials/getFormattedLocation/binSiteGrainSummary/formatLastBid results to precomputed fields on the row view-model (set once when `rendered`/`renderedCustomers` is built) and hoist the siteGroups.slice(...) into a computed signal, instead of calling them from the template. Not urgent given existing OnPush + zoneless + batched-render mitigations.",
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] New finding (performance domain audit). Verified OnPush is set on this component and the app bootstraps with provideZonelessChangeDetection() in main.ts, and that renderedCustomers is a computed signal batching the DOM-visible slice (renderLimit), which together substantially reduce the real-world impact of the per-row impure calls flagged here. Kept as a low-severity, inferred-only finding rather than discarded, since the pattern still recomputes per visible row on every CD run of this component.",
+      "resolution_notes": "Won't fix 2026-11-05: BuildListComponent is OnPush, so the template is re-evaluated only when its inputs/signals change, and rows render in batches (renderLimit). The helpers are cheap string formatting. Revisit only if profiling shows Build-a-List rendering cost."
+    },
+    {
+      "id": "test-gaps.field-season-dialog-untested",
+      "audit": "test-gaps",
+      "severity": "high",
+      "status": "resolved",
+      "title": "FieldSeasonDialogComponent, the core 45Z/field-plan editing dialog, has zero test coverage",
+      "description": "228-line production dialog (not prototype scaffolding) that orchestrates FieldPlanStore, FdCicApiService, FeedstockReportService and ToastService: copy-from/copy-to across a producer's fields (with a JSON-diff check that decides whether to confirm-before-overwrite or copy silently), the confirmReopen flow that unlocks a confirmed CI, canReview gating on frozen/preview state, and PDF report generation. This shipped as part of the 45Z feature that was just turned on in QA/PROD (c5483372); every sibling field-plan file in this directory (ci-preview-panel, crop-fields-panel, field-plan-wording) has a spec, but this coordinating dialog does not. A regression in the copy-confirmation branch or the reopen flow would silently corrupt or skip a producer's program data with no CI signal.",
+      "files": [
+        "client/src/app/features/customers/components/field-plan/field-season-dialog.component.ts"
+      ],
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] Verified (no spec). Duplicate of angular.45z-dialog-and-card-shipped-untested.",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05 (test-only): covered by field-season-dialog.component.spec.ts (13 tests); duplicate of angular.45z-dialog-and-card-shipped-untested."
+    },
+    {
+      "id": "test-gaps.program-enrollment-card-untested",
+      "audit": "test-gaps",
+      "severity": "high",
+      "status": "resolved",
+      "title": "ProgramEnrollmentCardComponent's CI-ladder grouping and Mass Balance Ledger export logic has zero test coverage",
+      "description": "249-line component computing the producer-facing 45Z summary: groups scored fields by crop into a CI ladder (ciLadder, sorted lowest-CI-first with running bushel totals), compares each field's CI against a user-typed target to color it at-or-below/above, and filters+exports confirmed fields as the Mass Balance Ledger CSV (downloadLedger). This is the view originators use to judge compliance against downstream CI targets and the artifact handed off for 45Z tax-credit documentation. No spec exists despite the non-trivial grouping/sorting/filtering logic; a bug in ladder ordering or the Documented-status filter in downloadLedger would misstate CI figures or omit/include the wrong fields in the ledger with no CI signal.",
+      "files": [
+        "client/src/app/features/customers/components/field-plan/programs/program-enrollment-card.component.ts"
+      ],
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] Verified (no spec). Duplicate of angular.45z-dialog-and-card-shipped-untested.",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05 (test-only): covered by program-enrollment-card.component.spec.ts (10 tests: CI ladders, ranges, CI target, Mass Balance Ledger CSV); duplicate of angular.45z-dialog-and-card-shipped-untested."
+    },
+    {
+      "id": "test-gaps.help-troubleshooter-untested",
+      "audit": "test-gaps",
+      "severity": "medium",
+      "status": "resolved",
+      "title": "HelpTroubleshooterComponent's producer-lookup branching and trade-unit-switch logic has zero test coverage",
+      "description": "The in-app \"a producer isn't showing up\" troubleshooter's lookUp() has five distinct outcomes (in-selection, other-trade-unit with a canSwitch flag, not-added, not-found, error) derived from two sequential API calls, and switchTo() has a documented fragile edge case (raw vs trimmed trade-unit code comparison: \"a trimmed copy of a padded code would show as unselected and be pruned\"). No spec exists. This sits next to the entitlement/trade-unit scoping logic that already has a tracked high-severity gap (test-gaps.entitlement-service-fail-open-path-untested, now resolved) -- the same risk class (authorization-adjacent scoping with untested branches) recurring in a new component.",
+      "files": [
+        "client/src/app/shared/components/help-panel/help-troubleshooter.component.ts"
+      ],
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] Verified: no spec and not referenced by one.",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05 (test-only): help-troubleshooter.component.spec.ts (10 tests) covers every lookup branch and the trade-unit switch."
+    },
+    {
+      "id": "test-gaps.help-spotlight-positioning-untested",
+      "audit": "test-gaps",
+      "severity": "low",
+      "status": "resolved",
+      "title": "HelpSpotlightComponent's element-finding and tooltip-positioning math has zero test coverage",
+      "description": "Exported module-level helpers (visibleAnchor, anchorRect) and component methods (tipY's above/below flip when there's no room underneath, the find-with-timeout retry loop in follow()) are all directly testable pure/DOM-measurement logic with documented fragility (\"a component host is display:inline by default and can report an empty box around block children\"), but have no spec. Lowest priority of this pass's findings since it degrades gracefully (follow() times out and returns to the panel rather than hanging), but a regression in anchorRect's children-union fallback would silently highlight nothing or the wrong region.",
+      "files": [
+        "client/src/app/shared/components/help-panel/help-spotlight.component.ts"
+      ],
+      "opened_in": {
+        "date": "2026-11-05"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] Verified: no spec and not referenced by one.",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05 (test-only): help-spotlight.component.spec.ts (8 tests) covers outline/tooltip placement, edge clamping, hidden copies, late targets, the 4-second give-up, scroll follow and cleanup."
+    },
+    {
+      "id": "code-review.field-season-dialog-startprogram-readds-removed-program",
+      "audit": "code-review",
+      "severity": "medium",
+      "status": "resolved",
+      "title": "Field-season dialog opened on a program (startProgram) re-adds that program as soon as it is removed",
+      "description": "FieldSeasonDialogComponent constructor: the second effect reads startProgram(), season() and store.find(seasonId, key), and calls addProgram(key) when the program is not on the season. Because store.find reads the store's records signal, the effect re-runs after removeProgram() removes the record, finds it missing, and adds it straight back (as a new, empty record). crop-fields-panel passes [startProgram]=\"openProgram\", so this is reachable from the real screen: open a field's dialog onto its program, click Remove from this field, and the program reappears. Opening the dialog without startProgram removes normally.",
+      "files": [
+        "client/src/app/features/customers/components/field-plan/field-season-dialog.component.ts"
+      ],
+      "suggested_fix": "Apply startProgram once per dialog/season, not on every store change: remember the season+key already handled, or read store.find/addProgram inside untracked() so record changes don't re-trigger the effect. Add a spec: open with startProgram, remove, expect the season to have no programs.",
+      "opened_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "last_verified": "2026-11-05",
+      "notes": "[2026-11-05] Found while writing field-season-dialog.component.spec.ts for the audit remediation. Reproduced with a throwaway test on main 7e9a316a: opened with startProgram = a test program -> season has [program]; after removeProgram() -> season still has [program]. Control (program added by hand, no startProgram) -> removal sticks. Not fixed on the remediation branch: it changes dialog behaviour, so it waits for the owner.",
+      "resolved_in": {
+        "date": "2026-11-05",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Fixed on fix_AuditFindings_2026-11-05_behavior: startProgram is applied once per season+program — the store read and addProgram run untracked, and the applied pair is remembered — so removing the program no longer re-triggers the effect. Regression spec (opened on a program, removed -> no programs, nothing active) fails on the old code; all 14 dialog tests pass."
     }
   ]
 }

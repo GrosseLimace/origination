@@ -9,8 +9,8 @@ using GrainOriginatorPortal.Api.Platform.Access;
 namespace GrainOriginatorPortal.Api.Middleware;
 
 /// <summary>
-/// Logs authorization denials at the point the framework decides them, and explains a permission denial
-/// to the caller.
+/// Logs authorization denials at the point the framework decides them, and gives each one the standard
+/// error envelope.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -23,13 +23,20 @@ namespace GrainOriginatorPortal.Api.Middleware;
 /// <para>
 /// Replacing the default <see cref="IAuthorizationMiddlewareResultHandler"/> is the framework's
 /// supported hook for this: it runs on the authorization decision itself, before the short-circuit,
-/// and then delegates to the default implementation. It never changes an allow/deny outcome.
+/// and then delegates to the default implementation, which sets the 401/403 and its headers.
+/// It never changes an allow/deny outcome.
 /// </para>
 /// <para>
-/// <b>Permission denials</b> (a <c>[RequirePermission]</c> the caller doesn't meet) also get the standard
-/// error envelope: <c>AUTHZ_PERMISSION_DENIED</c> with each missing permission in <c>details</c>. It names
-/// only the permissions the endpoint needs, never the ones the caller holds; <c>/api/me/permissions</c> is
-/// for that. Other 403s keep the framework's empty body.
+/// The default implementation sends an empty body, so a 401/403 was the one API error without the
+/// standard <see cref="ApiErrorResponse"/> envelope (error-handling.md §2, audit 2026-11-05). After
+/// delegating, this writes that envelope with the same trace id the log line carries, unless
+/// something has already started the response.
+/// </para>
+/// <para>
+/// <b>Permission denials</b> (a <c>[RequirePermission]</c> the caller doesn't meet) get
+/// <c>AUTHZ_PERMISSION_DENIED</c> with each missing permission in <c>details</c>. It names only the
+/// permissions the endpoint needs, never the ones the caller holds; <c>/api/me/permissions</c> is for
+/// that. Every other refusal gets <c>AUTH_REQUIRED</c> (401) or <c>ACCESS_DENIED</c> (403).
 /// </para>
 /// </remarks>
 public class AuthorizationAuditResultHandler : IAuthorizationMiddlewareResultHandler
@@ -88,12 +95,21 @@ public class AuthorizationAuditResultHandler : IAuthorizationMiddlewareResultHan
 
         await _default.HandleAsync(next, context, policy, authorizeResult);
 
-        // The default handler only sets the 403 status, so the body is still ours to write.
-        if (missingPermissions.Length > 0 && !context.Response.HasStarted)
+        // The default handler sets the status with an empty body, so the body is still ours to write.
+        if (authorizeResult.Succeeded || context.Response.HasStarted)
+            return;
+
+        if (missingPermissions.Length > 0)
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             await context.Response.WriteAsJsonAsync(
                 PermissionDenied(missingPermissions, traceId, path),
+                context.RequestAborted);
+        }
+        else if (context.Response.StatusCode is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden)
+        {
+            await context.Response.WriteAsJsonAsync(
+                Refused(context.Response.StatusCode == StatusCodes.Status401Unauthorized, traceId, path),
                 context.RequestAborted);
         }
     }
@@ -118,6 +134,22 @@ public class AuthorizationAuditResultHandler : IAuthorizationMiddlewareResultHan
             Details = missingPermissions
                 .Select(p => new ApiErrorDetail { Field = "permission", Message = $"Requires '{p}'.", Code = p })
                 .ToList(),
+            TraceId = traceId,
+            Timestamp = DateTime.UtcNow.ToString("O"),
+            Instance = path,
+        },
+    };
+
+    // -------------------------------------------------------------------------
+    private static ApiErrorResponse Refused(bool unauthenticated, string traceId, string? path) => new()
+    {
+        Error = new ApiErrorBody
+        {
+            Code = unauthenticated ? "AUTH_REQUIRED" : "ACCESS_DENIED",
+            // The 403 text is the client's own fallback wording, so users see exactly what they did before.
+            Message = unauthenticated
+                ? "Authentication required. Please sign in again."
+                : "Access denied: you are not authorized for this resource.",
             TraceId = traceId,
             Timestamp = DateTime.UtcNow.ToString("O"),
             Instance = path,
