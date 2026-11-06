@@ -1936,7 +1936,7 @@
       "id": "permissions.no-rbac-permission-data-model",
       "audit": "permissions",
       "severity": "low",
-      "status": "accepted",
+      "status": "resolved",
       "title": "No Role/Permission/RolePermission/UserRole data model or resource:action:scope permissions exist anywhere in the app",
       "description": "The style guide requires Roles/Permissions/RolePermissions/UserRoles EF Core entities, resource:action[:scope]-formatted permission strings, an IPermissionService/[RequirePermission] pipeline, and a GET /api/me/permissions endpoint. This app has none of that: authorization is instead a single Azure-AD-issued Admin app role plus a config-driven UsageDashboard:ViewAll allowlist, with all other access control delegated to trade-unit entitlement data-scoping (tenant/data scoping, not RBAC). Functionally this appears correctly enforced end-to-end for the app's actual (nearly binary) authorization needs, but it is a full architectural deviation from the style guide nowhere acknowledged as a deliberate choice the way AR-01 through AR-08 document other deviations.",
       "files": [
@@ -1949,8 +1949,13 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-20",
-      "notes": "[2026-09-21] Deliberate: authorization is two Azure AD app roles plus trade-unit data scoping. Adding a permissions table would mean a second source of truth beside AAD group membership, which is where access is actually administered. Documented in docs/application-context/SECURITY-MODEL.md. [2026-09-28] Re-checked: docs/application-context/SECURITY-MODEL.md:46 still documents the deviation and no Role/Permission/RolePermission/UserRole entities have appeared since. Still accepted, unchanged.\n[2026-10-20] Re-checked: new ClientTelemetryController (commit 9d6c3469, 2026-10-14) uses plain [Authorize], same pattern as the rest of the app -- no RBAC entities introduced. docs/application-context/SECURITY-MODEL.md still documents the deviation. Still accepted, unchanged."
+      "last_verified": "2026-11-06",
+      "notes": "[2026-09-21] Deliberate: authorization is two Azure AD app roles plus trade-unit data scoping. Adding a permissions table would mean a second source of truth beside AAD group membership, which is where access is actually administered. Documented in docs/application-context/SECURITY-MODEL.md. [2026-09-28] Re-checked: docs/application-context/SECURITY-MODEL.md:46 still documents the deviation and no Role/Permission/RolePermission/UserRole entities have appeared since. Still accepted, unchanged.\n[2026-10-20] Re-checked: new ClientTelemetryController (commit 9d6c3469, 2026-10-14) uses plain [Authorize], same pattern as the rest of the app -- no RBAC entities introduced. docs/application-context/SECURITY-MODEL.md still documents the deviation. Still accepted, unchanged.\n[2026-11-06] Resolved by Phase 1 of the modular architecture plan; see resolution_notes.",
+      "resolved_in": {
+        "date": "2026-11-06",
+        "detected_by": "manual"
+      },
+      "resolution_notes": "Phase 1 of agents-docs/plans/plan-modular-architecture.md added the model: dbo.Roles, dbo.Permissions, dbo.RolePermissions and dbo.RoleSegments; the AppPermissions catalog of resource:action[:scope] strings; IPermissionService and [RequirePermission]; GET /api/me/permissions; and the SPA's PermissionService, permissionGuard and *appHasPermission. UsageDashboardAccess.cs and user-roles.service.ts are gone. Role assignments still come from the token rather than a UserRoles table; that and the other remaining differences from the style guide are recorded in docs/application-context/STYLE-DEVIATIONS.md (Permissions model). So far only the former Admin checks name a permission; Phase 2 puts one on every endpoint, as SECURITY-MODEL.md says."
     },
     {
       "id": "permissions.role-change-audit-trail-gap",
@@ -1967,8 +1972,8 @@
       "opened_in": {
         "date": "2026-09-19"
       },
-      "last_verified": "2026-10-20",
-      "notes": "[2026-09-21] Follows from the above: Admin membership lives in an AAD group and the ViewAll list in config, so neither is ever mutated through app code and these events cannot exist in our telemetry. That history is in Azure AD's audit log. Documented in SECURITY-MODEL.md. [2026-09-28] Re-checked: SecurityAuditMiddleware.cs still the only in-app audit trail (401/403 events); no role/access-list mutation path has been added to app code since. Still accepted, unchanged.\n[2026-10-20] Re-checked: no role/access-list mutation path added to app code since the last pass. Still accepted, unchanged."
+      "last_verified": "2026-11-06",
+      "notes": "[2026-09-21] Follows from the above: Admin membership lives in an AAD group and the ViewAll list in config, so neither is ever mutated through app code and these events cannot exist in our telemetry. That history is in Azure AD's audit log. Documented in SECURITY-MODEL.md. [2026-09-28] Re-checked: SecurityAuditMiddleware.cs still the only in-app audit trail (401/403 events); no role/access-list mutation path has been added to app code since. Still accepted, unchanged.\n[2026-10-20] Re-checked: no role/access-list mutation path added to app code since the last pass. Still accepted, unchanged.\n[2026-11-06] Rationale updated for Phase 1 of the permissions work. Role assignments now belong to the entitlements app and arrive as token claims (Admin still comes from the Super Users group until that app issues this app's roles), so they still never pass through app code and role_assigned, role_removed and privilege_escalation still can't be emitted here. Grant history is now kept: dbo.RolePermissions and dbo.RoleSegments are SQL temporal tables, and grants change only through reviewed migrations until the grant editor (Phase 1b) adds role_modified events. Permission denials are logged as AUTHZ_PERMISSION_DENIED by AuthorizationAuditResultHandler. See docs/application-context/SECURITY-MODEL.md (Audit trail). Still accepted."
     },
     {
       "id": "test-gaps.angular-god-components",

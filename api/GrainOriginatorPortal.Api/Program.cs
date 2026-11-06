@@ -105,8 +105,9 @@ builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration)
     // In-memory is right for this: tokens are per-user and short-lived, a cold instance simply
     // re-exchanges, and a distributed cache would be new infrastructure for no correctness gain.
     .AddInMemoryTokenCaches();
-// Every endpoint is checked by permission through [RequirePermission]; AddAccess below registers a policy
-// per permission. No policy names a role.
+// Every endpoint needs a signed-in user (MapControllers().RequireAuthorization() below). An endpoint that
+// needs more names a permission with [RequirePermission]; AddAccess below registers a policy per
+// permission. No policy names a role.
 builder.Services.AddAuthorization();
 // Audit authorization denials where the framework decides them. The authorization middleware
 // short-circuits on a failed [Authorize] without calling the rest of the pipeline, so

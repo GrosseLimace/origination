@@ -19,7 +19,7 @@ This folder is the canonical reference for **what each screen of the Origination
 | Doc | Route | Audience hook |
 | --- | --- | --- |
 | [Shared Infrastructure](./Shared%20Infrastructure.md) | _(read first)_ | DbContexts, services, MSAL, route guards, the trade-unit-as-UX-filter authorization model |
-| [Security Model](./SECURITY-MODEL.md) | _(read first)_ | Why trade-unit entitlements are a UX filter, not a per-user access boundary, and which endpoints are the exception |
+| [Security Model](./SECURITY-MODEL.md) | _(read first)_ | Permissions (roles from the token, grants in our database, what each endpoint checks), and why trade-unit entitlements are a UX filter, not a per-user access boundary |
 | [Customer Home Page](./Customer%20Home%20Page.md) | `/` | Day-to-day producer view — list, profile tabs, notes sidebar, deep-link query params |
 | [Build a List](./Build%20a%20List.md) | `/build-list` | NLQ-driven producer list builder, refine filters, saved lists, linked-producer entity view |
 | [Actionable Insights](./Actionable%20Insights.md) | `/insights` | Three urgent-work categories: Unconfirmed Contracts, Spot Loads, Unshipped Bushels |

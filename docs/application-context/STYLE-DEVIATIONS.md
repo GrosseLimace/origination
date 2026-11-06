@@ -10,8 +10,11 @@ and style-guide scans re-surface each of these, and without a written reason the
 Each entry says what would make it worth revisiting. If you change one, update the entry in the
 same commit.
 
-Recorded 2026-09-21 from the Code Quality Dashboard pilot audit (PR #613), which flagged all of
-these. Finding ids are that tracker's.
+Most entries were recorded 2026-09-21 from the Code Quality Dashboard pilot audit (PR #613), and
+their finding ids are that tracker's. The [permissions model](#permissions-model) entries were added
+2026-11-06 with Phase 1 of the
+[modular architecture plan](../../agents-docs/plans/plan-modular-architecture.md), and cite the
+section of `permissions-model.md` they depart from.
 
 ---
 
@@ -125,6 +128,126 @@ workflows only ever run `database update`. Rewriting the `Down()` of an applied 
 than leaving it.
 
 **Revisit if:** a rollback procedure is ever introduced. Then audit every `Down()`, not just this one.
+
+---
+
+## Permissions model
+
+How the model works is in [SECURITY-MODEL.md](./SECURITY-MODEL.md). These are the places it
+departs from `permissions-model.md`.
+
+### Role assignments come from the token, not a `UserRoles` table
+`permissions-model.md` §5.1.4, §6.3, §10.1
+
+Who holds which role is administered in the company's entitlements app, and the roles arrive as
+claims on the access token. `ClaimsUserRoleSource` reads them, and this app keeps no user-to-role
+table. A table of our own would be a second place to assign roles, beside the one IT already
+administers, and the two would drift.
+
+So this app never assigns a role, and it can't log `role_assigned`, `role_removed` or
+`privilege_escalation`. That history is in the entitlements app; until it issues this app's roles,
+`Admin` still comes from the *Origination App {Env} Super Users* group, whose history is in Entra's
+audit log. A role change reaches the API with the user's next access token, roughly 60–90 minutes
+with Entra's defaults.
+
+**Revisit if:** the entitlements app can't carry this app's roles, or removing someone's access
+can't wait for their token to expire.
+
+### Resources are business-level, not one per entity
+`permissions-model.md` §4.2 ("must correspond to a real entity")
+
+The 42 permissions cover 27 resources, each a thing a user would name: `planting-intentions`,
+`bid-sheets`, `saved-lists`. They aren't one per table. Per-table resources would roughly double
+the permissions, their grants would always move together, and the grants would be harder to read.
+
+**Revisit if:** a role needs part of a resource, such as one of its tables but not another.
+
+### Flat grants, with no role inheritance
+`permissions-model.md` §3.4, §5.1.1 (`ParentRoleId`)
+
+Every grant is its own row, role to permission. `dbo.Roles.ParentRoleId` exists, in the guide's
+shape, but nothing sets or reads it, and there are no wildcard grants such as `*:read`.
+
+Roles combine instead. A user holds a persona role, which decides what they see, plus add-on roles
+such as `Editor` and `Manager`, which decide what they may do with it. Their permissions are the
+union. A `Viewer ⊂ Editor ⊂ Manager` ladder can't express "a trader who edits" beside "an
+originator who only reads"; the union can. Forgetting an add-on fails safe: the user is read-only.
+
+The cost is repetition: a new read permission's grant migration adds a row to every persona role.
+
+**Revisit if:** there are enough roles that those repeated rows start to drift.
+
+### One `write` action instead of `create`, `update` and `delete`
+`permissions-model.md` §4.2, §4.3
+
+The guide allows a custom action when its standard set doesn't fit. Here, no role may add a record
+without also being allowed to change and remove it, so the three permissions would always be granted
+together. `write` covers all three. The other actions are `read`, and `manage` for IT's operational
+powers (diagnostics, re-running the customer sync, usage exclusions). The one separate delete is
+`bid-sheet-locations:delete:global`: a manager may remove a location someone else created.
+
+**Revisit if:** a role needs to add without editing, or edit without deleting.
+
+### A permission's key is its own string, not a Guid
+`permissions-model.md` §5.1.2, §5.1.3
+
+`dbo.Permissions.Id` is the permission itself (`notes:write`), and `RolePermissions.PermissionId`
+references it. The catalog lives in code (`AppPermissions`), and `dbo.Permissions` is generated
+from it through EF `HasData`. A Guid would be a second identity to keep stable across environments.
+The string is already unique, and it reads as itself in grants, logs and the access map. Roles keep
+the guide's Guid ids.
+
+**Revisit if:** permissions need renaming in place. Today a rename is a new permission plus a grant
+migration.
+
+### A temporary default role for anyone without a persona role
+`permissions-model.md` §2.3 (deny by default)
+
+Until the entitlements app issues persona roles, a signed-in person whose token carries none gets
+`Access:DefaultRoles`: `Originator` + `Editor`. Each use is logged once per user per hour, and
+app-only tokens never get it. Today that is everyone, and it reproduces what a non-admin could do
+before permissions arrived, so nobody lost access in the switch.
+
+**Revisit:** this has to go (`DefaultRoles: []`) before traders launch. Otherwise a trader whose
+roles lag behind, or a token issued during an entitlements outage, would silently get producer
+access and edit rights.
+
+### No Access Denied page
+`permissions-model.md` §8.3, §8.4
+
+`permissionGuard` is a `canMatch` guard, not the guide's `canActivate`. A route the user may not
+open doesn't match, so it falls through to the catch-all and lands on the home page, and its code
+is never downloaded. The usage dashboard behaved this way before permissions. It is the only gated
+screen, and its menu item shows only to people who hold the permission, so an Access Denied page
+would only be seen by someone typing the URL.
+
+**Revisit if:** people start following shared links to screens their colleagues can't open.
+
+### Permissions load at startup without blocking it, and don't refresh
+`permissions-model.md` §8.4 (load in `APP_INITIALIZER`; refresh on role change)
+
+`PermissionService` starts its load once MSAL has settled, not in an app initializer. Blocking
+would hold the first screen on an API call, and during a sign-in redirect there is no account to
+load for yet. Nothing decides on the empty set held while loading: `permissionGuard` waits for the
+load, and `*appHasPermission` re-renders when it lands.
+
+Permissions are read once per page load. Roles change only with a new access token, and this app
+assigns none, so nothing in the app could trigger a refresh. The API enforces a grant change
+within about five minutes; the SPA shows it on the next reload.
+
+**Revisit if:** the grant editor (Phase 1b) should update its user's own screen at once, or people
+keep the app open for days.
+
+### The SPA's `PermissionService` follows the API's names
+`permissions-model.md` §8.1, §8.2
+
+The guide's sample is `PermissionsService` with `hasPermission` and `hasAnyPermission`. Here it is
+`PermissionService`, matching the API's `IPermissionService`, with `has` and `hasAll`. A list
+passed to `*appHasPermission` likewise means all of them. Every control so far needs all of its
+permissions: assigning a team list needs both `saved-lists:read:team` and `saved-lists:write:team`.
+The permission ids are typed (`PermissionId`, generated from `AppPermissions`), not bare strings.
+
+**Revisit if:** a control should show for either of two permissions. Add `hasAny` then.
 
 ---
 

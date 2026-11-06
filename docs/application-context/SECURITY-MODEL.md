@@ -2,9 +2,12 @@
 
 ## TL;DR
 
-**Trade-unit entitlements are a UX filter, not an access boundary.**
+Two separate questions, answered separately:
 
-Any authenticated Scoular user can read or mutate any customer's records via the Origination API. Trade-unit selection narrows the *default* result set in the UI but does not restrict what an authenticated user is permitted to see or change.
+- **What may this user do?** Permissions: roles from the token, each role's `resource:action[:scope]` grants in our database, and the permission each endpoint names. See [Permissions](#permissions-what-a-user-may-do) below.
+- **Which customers?** Trade units, and that answer is **a UX filter, not an access boundary.**
+
+Any authenticated Scoular user can read or mutate any customer's records via the Origination API. Trade-unit selection narrows the *default* result set in the UI but does not restrict what an authenticated user is permitted to see or change. (Once every endpoint names a permission, "any authenticated user" becomes "any user whose roles grant that kind of record". Trade units still won't narrow which customers.)
 
 This is intentional. Originators routinely cross trade units (e.g., search by name, follow a referral, edit notes on a producer outside their region), and a hard access boundary at the trade-unit level was creating false-positive blocks during legitimate workflows.
 
@@ -40,37 +43,133 @@ The fix in that case:
 - ~~Replace the `await next(); return;` outage path in `EnforceTradeUnitAccessAttribute` with a 503/403, or fall back to a trusted cached entitlement set.~~ **Already done** — both halves, in fact: the cached fallback *and* the 503 when there's no cache.
 - Constrain linked-producer traversal so the bidirectional logic doesn't surface customers outside the caller's allowed scope.
 
-## How authorization is actually expressed (and what it deliberately is NOT)
+## Permissions: what a user may do
 
-Authorization here is **two Azure AD app roles plus data scoping** — there is no roles/permissions
-table, no `resource:action:scope` permission strings, no `IPermissionService`, and no
-`GET /api/me/permissions`. The style guide's enterprise permissions model prescribes all of those;
-this app deliberately doesn't have them, and that is not an oversight:
+Since 2026-11-06 (Phase 1 of the [modular architecture plan](../../agents-docs/plans/plan-modular-architecture.md)),
+authorization follows the company permissions model. It replaces the earlier model of two Azure AD
+app roles, no permissions table, with access administered through AAD group membership. Three
+sources, each with one job:
 
-- The real authorization surface is binary — "may you open the Usage Dashboard" (the `Admin` app
-  role, granted by the *Origination App {Env} Super Users* group). Everyone who can open it sees the
-  whole organisation and may filter it by any manager. Everything else is trade-unit **data
-  scoping**, which is a tenancy filter, not a role.
-- Adding the table model would mean maintaining a second source of truth beside Azure AD group
-  membership, which is where access is actually administered.
+- **The token says which roles a user holds.** `ClaimsUserRoleSource` reads the role claims on the
+  access token. Roles are assigned in the company's entitlements app, which lets each app define its
+  own roles, and this app keeps no user-to-role table. Until the entitlements app issues this app's
+  roles, `Admin` still comes from the *Origination App {Env} Super Users* group. A token role with no
+  `dbo.Roles` row grants nothing, and is logged.
+- **Our database says what each role may do.** `dbo.RolePermissions` holds role → permission, and
+  `dbo.RoleSegments` holds role → customer segment. Every grant is its own row: no wildcards, no
+  inheritance. Grants change through migrations until the grant editor ships (Phase 1b).
+- **The code names the permissions.** `AppPermissions` is the catalog: 42 `resource:action[:scope]`
+  strings, such as `notes:write` and `saved-lists:read:team`. `dbo.Permissions` is generated from it.
+  A new permission reaches nobody until a migration grants it.
 
-Two consequences worth stating plainly, so a scan flagging them gets triaged rather than re-fixed:
+Where this departs from the style guide, and why, is in
+[STYLE-DEVIATIONS.md](./STYLE-DEVIATIONS.md#permissions-model).
 
-- **No in-app audit trail of role changes.** `Admin` membership lives in an Azure AD group, so it is
-  never mutated through app code and `role_assigned` / `role_removed` events can't exist in our
-  telemetry. That history is in Azure AD's own audit log. `SecurityAuditMiddleware` plus
-  `AuthorizationAuditResultHandler` do cover the one event type we can emit: 401/403 outcomes.
-- **`/api/me` reports only the token's roles.** It used to append a synthetic `UsageDashboardViewAll`
-  role for the names in `dbo.UsageDashboardViewAllUsers` (the former "how much of the dashboard do
-  you see" list). That table, the role and the per-caller scoping behind them were retired on
-  2026-10-09 when the manager dropdown was opened to every dashboard user; the response's `userId`
-  is now what the SPA uses to default that dropdown to the signed-in user.
+### Roles
 
-Revisit if the role surface stops being near-binary — more than a handful of distinct roles, or
-any need to grant a permission to someone who isn't in the corresponding AAD group.
+Roles only add: a user's permissions are the union of their roles' grants. A **persona** role
+decides what you see, and an **add-on** role decides what you may do with it.
+
+| Role | Kind | Holds | Segments |
+|---|---|---|---|
+| `Admin` | Base (system) | Every permission. In production it's meant for a break-glass account only; a production request carrying it logs a security warning, once per user per hour. | all |
+| `Originator` | Persona | The reads originators use, plus personal writes (preferences, your own saved lists, reminders) | `Producer` |
+| `Support` | Persona, for IT | Every read and personal writes, plus IT's operational powers: diagnostics, the customer sync, usage exclusions, the BarChart feed, the grant editor, the usage dashboard. No business-data writes. | all |
+| `Editor` | Add-on | Every shared business-data write | none |
+| `Manager` | Add-on | The usage dashboard, team saved lists, and removing other people's bid-sheet locations | none |
+| `Origination.Application` | Machine | `bid-feed:manage`, for the BarChart pipeline | none |
+
+**The default role.** Until the entitlements app issues persona roles, a signed-in person whose
+token carries none gets `Access:DefaultRoles`: `Originator` + `Editor`. That is exactly what a
+non-admin could do before permissions arrived. Today that's everyone; `Admin` holders also keep
+everything, since `Admin` holds every permission. Each use is logged once per user per hour, and
+app-only tokens never get defaults. **It must be emptied before traders launch**, or a trader whose
+roles lag behind would silently get producer access and edit rights.
+
+### What is checked today
+
+`[RequirePermission(AppPermissions.X)]` on a controller or action checks a permission. Each
+permission's policy also carries the default policy's requirements, so a permission check is never
+weaker than "signed in". **Today it guards only what used to need `Admin`:**
+
+| What | Permission |
+|---|---|
+| The usage dashboard | `usage-reports:read` |
+| Usage exclusions | `usage-exclusions:manage` |
+| Team saved lists: viewing them / assigning or changing another user's list | `saved-lists:read:team` / `saved-lists:write:team` |
+| Removing a bid-sheet location someone else created (checked in `BidSheetService`; the creator may always remove their own) | `bid-sheet-locations:delete:global` |
+| Diagnostics, and `GET /api/diagnostics/access-map` | `diagnostics:read`; the five diagnostics POSTs also need `diagnostics:manage` |
+| Customer sync diagnostics | `customer-sync:manage` |
+| BarChart ingest, by the pipeline or by a person re-running it | `bid-feed:manage` |
+
+**Every other endpoint still needs only a signed-in user**, as before. Phase 2 of the plan puts a
+permission on every endpoint: the read on each controller, and a write on each write action. A
+convention test will then fail on any endpoint without one, outside this exempt list:
+
+- **Any signed-in user, by design:** `/api/me`, `/api/me/permissions`, `/api/version`, `/api/help`,
+  `/api/whats-new`, `/api/clienttelemetry` (the browser's App Insights settings), and
+  `POST /api/usage-dashboard/click-event`. They describe the caller or the app, or record the
+  caller's own use of it.
+- **No sign-in:** `/health/live` and `/health/ready`, the App Service probes.
+
+There is no role check anywhere in code: no `RequireRole`, no `IsInRole`, and no role names.
+`PermissionService` is the only code that reads roles.
+
+### Denials, failures and timing
+
+- **A missing permission** gets a 403 with code `AUTHZ_PERMISSION_DENIED`. Its `details` name each
+  missing permission, never what the caller holds. `AuthorizationAuditResultHandler` writes the
+  response and logs the same code with the permissions. Other 403s keep the empty body and the
+  `ACCESS_DENIED` log.
+- **The grants fail closed.** Each instance caches every role's grants for about five minutes, with
+  a last-known-good copy. With no copy at all, a permission check returns
+  **503 `ACCESS_GRANTS_UNAVAILABLE`**, as do `/api/me/permissions` and the access map. An
+  environment whose database lacks the grants migrations returns that 503 on every permission check.
+- **How fast changes land.** A grant change reaches the API within about five minutes, and the SPA
+  at its next page load. A role change waits for the user's next access token: roughly 60–90 minutes
+  with Entra's defaults, unless their sessions are revoked.
+- **What an environment grants** is visible at `GET /api/diagnostics/access-map`
+  (`diagnostics:read`): every role's grants and segments, the default roles, and any permission no
+  role holds or only `Admin` holds. Dev, QA and Prod each hold their own grants.
+
+### The SPA hides; the API decides
+
+The SPA loads `/api/me/permissions` once per page load. `permissionGuard` keeps a route from
+matching, and `*appHasPermission` removes a control the user lacks. That is presentation only, and
+the API's check is the boundary. Until the permissions load, and if the load fails, the SPA treats
+the user as holding nothing. `forbiddenInterceptor` is the only place a 403 is shown, once.
+
+### Segments
+
+Each role's customer segments (`Producer`, `Commercial`) are granted and returned by
+`/api/me/permissions`, but nothing filters customers by them yet. They come into use with the
+trader work, and even then segment scope stays a UX filter, like trade units, unless the business
+decides otherwise.
+
+### Audit trail
+
+- **Role assignments** are recorded where they're made: the entitlements app, and for today's
+  `Admin`, Entra's audit log for the Super Users group. This app never assigns a role, so it can't
+  emit `role_assigned` or `role_removed`.
+- **Grants** are kept in `dbo.RolePermissions` and `dbo.RoleSegments`, which are SQL temporal
+  tables, so "who held what, when" is a query. Today grants change only through reviewed
+  migrations. The grant editor (Phase 1b) will log a `role_modified` event for every change.
+- **Decisions:** `SecurityAuditMiddleware` and `AuthorizationAuditResultHandler` log 401/403
+  outcomes, including every `AUTHZ_PERMISSION_DENIED`.
+
+### `/api/me`
+
+`/api/me` reports the token's roles and the user id. The SPA no longer calls it, because
+`/api/me/permissions` carries the same `userId`. Until 2026-10-09, `/api/me` also appended a
+synthetic `UsageDashboardViewAll` role for the names in `dbo.UsageDashboardViewAllUsers`. That table
+and the role behind it were retired when every dashboard user got the full manager dropdown.
 
 ## Relevant code
 
 - [api/GrainOriginatorPortal.Api/Filters/EnforceTradeUnitAccessAttribute.cs](../../api/GrainOriginatorPortal.Api/Filters/EnforceTradeUnitAccessAttribute.cs) — the trade-unit filter (UX scoping; fail-CLOSED on an uncached outage).
 - [api/GrainOriginatorPortal.Api/Services/UserEntitlementService.cs](../../api/GrainOriginatorPortal.Api/Services/UserEntitlementService.cs) — `ValidateCustomerAccessAsync` lives here.
 - [api/GrainOriginatorPortal.Api/Controllers/CustomersController.cs](../../api/GrainOriginatorPortal.Api/Controllers/CustomersController.cs) — example of a controller where the GETs intentionally skip the check.
+- [api/GrainOriginatorPortal.Infrastructure/Platform/Access/AppPermissions.cs](../../api/GrainOriginatorPortal.Infrastructure/Platform/Access/AppPermissions.cs) — the permission catalog.
+- [api/GrainOriginatorPortal.Api/Platform/Access/](../../api/GrainOriginatorPortal.Api/Platform/Access/) — `ClaimsUserRoleSource`, `PermissionService`, the grant cache, `[RequirePermission]` and its handler, `/api/me/permissions` and the access map.
+- [api/GrainOriginatorPortal.Api/Middleware/AuthorizationAuditResultHandler.cs](../../api/GrainOriginatorPortal.Api/Middleware/AuthorizationAuditResultHandler.cs) — the `AUTHZ_PERMISSION_DENIED` response and log.
+- [client/src/app/core/access/](../../client/src/app/core/access/) — the SPA's `PermissionService`, `permissionGuard`, `*appHasPermission` and the generated permission ids.
