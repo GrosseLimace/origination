@@ -14,6 +14,8 @@ import { recordkeepingFor } from './fd-cic-recordkeeping';
 import { ledgerCsv, ledgerFileName } from './mass-balance-ledger';
 import { feedstockReport } from './feedstock-report';
 import { FeedstockReportService } from './feedstock-report.service';
+import { FieldPlanDocumentsService } from '../../store/field-plan-documents.service';
+import { ApiError } from '@core/errors/api-error';
 import { ReviewTicketTableComponent } from './review/review-ticket-table.component';
 import { ReviewRecordkeepingComponent } from './review/review-recordkeeping.component';
 import { ReviewTDiscComponent } from './review/review-tdisc.component';
@@ -62,6 +64,13 @@ export class FdCicReviewComponent implements OnInit {
   private readonly toast = inject(ToastService);
   private readonly reports = inject(FeedstockReportService);
   private readonly tDiscApi = inject(TDiscApiService);
+  private readonly documents = inject(FieldPlanDocumentsService);
+
+  /** Whether a confirmed field's Biofuel Feedstock Report is saved to Doc Store here (the field plan is in the API). */
+  readonly docStoreEnabled = this.documents.enabled;
+  /** Saving the report to Doc Store: running, or failed with the reason (then the user can retry). */
+  readonly reportSaving = signal(false);
+  readonly reportSaveError = signal<string | null>(null);
 
   readonly recordId = input.required<string>();
   /** The producer's CTRM code and name, for the report and ledger. Without it they are on the program card only. */
@@ -411,19 +420,82 @@ export class FdCicReviewComponent implements OnInit {
     } finally {
       this.saving.set(false);
     }
+    // Confirming is what saves the report, whether or not anyone downloads it. A failure leaves the CI
+    // confirmed and says so in step 5, with a retry.
+    if (this.confirmed()) await this.saveReport();
+  }
+
+  /** What confirming saves to Doc Store and hasn't been saved yet, by name, for the status line in step 5. */
+  readonly unsavedDocuments = computed(() => {
+    const o = this.confirmed();
+    if (!o) return '';
+    const names = [o.reportDocumentId ? null : 'Biofuel Feedstock Report', o.ledgerDocumentId ? null : 'Mass Balance Ledger'].filter(n => n);
+    return names.join(' and ');
+  });
+
+  /**
+   * Saves the confirmed field's Biofuel Feedstock Report (PDF) and Mass Balance Ledger (CSV) to Doc Store, each
+   * once per confirmation (the server keeps the ids), so a retry saves only what's missing. A newer confirmation's
+   * pair marks the field's previous pair Overwritten on the server.
+   */
+  async saveReport(): Promise<void> {
+    const o = this.confirmed();
+    if (!this.docStoreEnabled || this.reportSaving() || !o || (o.reportDocumentId && o.ledgerDocumentId)) return;
+    const report = this.buildReport(), ledger = this.buildLedger();
+    if (!report || !ledger) {
+      this.reportSaveError.set('Open this review from the producer\'s page to build the report and ledger.');
+      return;
+    }
+    this.reportSaving.set(true);
+    this.reportSaveError.set(null);
+    const failures = new Set<string>();
+    const reason = (e: unknown, fallback: string) => failures.add(e instanceof ApiError && e.message ? e.message : fallback);
+    try {
+      if (!o.reportDocumentId) {
+        try {
+          const doc = await this.documents.saveReport(this.recordId(), await this.reports.blob(report), report.fileName);
+          this.store.reportSaved(this.recordId(), doc.id);
+        } catch (e) {
+          reason(e, 'The report couldn\'t be built.');
+        }
+      }
+      if (!o.ledgerDocumentId) {
+        try {
+          // With a byte-order mark, as the Download button saves it, so Excel reads it as UTF-8.
+          const csv = new Blob([String.fromCharCode(0xfeff), ledger.csv], { type: 'text/csv' });
+          const doc = await this.documents.saveLedger(this.recordId(), csv, ledger.fileName);
+          this.store.ledgerSaved(this.recordId(), doc.id);
+        } catch (e) {
+          reason(e, 'The ledger couldn\'t be saved.');
+        }
+      }
+    } finally {
+      this.reportSaving.set(false);
+      if (failures.size) this.reportSaveError.set([...failures].join(' '));
+    }
   }
 
   async generateReport(): Promise<void> {
-    const p = this.producer(), r = this.record(), s = this.season(), f = this.field();
-    if (!p || !r || !s || !f) return;
-    const report = feedstockReport({ producer: p, field: f, season: s, record: r, enrollmentId: this.store.enrollmentIdOf(r), generatedAt: new Date() });
+    const report = this.buildReport();
     if (report) await this.reports.download(report);
   }
 
-  downloadLedger(): void {
+  private buildReport() {
     const p = this.producer(), r = this.record(), s = this.season(), f = this.field();
-    if (!p || !r || !s || !f) return;
+    if (!p || !r || !s || !f) return null;
+    return feedstockReport({ producer: p, field: f, season: s, record: r, enrollmentId: this.store.enrollmentIdOf(r), generatedAt: new Date() });
+  }
+
+  downloadLedger(): void {
+    const ledger = this.buildLedger();
+    if (ledger) downloadCsv(ledger.csv, ledger.fileName);
+  }
+
+  /** This field's Mass Balance Ledger: the same one-row file as the Download button and the Doc Store copy. */
+  private buildLedger(): { csv: string; fileName: string } | null {
+    const p = this.producer(), r = this.record(), s = this.season(), f = this.field();
+    if (!p || !r || !s || !f) return null;
     const csv = ledgerCsv(p, [{ field: f, season: s, record: r, enrollmentId: this.store.enrollmentIdOf(r) }]);
-    downloadCsv(csv, ledgerFileName(p.code, s.year, new Date()));
+    return { csv, fileName: ledgerFileName(p.code, s.year, new Date()) };
   }
 }

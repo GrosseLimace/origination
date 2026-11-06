@@ -152,4 +152,18 @@ public class SecurityHeadersCspTests
 
         Assert.DoesNotContain("*.azurewebsites.net", csp);
     }
+
+    [Fact]
+    public void Csp_LetsTheAppFrameItsOwnBlobs_ForThe45ZDocumentViewer_ButScriptsStaySelfOnly()
+    {
+        // 2026-11-05: the 45Z documents dialog shows a PDF or image in an iframe from a blob: URL the app made
+        // itself, typed from an allow-list. Scripts stay 'self' only, so injected script can't make or run one.
+        var csp = SecurityHeadersMiddleware.BuildSpaContentSecurityPolicy(isDevelopment: false);
+
+        var frameSrc = csp.Split(';').Single(d => d.TrimStart().StartsWith("frame-src")).Trim();
+        var scriptSrc = csp.Split(';').Single(d => d.TrimStart().StartsWith("script-src")).Trim();
+        Assert.Equal("frame-src 'self' blob: https://login.microsoftonline.com", frameSrc);
+        Assert.Equal("script-src 'self'", scriptSrc);
+        Assert.Contains("object-src 'none'", csp);
+    }
 }

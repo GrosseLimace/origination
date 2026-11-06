@@ -132,7 +132,9 @@ public class SecurityHeadersMiddleware
             mediaSrc +
             workerSrc +
             "connect-src 'self' https://login.microsoftonline.com https://graph.microsoft.com" + configuredHosts + devConnectSrc + "; " +
-            "frame-src 'self' https://login.microsoftonline.com; " +
+            // blob: (2026-11-05): the 45Z documents dialog shows a PDF or image in an iframe from a blob: URL the
+            // app made itself from an allow-listed type. Only the app's own script ('self') can make one.
+            "frame-src 'self' blob: https://login.microsoftonline.com; " +
             "frame-ancestors 'none'; " +
             "form-action 'self'; " +
             "object-src 'none'; " +
