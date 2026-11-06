@@ -137,8 +137,9 @@ builder.Services.AddSingleton<
 
 builder.Services.AddScoped<IUserEntitlementService, UserEntitlementService>();
 
-// Permissions: roles from the token, grants from the database (plan §4.3). Nothing checks them until
-// RequirePermission lands; until then this only works out what each caller would be allowed.
+// Permissions: roles from the token, grants from the database. [RequirePermission] checks
+// them through one policy per catalog permission, each of which carries the default policy's
+// requirements as well.
 builder.Services.AddAccess(builder.Configuration);
 
 // Usage tracking: bounded in-memory channel + background batch writer

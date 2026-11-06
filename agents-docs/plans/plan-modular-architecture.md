@@ -301,18 +301,24 @@ public sealed record PermissionRequirement(string Permission) : IAuthorizationRe
 public sealed class PermissionRequirementHandler(IPermissionService permissions, IHttpContextAccessor http)
     : AuthorizationHandler<PermissionRequirement> { … }
 
-// PlatformModule: one policy per catalog permission.
+// AddAccess (AddPlatform in Phase 2): one policy per catalog permission.
 // A named policy REPLACES the default policy rather than adding to it, so each one starts from
 // the default policy's requirements (authenticated user, plus anything added there later) and
 // adds the permission on top. eTMS missed this, and its permission policies skipped its
-// active-user check.
-foreach (var permission in AppPermissions.All)
-    options.AddPolicy($"Permission:{permission}", p => p
-        .Combine(options.DefaultPolicy)
-        .AddRequirements(new PermissionRequirement(permission)));
+// active-user check. PostConfigure, so it copies the default policy as it finally stands.
+services.AddOptions<AuthorizationOptions>().PostConfigure(options =>
+{
+    foreach (var permission in AppPermissions.All)
+        options.AddPolicy($"Permission:{permission}", p => p
+            .Combine(options.DefaultPolicy)
+            .AddRequirements(new PermissionRequirement(permission)));
+});
 ```
 
-- **Test:** every `Permission:*` policy contains every requirement of the default policy, so a permission policy can never be weaker than the default (eTMS has the same test).
+- **Test:** every `Permission:*` policy contains every requirement of the default policy, so a permission policy can never be weaker than the default (eTMS has the same test). The test changes the default policy after `AddAccess` to prove the copy happens last.
+- **Test:** every `[RequirePermission]` names a catalog permission. One that doesn't has no policy, and its endpoint would fail with a 500 on first use.
+- **The 403.** A missing permission gets the standard error envelope with code `AUTHZ_PERMISSION_DENIED` and each missing permission in `details`, never the permissions the caller holds (style guide §7.1). `AuthorizationAuditResultHandler`, which already logs every framework denial, writes it and logs `AUTHZ_PERMISSION_DENIED` with the permissions. Other 403s keep the framework's empty body and the `ACCESS_DENIED` log.
+- **Wrong person.** The handler refuses if it is asked about any principal other than the request's caller, because `IPermissionService` only answers for the caller.
 
 ```csharp
 // A controller: the read permission at class level, a write permission on each write action.
@@ -321,8 +327,8 @@ foreach (var permission in AppPermissions.All)
 public sealed class PlantingIntentionsController : ControllerBase
 {
     [HttpGet]  public Task<…> List(…)   { … }
-    [HttpPost, RequirePermission(AppPermissions.Producers.PlantingIntentionsCreate)] public Task<…> Create(…) { … }
-    [HttpDelete("{id}"), RequirePermission(AppPermissions.Producers.PlantingIntentionsDelete)] public Task<…> Delete(…) { … }
+    [HttpPost, RequirePermission(AppPermissions.Producers.PlantingIntentionsWrite)] public Task<…> Create(…) { … }
+    [HttpDelete("{id}"), RequirePermission(AppPermissions.Producers.PlantingIntentionsWrite)] public Task<…> Delete(…) { … }
 }
 ```
 
