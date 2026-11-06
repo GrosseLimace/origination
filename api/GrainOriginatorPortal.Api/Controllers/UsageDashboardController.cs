@@ -1,47 +1,35 @@
 using System.Threading.Channels;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using GrainOriginatorPortal.Api.Authorization;
 using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Models.Requests;
+using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Exceptions;
+using GrainOriginatorPortal.Infrastructure.Platform.Access;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
 [Route("api/usage-dashboard")]
-// Baseline: any authenticated user. Individual data-read endpoints require the
-// UsageDashboardViewer policy (the Admin app role, granted by the "Origination App {Env} Super
-// Users" group), applied per method because ASP.NET combines Authorize attributes with
-// AND — a class-level policy would also block the telemetry endpoint below, which
-// needs to accept click events from every signed-in user for user-activity tracking.
-// Exclusion administration stays AdminOnly (+ the ExclusionManagers allowlist).
-// Everyone who passes the read policy sees the whole organisation and may narrow it to any
-// manager's team with `managerId` — there is no per-caller scoping beyond that policy.
+// Baseline: any authenticated user. Each data-read endpoint requires usage-reports:read, applied per
+// method because ASP.NET requires every authorization attribute that applies: one on the class would
+// also block the telemetry endpoint below, which accepts click events from every signed-in user.
+// Exclusion administration requires usage-exclusions:manage instead.
+// Everyone who may read sees the whole organisation and may narrow it to any manager's team with
+// `managerId` — there is no per-caller scoping beyond the permission.
 [Authorize]
 [Produces("application/json")]
 public class UsageDashboardController : ControllerBase
 {
     private readonly IUsageDashboardService _service;
-    private readonly HashSet<string> _exclusionManagers;
+    private readonly IPermissionService _permissions;
 
-    public UsageDashboardController(IUsageDashboardService service, IConfiguration configuration)
+    public UsageDashboardController(IUsageDashboardService service, IPermissionService permissions)
     {
         _service = service;
-        // The short list of IT users allowed to manage the exclusion list — a tighter circle than
-        // the Admin role that gates the rest of the dashboard.
-        _exclusionManagers = new HashSet<string>(
-            configuration.GetSection("UsageDashboard:ExclusionManagers").Get<string[]>() ?? [],
-            StringComparer.OrdinalIgnoreCase);
-    }
-
-    /// <summary>Whether the signed-in user is on the configured exclusion-manager allowlist.</summary>
-    private bool IsExclusionManager()
-    {
-        var shortName = GetCurrentUserShortName();
-        return !string.IsNullOrEmpty(shortName) && _exclusionManagers.Contains(shortName);
+        _permissions = permissions;
     }
 
     // `from`/`to` are calendar dates (yyyy-MM-dd) interpreted in UTC; the window is
@@ -54,7 +42,7 @@ public class UsageDashboardController : ControllerBase
     // yield empty results rather than errors.
 
     [HttpGet("summary")]
-    [Authorize(Policy = UsageDashboardAccess.PolicyName)]
+    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<UsageDashboardSummaryDto>> GetSummary(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
@@ -62,7 +50,7 @@ public class UsageDashboardController : ControllerBase
         => Ok(await _service.GetSummaryAsync(from, to, managerId, cancellationToken));
 
     [HttpGet("users")]
-    [Authorize(Policy = UsageDashboardAccess.PolicyName)]
+    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<List<UsageDashboardUserDto>>> GetUsers(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
@@ -71,7 +59,7 @@ public class UsageDashboardController : ControllerBase
         => Ok(await _service.GetUsersAsync(from, to, managerId, status, cancellationToken));
 
     [HttpGet("daily-active")]
-    [Authorize(Policy = UsageDashboardAccess.PolicyName)]
+    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<List<DailyActiveDto>>> GetDailyActive(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
@@ -79,7 +67,7 @@ public class UsageDashboardController : ControllerBase
         => Ok(await _service.GetDailyActiveAsync(from, to, managerId, cancellationToken));
 
     [HttpGet("feature-sessions")]
-    [Authorize(Policy = UsageDashboardAccess.PolicyName)]
+    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<List<FeatureSessionsDto>>> GetFeatureSessions(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
@@ -89,7 +77,7 @@ public class UsageDashboardController : ControllerBase
 
     // Trend view over whole calendar weeks — deliberately not bound to the dashboard's date filter.
     [HttpGet("weekly-trend")]
-    [Authorize(Policy = UsageDashboardAccess.PolicyName)]
+    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<List<WeeklyTrendDto>>> GetWeeklyTrend(
         [FromQuery] string? managerId = null,
         [FromQuery] int weeks = 8,
@@ -97,7 +85,7 @@ public class UsageDashboardController : ControllerBase
         => Ok(await _service.GetWeeklyTrendAsync(managerId, weeks, cancellationToken));
 
     [HttpGet("activity-breakdown")]
-    [Authorize(Policy = UsageDashboardAccess.PolicyName)]
+    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<List<ActivityBreakdownDto>>> GetActivityBreakdown(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
@@ -105,7 +93,7 @@ public class UsageDashboardController : ControllerBase
         => Ok(await _service.GetActivityBreakdownAsync(from, to, managerId, cancellationToken));
 
     [HttpGet("underused-features")]
-    [Authorize(Policy = UsageDashboardAccess.PolicyName)]
+    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<List<UnderusedFeatureDto>>> GetUnderusedFeatures(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
@@ -113,7 +101,7 @@ public class UsageDashboardController : ControllerBase
         => Ok(await _service.GetUnderusedFeaturesAsync(from, to, managerId, cancellationToken));
 
     [HttpGet("query-library-usage")]
-    [Authorize(Policy = UsageDashboardAccess.PolicyName)]
+    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<List<QueryLibraryUsageDto>>> GetQueryLibraryUsage(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
@@ -121,7 +109,7 @@ public class UsageDashboardController : ControllerBase
         => Ok(await _service.GetQueryLibraryUsageAsync(from, to, managerId, cancellationToken));
 
     [HttpGet("query-search-gaps")]
-    [Authorize(Policy = UsageDashboardAccess.PolicyName)]
+    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<List<QuerySearchGapDto>>> GetQuerySearchGaps(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
@@ -131,13 +119,13 @@ public class UsageDashboardController : ControllerBase
     /// <summary>Active managers for the manager filter. 503 when the TradeUnitPreferences DB is
     /// unreachable — fail closed, so the client shows "unavailable" instead of a stale roster.</summary>
     [HttpGet("managers")]
-    [Authorize(Policy = UsageDashboardAccess.PolicyName)]
+    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<List<UsageManagerDto>>> GetManagers(CancellationToken cancellationToken = default)
         => Ok(await _service.GetManagersAsync(cancellationToken));
 
     // Per-user drill-down. Aggregates one originator's full activity profile in the window.
     [HttpGet("users/{userId}/detail")]
-    [Authorize(Policy = UsageDashboardAccess.PolicyName)]
+    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<UserUsageDetailDto>> GetUserDetail(
         string userId,
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
@@ -152,42 +140,38 @@ public class UsageDashboardController : ControllerBase
     // Accounts kept out of every dashboard view (IT/dev/admin accounts whose activity would skew
     // adoption). Excluding someone changes nothing about their access to the app.
     //
-    // These endpoints are gated TWICE: AdminOnly (like the rest of the dashboard) AND the
-    // UsageDashboard:ExclusionManagers allowlist — only the named IT users may see or change the
-    // exclusion list. The client asks /excluded-users/can-manage and hides the gear for everyone else.
+    // These endpoints require usage-exclusions:manage, which IT holds. Reading the dashboard isn't
+    // enough to see or change the exclusion list. The client asks /excluded-users/can-manage and
+    // hides the gear for everyone else.
 
     /// <summary>Whether the caller may manage exclusions — drives the gear icon's visibility.</summary>
-    // Viewer policy (not AdminOnly) so non-admin viewers get a clean `false` instead of a 403 on
-    // page load; the answer is still the ExclusionManagers allowlist check either way.
+    // Needs only usage-reports:read, so a reader who can't manage gets a clean `false` instead of a 403
+    // on page load.
     [HttpGet("excluded-users/can-manage")]
-    [Authorize(Policy = UsageDashboardAccess.PolicyName)]
-    public ActionResult<ExclusionPermissionsDto> GetCanManageExclusions()
-        => Ok(new ExclusionPermissionsDto { CanManage = IsExclusionManager() });
+    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
+    public async Task<ActionResult<ExclusionPermissionsDto>> GetCanManageExclusions(CancellationToken cancellationToken = default)
+        => Ok(new ExclusionPermissionsDto
+        {
+            CanManage = await _permissions.HasPermissionAsync(AppPermissions.UsageAnalytics.UsageExclusionsManage, cancellationToken),
+        });
 
     // People who can sign in to the app (Entra access-group members), for the exclusion picker so an
     // admin can search + select instead of typing a user id. Available=false ⇒ client falls to free text.
     [HttpGet("access-users")]
-    [Authorize(Policy = "AdminOnly")]
+    [RequirePermission(AppPermissions.UsageAnalytics.UsageExclusionsManage)]
     public async Task<ActionResult<AccessUsersDto>> GetAccessUsers(CancellationToken cancellationToken = default)
-    {
-        if (!IsExclusionManager()) return Forbid();
-        return Ok(await _service.GetAccessUsersAsync(cancellationToken));
-    }
+        => Ok(await _service.GetAccessUsersAsync(cancellationToken));
 
     [HttpGet("excluded-users")]
-    [Authorize(Policy = "AdminOnly")]
+    [RequirePermission(AppPermissions.UsageAnalytics.UsageExclusionsManage)]
     public async Task<ActionResult<List<ExcludedUserDto>>> GetExcludedUsers(CancellationToken cancellationToken = default)
-    {
-        if (!IsExclusionManager()) return Forbid();
-        return Ok(await _service.GetExcludedUsersAsync(cancellationToken));
-    }
+        => Ok(await _service.GetExcludedUsersAsync(cancellationToken));
 
     [HttpPost("excluded-users")]
-    [Authorize(Policy = "AdminOnly")]
+    [RequirePermission(AppPermissions.UsageAnalytics.UsageExclusionsManage)]
     public async Task<ActionResult<ExcludedUserDto>> AddExcludedUser(
         [FromBody] AddExcludedUserRequest request, CancellationToken cancellationToken = default)
     {
-        if (!IsExclusionManager()) return Forbid();
         // Throw rather than return a bare string: ASP.NET serializes a string body as raw JSON,
         // which the Angular client's error unwrapping can't read, so the user saw a generic
         // "Server error" instead of this text. Going through GlobalExceptionHandler puts it in the
@@ -204,16 +188,12 @@ public class UsageDashboardController : ControllerBase
     }
 
     [HttpDelete("excluded-users/{id:int}")]
-    [Authorize(Policy = "AdminOnly")]
+    [RequirePermission(AppPermissions.UsageAnalytics.UsageExclusionsManage)]
     public async Task<ActionResult> RemoveExcludedUser(int id, CancellationToken cancellationToken = default)
-    {
-        if (!IsExclusionManager()) return Forbid();
-        return await _service.RemoveExcludedUserAsync(id, cancellationToken) ? NoContent() : NotFound();
-    }
+        => await _service.RemoveExcludedUserAsync(id, cancellationToken) ? NoContent() : NotFound();
 
-    // Telemetry endpoint — every signed-in user posts click events from the UI,
-    // not just Admin. Intentionally left without the per-method AdminOnly policy
-    // so the class-level `[Authorize]` (any authenticated user) applies. Writes to a
+    // Telemetry endpoint — every signed-in user posts click events from the UI. Intentionally left
+    // without a permission so the class-level `[Authorize]` (any authenticated user) applies. Writes to a
     // bounded channel (no DbContext) drained by the usage-tracking background service.
     [HttpPost("click-event")]
     public ActionResult TrackClickEvent(

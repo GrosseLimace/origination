@@ -51,6 +51,10 @@ internal static class TestGrants
     public static readonly RoleGrants Manager = Role("Manager", RoleKind.AddOn, isSystem: false,
         [AppPermissions.UsageAnalytics.UsageReportsRead], []);
 
+    /// <summary>The BarChart pipeline's machine role. Not in <see cref="All"/>; tests that need it add it.</summary>
+    public static readonly RoleGrants Pipeline = Role("Origination.Application", RoleKind.Machine, isSystem: false,
+        [AppPermissions.BidSheet.BidFeedManage], []);
+
     public static IReadOnlyList<RoleGrants> All => [Admin, Originator, Support, Editor, Manager];
 
     public static AccessGrants Map(params RoleGrants[] roles) => AccessGrants.From(roles.Length > 0 ? roles : All, out _);

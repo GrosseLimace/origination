@@ -14,11 +14,13 @@ using Moq;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Controllers;
+using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Access;
 using GrainOriginatorPortal.Infrastructure.Sync;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
@@ -476,13 +478,13 @@ public class CustomerSyncDiagnosticsControllerTests
     }
 
     [Fact]
-    public void Controller_IsAdminOnly()
+    public void Controller_RequiresCustomerSyncManage()
     {
-        var authorize = typeof(CustomerSyncDiagnosticsController)
-            .GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true)
-            .Cast<AuthorizeAttribute>();
+        var required = typeof(CustomerSyncDiagnosticsController)
+            .GetCustomAttributes(typeof(RequirePermissionAttribute), inherit: true)
+            .Cast<RequirePermissionAttribute>();
 
-        Assert.Contains(authorize, a => a.Policy == "AdminOnly");
+        Assert.Equal(AppPermissions.Customers.CustomerSyncManage, Assert.Single(required).Permission);
     }
 
     [Fact]

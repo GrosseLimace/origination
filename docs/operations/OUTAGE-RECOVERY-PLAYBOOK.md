@@ -145,7 +145,7 @@ Run B1–B3 from **each network path**: office LAN, Prisma VPN, and a remote sit
 Run this **every time**, even if nobody restarted anything. The 07:00 UTC run or an Azure-initiated restart may have happened mid-outage.
 
 - **How:**
-  1. **First**, `GET /api/diagnostics/customer-sync/last-run` ([A1](#a1-call-an-admin-endpoint-in-prod); AdminOnly, works in PROD). It returns `{ processStartedUtc, nowUtc, lastSuccessfulRunUtc, stale, lastRun }`. `stale: true` (no successful run finished in the last 26 h) or `lastRun.outcome: "aborted"` is the signal; `lastRun.abortCode` and `lastRun.abortReason` say why. It is **in memory only**: a restart wipes it, so `lastRun: null` right after a deploy is normal (the startup sync runs 60 s after boot; compare `processStartedUtc` with `nowUtc`).
+  1. **First**, `GET /api/diagnostics/customer-sync/last-run` ([A1](#a1-call-an-admin-endpoint-in-prod); needs `customer-sync:manage`, which today means the Admin role; works in PROD). It returns `{ processStartedUtc, nowUtc, lastSuccessfulRunUtc, stale, lastRun }`. `stale: true` (no successful run finished in the last 26 h) or `lastRun.outcome: "aborted"` is the signal; `lastRun.abortCode` and `lastRun.abortReason` say why. It is **in memory only**: a restart wipes it, so `lastRun: null` right after a deploy is normal (the startup sync runs 60 s after boot; compare `processStartedUtc` with `nowUtc`).
   2. Then the history, in App Insights ([Appendix B](#appendix-b--app-insights-queries), "Customer sync aborts"). The abort codes are explained in [Customer sync abort codes](#customer-sync-abort-codes) below.
   3. Then run against the **Origination** DB:
   ```sql

@@ -105,28 +105,9 @@ builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration)
     // In-memory is right for this: tokens are per-user and short-lived, a cold instance simply
     // re-exchanges, and a distributed cache would be new infrastructure for no correctness gain.
     .AddInMemoryTokenCaches();
-builder.Services.AddAuthorization(options =>
-{
-    // RequireRole honors the identity's RoleClaimType so it works whether the
-    // JWT middleware surfaced the claim as `roles` (Microsoft.Identity.Web default)
-    // or as `ClaimTypes.Role` (mapped). Both paths resolve to the same "Admin" check.
-    options.AddPolicy("AdminOnly", policy =>
-        policy.RequireRole("Admin"));
-
-    // BarChart ingestion: the data pipeline's managed identity holding the pre-existing
-    // application-only app role, or an Admin so the feed can be exercised and re-run by hand.
-    // RequireRole is OR across the listed roles.
-    options.AddPolicy("BarchartIngest", policy =>
-        policy.RequireRole("Origination.Application", "Admin"));
-
-    // Usage-dashboard read surface: Super Users group membership, surfaced as the Admin role.
-    // Equivalent to AdminOnly today; kept as its own named policy so the read surface stays distinct
-    // from exclusion administration (a convention test pins that split), and so how much of the org
-    // a viewer sees can keep changing without touching who may open it.
-    options.AddPolicy(GrainOriginatorPortal.Api.Authorization.UsageDashboardAccess.PolicyName, policy =>
-        policy.RequireAssertion(ctx =>
-            GrainOriginatorPortal.Api.Authorization.UsageDashboardAccess.CanView(ctx.User)));
-});
+// Every endpoint is checked by permission through [RequirePermission]; AddAccess below registers a policy
+// per permission. No policy names a role.
+builder.Services.AddAuthorization();
 // Audit authorization denials where the framework decides them. The authorization middleware
 // short-circuits on a failed [Authorize] without calling the rest of the pipeline, so
 // SecurityAuditMiddleware (which reads the final status code downstream) never saw the ordinary

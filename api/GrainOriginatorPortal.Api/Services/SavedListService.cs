@@ -1,7 +1,9 @@
 using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Services.Mappings;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Access;
 
 namespace GrainOriginatorPortal.Api.Services;
 
@@ -13,19 +15,22 @@ public class SavedListService : ISavedListService
     private readonly IDisplayNameLookupRepository _displayNameLookup;
     private readonly IUserEntitlementService _entitlementService;
     private readonly IRequestContextService _requestContext;
+    private readonly IPermissionService _permissions;
 
     public SavedListService(
         ISavedListRepository repository,
         IEntitlementsRepository entitlements,
         IDisplayNameLookupRepository displayNameLookup,
         IUserEntitlementService entitlementService,
-        IRequestContextService requestContext)
+        IRequestContextService requestContext,
+        IPermissionService permissions)
     {
         _repository = repository;
         _entitlements = entitlements;
         _displayNameLookup = displayNameLookup;
         _entitlementService = entitlementService;
         _requestContext = requestContext;
+        _permissions = permissions;
     }
 
     /// <inheritdoc />
@@ -183,15 +188,15 @@ public class SavedListService : ISavedListService
         await _repository.DeleteAsync(listId, _requestContext.GetCurrentUser(), canManageAny, cancellationToken);
     }
 
-    /// <summary>Whether the caller may manage (edit/delete) the target list as a MANAGER — i.e. the
-    /// admin override. Scoped to the same team-list boundary as the read path: an Admin may manage a
+    /// <summary>Whether the caller may manage (edit/delete) the target list as a MANAGER, through
+    /// saved-lists:write:team. Scoped to the same team-list boundary as the read path: a holder may manage a
     /// list only when its trade units overlap the caller's entitled trade units. (Owner/assignee access
     /// is enforced separately in the repository by CreatedBy/AssignedTo, so this never needs to be true
-    /// for one's own list.) Without this scope, the global Admin role could mutate ANY list by id,
+    /// for one's own list.) Without this scope, the permission would let its holder mutate ANY list by id,
     /// including lists outside the caller's trade units (broken access control).</summary>
     private async Task<bool> CanManageTargetAsync(int listId, CancellationToken cancellationToken)
     {
-        if (!_requestContext.IsAdmin()) return false;
+        if (!await _permissions.HasPermissionAsync(AppPermissions.Lists.SavedListsWriteTeam, cancellationToken)) return false;
 
         var target = await _repository.GetByIdAsync(listId, cancellationToken);
         var listTradeUnits = (target?.TradeUnits ?? string.Empty)

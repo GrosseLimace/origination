@@ -18,5 +18,11 @@ public static class RoleKind
     /// <summary>The style guide's base role, <c>Admin</c>: every permission and every segment.</summary>
     public const string Base = "Base";
 
-    public static IReadOnlyList<string> All { get; } = [Persona, AddOn, Base];
+    /// <summary>
+    /// A machine caller, not a person, such as the BarChart pipeline. Its app-only token carries an app role
+    /// named like the row. It never gets the default roles and holds no segments.
+    /// </summary>
+    public const string Machine = "Machine";
+
+    public static IReadOnlyList<string> All { get; } = [Persona, AddOn, Base, Machine];
 }

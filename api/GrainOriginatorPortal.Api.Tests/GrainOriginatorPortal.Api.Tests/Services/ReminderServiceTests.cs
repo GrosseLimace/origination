@@ -4,6 +4,7 @@ using Moq;
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models.Requests;
+using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
@@ -141,10 +142,10 @@ public class ReminderServiceTests
     }
 
     [Fact]
-    public async Task AdminRoleGrantsNoExtraReach()
+    public async Task NoRoleOrPermissionGrantsExtraReach()
     {
-        // Arrange — an admin is just another user here; there is no override path.
-        _requestContext.Setup(r => r.IsAdmin()).Returns(true);
+        // Arrange — reminders are owner-only, with no override path for anyone: the repository finds only
+        // the caller's own, and the service never asks about permissions.
         _repository.Setup(r => r.GetByIdAsync(7, Caller, It.IsAny<CancellationToken>()))
             .ReturnsAsync((ProducerReminder?)null);
 
@@ -153,7 +154,9 @@ public class ReminderServiceTests
 
         // Assert
         Assert.Null(result);
-        _requestContext.Verify(r => r.IsAdmin(), Times.Never);
+        Assert.DoesNotContain(
+            typeof(ReminderService).GetConstructors().SelectMany(c => c.GetParameters()),
+            p => p.ParameterType == typeof(IPermissionService));
     }
 
     // ── Due-date validation ──────────────────────────────────────────────────

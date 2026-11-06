@@ -11,7 +11,7 @@ locally). First consumers of that list:
 | --- | --- | --- |
 | **Usage Dashboard** (all endpoints) | "All users" = the access group (people with access but no entitlements — e.g. admin accounts — appear, with Entra display names); a trade-unit filter shows that unit's entitled users ∩ access | Exactly the pre-existing behavior: full entitlements snapshot |
 | **Daily Digest → People picker** (`GET /api/entitlements/catalog`) | People sharing a TU with the caller ∩ access | Unfiltered people list, as before |
-| **Diagnostic** `GET /api/diagnostics/app-access-group-members` (AdminOnly, all envs) | Full member list | The categorized reason (see table below) |
+| **Diagnostic** `GET /api/diagnostics/app-access-group-members` (`diagnostics:read`, all envs) | Full member list | The categorized reason (see table below) |
 
 Not yet filtered: the Logic Apps' **send-time** expansion of trade-unit/group recipients (they read
 the raw Entitlements tables directly). Future phase — likely a synced SQL table of the access set.

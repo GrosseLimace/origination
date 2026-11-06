@@ -10,7 +10,9 @@ using Microsoft.AspNetCore.Mvc.Routing;
 // Project namespaces
 using GrainOriginatorPortal.Api.Controllers;
 using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Infrastructure.Platform.Access;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 
@@ -118,7 +120,7 @@ public class DiagnosticsControllerRouteContractTests
         var type = typeof(DiagnosticsController);
 
         var authorize = Assert.Single(type.GetCustomAttributes<AuthorizeAttribute>(inherit: false));
-        Assert.Equal("AdminOnly", authorize.Policy);
+        Assert.Equal(AppPermissions.Platform.DiagnosticsRead, Assert.IsType<RequirePermissionAttribute>(authorize).Permission);
 
         var route = Assert.Single(type.GetCustomAttributes<RouteAttribute>(inherit: false));
         Assert.Equal("api/[controller]", route.Template);
@@ -130,14 +132,24 @@ public class DiagnosticsControllerRouteContractTests
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>No action ever carried its own authorization override; the class policy is the whole
-    /// caller-side gate (the environment gate is a runtime check, pinned in DiagnosticsControllerGateTests).</summary>
+    /// <summary>The class requires diagnostics:read, and each POST adds diagnostics:manage. Nothing else changes
+    /// the caller-side gate (the environment gate is a runtime check, pinned in DiagnosticsControllerGateTests).</summary>
     [Fact]
-    public void NoAction_OverridesTheControllerAuthorization()
+    public void OnlyThePosts_AddDiagnosticsManage()
     {
         foreach (var method in DeclaredPublicMethods())
         {
-            Assert.Empty(method.GetCustomAttributes<AuthorizeAttribute>());
+            var authorize = method.GetCustomAttributes<AuthorizeAttribute>().ToArray();
+            if (method.GetCustomAttribute<HttpPostAttribute>() is not null)
+            {
+                var required = Assert.IsType<RequirePermissionAttribute>(Assert.Single(authorize));
+                Assert.Equal(AppPermissions.Platform.DiagnosticsManage, required.Permission);
+            }
+            else
+            {
+                Assert.Empty(authorize);
+            }
+
             Assert.Empty(method.GetCustomAttributes<AllowAnonymousAttribute>());
             Assert.Empty(method.GetCustomAttributes<NonActionAttribute>());
         }

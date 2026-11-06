@@ -2,7 +2,9 @@
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Infrastructure.Platform.Access;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -32,9 +34,9 @@ public class SavedListsController : ControllerBase
 
     // -------------------------------------------------------------------------
     /// <summary>Manager-only: all saved lists created by other users whose trade units overlap the
-    /// requested CSV. Gated by the same "Admin" role that gates the Usage Dashboard.</summary>
+    /// requested CSV.</summary>
     [HttpGet("team")]
-    [Authorize(Policy = "AdminOnly")]
+    [RequirePermission(AppPermissions.Lists.SavedListsReadTeam)]
     [ProducesResponseType(typeof(List<SavedListResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<SavedListResponse>>> GetTeam([FromQuery] string? tradeUnits, CancellationToken cancellationToken = default)
     {
@@ -51,7 +53,7 @@ public class SavedListsController : ControllerBase
     // -------------------------------------------------------------------------
     /// <summary>Manager-only: team members in the requested trade units (for the "assign a list" picker).</summary>
     [HttpGet("team-members")]
-    [Authorize(Policy = "AdminOnly")]
+    [RequirePermission(AppPermissions.Lists.SavedListsReadTeam)]
     [ProducesResponseType(typeof(List<TeamMemberResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<TeamMemberResponse>>> GetTeamMembers([FromQuery] string? tradeUnits, CancellationToken cancellationToken = default)
     {
@@ -61,7 +63,7 @@ public class SavedListsController : ControllerBase
     // -------------------------------------------------------------------------
     /// <summary>Manager-only: assigns a copy of a built list to one or more team members.</summary>
     [HttpPost("assign")]
-    [Authorize(Policy = "AdminOnly")]
+    [RequirePermission(AppPermissions.Lists.SavedListsWriteTeam)]
     [ProducesResponseType(typeof(List<SavedListResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<List<SavedListResponse>>> Assign([FromBody] AssignSavedListRequest request, CancellationToken cancellationToken = default)

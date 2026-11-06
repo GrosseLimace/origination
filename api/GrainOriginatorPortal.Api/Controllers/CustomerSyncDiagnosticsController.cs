@@ -1,24 +1,25 @@
 // Microsoft namespaces
 using System.Text.Json;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 // Project namespaces
+using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Access;
 using GrainOriginatorPortal.Infrastructure.Sync;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
 /// <summary>
-/// Admin-only diagnostics for the nightly customer sync (<see cref="CustomerSyncService"/>). Nothing here writes
+/// Diagnostics for the nightly customer sync (<see cref="CustomerSyncService"/>). Nothing here writes
 /// customer data except <c>POST run</c> without <c>dryRun</c>. Responses carry codes and counts only — never
 /// customer names, emails, phones or addresses.
 /// </summary>
 [ApiController]
 [Route("api/diagnostics/customer-sync")]
-[Authorize(Policy = "AdminOnly")]
+[RequirePermission(AppPermissions.Customers.CustomerSyncManage)]
 [Produces("application/json")]
 public class CustomerSyncDiagnosticsController : ControllerBase
 {
@@ -53,8 +54,8 @@ public class CustomerSyncDiagnosticsController : ControllerBase
 
     // -------------------------------------------------------------------------
     /// <summary>
-    /// Manual on-demand trigger for the customer sync. Available in all environments to admins (gated by the
-    /// controller-level <c>[Authorize(Policy = "AdminOnly")]</c>, no environment gate) — PROD is where it matters:
+    /// Manual on-demand trigger for the customer sync. Available in all environments to holders of
+    /// <c>customer-sync:manage</c> (the controller-level permission, no environment gate) — PROD is where it matters:
     /// an out-of-cycle refresh ahead of the next scheduled <see cref="CustomerSyncBackgroundService"/> run, and the
     /// recovery from a tripped mass-deactivation guard (<c>?force=true</c>, once the deactivation is known to be
     /// legitimate; check it first with <c>?dryRun=true</c>).

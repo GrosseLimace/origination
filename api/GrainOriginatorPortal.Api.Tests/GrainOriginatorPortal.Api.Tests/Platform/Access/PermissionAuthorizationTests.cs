@@ -168,4 +168,16 @@ public class PermissionAuthorizationTests
             AppPermissions.All.Contains(use.Permission),
             $"{use.Where} requires '{use.Permission}', which isn't in AppPermissions."));
     }
+
+    [Fact]
+    public async Task ThePipelinesAppOnlyToken_PassesThroughItsMachineRole()
+    {
+        // The BarChart pipeline goes through the same permission policy as a person, by its role row.
+        _grantCache.GetAsync(Arg.Any<CancellationToken>()).Returns(TestGrants.Map([.. TestGrants.All, TestGrants.Pipeline]));
+
+        var result = await AuthorizeAsync(
+            TestUsers.Signed(delegated: false, "Origination.Application"), AppPermissions.BidSheet.BidFeedManage);
+
+        Assert.True(result.Succeeded);
+    }
 }

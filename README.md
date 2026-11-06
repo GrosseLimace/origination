@@ -161,8 +161,9 @@ All routes require Azure AD bearer token authentication. Base path: `/api/v1`
 > Trade unit and trade-unit-group catalog lookups are sourced from the **TradeUnitPreferences** database (`dbo.vw_UserTradeUnitPreferences`, see `/usertradeunits`). Managers assign users to trade units in a separate preferences application, which owns the writes; this app only reads. Replaced the Entitlements DB 2026-08-18. The app DB no longer maintains a local TU catalog.
 
 ### BarChart Bid Feed Ingestion (application DB — machine-to-machine)
-Routed at `/api/barchart-ingest` (no `/v1` segment). Requires the `BarchartIngest` policy — the data
-pipeline's managed identity holding the `Origination.Application` app role, or an Admin. See
+Routed at `/api/barchart-ingest` (no `/v1` segment). Requires `bid-feed:manage`. The data
+pipeline's managed identity holds it through its `Origination.Application` app role, which has a
+`Machine` role row; a person holding it can re-run the feed by hand. See
 [Barchart Ingestion API Contract](docs/application-context/Barchart%20Ingestion%20API%20Contract.md).
 
 | Method | Endpoint | Description |

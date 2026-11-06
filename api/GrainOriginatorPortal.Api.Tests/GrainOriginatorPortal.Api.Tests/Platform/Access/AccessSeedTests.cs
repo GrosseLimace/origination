@@ -28,6 +28,7 @@ public class AccessSeedTests
     private const string Support = "Support";
     private const string Editor = "Editor";
     private const string Manager = "Manager";
+    private const string Pipeline = "Origination.Application";
 
     private static readonly Lazy<SeededAccess> Seeded = new(SeededAccess.Replay);
 
@@ -50,6 +51,7 @@ public class AccessSeedTests
             (Admin, RoleKind.Base, true),
             (Editor, RoleKind.AddOn, false),
             (Manager, RoleKind.AddOn, false),
+            (Pipeline, RoleKind.Machine, false),
             (Originator, RoleKind.Persona, false),
             (Support, RoleKind.Persona, false),
         ];
@@ -81,6 +83,14 @@ public class AccessSeedTests
     {
         // Add-ons decide what you may do, never which customers you see (plan §7.3).
         Assert.All(Seeded.Value.Roles.Values.Where(r => r.Kind == RoleKind.AddOn), r => Assert.Empty(Seeded.Value.SegmentsOf(r.Name)));
+    }
+
+    [Fact]
+    public void ThePipelineRole_LoadsTheBidFeed_AndNothingElse()
+    {
+        // A machine identity, so it reads no customers and holds only what its job needs.
+        Assert.Equal(new[] { AppPermissions.BidSheet.BidFeedManage }, Seeded.Value.PermissionsOf(Pipeline));
+        Assert.Empty(Seeded.Value.SegmentsOf(Pipeline));
     }
 
     [Fact]

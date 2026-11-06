@@ -1,11 +1,13 @@
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Services.Mappings;
 using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Exceptions;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Access;
 
 namespace GrainOriginatorPortal.Api.Services;
 
@@ -18,6 +20,7 @@ public class BidSheetService : IBidSheetService
     private readonly IBarchartCatalogRepository _barchartCatalog;
     private readonly IBarchartIngestRepository _barchartIngest;
     private readonly IEntitlementsRepository _entitlements;
+    private readonly IPermissionService _permissions;
     private readonly ILogger<BidSheetService> _logger;
 
     /// <summary>Resolved once per request — the service is scoped, so this lives exactly as long as the
@@ -31,6 +34,7 @@ public class BidSheetService : IBidSheetService
         IBarchartCatalogRepository barchartCatalog,
         IBarchartIngestRepository barchartIngest,
         IEntitlementsRepository entitlements,
+        IPermissionService permissions,
         ILogger<BidSheetService> logger)
     {
         _repository = repository;
@@ -39,6 +43,7 @@ public class BidSheetService : IBidSheetService
         _barchartCatalog = barchartCatalog;
         _barchartIngest = barchartIngest;
         _entitlements = entitlements;
+        _permissions = permissions;
         _logger = logger;
     }
 
@@ -94,7 +99,8 @@ public class BidSheetService : IBidSheetService
     }
 
     /// <summary>
-    /// Authorizes a DESTRUCTIVE change to a location: only whoever created it, or an Admin.
+    /// Authorizes a DESTRUCTIVE change to a location: only whoever created it, or a holder of
+    /// bid-sheet-locations:delete:global.
     ///
     /// This replaced a check against the row's persisted trade unit, which stopped meaning anything
     /// when locations became company-wide -- there is no desk left to check, and without a
@@ -114,15 +120,14 @@ public class BidSheetService : IBidSheetService
     {
         var createdBy = await _repository.GetLocationCreatedByAsync(locationId, cancellationToken);
         if (string.IsNullOrEmpty(createdBy)) return false;
-        if (_requestContext.IsAdmin()) return true;
 
-        var caller = _requestContext.GetCurrentUser();
-        if (!string.Equals(createdBy, caller, StringComparison.OrdinalIgnoreCase))
-            throw new ForbiddenException(
-                "Only the person who added this location, or an administrator, can remove it. "
-              + "It is shared, so removing it would take it off everyone's sheet.");
+        // The creator first, so removing your own location never depends on the grants.
+        if (string.Equals(createdBy, _requestContext.GetCurrentUser(), StringComparison.OrdinalIgnoreCase)) return true;
+        if (await _permissions.HasPermissionAsync(AppPermissions.BidSheet.BidSheetLocationsDeleteGlobal, cancellationToken)) return true;
 
-        return true;
+        throw new ForbiddenException(
+            "Only the person who added this location, or a manager, can remove it. "
+          + "It is shared, so removing it would take it off everyone's sheet.");
     }
 
     /// <inheritdoc />
@@ -251,14 +256,14 @@ public class BidSheetService : IBidSheetService
     /// <inheritdoc />
     public async Task DeleteLocationAsync(int id, CancellationToken cancellationToken)
     {
-        // Destructive and company-wide: creator or Admin only.
+        // Destructive and company-wide: its creator, or a holder of bid-sheet-locations:delete:global.
         if (!await AuthorizeDestructiveLocationChangeAsync(id, cancellationToken)) return;
 
         // A location linked to the BarChart feed is never deleted through the app, by anyone (business
         // rule, 2026-10-20). It is a link to a vendor listing that other desks' sheets may also hold,
         // and its bids are the feed's, not anyone's typing; what a user wants is to take it off their
         // sheet, which removeBidSheetLocations does without touching the location or its bids. Manual
-        // locations keep the creator-or-Admin delete above.
+        // locations keep the creator-or-delete:global rule above.
         var location = await _repository.GetLocationAsync(id, cancellationToken);
         if (!string.IsNullOrWhiteSpace(location?.BarchartLocationKey))
             throw new ForbiddenException(
@@ -271,7 +276,7 @@ public class BidSheetService : IBidSheetService
     /// <inheritdoc />
     public async Task DeleteBidsAsync(int locationId, string commodityCode, int? month, CancellationToken cancellationToken)
     {
-        // Wipes every bid for a commodity on a shared location: creator or Admin only.
+        // Wipes every bid for a commodity on a shared location: its creator, or a holder of bid-sheet-locations:delete:global.
         if (!await AuthorizeDestructiveLocationChangeAsync(locationId, cancellationToken)) return;
         await _repository.DeleteBidsAsync(locationId, commodityCode, month, cancellationToken);
     }
@@ -537,7 +542,7 @@ public class BidSheetService : IBidSheetService
     {
         // Any member, like the single remove and like adding: taking a location off a shared sheet is
         // ordinary editing. It is NOT the destructive delete -- that one lives on the location itself,
-        // is creator-or-Admin only, and warns how many sheets hold it first.
+        // is limited to its creator or a holder of bid-sheet-locations:delete:global, and warns how many sheets hold it first.
         await RequireVisibleSheetAsync(sheetId, cancellationToken);
         await _repository.RemoveSheetLocationsAsync(sheetId, request.LocationIds, cancellationToken);
         return await ReloadSheetAsync(sheetId, cancellationToken);

@@ -1599,9 +1599,12 @@ the same company.
   does not already.
 - There is still exactly one gate, the Super Users Entra group, and it is administered in Entra, not
   in app code or SQL. Membership is the access review surface.
-- Every read still passes the `UsageDashboardViewer` policy (pinned by a convention test), still goes
-  through `SecurityAuditMiddleware` for 401/403 outcomes, and still has `dbo.UsageDashboardExcludedUsers`
-  subtracted. Exclusion administration remains restricted to the `ExclusionManagers` allowlist.
+- Every read still requires `usage-reports:read` (pinned by a convention test; today only the `Admin`
+  role, from the Super Users group, holds it), still goes through `SecurityAuditMiddleware` for 401/403
+  outcomes, and still has `dbo.UsageDashboardExcludedUsers` subtracted. Exclusion administration requires
+  `usage-exclusions:manage`. Until IT moves to the `Support` role, every `Admin` holder has it: on
+  2026-11-05 it replaced the four-name `ExclusionManagers` allowlist, because permissions are granted only
+  through roles. Exclusions only hide people from the dashboard; they change nobody's access.
 - Scope is Scoular-internal only — no external or guest accounts (see
   [SECURITY-MODEL.md](../docs/application-context/SECURITY-MODEL.md)).
 

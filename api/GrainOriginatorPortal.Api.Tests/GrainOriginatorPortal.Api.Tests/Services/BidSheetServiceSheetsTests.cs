@@ -6,6 +6,7 @@ using Moq;
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models.Requests;
+using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
@@ -34,6 +35,7 @@ public class BidSheetServiceSheetsTests
 {
     private readonly Mock<IBidSheetRepository> _repo = new();
     private readonly Mock<IRequestContextService> _requestContext = new();
+    private readonly Mock<IPermissionService> _permissions = new();
     private readonly Mock<IUserEntitlementService> _entitlementService = new();
     private readonly Mock<IBarchartCatalogRepository> _barchartCatalog = new();
     private readonly Mock<IBarchartIngestRepository> _barchartIngest = new();
@@ -51,7 +53,7 @@ public class BidSheetServiceSheetsTests
         _sut = new BidSheetService(
             _repo.Object, _requestContext.Object, _entitlementService.Object,
             _barchartCatalog.Object, _barchartIngest.Object,
-            _entitlements.Object, NullLogger<BidSheetService>.Instance);
+            _entitlements.Object, _permissions.Object, NullLogger<BidSheetService>.Instance);
     }
 
     private void CallerIs(string shortName) =>

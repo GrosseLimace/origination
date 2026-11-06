@@ -6,9 +6,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Authorization;
 using GrainOriginatorPortal.Api.Controllers;
+using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Platform.Access.Controllers;
+using GrainOriginatorPortal.Infrastructure.Platform.Access;
 
 namespace GrainOriginatorPortal.Api.Tests;
 
@@ -92,18 +93,17 @@ public class ControllerAuthorizationTests
     }
 
     /// <summary>
-    /// Every usage-dashboard action reads or edits other people's activity data, so all of them
-    /// must carry an explicit policy — the class-level [Authorize] alone would only require a
-    /// sign-in. Reads take the UsageDashboardViewer policy (the Admin role, granted by the Super
-    /// Users group); exclusion administration must stay strictly AdminOnly. The single exception is
-    /// the telemetry endpoint, which every signed-in user posts to. The read policy is the whole
-    /// gate: anyone who passes it sees the entire organisation and may filter by any manager.
+    /// Every usage-dashboard action reads or edits other people's activity data, so each must require a
+    /// permission — the class-level [Authorize] alone would only require a sign-in. Reads require
+    /// usage-reports:read. Exclusion administration requires usage-exclusions:manage, which reading
+    /// doesn't grant. The single exception is the telemetry endpoint, which every signed-in user posts
+    /// to. The read permission is the whole gate: whoever holds it sees the entire organisation and may
+    /// filter by any manager.
     /// </summary>
     [Fact]
-    public void UsageDashboardController_EveryActionExceptClickEvent_CarriesADashboardPolicy()
+    public void UsageDashboardController_EveryActionExceptClickEvent_RequiresItsPermission()
     {
-        // Exclusion administration: viewers must never gain these, so AdminOnly stays mandatory.
-        string[] adminOnlyActions =
+        string[] exclusionActions =
         [
             nameof(UsageDashboardController.GetAccessUsers),
             nameof(UsageDashboardController.GetExcludedUsers),
@@ -115,49 +115,41 @@ public class ControllerAuthorizationTests
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Where(m => !m.IsSpecialName)
             .ToList();
-
         Assert.NotEmpty(actions);
 
-        var missing = actions
+        static string[] Required(MethodInfo action) =>
+            action.GetCustomAttributes<RequirePermissionAttribute>(inherit: true).Select(a => a.Permission).ToArray();
+
+        var wrong = actions
             .Where(m => m.Name != nameof(UsageDashboardController.TrackClickEvent))
-            .Where(m => !m.GetCustomAttributes<AuthorizeAttribute>(inherit: true)
-                .Any(a => a.Policy == "AdminOnly" || a.Policy == UsageDashboardAccess.PolicyName))
-            .Select(m => m.Name)
+            .Select(m => (m.Name, Required: Required(m), Expected: exclusionActions.Contains(m.Name)
+                ? AppPermissions.UsageAnalytics.UsageExclusionsManage
+                : AppPermissions.UsageAnalytics.UsageReportsRead))
+            .Where(a => !a.Required.SequenceEqual([a.Expected]))
+            .Select(a => $"{a.Name} requires [{string.Join(", ", a.Required)}], not {a.Expected}")
             .ToList();
 
-        Assert.True(missing.Count == 0,
-            $"These usage-dashboard actions are missing an explicit dashboard policy: {string.Join(", ", missing)}");
+        Assert.True(wrong.Count == 0, string.Join("; ", wrong));
 
-        var demoted = adminOnlyActions
-            .Where(name => !actions.Single(m => m.Name == name)
-                .GetCustomAttributes<AuthorizeAttribute>(inherit: true)
-                .Any(a => a.Policy == "AdminOnly"))
-            .ToList();
-
-        Assert.True(demoted.Count == 0,
-            $"These exclusion-administration actions must stay [Authorize(Policy = \"AdminOnly\")]: {string.Join(", ", demoted)}");
-
-        // And the telemetry endpoint must NOT be policy-gated, or the UI stops reporting usage.
+        // And the telemetry endpoint must need only a sign-in, or the UI stops reporting usage.
         var clickEvent = actions.Single(m => m.Name == nameof(UsageDashboardController.TrackClickEvent));
-        Assert.DoesNotContain(clickEvent.GetCustomAttributes<AuthorizeAttribute>(inherit: true),
-            a => a.Policy == "AdminOnly" || a.Policy == UsageDashboardAccess.PolicyName);
+        Assert.Empty(clickEvent.GetCustomAttributes<AuthorizeAttribute>(inherit: true));
     }
 
     /// <summary>
     /// The BarChart ingestion endpoints write vendor data straight into the app database, so a plain
-    /// signed-in user must not reach them: the controller carries the BarchartIngest policy (the data
-    /// pipeline's application role, or an Admin) and every action inherits it. A bare [Authorize] would
-    /// only require a sign-in, which is the mistake this test exists to catch.
+    /// signed-in user must not reach them: the controller requires bid-feed:manage, which the data
+    /// pipeline holds through its role row, and every action inherits it. A bare [Authorize] would only
+    /// require a sign-in, which is the mistake this test exists to catch.
     /// </summary>
     [Fact]
-    public void BarchartIngestController_RequiresTheBarchartIngestPolicy()
+    public void BarchartIngestController_RequiresBidFeedManage()
     {
-        var classPolicies = typeof(BarchartIngestController)
-            .GetCustomAttributes<AuthorizeAttribute>(inherit: true)
-            .Select(a => a.Policy)
-            .ToList();
+        var required = typeof(BarchartIngestController)
+            .GetCustomAttributes<RequirePermissionAttribute>(inherit: true)
+            .Select(a => a.Permission);
 
-        Assert.Contains("BarchartIngest", classPolicies);
+        Assert.Equal(new[] { AppPermissions.BidSheet.BidFeedManage }, required);
     }
 
     /// <summary>

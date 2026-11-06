@@ -1,6 +1,7 @@
 using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Services;
-using Microsoft.AspNetCore.Authorization;
+using GrainOriginatorPortal.Infrastructure.Platform.Access;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GrainOriginatorPortal.Api.Controllers;
@@ -13,17 +14,17 @@ namespace GrainOriginatorPortal.Api.Controllers;
 /// application the only writer to its own database. The contract handed to that team lives at
 /// docs/application-context/Barchart Ingestion API Contract.md.
 ///
-/// Authorization is the <c>BarchartIngest</c> policy: the pipeline's managed identity holding the
-/// <c>Origination.Application</c> app role, or an Admin (so the feed can be exercised and re-run by
-/// hand). Callers are machine identities with no user context, so nothing on this path consults
-/// trade-unit entitlements.
+/// Every endpoint requires <c>bid-feed:manage</c>. The pipeline's managed identity holds it through its
+/// <c>Origination.Application</c> app role, which is a role row like any other; a person who holds it can
+/// exercise and re-run the feed by hand. Nothing on this path consults trade-unit entitlements, because the
+/// usual caller is a machine identity with no user context.
 ///
 /// Every endpoint is safe to retry: loads upsert, the daily history row is replaced per business
 /// date, and the bridge is deterministic. A failed pipeline run can simply be run again.
 /// </summary>
 [ApiController]
 [Route("api/barchart-ingest")]
-[Authorize(Policy = "BarchartIngest")]
+[RequirePermission(AppPermissions.BidSheet.BidFeedManage)]
 [Produces("application/json")]
 public class BarchartIngestController : ControllerBase
 {

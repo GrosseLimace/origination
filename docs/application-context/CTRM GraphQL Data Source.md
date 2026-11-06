@@ -309,7 +309,7 @@ The sync aborts before any write on: `CUSTOMER_SYNC_NO_PERMISSION` (`Customers.R
 
 ### Diagnostics routes
 
-All `AdminOnly`, JSON camelCase, under `api/diagnostics/customer-sync/`.
+All require `customer-sync:manage`, JSON camelCase, under `api/diagnostics/customer-sync/`.
 
 | Route | Environments | What it does |
 |---|---|---|

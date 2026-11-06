@@ -224,7 +224,7 @@ All controllers depend on `IDataService` (DI'd as `SqlDataService` today, with `
 `api/GrainOriginatorPortal.Api/Program.cs`
 
 - JWT bearer auth via `Microsoft.Identity.Web.AddMicrosoftIdentityWebApi()`.
-- Policy `AdminOnly` (configured in Program.cs) requires the `Admin` role claim. Applied to `UsageDashboardController`'s read endpoints.
+- **Permissions, not roles**: endpoints carry `[RequirePermission(AppPermissions.X)]` (`api/GrainOriginatorPortal.Api/Platform/Access/`). The caller's roles come from the token and their grants from `dbo.RolePermissions`; a missing permission is a 403 with code `AUTHZ_PERMISSION_DENIED`. Machine callers are roles too: the data pipeline's `Origination.Application` app role has a `Machine` role row granting `bid-feed:manage`.
 - **Trade-unit filter**: `[EnforceTradeUnitAccess]` (`api/GrainOriginatorPortal.Api/Filters/EnforceTradeUnitAccessAttribute.cs`) intersects the requested TUs with the user's entitled set. **Fails open on entitlement-DB outage for GET/HEAD**, again per the documented security model.
 
 ## Database connections

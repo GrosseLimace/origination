@@ -1,20 +1,22 @@
 // Microsoft namespaces
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Services.Diagnostics;
+using GrainOriginatorPortal.Infrastructure.Platform.Access;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-// Defense in depth: AdminOnly caller claim + DenyIfNotDevelopment() per-route env gate.
-// Both must pass — admin caller running in a non-Dev/QA environment still gets 404.
-[Authorize(Policy = "AdminOnly")]
+// Defense in depth: the caller's permission (diagnostics:read, plus diagnostics:manage on each POST)
+// and the DenyIfNotDevelopment() per-route env gate. Both must pass: a permitted caller in a non-Dev/QA
+// environment still gets 404.
+[RequirePermission(AppPermissions.Platform.DiagnosticsRead)]
 [Produces("application/json")]
 public class DiagnosticsController : ControllerBase
 {
@@ -238,6 +240,7 @@ public class DiagnosticsController : ControllerBase
     /// there is nothing older to aggregate from.</para>
     /// </summary>
     [HttpPost("usage-rollups/backfill")]
+    [RequirePermission(AppPermissions.Platform.DiagnosticsManage)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> BackfillUsageRollups(
         [FromQuery] int days = 90,
@@ -272,6 +275,7 @@ public class DiagnosticsController : ControllerBase
     /// Skips codes that already exist. Dev/QA only.
     /// </summary>
     [HttpPost("commodities/seed")]
+    [RequirePermission(AppPermissions.Platform.DiagnosticsManage)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> SeedCommodities(CancellationToken cancellationToken = default)
     {
@@ -287,6 +291,7 @@ public class DiagnosticsController : ControllerBase
     /// Dev/QA only.
     /// </summary>
     [HttpPost("elevator-cache/refresh")]
+    [RequirePermission(AppPermissions.Platform.DiagnosticsManage)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> RefreshElevatorCache([FromQuery] bool geocode = false, CancellationToken cancellationToken = default)
     {
@@ -300,6 +305,7 @@ public class DiagnosticsController : ControllerBase
     /// Returns immediately with estimated time. Check progress via GET elevator-cache/geocode-status.
     /// </summary>
     [HttpPost("elevator-cache/geocode")]
+    [RequirePermission(AppPermissions.Platform.DiagnosticsManage)]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     // No CancellationToken parameter: this is fire-and-forget. The background work in the service
     // deliberately outlives the request and takes a fresh scope, so a request-scoped token would
@@ -328,6 +334,7 @@ public class DiagnosticsController : ControllerBase
     // -------------------------------------------------------------------------
     /// <summary>Geocode missing elevators using zip code centroids (zippopotam.us).</summary>
     [HttpPost("elevator-cache/geocode-zip")]
+    [RequirePermission(AppPermissions.Platform.DiagnosticsManage)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> GeocodeByZip(CancellationToken cancellationToken = default)
     {

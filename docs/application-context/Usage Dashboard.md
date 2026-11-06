@@ -9,8 +9,8 @@
 - **Primary user goal**: monitor adoption, spot inactive originators, identify underused features, and find gaps in the query library — feed product / management decisions.
 
 This is the only screen in the app gated by an actual role (vs. just "authenticated"). Backend reads are
-gated server-side too, via the `UsageDashboardViewer` policy (equivalent to `AdminOnly` today, but named
-separately so the read surface stays distinct from exclusion administration).
+gated server-side too: every read requires the `usage-reports:read` permission, and exclusion administration
+requires `usage-exclusions:manage`, which reading doesn't grant.
 
 One question decides whether a person sees it at all; what they then see is the same for everyone —
 see [Who sees what](#who-sees-what).
@@ -20,7 +20,7 @@ see [Who sees what](#who-sees-what).
 
 | Question | Answered by | Changed how |
 | --- | --- | --- |
-| May you open the dashboard at all? | `Admin` app role, granted by the **"Origination App {Env} Super Users"** Entra group | Entra group membership |
+| May you open the dashboard at all? | `usage-reports:read`. Today only the `Admin` role holds it, granted by the **"Origination App {Env} Super Users"** Entra group | Entra group membership; the role's grants |
 
 Everyone who can open the dashboard sees the **whole organisation** and gets the **manager
 dropdown**, which is the dashboard's only filter. It defaults to the signed-in user (when they manage
@@ -187,13 +187,11 @@ reconstruct), `query-library-usage`, `query-search-gaps`, and `users/{id}/detail
 
 ### Controller endpoints
 
-All read endpoints require `[Authorize(Policy = UsageDashboardAccess.PolicyName)]` (`"UsageDashboardViewer"`,
-equivalent to `AdminOnly` today). Every panel endpoint also accepts `?managerId=` to narrow the view to
+All read endpoints require `[RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]`. Every panel endpoint also accepts `?managerId=` to narrow the view to
 that manager's whole org subtree; omitted means the whole organisation. It is honoured for every
-caller — there is no per-caller scoping beyond the read policy. The exclusion endpoints
-(`access-users`, `excluded-users` CRUD) are additionally restricted to the
-`UsageDashboard:ExclusionManagers` allowlist in appsettings (the named IT users) — other admins get
-403 and never see the gear.
+caller — there is no per-caller scoping beyond the read permission. The exclusion endpoints
+(`access-users`, `excluded-users` CRUD) require `usage-exclusions:manage` instead; anyone without it gets
+403 and never sees the gear. Until IT moves to the `Support` role, every `Admin` holder has it.
 
 | Verb / route | Returns |
 | --- | --- |
@@ -208,7 +206,7 @@ caller — there is no per-caller scoping beyond the read policy. The exclusion 
 | `GET /query-search-gaps` | top 20 library searches that matched nothing |
 | `GET /managers` | roster for the manager dropdown, from TradeUnitPreferences `vw_UserManagerLookup`; empty for a scoped caller, 503 if that DB is unreachable |
 | `GET /users/{userId}/detail` | full per-user profile — drives the drill-down page |
-| `GET /excluded-users/can-manage` | whether the caller is on the `UsageDashboard:ExclusionManagers` allowlist — the client hides the exclusion gear when false |
+| `GET /excluded-users/can-manage` | whether the caller holds `usage-exclusions:manage` — the client hides the exclusion gear when false |
 | `GET /access-users` | app-access roster (Entra group) for the exclusion picker; `available=false` ⇒ client falls back to free text |
 | `GET /excluded-users` | current exclusion list with reason / who added it / when |
 | `POST /excluded-users` | add an exclusion (409 if already excluded) |
@@ -316,7 +314,7 @@ POST /api/diagnostics/usage-rollups/backfill?days=90
 ## Admin gating
 
 - **Frontend**: `adminGuard` reads roles from `/api/me` and rejects unless `roles.includes('Admin')`.
-- **Backend**: `[Authorize(Policy = "AdminOnly")]` on every read endpoint, configured in `Program.cs`.
+- **Backend**: `usage-reports:read` on every read endpoint and `usage-exclusions:manage` on the exclusion endpoints, through `[RequirePermission]`.
 - **`POST /click-event` is not admin-gated** — every authenticated user posts telemetry there.
 
 ## Feature flag
@@ -328,7 +326,7 @@ POST /api/diagnostics/usage-rollups/backfill?days=90
 | Symptom | Likely cause | First place to look |
 | --- | --- | --- |
 | Menu item missing for an admin user | flag off, or `roles` lacks `'Admin'` | `/api/me` response; environment file |
-| 403 on a `/api/usage-dashboard/...` GET | user lacks the `Admin` role claim | AAD app role assignment |
+| 403 on a `/api/usage-dashboard/...` GET | no role of the user's grants `usage-reports:read` | the 403 body names the missing permission; `/api/me/permissions`; AAD app role assignment |
 | Historical charts empty, today's data fine | rollups were never backfilled for those days | run the backfill endpoint above; check `dbo.UserFeatureUsageDaily` |
 | Yesterday missing from a chart | the aggregation job hasn't run since midnight UTC | service logs; `dbo.UserActivityDaily` for yesterday |
 | A feature shows 0 despite obvious use | its requests fall into `other`, or its events aren't fired | `FeatureNameMapperTests`; spot-check `dbo.UserActivity` `FeatureCode`/`Path` for the route |

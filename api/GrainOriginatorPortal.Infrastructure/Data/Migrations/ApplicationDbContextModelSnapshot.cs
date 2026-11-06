@@ -3610,7 +3610,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 
                     b.ToTable("Roles", "dbo", t =>
                         {
-                            t.HasCheckConstraint("CK_Roles_Kind", "[Kind] IN ('Persona', 'AddOn', 'Base')");
+                            t.HasCheckConstraint("CK_Roles_Kind", "[Kind] IN ('Persona', 'AddOn', 'Base', 'Machine')");
                         });
                 });
 

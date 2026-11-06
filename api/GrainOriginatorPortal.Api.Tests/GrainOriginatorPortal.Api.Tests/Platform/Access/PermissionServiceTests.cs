@@ -106,11 +106,25 @@ public class PermissionServiceTests
     [Fact]
     public async Task AnAppOnlyToken_NeverGetsTheDefaults()
     {
-        // The BarChart pipeline's token: an app role and no delegated scope.
+        // An app role with no row, and no delegated scope: a machine caller nobody has granted anything.
         var access = await For(TestUsers.Signed(delegated: false, "Origination.Application")).GetAccessAsync();
 
         Assert.Empty(access.Roles);
         Assert.Empty(access.Permissions);
+        Assert.False(access.UsesDefaultRoles);
+    }
+
+    [Fact]
+    public async Task AMachineRole_GrantsItsPermissions_ToTheAppOnlyToken()
+    {
+        // The BarChart pipeline: its token's app role has a Machine row that grants bid-feed:manage.
+        _grantCache.GetAsync(Arg.Any<CancellationToken>()).Returns(TestGrants.Map([.. TestGrants.All, TestGrants.Pipeline]));
+
+        var access = await For(TestUsers.Signed(delegated: false, "Origination.Application")).GetAccessAsync();
+
+        Assert.Equal(new[] { "Origination.Application" }, access.Roles);
+        Assert.Equal(new[] { AppPermissions.BidSheet.BidFeedManage }, access.Permissions);
+        Assert.Empty(access.Segments);
         Assert.False(access.UsesDefaultRoles);
     }
 

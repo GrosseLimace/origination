@@ -2,9 +2,11 @@
 using Moq;
 
 // Project namespaces
+using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Access;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 
@@ -15,6 +17,7 @@ public class SavedListServiceTests
     private readonly Mock<IDisplayNameLookupRepository> _displayNames = new();
     private readonly Mock<IUserEntitlementService> _entitlementService = new();
     private readonly Mock<IRequestContextService> _requestContext = new();
+    private readonly Mock<IPermissionService> _permissions = new();
     private readonly SavedListService _sut;
 
     public SavedListServiceTests()
@@ -29,7 +32,7 @@ public class SavedListServiceTests
             .ReturnsAsync(new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "TU1" });
 
         _sut = new SavedListService(_repo.Object, _entitlements.Object, _displayNames.Object,
-            _entitlementService.Object, _requestContext.Object);
+            _entitlementService.Object, _requestContext.Object, _permissions.Object);
     }
 
     private static UserTradeUnitPreference Member(string userId, string tu, string? name = null) =>
@@ -93,14 +96,14 @@ public class SavedListServiceTests
         Assert.Equal("Sam Smith", member.DisplayName);
     }
 
-    // ── Manager (admin) mutation scope ───────────────────────────────────────
-    // Security: the admin "manage any" bypass on update/delete must be limited to lists whose trade
+    // ── Manager (saved-lists:write:team) mutation scope ──────────────────────
+    // Security: the team-write "manage any" bypass on update/delete must be limited to lists whose trade
     // units overlap the caller's entitled trade units — never a blanket bypass over every list id.
 
     [Fact]
-    public async Task UpdateAsync_Admin_ListInAllowedTradeUnits_AuthorizesManage()
+    public async Task UpdateAsync_TeamWriter_ListInAllowedTradeUnits_AuthorizesManage()
     {
-        _requestContext.Setup(r => r.IsAdmin()).Returns(true);
+        _permissions.Setup(p => p.HasPermissionAsync(AppPermissions.Lists.SavedListsWriteTeam, It.IsAny<CancellationToken>())).ReturnsAsync(true);
         _repo.Setup(r => r.GetByIdAsync(5, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SavedList { Id = 5, TradeUnits = "TU1", CreatedBy = "other@x.com" });
 
@@ -111,9 +114,9 @@ public class SavedListServiceTests
     }
 
     [Fact]
-    public async Task UpdateAsync_Admin_ListOutsideAllowedTradeUnits_DeniesManage()
+    public async Task UpdateAsync_TeamWriter_ListOutsideAllowedTradeUnits_DeniesManage()
     {
-        _requestContext.Setup(r => r.IsAdmin()).Returns(true);
+        _permissions.Setup(p => p.HasPermissionAsync(AppPermissions.Lists.SavedListsWriteTeam, It.IsAny<CancellationToken>())).ReturnsAsync(true);
         _repo.Setup(r => r.GetByIdAsync(5, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SavedList { Id = 5, TradeUnits = "TU9", CreatedBy = "other@x.com" });
 
@@ -125,9 +128,9 @@ public class SavedListServiceTests
     }
 
     [Fact]
-    public async Task UpdateAsync_NonAdmin_DeniesManage_WithoutLoadingTarget()
+    public async Task UpdateAsync_WithoutTeamWrite_DeniesManage_WithoutLoadingTarget()
     {
-        _requestContext.Setup(r => r.IsAdmin()).Returns(false);
+        _permissions.Setup(p => p.HasPermissionAsync(AppPermissions.Lists.SavedListsWriteTeam, It.IsAny<CancellationToken>())).ReturnsAsync(false);
 
         await _sut.UpdateAsync(5, "n", "q", "TU1", null, null, null, CancellationToken.None);
 
@@ -137,9 +140,9 @@ public class SavedListServiceTests
     }
 
     [Fact]
-    public async Task DeleteAsync_Admin_ListOutsideAllowedTradeUnits_DeniesManage()
+    public async Task DeleteAsync_TeamWriter_ListOutsideAllowedTradeUnits_DeniesManage()
     {
-        _requestContext.Setup(r => r.IsAdmin()).Returns(true);
+        _permissions.Setup(p => p.HasPermissionAsync(AppPermissions.Lists.SavedListsWriteTeam, It.IsAny<CancellationToken>())).ReturnsAsync(true);
         _repo.Setup(r => r.GetByIdAsync(5, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SavedList { Id = 5, TradeUnits = "TU9" });
 

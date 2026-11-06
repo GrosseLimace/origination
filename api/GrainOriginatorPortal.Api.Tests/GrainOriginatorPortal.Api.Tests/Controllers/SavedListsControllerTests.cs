@@ -11,7 +11,9 @@ using GrainOriginatorPortal.Api.Controllers;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Infrastructure.Platform.Access;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 
@@ -105,18 +107,17 @@ public class SavedListsControllerTests
 
     // -------------------------------------------------------------------------
     [Theory]
-    [InlineData(nameof(SavedListsController.GetTeam))]
-    [InlineData(nameof(SavedListsController.GetTeamMembers))]
-    [InlineData(nameof(SavedListsController.Assign))]
-    public void ManagerEndpoints_RequireAdminOnlyPolicy(string methodName)
+    [InlineData(nameof(SavedListsController.GetTeam), AppPermissions.Lists.SavedListsReadTeam)]
+    [InlineData(nameof(SavedListsController.GetTeamMembers), AppPermissions.Lists.SavedListsReadTeam)]
+    [InlineData(nameof(SavedListsController.Assign), AppPermissions.Lists.SavedListsWriteTeam)]
+    public void ManagerEndpoints_RequireTheTeamPermission(string methodName, string permission)
     {
         var method = typeof(SavedListsController).GetMethod(methodName);
         Assert.NotNull(method);
-        var authorize = (AuthorizeAttribute?)method!
-            .GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true)
-            .FirstOrDefault();
-        Assert.NotNull(authorize);
-        Assert.Equal("AdminOnly", authorize!.Policy);
+        var required = method!
+            .GetCustomAttributes(typeof(RequirePermissionAttribute), inherit: true)
+            .Cast<RequirePermissionAttribute>();
+        Assert.Equal(permission, Assert.Single(required).Permission);
     }
 
     // -------------------------------------------------------------------------

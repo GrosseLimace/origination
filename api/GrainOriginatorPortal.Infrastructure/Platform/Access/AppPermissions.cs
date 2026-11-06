@@ -153,7 +153,7 @@ public static class AppPermissions
         /// <summary>The BarChart picker: feed locations and coverage.</summary>
         public const string BidFeedRead = "bid-feed:read";
 
-        /// <summary>Run the BarChart ingestion by hand. The pipeline itself uses its machine role.</summary>
+        /// <summary>Run the BarChart ingestion: the pipeline, through its machine role, or a person by hand.</summary>
         public const string BidFeedManage = "bid-feed:manage";
     }
 

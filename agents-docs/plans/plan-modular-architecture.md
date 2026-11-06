@@ -50,7 +50,7 @@
 **Authorization:**
 - There is one user-facing Azure AD app role, `Admin`, granted through the Super Users group. The synthetic `UsageDashboardViewAll` role was retired on 2026-10-09.
 - **`Admin` covers two kinds of user.** The Super Users group holds managers and IT alike, and the code uses `Admin` for both: manager actions (the usage dashboard, team saved lists, deleting other people's bid-sheet locations) and IT actions (diagnostics, the customer sync, usage exclusions). §7.2 lists every check.
-- A second app role, `Origination.Application`, is held by the BarChart ingestion pipeline's managed identity (`BarchartIngest` policy). It is a machine caller, not a persona.
+- A second app role, `Origination.Application`, is held by the BarChart ingestion pipeline's managed identity. It is a machine caller, not a persona: its `dbo.Roles` row is of kind `Machine` and grants only `bid-feed:manage` (§4.3).
 - Everything else is trade-unit data scoping, which is a UX filter by design ([SECURITY-MODEL.md](docs/application-context/SECURITY-MODEL.md)).
 - That doc says to revisit the model "if the role surface stops being near-binary." Adding Trader and read-only access is that moment.
 
@@ -337,7 +337,7 @@ public sealed class PlantingIntentionsController : ControllerBase
 ```
 dbo.Permissions     (Id PK 'planting-intentions:write', Resource, Action, Scope, ModuleId, Description)
                     -- written only by migrations, from AppPermissions through EF HasData
-dbo.Roles           (Id PK Guid, Name UNIQUE, Description, Kind (Persona | AddOn | Base), IsSystem, ParentRoleId (unused), CreatedAt, UpdatedAt)
+dbo.Roles           (Id PK Guid, Name UNIQUE, Description, Kind (Persona | AddOn | Base | Machine), IsSystem, ParentRoleId (unused), CreatedAt, UpdatedAt)
                     -- data, like the grants: seeded by a migration, then the grant editor; names match the token's role values
 dbo.RolePermissions (RoleId FK, PermissionId FK, GrantedBy, GrantedAt)   PK (RoleId, PermissionId)   -- temporal
 dbo.RoleSegments    (RoleId FK, Segment, GrantedBy, GrantedAt)          PK (RoleId, Segment)        -- temporal
@@ -385,7 +385,7 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 | Bid Sheet | `bid-sheets:read`, `:write` | `BidSheet` GETs; every other `BidSheet` write (sheets, locations and their bids) and the BarChart `refresh-bids`. Deleting a location is limited to its creator. | read to personas, write to `Editor` |
 | | `bid-sheet-locations:delete:global` | deleting someone else's location, checked in `BidSheetService` | `Manager` |
 | | `bid-feed:read` | `Barchart` GETs: the picker | personas |
-| | `bid-feed:manage` | `BarchartIngest` by hand. The pipeline keeps its machine role. | `Support` |
+| | `bid-feed:manage` | `BarchartIngest`: the pipeline, and a person re-running the feed by hand | `Support`; the pipeline's `Machine` role |
 | Usage Analytics | `usage-reports:read` | `UsageDashboard` GETs, `can-manage` included | `Manager`, `Support` |
 | | `usage-exclusions:manage` | `access-users`; `excluded-users` GET, POST and DELETE | `Support` |
 
@@ -404,11 +404,11 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
   - `SavedListService` lets a holder of `saved-lists:write:team` change or delete another user's list when its trade units overlap the caller's. That is today's rule, minus the `IsAdmin()` check.
 - **Extend `ControllerAuthorizationTests`** (reflection only, no new dependency):
   - Every action is covered by a `RequirePermission`.
-  - Every controller carries a class-level permission from its own module, normally its read, so a write action always needs it too. The add-on roles rely on this (§7.3). The exempt list and the `BarchartIngest` machine exception below are excluded, since the pipeline holds no grants.
+  - Every controller carries a class-level permission from its own module, normally its read, so a write action always needs it too. The add-on roles rely on this (§7.3). The exempt list below is excluded.
   - Every non-GET action carries a write permission, unless it is on the non-mutating list.
   - Every permission is in `AppPermissions`, and every resource belongs to exactly one module.
   - **Exempt list:** `me` (including `/api/me/permissions`), `version`, `help`, `whats-new`, the client-telemetry config and the usage click event. Any signed-in user may call them.
-  - **One machine exception:** `BarchartIngest` keeps its policy for the pipeline's `Origination.Application` app role. That caller is not a user and holds no grants. A person re-running the feed by hand needs `bid-feed:manage`, so the policy is "the machine role, or that permission."
+  - **Machine callers are roles too.** The pipeline's `Origination.Application` app role has a `dbo.Roles` row of kind `Machine` (migration `AddPipelineRole`) that grants `bid-feed:manage` and no segments. `BarchartIngest` is an ordinary `[RequirePermission(bid-feed:manage)]`, which a person re-running the feed by hand also passes, so no role name appears in code. The grant editor refuses to change `Machine` roles (Phase 1b).
 - **Grants stay honest without a code map:**
   - `dbo.Permissions` is generated from `AppPermissions` through EF `HasData`. Adding a permission constant without a migration is a pending model change, and a test calling `HasPendingModelChanges()` fails on it. `RolePermission` has a foreign key to it.
   - **Deny by default.** A new permission reaches nobody until it is granted. Its PR includes a grant migration for the intended roles: the persona roles (`Support` included) for a `:read` or a personal write, `Editor` for an edit, `Manager` or `Support` for a manager or operational power, and always `Admin`. The first grant is therefore still code-reviewed; later changes are edits in the grant editor.
@@ -458,7 +458,7 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 | Engagement | Notes, Reminders, TeamsChannels, DailyRecapGroups | |
 | Producers | PlantingIntentions, ProducerDetails, StoredGrain, DpContracts, DashboardPlantingEstimates, FieldPlan, CtrmSplits, FdCic; **gains** `customers/search-ods`, `customers/linked-to`, `contracts/pacing`, `commodities/planting`, `commodities/harvest-windows` | Keep the **route templates unchanged**, so the SPA doesn't change. The split readers and `FieldTicketReader` come from `Infrastructure/Ctrm/`. Delete the `farm/{farmId}` endpoints on Contracts and Tickets and their `GetByFarmAsync` chain through services and repositories; the Farms controller itself is already gone. |
 | Lists | SavedLists, QueryLibrary | |
-| BidSheet | BidSheet, Barchart, BarchartIngest (machine role or `bid-feed:manage`, §4.3) | |
+| BidSheet | BidSheet, Barchart, BarchartIngest (`bid-feed:manage`, which the pipeline holds through its `Machine` role, §4.3) | |
 | UsageAnalytics | UsageDashboard (`usage-reports:read`; exclusions `usage-exclusions:manage`) | |
 
 **`CustomerResponse` sheds `TotalAcres`, `FarmIds`, `LinkedProducerIds` and `Farm`.** The Producers module serves them in a `ProducerProfileResponse` instead. This one *is* a wire change, so sequence it with the frontend in Phase 4.
@@ -812,7 +812,7 @@ This is not a folder problem. The data simply isn't there yet.
 | Deleting a bid-sheet location someone else created (`BidSheetService.cs:117`) | Managers. It changes business data, so not IT (Q8). | `bid-sheet-locations:delete:global`; anyone with `bid-sheets:write` may still delete their own |
 | `DiagnosticsController` (`AdminOnly` plus the environment gate) | IT | `diagnostics:read` / `diagnostics:manage`; the environment gate stays |
 | `CustomerSyncDiagnosticsController` (`AdminOnly`) | IT | `customer-sync:manage` |
-| `BarchartIngest` policy's "or Admin" | IT | the machine role, or `bid-feed:manage` |
+| `BarchartIngest` policy's "or Admin" | IT | `bid-feed:manage`, which the pipeline holds through its `Machine` role row |
 | *(new)* the grant editor | IT now, business admins later | `roles:manage` |
 
 - `AdminOnly`, `UsageDashboardViewer`, `RequestContextService.IsAdmin()` and the SPA's `isAdmin` and `canViewUsageDashboard` are deleted. The convention tests that pin those policies today pin the permissions instead.
@@ -889,7 +889,7 @@ This is not a folder problem. The data simply isn't there yet.
 - Its "two Azure AD app roles plus data scoping" and "near-binary" rationale become: roles from the entitlements app, granted `resource:action[:scope]` permissions held in our database, checked on every endpoint.
 - Its "no roles/permissions table" and "AAD group membership is where access is administered" lines reverse. Role assignments are administered in the entitlements app, and grants in our grant editor.
 - Its "no in-app audit trail of role changes" consequence changes. Assignment history lives in the entitlements app; grant history lives in our temporal tables and `role_modified` events.
-- It lists the one machine exception (`BarchartIngest`) and the exempt endpoints.
+- It lists the exempt endpoints.
 
 ---
 
@@ -901,7 +901,7 @@ Phases 1–4 deliver modularity and stand on their own even if traders slip. Pha
 |---|---|---|---|
 | **0. Decide** | — | Answer section 9 with the business; agree the module list and the draft resource catalog (§4.3); **define this app's roles in the entitlements app, and agree with that team which claim carries them and how** (§7.1); record an ADR; **ask the API team when the customer↔trade-unit pairs query will land**, which decides how commercial links are backfilled (§6.1) | none |
 | **1. Access plumbing** | M | `AppPermissions` catalog and the generated TypeScript ids; the four grants tables, `HasData`, and the seed migration that reproduces today's access; `ClaimsUserRoleSource` with the temporary default role; grant cache; `PermissionService`; `RequirePermission` and its handler; `/api/me/permissions`; the access-map endpoint; frontend `PermissionService`, `permissionGuard` (waits for the first load) and `*appHasPermission`; the single 403 interceptor (screens stop showing their own 403s); the test that no permission policy is weaker than the default; **replace every Admin check in §7.2**; tests | none: everyone is `Originator` + `Editor`, and admins keep what they have |
-| **1b. Grant editor** | S–M | An admin screen for each role's permissions and segments, and for creating and retiring roles (never renaming them), gated by `roles:manage`; `role_modified` audit; the last-grant guard and the no-editing-your-own-role guard | IT changes roles and grants without a deploy |
+| **1b. Grant editor** | S–M | An admin screen for each role's permissions and segments, and for creating and retiring roles (never renaming them), gated by `roles:manage`; `role_modified` audit; the last-grant guard, the no-editing-your-own-role guard, and no edits to `Machine` roles | IT changes roles and grants without a deploy |
 | **2. Backend modules** | M, mostly `git mv` | One PR per module, **Producers first**: move files, fix namespaces, add `AddXModule()`, **put `RequirePermission` on every controller and write action and turn the convention test on for the module**, split mixed controllers (routes unchanged), per-module EF configurations as `IEntityTypeConfiguration` classes in each module's `Configurations/`, the pattern Phase 1 set in `Platform/Access` (empty migration), architecture tests, delete the `farm/{farmId}` endpoints. Program.cs shrinks to ~150 lines. | none. Read-only is now enforced by the API. |
 | **3. Frontend foundations** | M | ESLint and boundaries; move header to `core/layout`; NLQ out of core; delete dead code; split `ApiService` and `AppStateService` per module; manifests and registry; data-driven routes and nav | none |
 | **4. Profile extension slots** | L | Break up `home.component` (1,621 lines) and `customer-profile` into a shell plus slots; move producer components to `features/producers`; **`*appHasPermission` on every add, edit and delete control as its component moves**; per-module preload; `Customer` → `ProducerProfile` split (paired with the backend DTO change); segment filter in the hosts, treating every customer as `Producer` until Phase 5 adds the column | none for originators. **A Trader-role test user now gets a working contracts + tickets view, still over producer data, and a test user without `Editor` sees no control they can't use.** |
@@ -949,7 +949,7 @@ Phases 1–4 deliver modularity and stand on their own even if traders slip. Pha
 
 - **No split of the database or `ApplicationDbContext` per module.**
 - **No project or assembly per module** for now; section 4.1 describes the graduation path.
-- **No role checks in code:** no `RequireRole`, `IsInRole`, `isAdmin` or `isTrader()`, and no role names in code at all: roles are rows (§4.3). Roles are read once, by `PermissionService`, and every check is a permission. The pipeline's machine role on `BarchartIngest` is the one exception.
+- **No role checks in code:** no `RequireRole`, `IsInRole`, `isAdmin` or `isTrader()`, and no role names in code at all: roles are rows (§4.3). Roles are read once, by `PermissionService`, and every check is a permission, including the pipeline's, through its `Machine` role row.
 - **No user-to-role table in our database.** Assignments live in the entitlements app and arrive in the token.
 - **No grants to named users,** such as today's `ExclusionManagers` list. Permissions flow only through roles.
 - **No wildcard grants** such as `*:read` or `contracts:*`. Every grant is an individual row.

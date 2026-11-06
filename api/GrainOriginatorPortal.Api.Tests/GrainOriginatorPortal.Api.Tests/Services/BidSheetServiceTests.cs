@@ -6,9 +6,11 @@ using Moq;
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models.Requests;
+using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Access;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 
@@ -16,6 +18,7 @@ public class BidSheetServiceTests
 {
     private readonly Mock<IBidSheetRepository> _repo = new();
     private readonly Mock<IRequestContextService> _requestContext = new();
+    private readonly Mock<IPermissionService> _permissions = new();
     private readonly Mock<IUserEntitlementService> _entitlementService = new();
     private readonly Mock<IBarchartCatalogRepository> _barchartCatalog = new();
     private readonly Mock<IBarchartIngestRepository> _barchartIngest = new();
@@ -28,7 +31,7 @@ public class BidSheetServiceTests
         _sut = new BidSheetService(
             _repo.Object, _requestContext.Object, _entitlementService.Object,
             _barchartCatalog.Object, _barchartIngest.Object,
-            _entitlements.Object, NullLogger<BidSheetService>.Instance);
+            _entitlements.Object, _permissions.Object, NullLogger<BidSheetService>.Instance);
     }
 
     private static CreateBidSheetLocationRequest Request(string name = "Kansas West", string tu = "TU1") => new()
@@ -218,11 +221,11 @@ public class BidSheetServiceTests
     }
 
     [Fact]
-    public async Task DeleteLocationAsync_AdminMayDeleteSomeoneElsesLocation()
+    public async Task DeleteLocationAsync_AHolderOfDeleteGlobal_MayDeleteSomeoneElsesLocation()
     {
         _repo.Setup(r => r.GetLocationCreatedByAsync(7, It.IsAny<CancellationToken>()))
              .ReturnsAsync("someone.else@x.com");
-        _requestContext.Setup(r => r.IsAdmin()).Returns(true);
+        _permissions.Setup(p => p.HasPermissionAsync(AppPermissions.BidSheet.BidSheetLocationsDeleteGlobal, It.IsAny<CancellationToken>())).ReturnsAsync(true);
 
         await _sut.DeleteLocationAsync(7, CancellationToken.None);
 
@@ -254,19 +257,19 @@ public class BidSheetServiceTests
         _repo.Verify(r => r.DeleteLocationAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    // BarChart-linked locations are never deleted through the app -- not by their creator, not by an
-    // Admin (business rule, 2026-10-20). The way off a sheet is removing it from the sheet, which keeps
+    // BarChart-linked locations are never deleted through the app -- not by their creator, not by a
+    // holder of bid-sheet-locations:delete:global (business rule, 2026-10-20). The way off a sheet is removing it from the sheet, which keeps
     // the location and its feed bids for everyone else.
     [Theory]
     [InlineData(false)]   // the creator
-    [InlineData(true)]    // an Admin
-    public async Task DeleteLocationAsync_BarchartLinkedLocation_ThrowsForbiddenForEveryoneAndDeletesNothing(bool admin)
+    [InlineData(true)]    // a holder of delete:global
+    public async Task DeleteLocationAsync_BarchartLinkedLocation_ThrowsForbiddenForEveryoneAndDeletesNothing(bool deleteGlobal)
     {
         _repo.Setup(r => r.GetLocationCreatedByAsync(7, It.IsAny<CancellationToken>()))
              .ReturnsAsync("user@x.com");
         _repo.Setup(r => r.GetLocationAsync(7, It.IsAny<CancellationToken>()))
              .ReturnsAsync(new BidSheetLocation { Id = 7, Name = "Gothenburg", BarchartLocationKey = "6916", CreatedBy = "user@x.com" });
-        _requestContext.Setup(r => r.IsAdmin()).Returns(admin);
+        _permissions.Setup(p => p.HasPermissionAsync(AppPermissions.BidSheet.BidSheetLocationsDeleteGlobal, It.IsAny<CancellationToken>())).ReturnsAsync(deleteGlobal);
 
         var ex = await Assert.ThrowsAsync<ForbiddenException>(
             () => _sut.DeleteLocationAsync(7, CancellationToken.None));
