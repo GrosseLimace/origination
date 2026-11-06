@@ -413,7 +413,7 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
   - `dbo.Permissions` is generated from `AppPermissions` through EF `HasData`. Adding a permission constant without a migration is a pending model change, and a test calling `HasPendingModelChanges()` fails on it. `RolePermission` has a foreign key to it.
   - **Deny by default.** A new permission reaches nobody until it is granted. Its PR includes a grant migration for the intended roles: the persona roles (`Support` included) for a `:read` or a personal write, `Editor` for an edit, `Manager` or `Support` for a manager or operational power, and always `Admin`. The first grant is therefore still code-reviewed; later changes are edits in the grant editor.
   - The deploy workflows run `dotnet ef database update` before new code goes out, so the grant exists when the code that checks it arrives.
-  - `GET /api/diagnostics/access-map` (`diagnostics:read`) shows each role's grants and any permission no role holds, per environment. That replaces the first draft's checked-in grant snapshot.
+  - `GET /api/diagnostics/access-map` (`diagnostics:read`) shows, per environment, each role's grants and segments, the default roles, any permission no role holds, and any permission only `Admin` holds. It reads the grant cache, so it shows what the instance enforces. That replaces the first draft's checked-in grant snapshot.
 - **Generate the frontend's permission ids from `AppPermissions`.**
   - A backend test renders the catalog as a TypeScript union and fails if the checked-in `client/src/app/core/access/permission-ids.generated.ts` differs from it. A script regenerates the file.
   - A manifest or template that names a permission the server doesn't know won't compile (§5.2).

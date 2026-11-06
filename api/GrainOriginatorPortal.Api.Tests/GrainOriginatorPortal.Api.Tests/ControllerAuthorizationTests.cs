@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 // Project namespaces
 using GrainOriginatorPortal.Api.Authorization;
 using GrainOriginatorPortal.Api.Controllers;
+using GrainOriginatorPortal.Api.Platform.Access.Controllers;
 
 namespace GrainOriginatorPortal.Api.Tests;
 
@@ -20,9 +21,11 @@ public class ControllerAuthorizationTests
 {
     public static IEnumerable<object[]> AllControllerTypes()
     {
+        yield return new object[] { typeof(AccessMapController) };
         yield return new object[] { typeof(BarchartController) };
         yield return new object[] { typeof(BarchartIngestController) };
         yield return new object[] { typeof(BidSheetController) };
+        yield return new object[] { typeof(ClientTelemetryController) };
         yield return new object[] { typeof(CommoditiesController) };
         yield return new object[] { typeof(ContractsController) };
         yield return new object[] { typeof(CustomersController) };
@@ -36,7 +39,9 @@ public class ControllerAuthorizationTests
         yield return new object[] { typeof(CtrmSplitsController) };
         yield return new object[] { typeof(FieldPlanController) };
         yield return new object[] { typeof(GeocodeController) };
+        yield return new object[] { typeof(HelpController) };
         yield return new object[] { typeof(MeController) };
+        yield return new object[] { typeof(MyPermissionsController) };
         yield return new object[] { typeof(NotesController) };
         yield return new object[] { typeof(PlantingIntentionsController) };
         yield return new object[] { typeof(ProducerDetailsController) };
@@ -44,6 +49,8 @@ public class ControllerAuthorizationTests
         yield return new object[] { typeof(RemindersController) };
         yield return new object[] { typeof(SavedListsController) };
         yield return new object[] { typeof(StoredGrainController) };
+        yield return new object[] { typeof(TDiscController) };
+        yield return new object[] { typeof(TeamsChannelsController) };
         yield return new object[] { typeof(TicketsController) };
         yield return new object[] { typeof(TradeUnitsController) };
         yield return new object[] { typeof(UsageDashboardController) };
@@ -51,6 +58,20 @@ public class ControllerAuthorizationTests
         yield return new object[] { typeof(UserTradeUnitsController) };
         yield return new object[] { typeof(VersionController) };
         yield return new object[] { typeof(WhatsNewController) };
+    }
+
+    [Fact]
+    public void TheListAbove_CoversEveryController()
+    {
+        // The checks below only see controllers in the list, and controllers now live in more than one folder.
+        var listed = AllControllerTypes().Select(row => (Type)row[0]).ToHashSet();
+        var missing = typeof(MeController).Assembly.GetTypes()
+            .Where(t => t is { IsClass: true, IsAbstract: false } && typeof(ControllerBase).IsAssignableFrom(t))
+            .Where(t => !listed.Contains(t))
+            .Select(t => t.FullName)
+            .ToArray();
+
+        Assert.True(missing.Length == 0, $"Add to AllControllerTypes: {string.Join(", ", missing)}");
     }
 
     [Theory]
