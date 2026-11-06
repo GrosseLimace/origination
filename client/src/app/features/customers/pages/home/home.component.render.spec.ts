@@ -11,7 +11,7 @@ import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { NlqFilterService } from '@core/services/nlq-filter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { UserRolesService } from '@core/services/user-roles.service';
+import { providePermissions } from '@testing/permission.stub';
 import { OutlookCalendarService } from '@core/services/outlook-calendar.service';
 import { environment } from '@env/environment';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent } from '@shared/components/card/card.component';
@@ -93,7 +93,7 @@ class StubProfile {
   readonly openPlantingYear = input<unknown>();
   readonly savedListsForCustomer = input<SavedList[]>([]);
   readonly teamListsForCustomer = input<unknown>();
-  readonly isManager = input<unknown>();
+  readonly canEditTeamLists = input<unknown>();
   readonly retryContracts = output<void>();
   readonly retryTickets = output<void>();
   readonly onAddPlanting = output<unknown>();
@@ -271,7 +271,7 @@ describe('HomeComponent (rendered)', () => {
           },
         },
         { provide: UsageTrackingService, useValue: { trackProfileOpened: vi.fn() } },
-        { provide: UserRolesService, useValue: { isAdmin: signal(false) } },
+        providePermissions(),
         { provide: OutlookCalendarService, useValue: { addToOutlook: vi.fn(() => of(null)) } },
         { provide: MsalService, useValue: { instance: { getActiveAccount: () => null, getAllAccounts: () => [] } } },
         { provide: ActivatedRoute, useValue: { queryParams } },

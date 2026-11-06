@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MsalService } from '@azure/msal-angular';
+import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import {
@@ -367,7 +368,7 @@ export class DailyDigestComponent implements OnInit {
           this.groups.update(list => list.filter(g => g.id !== id));
           this.toast.success('Group deleted.');
         },
-        error: () => this.toast.error('Could not delete the group. Try again.'),
+        error: err => { if (!alreadyShown(err)) this.toast.error('Could not delete the group. Try again.'); },
       });
     this.cancelDeleteGroup();
   }
@@ -388,9 +389,9 @@ export class DailyDigestComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: updated => this.groups.update(list => list.map(g => g.id === updated.id ? updated : g)),
-        error: () => {
+        error: err => {
           this.groups.update(list => list.map(g => g.id === group.id ? { ...g, enabled: group.enabled } : g));
-          this.toast.error('Could not update the group. Try again.');
+          if (!alreadyShown(err)) this.toast.error('Could not update the group. Try again.');
         },
       });
   }
@@ -497,9 +498,9 @@ export class DailyDigestComponent implements OnInit {
                 : 'Group updated.');
           this.closeDialog();
         },
-        error: () => {
+        error: err => {
           this.saving.set(false);
-          this.toast.error('Could not save the group. Try again.');
+          if (!alreadyShown(err)) this.toast.error('Could not save the group. Try again.');
         },
       });
   }

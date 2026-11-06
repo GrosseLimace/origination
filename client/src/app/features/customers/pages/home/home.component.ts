@@ -6,6 +6,7 @@ import { mergeProducerRows } from './merge-producer-rows';
 import { applyAdoptedCustomerId } from './adopt-assigned-customer';
 import { applyProducerDetails } from '@shared/utils/apply-producer-details';
 import { catchError, finalize, takeUntil } from 'rxjs/operators';
+import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
@@ -73,8 +74,8 @@ export class HomeComponent {
   /** The selected producer's planting intentions and their handlers (see HomePlantingStore). */
   private readonly planting = inject(HomePlantingStore);
 
-  /** Manager = holds the "Admin" app role. Enables the "Team Lists" tab in the Add-to-List dropdown. */
-  readonly isManager = this.lists.isManager;
+  /** Enables the "Team Lists" tab in the Add-to-List dropdown (see HomeSavedListsStore). */
+  readonly canEditTeamLists = this.lists.canEditTeamLists;
   /** Gates the floating calculator launcher (Profitability calc + future calculators). */
   readonly calculatorEnabled = environment.calculatorEnabled;
   /** Gates the personal follow-up reminders card and the producer-list reminder badge. */
@@ -283,10 +284,10 @@ export class HomeComponent {
       untracked(() => this._onTradeUnitsChanged(tradeUnits));
     });
 
-    // (Re)load the manager team lists whenever admin status resolves (/api/me) or the TU selection
-    // changes. Guarded inside loadTeamLists so non-managers / empty selections clear the set.
+    // (Re)load the team lists whenever the permissions load or the TU selection changes. Guarded
+    // inside loadTeamLists, so a user without the team permissions or an empty selection clears the set.
     effect(() => {
-      this.isManager();
+      this.canEditTeamLists();
       this.selectedTradeUnits();
       untracked(() => this.lists.loadTeamLists());
     });
@@ -1337,7 +1338,7 @@ export class HomeComponent {
           this._saveProducerDetailsAndLinks(effective);
           this.planting.movePlantingIntentions(effective.customerId, effective.intentionMoves ?? []);
         },
-        error: () => this.toastService.error('Failed to update trade units')
+        error: err => { if (!alreadyShown(err)) this.toastService.error('Failed to update trade units'); }
       });
     } else {
       this._saveProducerDetailsAndLinks(data);
@@ -1409,7 +1410,7 @@ export class HomeComponent {
         this.producerDetailsMap.set(map);
         this.toastService.success('Producer updated successfully');
       },
-      error: () => this.toastService.error('Failed to save producer details')
+      error: err => { if (!alreadyShown(err)) this.toastService.error('Failed to save producer details'); }
     });
 
     for (const linkedIdStr of data.removedIncomingIds) {

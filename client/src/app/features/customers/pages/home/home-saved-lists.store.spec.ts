@@ -7,7 +7,7 @@ import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { NlqFilterContext, NlqFilterService } from '@core/services/nlq-filter.service';
-import { UserRolesService } from '@core/services/user-roles.service';
+import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
 import type { Customer, Note, QueryLibraryItem, SavedList } from '@models';
 import { HomeBackgroundFailures } from './home-background-failures';
 import { HomePageState } from './home-page.state';
@@ -20,7 +20,7 @@ const list = (id: number, over: Partial<SavedList> = {}): SavedList =>
 describe('HomeSavedListsStore', () => {
   let store: HomeSavedListsStore;
   let page: HomePageState;
-  let isAdmin: ReturnType<typeof signal<boolean>>;
+  let access: PermissionStub;
   let api: {
     getSavedLists: ReturnType<typeof vi.fn>;
     getQueryLibrary: ReturnType<typeof vi.fn>;
@@ -41,7 +41,7 @@ describe('HomeSavedListsStore', () => {
   let failures: { report: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
-    isAdmin = signal(false);
+    access = permissionStub();
     api = {
       getSavedLists: vi.fn((): Observable<SavedList[]> => of([])),
       getQueryLibrary: vi.fn((): Observable<QueryLibraryItem[]> => of([])),
@@ -81,7 +81,7 @@ describe('HomeSavedListsStore', () => {
         { provide: ToastService, useValue: toast },
         { provide: NlqFilterService, useValue: nlq },
         { provide: HomeBackgroundFailures, useValue: failures },
-        { provide: UserRolesService, useValue: { isAdmin } },
+        providePermissions(access),
         { provide: MsalService, useValue: { instance: { getActiveAccount: () => null, getAllAccounts: () => [{ name: 'Pat', username: 'pat@x' }] } } },
       ],
     });
@@ -155,21 +155,21 @@ describe('HomeSavedListsStore', () => {
   });
 
   describe('team lists', () => {
-    it('are cleared for a non-manager or with no trade unit', () => {
+    it('are cleared without the team permissions or with no trade unit', () => {
       store.teamSavedLists.set([list(40)]);
       store.loadTeamLists();
       expect(store.teamSavedLists()).toEqual([]);
       expect(api.getTeamSavedLists).not.toHaveBeenCalled();
 
-      isAdmin.set(true);
+      access.grant('saved-lists:read:team', 'saved-lists:write:team');
       page.selectedTradeUnits.set([]);
       store.loadTeamLists();
       expect(api.getTeamSavedLists).not.toHaveBeenCalled();
       expect(store.teamListsForSelectedCustomer()).toEqual([]);
     });
 
-    it('are fetched for the selected trade units and resolved for a manager; a failure keeps the prior set', () => {
-      isAdmin.set(true);
+    it('are fetched for the selected trade units and resolved with the team permissions; a failure keeps the prior set', () => {
+      access.grant('saved-lists:read:team', 'saved-lists:write:team');
       page.selectedTradeUnits.set(['TU1', 'TU2']);
       api.getTeamSavedLists.mockReturnValue(of([list(40)]));
       store.loadTeamLists();
@@ -179,6 +179,16 @@ describe('HomeSavedListsStore', () => {
       api.getTeamSavedLists.mockReturnValue(throwError(() => new Error('500')));
       store.loadTeamLists();
       expect(store.teamSavedLists().map(l => l.id)).toEqual([40]);
+    });
+  });
+
+  describe('team list permissions', () => {
+    it('the team read alone loads nothing, since adding a producer to a teammate\'s list is a team write', () => {
+      access.grant('saved-lists:read:team');
+      page.selectedTradeUnits.set(['TU1']);
+      store.loadTeamLists();
+      expect(store.canEditTeamLists()).toBe(false);
+      expect(api.getTeamSavedLists).not.toHaveBeenCalled();
     });
   });
 

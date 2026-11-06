@@ -1,5 +1,6 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { FieldProgramRecord, FieldSeason, FieldTickets, ProducerField } from '@models';
+import { alreadyShown } from '@core/http/shown-errors';
 import { ToastService } from '@core/services/toast.service';
 import { ProgramRegistry } from '../programs/program-registry';
 import { enrollmentIdFor } from '../programs/program-enrollment';
@@ -96,10 +97,10 @@ export class FieldPlanStore {
       if (this._loadRequest.get(customerId) !== request) return;
       this.replaceCustomer(customerId, snapshot);
       this.setLoad(customerId, 'loaded');
-    } catch {
+    } catch (e) {
       if (this._loadRequest.get(customerId) !== request) return;
       this.setLoad(customerId, 'error');
-      this.toast.error('Couldn\'t load this producer\'s fields. Try again in a moment.');
+      if (!alreadyShown(e)) this.toast.error('Couldn\'t load this producer\'s fields. Try again in a moment.');
     }
   }
 
@@ -406,7 +407,7 @@ export class FieldPlanStore {
     try {
       return await run();
     } catch (e) {
-      this.toast.error(`Couldn't ${what}. ${e instanceof Error ? e.message : ''}`.trim());
+      if (!alreadyShown(e)) this.toast.error(`Couldn't ${what}. ${e instanceof Error ? e.message : ''}`.trim());
       return undefined;
     }
   }
@@ -429,7 +430,7 @@ export class FieldPlanStore {
         await pending.save();
       } catch (e) {
         this._pending.delete(key);
-        this.toast.error(`Couldn't save your change. ${e instanceof Error ? e.message : ''}`.trim());
+        if (!alreadyShown(e)) this.toast.error(`Couldn't save your change. ${e instanceof Error ? e.message : ''}`.trim());
         await this.reload(pending.customerId);
       }
     });

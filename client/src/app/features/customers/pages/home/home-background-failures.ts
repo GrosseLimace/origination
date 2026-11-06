@@ -1,4 +1,5 @@
 import { Injectable, inject, isDevMode } from '@angular/core';
+import { alreadyShown } from '@core/http/shown-errors';
 import { ToastService } from '@core/services/toast.service';
 
 /**
@@ -29,6 +30,8 @@ export class HomeBackgroundFailures {
 
   report(what: string, err: unknown): void {
     if (isDevMode()) console.error(`[Home] failed to ${what}`, err);
+    // A 403 the interceptor has already explained needs no vaguer second message.
+    if (alreadyShown(err)) return;
     const now = Date.now();
     const lastForSource = this._backgroundFailureToastAt.get(what) ?? 0;
     if (now - lastForSource < HomeBackgroundFailures.BackgroundFailurePerSourceQuietMs) return;

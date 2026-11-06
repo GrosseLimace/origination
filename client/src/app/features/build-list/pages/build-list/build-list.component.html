@@ -218,7 +218,7 @@
             }
 
             @if (!showRequestForm()) {
-              @if (isManager() && selectedCategory() === 'Team Lists' && buildingForMembers().length === 0) {
+              @if (canAssignLists() && selectedCategory() === 'Team Lists' && buildingForMembers().length === 0) {
                 <button type="button"
                   (click)="openBuildForMembersPicker()"
                   [disabled]="!hasSelectedTradeUnit()"
@@ -243,7 +243,7 @@
                   }
                 </div>
               }
-              @if (isManager() && libraryTeamLists().length === 0 && selectedCategory() === 'Team Lists') {
+              @if (canSeeTeamLists() && libraryTeamLists().length === 0 && selectedCategory() === 'Team Lists') {
                 <div class="text-center py-8 px-4">
                   <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-3 text-gray-300 dark:text-gray-600">
                     <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
@@ -284,7 +284,7 @@
                             </p>
                           }
                         </button>
-                        @if (isManager()) {
+                        @if (canAssignLists()) {
                           <button type="button"
                             (click)="$event.stopPropagation(); openAssignExistingList(list)"
                             class="text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green bg-transparent border-0 p-0 flex-shrink-0"
@@ -309,7 +309,7 @@
                   </div>
                 </div>
               }
-              @if (isManager() && libraryTeamLists().length > 0) {
+              @if (canSeeTeamLists() && libraryTeamLists().length > 0) {
                 <div>
                   <p class="text-[0.65rem] font-bold uppercase tracking-widest text-gray-400/80 dark:text-gray-500/80 mb-2">Team Lists</p>
                   <div class="space-y-1">
@@ -341,13 +341,16 @@
                             </p>
                           }
                         </button>
-                        <button type="button"
-                          (click)="$event.stopPropagation(); openAssignExistingList(list)"
-                          class="text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green bg-transparent border-0 p-0 flex-shrink-0"
-                          title="Assign this list to a team member">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
-                        </button>
-                        <button type="button"
+                        @if (canAssignLists()) {
+                          <button type="button"
+                            (click)="$event.stopPropagation(); openAssignExistingList(list)"
+                            class="text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green bg-transparent border-0 p-0 flex-shrink-0"
+                            title="Assign this list to a team member">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
+                          </button>
+                        }
+                        <!-- Someone else's list: deleting it needs the team write. -->
+                        <button type="button" *appHasPermission="'saved-lists:write:team'"
                           (click)="$event.stopPropagation(); deleteList(list.id)"
                           class="text-scoular-red hover:text-scoular-red-accessible bg-transparent border-0 p-0 flex-shrink-0"
                           title="Delete this list">

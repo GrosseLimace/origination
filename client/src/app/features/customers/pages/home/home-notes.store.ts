@@ -2,6 +2,7 @@ import { DestroyRef, Injectable, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { forkJoin, of } from 'rxjs';
 import { catchError, finalize, takeUntil } from 'rxjs/operators';
+import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
@@ -219,7 +220,7 @@ export class HomeNotesStore {
       error: (err: Error) => {
         // Surface the server's reason (e.g. a mentioned group that's no longer available) —
         // the generic message gives the user nothing to act on.
-        this.toastService.error(err?.message || 'Failed to add note');
+        if (!alreadyShown(err)) this.toastService.error(err?.message || 'Failed to add note');
         // Leave the success counter alone — the child keeps the text so the user
         // can retry. Just clear the in-flight flag so the button re-enables.
         this._isSavingNote.set(false);
@@ -278,7 +279,7 @@ export class HomeNotesStore {
         );
         this.toastService.success(updated.isPinned ? 'Note pinned' : 'Note unpinned');
       },
-      error: () => this.toastService.error('Failed to update note')
+      error: err => { if (!alreadyShown(err)) this.toastService.error('Failed to update note'); }
     });
   }
 
@@ -294,7 +295,7 @@ export class HomeNotesStore {
       },
       // Surface the server's reason (e.g. a group that's no longer available) instead of a
       // generic failure — the message is actionable and the generic one isn't.
-      error: (err: Error) => this.toastService.error(err?.message || 'Failed to update note')
+      error: (err: Error) => { if (!alreadyShown(err)) this.toastService.error(err?.message || 'Failed to update note'); }
     });
   }
 
@@ -311,7 +312,7 @@ export class HomeNotesStore {
         this.customerNotes.update(arr => arr.filter(n => n.id !== noteId));
         this.toastService.success('Note deleted');
       },
-      error: () => this.toastService.error('Failed to delete note')
+      error: err => { if (!alreadyShown(err)) this.toastService.error('Failed to delete note'); }
     });
   }
 }

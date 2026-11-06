@@ -9,7 +9,7 @@ import { AppStateService } from '@core/services/app-state.service';
 import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { UserRolesService } from '@core/services/user-roles.service';
+import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 import { NlqFilterContext, NlqFilterResult, NlqFilterService } from '@core/services/nlq-filter.service';
 import { Contract, Customer, NoteLastContact, QueryLibraryItem, RefinementFilters, SavedList, Ticket } from '@models';
@@ -145,7 +145,7 @@ describe('BuildListComponent', () => {
   let nlq: ReturnType<typeof makeNlq>;
   let toast: { info: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn>; success: ReturnType<typeof vi.fn> };
   let usage: { postClickEvent: ReturnType<typeof vi.fn>; trackProfileOpened: ReturnType<typeof vi.fn> };
-  let isAdmin: boolean;
+  let access: PermissionStub;
   let appState: AppStateService;
   let fixture: ComponentFixture<BuildListComponent>;
 
@@ -157,7 +157,7 @@ describe('BuildListComponent', () => {
     nlq = makeNlq();
     toast = { info: vi.fn(), error: vi.fn(), success: vi.fn() };
     usage = { postClickEvent: vi.fn(), trackProfileOpened: vi.fn() };
-    isAdmin = false;
+    access = permissionStub();
     TestBed.configureTestingModule({
       imports: [BuildListComponent],
       providers: [
@@ -171,7 +171,7 @@ describe('BuildListComponent', () => {
         { provide: UserTradeUnitsService, useValue: { load: () => of([]), openPreferences: vi.fn(), computeAvailableTradeUnits: () => [] } },
         { provide: ToastService, useValue: toast },
         { provide: UsageTrackingService, useValue: usage },
-        { provide: UserRolesService, useValue: { isAdmin: () => isAdmin } },
+        providePermissions(access),
         {
           provide: MsalService,
           useValue: { instance: { getActiveAccount: () => ({ name: 'Pat Merchant', username: 'pat@scoular.com' }), getAllAccounts: () => [] } },
@@ -714,11 +714,26 @@ describe('BuildListComponent', () => {
       expect(usage.postClickEvent).toHaveBeenCalledWith('interaction', 'build-a-list', 'library-search-no-match', 'organic barley');
     });
 
-    it('managers get the Team Lists pseudo-category after Saved Lists', () => {
-      isAdmin = true;
+    it('the team permissions add the Team Lists pseudo-category after Saved Lists', () => {
+      access.grant('saved-lists:read:team', 'saved-lists:write:team');
       const c = mount();
       expect(c.libraryCategories().slice(0, 3)).toEqual(['Saved Lists', 'Team Lists', 'Contracts']);
       expect(api.getTeamSavedLists).toHaveBeenCalledWith('1000');
+    });
+
+    it('the team read alone shows Team Lists, but not building or sending lists for teammates', () => {
+      // Support holds saved-lists:read:team without the write, so it may look but not assign.
+      access.grant('saved-lists:read:team');
+      const c = mount();
+      expect(c.libraryCategories()).toContain('Team Lists');
+      expect(c.canSeeTeamLists()).toBe(true);
+      expect(c.canAssignLists()).toBe(false);
+    });
+
+    it('without the team read there is no Team Lists category and nothing is fetched', () => {
+      const c = mount();
+      expect(c.libraryCategories()).not.toContain('Team Lists');
+      expect(api.getTeamSavedLists).not.toHaveBeenCalled();
     });
   });
 
@@ -1450,7 +1465,7 @@ describe('BuildListComponent', () => {
     });
 
     it('managers\' team lists match the search on name, prompt or owner and hide under a prompt category', () => {
-      isAdmin = true;
+      access.grant('saved-lists:read:team', 'saved-lists:write:team');
       const TEAM: SavedList[] = [
         { id: 20, name: 'Corn growers', query: 'All producers', createdBy: 'Lee Smith', createdAt: '2026-10-01T00:00:00' },
         { id: 21, name: 'Beans', query: 'Producers with active contracts', createdBy: 'Pat Jones', createdAt: '2026-10-01T00:00:00' },
@@ -1552,7 +1567,7 @@ describe('BuildListComponent', () => {
     });
 
     it('a manager building a list for team members assigns it with the same payload', () => {
-      isAdmin = true;
+      access.grant('saved-lists:read:team', 'saved-lists:write:team');
       api.getTeamMembers.mockReturnValue(of([{ userId: 'u1', displayName: 'Lee' }, { userId: 'u2', displayName: 'Sam' }]) as never);
       api.assignSavedList.mockReturnValue(of([{ id: 1 }, { id: 2 }]) as never);
       const c = mount();

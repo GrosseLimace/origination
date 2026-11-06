@@ -66,14 +66,14 @@ export function filterLibrary(items: QueryLibraryItem[], search: string, categor
   return items;
 }
 
-/** Category tabs: Saved Lists, Team Lists (managers only), then the prompt categories A-Z. */
-export function libraryCategories(items: QueryLibraryItem[], isManager: boolean): string[] {
+/** Category tabs: Saved Lists, Team Lists (with saved-lists:read:team), then the prompt categories A-Z. */
+export function libraryCategories(items: QueryLibraryItem[], showTeamLists: boolean): string[] {
   const cats = new Set(items.map(q => q.category));
   const sorted = [...cats].sort();
   // Prepend pseudo-categories so they sit right after "All" (rendered separately, before this loop).
-  // 'Team Lists' (managers only) goes between 'Saved Lists' and the first real category. unshift in
+  // 'Team Lists' (when shown) goes between 'Saved Lists' and the first real category. unshift in
   // reverse order so the final order is: Saved Lists, Team Lists, <alphabetical categories>.
-  if (isManager) sorted.unshift('Team Lists');
+  if (showTeamLists) sorted.unshift('Team Lists');
   sorted.unshift('Saved Lists');
   return sorted;
 }

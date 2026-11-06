@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { GlobalErrorHandler } from './global-error.handler';
 import { ToastService } from '@core/services/toast.service';
 import { AppInsightsService } from '@core/services/app-insights.service';
+import { markShown } from '@core/http/shown-errors';
 
 describe('GlobalErrorHandler', () => {
   let handler: GlobalErrorHandler;
@@ -77,6 +78,19 @@ describe('GlobalErrorHandler', () => {
       handler.handleError(chunk);
 
       expect(trackException.mock.calls.map(c => c[0])).toEqual([generic, chunk]);
+    });
+
+    it('reports a 403 nobody handled, but leaves showing it to the interceptor, which already has', () => {
+      const trackException = vi.fn();
+      const { handler, toast } = withTelemetry(trackException);
+      const showSpy = vi.spyOn(toast, 'error');
+      const refused = new Error('Insufficient permissions.');
+      markShown(refused);
+
+      handler.handleError(refused);
+
+      expect(trackException).toHaveBeenCalledWith(refused);
+      expect(showSpy).not.toHaveBeenCalled();
     });
 
     it('still shows the toast when reporting itself throws', () => {

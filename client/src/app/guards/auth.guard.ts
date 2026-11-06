@@ -2,6 +2,8 @@ import { inject } from '@angular/core';
 import { CanActivateFn } from '@angular/router';
 import { MsalGuard, MsalService } from '@azure/msal-angular';
 
+import { rememberDeepLink } from '@core/auth/deep-link';
+
 // Delegate directly to MsalGuard. It coordinates with MSAL's interaction
 // state internally; wrapping it in our own `inProgress$ -> filter(None) -> take(1)`
 // pre-gate caused per-click navigations to hang whenever MSAL happened to be
@@ -17,8 +19,6 @@ export const authGuard: CanActivateFn = (route, state) => {
   const msalService = inject(MsalService);
   const hasAccount = !!msalService.instance.getActiveAccount()
     || msalService.instance.getAllAccounts().length > 0;
-  if (!hasAccount && state.url && state.url !== '/' && state.url.startsWith('/')) {
-    try { sessionStorage.setItem('deepLinkUrl', state.url); } catch { /* sessionStorage unavailable */ }
-  }
+  if (!hasAccount) rememberDeepLink(state.url);
   return inject(MsalGuard).canActivate(route, state);
 };

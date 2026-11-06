@@ -1,7 +1,7 @@
 import { Routes } from '@angular/router';
 
 import { authGuard } from './guards/auth.guard';
-import { usageDashboardGuard } from './guards/usage-dashboard.guard';
+import { permissionGuard, requires } from '@core/access/permission.guard';
 import { environment } from '../environments/environment';
 
 export const routes: Routes = [
@@ -44,14 +44,18 @@ export const routes: Routes = [
   environment.usageDashboardEnabled
     ? {
         path: 'usage-dashboard',
-        canActivate: [authGuard, usageDashboardGuard],
+        canMatch: [permissionGuard],
+        canActivate: [authGuard],
+        data: requires('usage-reports:read'),
         loadComponent: () => import('./features/usage-dashboard/pages/usage-dashboard/usage-dashboard.component').then(m => m.UsageDashboardComponent)
       }
     : { path: 'usage-dashboard', redirectTo: '' },
   environment.usageDashboardEnabled
     ? {
         path: 'usage-dashboard/users/:userId',
-        canActivate: [authGuard, usageDashboardGuard],
+        canMatch: [permissionGuard],
+        canActivate: [authGuard],
+        data: requires('usage-reports:read'),
         loadComponent: () => import('./features/usage-dashboard/pages/user-usage-detail/user-usage-detail.component').then(m => m.UserUsageDetailComponent)
       }
     : { path: 'usage-dashboard/users/:userId', redirectTo: '' },

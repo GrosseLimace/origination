@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
 import { Customer, Contract, Ticket, Commodity } from '@models';
 import { applyProducerDetails } from '@shared/utils/apply-producer-details';
+import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { formatPhoneProgressive } from '@shared/utils/phone';
@@ -864,7 +865,7 @@ export class EditCustomerDialogComponent {
         this.tuListLoaded.set(false);
         this.isLoadingCurrentTradeUnits.set(false);
         this.currentTradeUnitsError.set(e?.message || 'Couldn\'t load trade units.');
-        this.toast.error(e?.message || 'Couldn\'t load this producer\'s trade units.');
+        if (!alreadyShown(e)) this.toast.error(e?.message || 'Couldn\'t load this producer\'s trade units.');
       }
     });
   }
@@ -1300,7 +1301,11 @@ export class EditCustomerDialogComponent {
       const dormantRemovals = this.removedDormantTuCodes();
       for (const code of dormantRemovals) {
         this.apiService.removeDormantTradeUnit(customer.id, code).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-          error: () => this.toast.error(`Couldn't remove trade unit ${code} — the producer may still have an open contract or ticket there.`)
+          error: err => {
+            if (!alreadyShown(err)) {
+              this.toast.error(`Couldn't remove trade unit ${code} — the producer may still have an open contract or ticket there.`);
+            }
+          }
         });
       }
 

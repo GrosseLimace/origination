@@ -2,13 +2,13 @@
 
 ## At a Glance
 
-- **Route**: `/usage-dashboard` (admin-only, env-gated by `environment.usageDashboardEnabled`)
+- **Route**: `/usage-dashboard` (needs `usage-reports:read`, env-gated by `environment.usageDashboardEnabled`)
 - **Component**: [`client/src/app/features/usage-dashboard/pages/usage-dashboard/usage-dashboard.component.ts`](../../client/src/app/features/usage-dashboard/pages/usage-dashboard/usage-dashboard.component.ts)
 - **Template**: [`usage-dashboard.component.html`](../../client/src/app/features/usage-dashboard/pages/usage-dashboard/usage-dashboard.component.html)
-- **Access**: `authGuard` + `adminGuard` (must have `Admin` role claim).
+- **Access**: `authGuard` + `permissionGuard` with `usage-reports:read`.
 - **Primary user goal**: monitor adoption, spot inactive originators, identify underused features, and find gaps in the query library — feed product / management decisions.
 
-This is the only screen in the app gated by an actual role (vs. just "authenticated"). Backend reads are
+This is the only screen in the app gated by a permission (vs. just "authenticated"). Backend reads are
 gated server-side too: every read requires the `usage-reports:read` permission, and exclusion administration
 requires `usage-exclusions:manage`, which reading doesn't grant.
 
@@ -309,13 +309,13 @@ mapping — run:
 POST /api/diagnostics/usage-rollups/backfill?days=90
 ```
 
-(admin-only). Without this, the historical half of every chart reads empty rollup tables.
+(needs `diagnostics:manage`). Without this, the historical half of every chart reads empty rollup tables.
 
-## Admin gating
+## Access
 
-- **Frontend**: `adminGuard` reads roles from `/api/me` and rejects unless `roles.includes('Admin')`.
+- **Frontend**: the routes use `permissionGuard` with `usage-reports:read`. It waits for `/api/me/permissions` to load, and a user without the permission falls through to the home page. The header shows the menu item only to holders of `usage-reports:read`, and the exclusions gear appears when `can-manage` reports `usage-exclusions:manage`.
 - **Backend**: `usage-reports:read` on every read endpoint and `usage-exclusions:manage` on the exclusion endpoints, through `[RequirePermission]`.
-- **`POST /click-event` is not admin-gated** — every authenticated user posts telemetry there.
+- **`POST /click-event` needs no permission** — every authenticated user posts telemetry there.
 
 ## Feature flag
 
@@ -325,7 +325,7 @@ POST /api/diagnostics/usage-rollups/backfill?days=90
 
 | Symptom | Likely cause | First place to look |
 | --- | --- | --- |
-| Menu item missing for an admin user | flag off, or `roles` lacks `'Admin'` | `/api/me` response; environment file |
+| Menu item missing for a manager | flag off, or no role of theirs grants `usage-reports:read` | `/api/me/permissions` response; environment file |
 | 403 on a `/api/usage-dashboard/...` GET | no role of the user's grants `usage-reports:read` | the 403 body names the missing permission; `/api/me/permissions`; AAD app role assignment |
 | Historical charts empty, today's data fine | rollups were never backfilled for those days | run the backfill endpoint above; check `dbo.UserFeatureUsageDaily` |
 | Yesterday missing from a chart | the aggregation job hasn't run since midnight UTC | service logs; `dbo.UserActivityDaily` for yesterday |
@@ -338,6 +338,6 @@ POST /api/diagnostics/usage-rollups/backfill?days=90
 
 ## References
 
-- [`Shared Infrastructure.md`](./Shared%20Infrastructure.md) — `Admin` policy registration, `adminGuard`, `UsageTrackingService`.
+- [`Shared Infrastructure.md`](./Shared%20Infrastructure.md) — `[RequirePermission]`, `permissionGuard`, the 403 interceptor, `UsageTrackingService`.
 - [`Build a List.md`](./Build%20a%20List.md) — `dbo.QueryLibrary` and the search-gap events.
 - `api/GrainOriginatorPortal.Infrastructure/Data/Migrations/ApplicationDbContextModelSnapshot.cs` — authoritative shape of the usage tables. Prefer it over `scripts/_VerifySchema.sql`, which is a hand-maintained manifest that has drifted before. That file is KEPT rather than deleted (the audit proposed removing it): the BarChart work references it by name in five migrations as the `Barchart.ViewDrift` check, so it is still load-bearing on that line even though nothing in CI runs it.

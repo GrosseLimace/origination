@@ -2,11 +2,12 @@ import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core'
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { forkJoin } from 'rxjs';
 import { MsalService } from '@azure/msal-angular';
+import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
-import { UserRolesService } from '@core/services/user-roles.service';
+import { PermissionService } from '@core/access/permission.service';
 import type { SavedList } from '@models';
 import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
 import { HomeBackgroundFailures } from './home-background-failures';
@@ -33,9 +34,12 @@ export class HomeSavedListsStore {
   private readonly page = inject(HomePageState);
   private readonly destroyRef = inject(DestroyRef);
 
-  /** Manager = holds the "Admin" app role (same gate as the Usage Dashboard). Enables the
-   *  "Team Lists" tab in the Add-to-List dropdown. */
-  readonly isManager = inject(UserRolesService).isAdmin;
+  private readonly access = inject(PermissionService);
+
+  /** The Add-to-List "Team Lists" tab: loading teammates' lists needs the team read, and adding a
+   *  producer to one changes someone else's list, which needs the team write. */
+  readonly canEditTeamLists = computed(() =>
+    this.access.hasAll(['saved-lists:read:team', 'saved-lists:write:team']));
 
   /** Guards the one-per-session background full-notes fetch used by saved-list enrichment. */
   private _notesFetchInFlight = false;
@@ -193,11 +197,11 @@ export class HomeSavedListsStore {
     });
   }
 
-  /** Manager-only: fetch the team lists tied to the selected TU(s) and enrich them. Clears the set
-   *  for non-managers or when no TU is selected. */
+  /** Fetch the team lists tied to the selected TU(s) and enrich them. Clears the set without the
+   *  team permissions or when no TU is selected. */
   loadTeamLists(): void {
     const tus = this.page.selectedTradeUnits();
-    if (!this.isManager() || tus.length === 0) {
+    if (!this.canEditTeamLists() || tus.length === 0) {
       this.teamSavedLists.set([]);
       return;
     }
@@ -274,11 +278,11 @@ export class HomeSavedListsStore {
       next: () => this.toastService.success(
         updates$.length === 1 ? 'Saved list updated' : `${updates$.length} saved lists updated`
       ),
-      error: () => {
+      error: err => {
         if (ownChanged) { this.savedLists.set(ownOriginals); this.appState.setSavedLists(ownOriginals); }
         if (teamChanged) { this.teamSavedLists.set(teamOriginals); }
         this.enrichSavedLists(true);
-        this.toastService.error('Failed to save list changes');
+        if (!alreadyShown(err)) this.toastService.error('Failed to save list changes');
       }
     });
   }

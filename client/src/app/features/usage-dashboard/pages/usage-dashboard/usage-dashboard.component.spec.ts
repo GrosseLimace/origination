@@ -6,7 +6,7 @@ import { signal } from '@angular/core';
 
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
-import { UserRolesService } from '@core/services/user-roles.service';
+import { PermissionService } from '@core/access/permission.service';
 import { UsageDashboardUser, UsageManager } from '@models';
 
 import { UsageDashboardComponent } from './usage-dashboard.component';
@@ -55,14 +55,11 @@ function makeApiStub(roster: UsageManager[] = []) {
   };
 }
 
-/** UserRolesService reaches for MsalService; the dashboard only needs the short name. */
+/** PermissionService reaches for MsalService; the dashboard only needs the short name. */
 function rolesStub(userShortName = 'CEgr') {
   return {
     userShortName: signal(userShortName),
     userId: signal(`${userShortName}@scoular.com`),
-    canViewUsageDashboard: signal(true),
-    isAdmin: signal(true),
-    roles: signal<string[]>([]),
   };
 }
 
@@ -72,7 +69,7 @@ function configure(api: ReturnType<typeof makeApiStub>, roles = rolesStub(), toa
       { provide: ApiService, useValue: api },
       { provide: ToastService, useValue: { show: (m: string) => toasts?.push(m), error: () => {}, success: () => {} } },
       { provide: Router, useValue: { navigate: () => {} } },
-      { provide: UserRolesService, useValue: roles },
+      { provide: PermissionService, useValue: roles },
     ],
   });
   // happy-dom + JIT can't fetch templateUrl, and the child imports carry their own templateUrls.

@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MsalService } from '@azure/msal-angular';
 import { HeaderComponent } from './header.component';
 import { ThemeService } from '@core/services/theme.service';
-import { UserRolesService } from '@core/services/user-roles.service';
+import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
@@ -14,10 +14,9 @@ import { makeMsalServiceMock } from '@testing/msal.mocks';
 // HeaderComponent uses an external templateUrl — these tests confirm the Vitest +
 // @analogjs/vite-plugin-angular pipeline AOT-inlines and renders real component DOM.
 // The two root services with side-effecting constructors (ThemeService -> matchMedia,
-// UserRolesService -> GET /api/me) are stubbed so the component renders in isolation.
+// PermissionService -> GET /api/me/permissions) are stubbed so the component renders in isolation.
 describe('HeaderComponent', () => {
   const themeStub = { isDarkMode: signal(false), toggleTheme: () => undefined };
-  const rolesStub = { isAdmin: signal(false), roles: signal<string[]>([]), canViewUsageDashboard: signal(false) };
   // The real service calls window.open — stub it so no popup is attempted under test.
   const tradeUnitsStub = { openPreferences: vi.fn() };
   // The header reads hasUnseen() for the unread dot and version() for the build line; the real
@@ -25,11 +24,11 @@ describe('HeaderComponent', () => {
   const whatsNewStub = { hasUnseen: signal(false), version: signal<any>(null) };
   const usageTrackingStub = { trackWhatsNewOpened: vi.fn() };
 
-  function baseProviders(extra: any[] = []) {
+  function baseProviders(extra: any[] = [], access: PermissionStub = permissionStub()) {
     return provideTestEnvironment({
       extraProviders: [
         { provide: ThemeService, useValue: themeStub },
-        { provide: UserRolesService, useValue: rolesStub },
+        providePermissions(access),
         { provide: UserTradeUnitsService, useValue: tradeUnitsStub },
         { provide: WhatsNewService, useValue: whatsNewStub },
         { provide: UsageTrackingService, useValue: usageTrackingStub },
@@ -60,6 +59,26 @@ describe('HeaderComponent', () => {
     await userEvent.click(screen.getAllByRole('button', { name: /sign out/i })[0]);
 
     expect(logoutSpy).toHaveBeenCalled();
+  });
+
+  describe('Usage Dashboard menu item', () => {
+    async function openProfileMenu(access = permissionStub()) {
+      const msal = makeMsalServiceMock({ name: 'Jane Doe', username: 'jdoe@scoular.com' });
+      await render(HeaderComponent, { providers: baseProviders([{ provide: MsalService, useValue: msal }], access) });
+      await userEvent.click(screen.getAllByTitle('Jane Doe')[0]);
+    }
+
+    it('is shown to a holder of usage-reports:read, the permission the route and the API check', async () => {
+      await openProfileMenu(permissionStub(['usage-reports:read']));
+
+      expect(screen.getAllByRole('button', { name: /usage dashboard/i }).length).toBeGreaterThan(0);
+    });
+
+    it('is hidden from everyone else', async () => {
+      await openProfileMenu(permissionStub(['usage-exclusions:manage']));
+
+      expect(screen.queryByRole('button', { name: /usage dashboard/i })).toBeNull();
+    });
   });
 
   it('should open Trade Unit Preferences from the profile dropdown and close the menu', async () => {

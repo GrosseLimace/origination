@@ -116,10 +116,8 @@ export class ApiService {
     }
 
     if (error instanceof HttpErrorResponse) {
-      if (error.status === 403) {
-        const message = error.error?.error?.message || 'Access denied: you are not authorized for this resource.';
-        this.toastService.error(message);
-      } else if (error.status === 401) {
+      // A 403 has already been shown by forbiddenInterceptor, for every API client, not just this one.
+      if (error.status === 401) {
         // Previously fell through to the generic path, where most call sites swallow the error —
         // so a revoked or expired session showed the user nothing at all. MSAL still drives the
         // re-auth; this only makes sure they're told why the screen stopped working.

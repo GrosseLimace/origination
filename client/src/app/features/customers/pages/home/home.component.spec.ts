@@ -10,7 +10,7 @@ import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { NlqFilterContext, NlqFilterResult, NlqFilterService } from '@core/services/nlq-filter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { UserRolesService } from '@core/services/user-roles.service';
+import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
 import { OutlookCalendarService } from '@core/services/outlook-calendar.service';
 import { environment } from '@env/environment';
 import {
@@ -288,7 +288,7 @@ interface Harness {
   nlq: ReturnType<typeof makeNlq>;
   outlook: { addToOutlook: ReturnType<typeof vi.fn> };
   router: { navigate: ReturnType<typeof vi.fn> };
-  isAdmin: ReturnType<typeof signal<boolean>>;
+  access: PermissionStub;
   /** Runs change detection so the component's effects (TU change, team lists) observe signal writes. */
   flush(): void;
 }
@@ -296,7 +296,8 @@ interface Harness {
 interface SetupOptions {
   customers?: Customer[];
   queryParams?: Params;
-  isAdmin?: boolean;
+  /** Grants the team-list permissions, as a manager holds. */
+  teamLists?: boolean;
   /** Mutate the API/NLQ stubs before the component is constructed (constructor loads fire immediately). */
   arrange?: (api: ApiStub, nlq: ReturnType<typeof makeNlq>, app: AppStateStub) => void;
 }
@@ -315,7 +316,7 @@ function setup(opts: SetupOptions = {}): Harness {
   const toast = { error: vi.fn(), success: vi.fn(), info: vi.fn() };
   const outlook = { addToOutlook: vi.fn((_r: Reminder, _link: string): Observable<Reminder | null> => of(null)) };
   const router = { navigate: vi.fn() };
-  const isAdmin = signal(opts.isAdmin ?? false);
+  const access = permissionStub(opts.teamLists ? ['saved-lists:read:team', 'saved-lists:write:team'] : []);
 
   TestBed.configureTestingModule({
     providers: [
@@ -324,7 +325,7 @@ function setup(opts: SetupOptions = {}): Harness {
       { provide: ToastService, useValue: toast },
       { provide: NlqFilterService, useValue: nlq },
       { provide: UsageTrackingService, useValue: { trackProfileOpened: vi.fn() } },
-      { provide: UserRolesService, useValue: { isAdmin } },
+      providePermissions(access),
       { provide: OutlookCalendarService, useValue: outlook },
       {
         provide: MsalService,
@@ -345,7 +346,7 @@ function setup(opts: SetupOptions = {}): Harness {
   const fixture = TestBed.createComponent(HomeComponent);
   fixture.detectChanges();
   return {
-    fixture, c: fixture.componentInstance, api, app, toast, nlq, outlook, router, isAdmin,
+    fixture, c: fixture.componentInstance, api, app, toast, nlq, outlook, router, access,
     flush: () => fixture.detectChanges(),
   };
 }
@@ -742,7 +743,7 @@ describe('HomeComponent', () => {
       expect(nonManager.c.teamListsForSelectedCustomer()).toEqual([]);
       TestBed.resetTestingModule();
 
-      const manager = setup({ isAdmin: true, arrange: api => api.getTeamSavedLists.mockReturnValue(of(team)) });
+      const manager = setup({ teamLists: true, arrange: api => api.getTeamSavedLists.mockReturnValue(of(team)) });
       expect(manager.api.getTeamSavedLists).toHaveBeenCalledWith('TU1');
       expect(manager.c.teamListsForSelectedCustomer().map(l => l.id)).toEqual([40]);
     });
@@ -1235,7 +1236,7 @@ describe('HomeComponent', () => {
 
     it('a manager can change a team list\'s membership; it is not written to the shared own-list cache', () => {
       const h = setup({
-        isAdmin: true,
+        teamLists: true,
         arrange: api => {
           api.getSavedLists.mockReturnValue(of([savedList(7)]));
           api.getTeamSavedLists.mockReturnValue(of([savedList(40, { createdBy: 'Someone Else' })]));

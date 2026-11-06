@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { forkJoin, of } from 'rxjs';
 import { catchError, tap } from 'rxjs/operators';
+import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService, DashboardCacheEntry } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
@@ -903,9 +904,9 @@ export class DashboardComponent {
           if (sharePayload.length > 0) this.loadDashboardMarketShares();
           this.showSeasonTargets.set(false);
         },
-        error: () => {
+        error: err => {
           this.estimatesSaving.set(false);
-          this.toastService.error('Failed to save season targets');
+          if (!alreadyShown(err)) this.toastService.error('Failed to save season targets');
         },
       });
   }
@@ -1004,9 +1005,9 @@ export class DashboardComponent {
         this.tempHarvestMap.set({});
         this.loadActualHarvest();
       },
-      error: () => {
+      error: err => {
         this.harvestSaving.set(false);
-        this.toastService.error('Failed to save harvest data');
+        if (!alreadyShown(err)) this.toastService.error('Failed to save harvest data');
       }
     });
   }
@@ -1016,7 +1017,7 @@ export class DashboardComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => this.loadActualHarvest(),
-        error: () => this.toastService.error('Failed to delete harvest row')
+        error: err => { if (!alreadyShown(err)) this.toastService.error('Failed to delete harvest row'); }
       });
   }
 
@@ -1038,9 +1039,9 @@ export class DashboardComponent {
         this.newHarvestBushels.set('');
         this.loadActualHarvest();
       },
-      error: () => {
+      error: err => {
         this.harvestSaving.set(false);
-        this.toastService.error('Failed to add harvest row');
+        if (!alreadyShown(err)) this.toastService.error('Failed to add harvest row');
       }
     });
   }

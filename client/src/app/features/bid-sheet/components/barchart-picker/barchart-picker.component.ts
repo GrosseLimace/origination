@@ -2,6 +2,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import {
@@ -294,11 +295,11 @@ export class BarchartPickerComponent {
         this.results.set(rows);
         this.resultsChange.emit(rows);
       },
-      error: () => {
+      error: err => {
         this.loading.set(false);
         this.results.set([]);
         this.resultsChange.emit([]);
-        this.toast.error('Could not load BarChart locations');
+        if (!alreadyShown(err)) this.toast.error('Could not load BarChart locations');
       },
     });
   }

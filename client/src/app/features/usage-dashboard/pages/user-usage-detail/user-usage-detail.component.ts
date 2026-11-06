@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
+import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import {
@@ -161,8 +162,8 @@ export class UserUsageDetailComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: data => { this.detail.set(data); this.loading.set(false); },
-        error: () => {
-          this.toast.show('Failed to load user detail', 'error');
+        error: err => {
+          if (!alreadyShown(err)) this.toast.show('Failed to load user detail', 'error');
           this.loading.set(false);
         }
       });

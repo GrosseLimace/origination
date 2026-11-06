@@ -85,7 +85,7 @@
             [openPlantingYear]="pendingPlantingYear()"
             [savedListsForCustomer]="savedListsForSelectedCustomer()"
             [teamListsForCustomer]="teamListsForSelectedCustomer()"
-            [isManager]="isManager()"
+            [canEditTeamLists]="canEditTeamLists()"
             (onContractsWideChange)="contractsWide.set($event)"
             (onSaveSavedListMembership)="handleSaveSavedListMembership($event)">
           </app-customer-profile>

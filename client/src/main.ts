@@ -5,7 +5,7 @@ import { bootstrapApplication } from '@angular/platform-browser';
 
 // 2. Angular router/http
 import { provideRouter, Router } from '@angular/router';
-import { provideHttpClient, withInterceptorsFromDi, HTTP_INTERCEPTORS } from '@angular/common/http';
+import { provideHttpClient, withInterceptors, withInterceptorsFromDi, HTTP_INTERCEPTORS } from '@angular/common/http';
 
 // 3. Third-party (MSAL)
 import {
@@ -24,6 +24,7 @@ import { AppComponent } from './app/app.component';
 import { routes } from './app/app.routes';
 import { environment } from './environments/environment';
 import { GlobalErrorHandler } from './app/core/handlers/global-error.handler';
+import { forbiddenInterceptor } from './app/core/http/forbidden.interceptor';
 
 // Token storage decision — security-guide.md §4.2:
 // "Prefer HttpOnly secure cookies for browser apps where feasible.
@@ -58,7 +59,8 @@ bootstrapApplication(AppComponent, {
     provideZonelessChangeDetection(),
     { provide: ErrorHandler, useClass: GlobalErrorHandler },
     provideRouter(routes),
-    provideHttpClient(withInterceptorsFromDi()),
+    // forbiddenInterceptor is the only place a 403 is shown; MsalInterceptor comes in through DI.
+    provideHttpClient(withInterceptorsFromDi(), withInterceptors([forbiddenInterceptor])),
     {
       provide: MSAL_INSTANCE,
       useValue: msalInstance,

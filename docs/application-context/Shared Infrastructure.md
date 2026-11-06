@@ -37,7 +37,11 @@ flowchart LR
 - ~68 public methods. Every API call in the app goes through here.
 - **Base URL** comes from `environment.apiBaseUrl` (`client/src/environments/environment.ts`).
 - **Request deduplication** for expensive ODS endpoints — see `_dedupe<T>(key, request)`. Used by `getCustomers`, `getContracts`, `getTickets`, `getNotes`, `getStoredGrain`, `getCommodities`, `getElevators`, `getBidSheetLocations`, `getAllProducerDetails`, `getSavedLists`, etc. If two callers ask for the same key in flight, they share one HTTP request.
-- **Error handling** is centralized: 403 messages are toasted to the user; all other errors are logged in dev mode and re-thrown.
+- **Error handling** is centralized: a 401 toasts a session-expired message; every failure is logged in dev mode and re-thrown as an `ApiError`. A 403 is shown by `forbiddenInterceptor` instead (see below).
+
+### `forbiddenInterceptor` and `alreadyShown`
+
+`client/src/app/core/http/` — the one place a 403 from the API is shown, for every API client, not just `ApiService`. A missing permission (`AUTHZ_PERMISSION_DENIED`) gets a plain-language message; any other 403 is a rule about a particular record, so its own message is shown. Identical messages don't stack. The error is marked as shown and passed on, and every screen checks `alreadyShown(err)` before showing its own "Failed to …" toast, so a 403 is one toast, not two. `GlobalErrorHandler` skips its toast for a marked error too.
 
 ### `AppStateService`
 
@@ -211,13 +215,21 @@ All controllers depend on `IDataService` (DI'd as `SqlDataService` today, with `
 - Dev SPA client: `e0f25943-ae8b-4c2d-8060-c9ffbd448aff`.
 - Dev API scope: `api://00078a10-3f3f-4d17-9350-fe90401125ae/Origination.Application.Dev`.
 - **Cache mode**: `sessionStorage`. Tokens die when the tab closes — see security comments at the top of `main.ts` for the threat-model rationale.
-- Deep-link preservation: `auth.guard.ts` saves the target URL to `sessionStorage["deepLinkUrl"]` before redirecting to AAD; `main.ts` restores it after `loginRedirect` returns.
+- Deep-link preservation: `rememberDeepLink` (`core/auth/deep-link.ts`) saves the target URL to `sessionStorage["deepLinkUrl"]` before the redirect to AAD; `main.ts` restores it after `loginRedirect` returns. `authGuard` and `permissionGuard` both call it.
 
 ### Route guards
 
 `client/src/app/guards/auth.guard.ts` — wraps `MsalGuard.canActivate()` and adds the deep-link save behavior.
 
-`client/src/app/guards/admin.guard.ts` — checks for `"Admin"` in the user's role claims (sourced from `/api/me`). Used only on `/usage-dashboard`.
+`client/src/app/core/access/permission.guard.ts` — `permissionGuard`, a `canMatch` guard: the route matches only when the user holds every permission in its `data.requires`, written `data: requires('usage-reports:read')`. It waits for the first permissions load and denies if that failed, so a typed URL never gets through on the empty set held while loading. A refused route falls through to the catch-all, and its code is never downloaded. Used on the usage dashboard routes.
+
+### Permissions (frontend)
+
+`client/src/app/core/access/`:
+
+- **`PermissionService`** loads `/api/me/permissions` once MSAL has settled and answers `has(permission)` and `hasAll(permissions)`. It is the only place the SPA learns what the user may do, and it never looks at roles. Until the load answers, and if it fails, the user holds nothing. It also carries the user id the usage dashboard defaults its manager filter to.
+- **`*appHasPermission`** removes a control the user lacks the permission for: `*appHasPermission="'saved-lists:write:team'"`, or a list that must all be held.
+- **`permission-ids.generated.ts`** is the `PermissionId` type, generated from `AppPermissions`, so a misspelled permission doesn't compile. `PermissionIdsTypeScriptTests` fails when it drifts; regenerate from the repository root with `REGENERATE_PERMISSION_IDS=1 dotnet test --filter PermissionIdsTypeScriptTests`.
 
 ### Backend authentication
 

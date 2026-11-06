@@ -12,6 +12,7 @@ import { CdkScrollable } from '@angular/cdk/scrolling';
 // keeps it attached to the trigger as the grid scrolls.
 import { OverlayModule, ConnectedPosition } from '@angular/cdk/overlay';
 import type * as Leaflet from 'leaflet';
+import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
@@ -628,9 +629,9 @@ export class BidSheetComponent {
               ? `Removed ${what} from this sheet`
               : `Removed ${what} from ${sheetCount} sheets`);
           },
-          error: () => {
+          error: err => {
             this.removingLocations.set(false);
-            this.toastService.error('Failed to remove the locations');
+            if (!alreadyShown(err)) this.toastService.error('Failed to remove the locations');
           }
         });
     });
@@ -1625,10 +1626,10 @@ export class BidSheetComponent {
         if (this.editBidsMode() && this._buildDirtyBids().length === 0) this._buildEditGrid();
         onLoaded?.();
       },
-      error: () => {
+      error: err => {
         this.isLoading.set(false);
         this.editBidsGridLoading.set(false);
-        this.toastService.error('Failed to load bid sheet locations');
+        if (!alreadyShown(err)) this.toastService.error('Failed to load bid sheet locations');
       }
     });
   }
@@ -1693,7 +1694,7 @@ export class BidSheetComponent {
       error: (err) => {
         this.sheetsLoaded.set(true);
         if (isDevMode()) console.error('[BidSheet] failed to load sheets', err);
-        this.toastService.error('Failed to load bid sheets');
+        if (!alreadyShown(err)) this.toastService.error('Failed to load bid sheets');
       }
     });
   }
@@ -1892,7 +1893,7 @@ export class BidSheetComponent {
       },
       error: (err) => {
         this.creatingSheet.set(false);
-        this.toastService.error(err?.status === 409
+        if (!alreadyShown(err)) this.toastService.error(err?.status === 409
           ? `You already have a bid sheet called "${name}"`
           : 'Failed to create bid sheet');
       }
@@ -1926,7 +1927,7 @@ export class BidSheetComponent {
       },
       error: (err) => {
         this.renamingSheet.set(false);
-        this.toastService.error(err?.status === 409
+        if (!alreadyShown(err)) this.toastService.error(err?.status === 409
           ? `You already have a bid sheet called "${name}"`
           : 'Failed to rename bid sheet');
       }
@@ -1975,9 +1976,9 @@ export class BidSheetComponent {
         this.filterBids();
         this._refreshMapMarkers();
       },
-      error: () => {
+      error: err => {
         this.deletingSheet.set(false);
-        this.toastService.error('Failed to delete bid sheet');
+        if (!alreadyShown(err)) this.toastService.error('Failed to delete bid sheet');
       }
     });
   }
@@ -2010,9 +2011,9 @@ export class BidSheetComponent {
           this.shareCatalogLoaded.set(true);
           this.shareCatalogLoading.set(false);
         },
-        error: () => {
+        error: err => {
           this.shareCatalogLoading.set(false);
-          this.toastService.error('Failed to load the directory');
+          if (!alreadyShown(err)) this.toastService.error('Failed to load the directory');
         }
       });
     }
@@ -2065,9 +2066,9 @@ export class BidSheetComponent {
         this.filterBids();
         this._refreshMapMarkers();
       },
-      error: () => {
+      error: err => {
         this.savingShares.set(false);
-        this.toastService.error('Failed to update sharing');
+        if (!alreadyShown(err)) this.toastService.error('Failed to update sharing');
       }
     });
   }
@@ -2883,7 +2884,7 @@ export class BidSheetComponent {
       error: (err) => {
         this.addLocationSaving.set(false);
         if (isDevMode()) console.error('[BidSheet] add location failed', err);
-        this.toastService.error(this._errorToast(err, "Failed to add location"));
+        if (!alreadyShown(err)) this.toastService.error(this._errorToast(err, "Failed to add location"));
       }
     });
   }
@@ -3247,7 +3248,7 @@ export class BidSheetComponent {
       error: (err: { status?: number }) => {
         this.barchartAdding.set(false);
         // Keeps the picker open with the basket intact, so the user just renames and confirms again.
-        this.toastService.error(err?.status === 409
+        if (!alreadyShown(err)) this.toastService.error(err?.status === 409
           ? `You already have a bid sheet called "${name}"`
           : 'Failed to create bid sheet');
       }
@@ -3273,11 +3274,12 @@ export class BidSheetComponent {
           sheet,
           location: sheet.locations.find(l => l.id === locationId) ?? null,
           duplicate: false,
-          failed: false
+          failed: false,
+          shown: false
         })),
         catchError((err: unknown) => {
           if (isDevMode()) console.error('[BidSheet] failed to add location to sheet', err);
-          return of({ sheet: null as BidSheet | null, location: null as BidSheetLocation | null, duplicate: false, failed: true });
+          return of({ sheet: null as BidSheet | null, location: null as BidSheetLocation | null, duplicate: false, failed: true, shown: alreadyShown(err) });
         })
       );
 
@@ -3294,7 +3296,7 @@ export class BidSheetComponent {
             catchError((err: unknown) => {
               const duplicate = (err as { status?: number })?.status === 400;
               if (!duplicate && isDevMode()) console.error('[BidSheet] barchart create failed', err);
-              return of({ sheet: null as BidSheet | null, location: null as BidSheetLocation | null, duplicate, failed: !duplicate });
+              return of({ sheet: null as BidSheet | null, location: null as BidSheetLocation | null, duplicate, failed: !duplicate, shown: alreadyShown(err) });
             })
           ));
 
@@ -3304,11 +3306,13 @@ export class BidSheetComponent {
       // permanently dead behind a spinning button.
       this.barchartAdding.set(false);
 
-      const succeeded = results.filter((r): r is { sheet: BidSheet; location: BidSheetLocation; duplicate: boolean; failed: boolean } => r.location != null);
+      const succeeded = results.filter((r): r is { sheet: BidSheet; location: BidSheetLocation; duplicate: boolean; failed: boolean; shown: boolean } => r.location != null);
       const duplicates = results.filter(r => r.duplicate).length;
       const failures = results.filter(r => r.failed).length;
 
       if (succeeded.length === 0) {
+        // Every failure was a 403 the interceptor has already explained; a vaguer toast would contradict it.
+        if (failures > 0 && results.every(r => !r.failed || r.shown)) return;
         this.toastService.error(failures > 0
           ? 'Could not add locations — something went wrong, please try again'
           : 'Those locations are already on this sheet');
@@ -3503,7 +3507,7 @@ export class BidSheetComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (sheet) => this._applySheet(sheet),
-        error: () => this.toastService.error('Failed to save row order')
+        error: err => { if (!alreadyShown(err)) this.toastService.error('Failed to save row order'); }
       });
   }
 
@@ -3817,7 +3821,7 @@ export class BidSheetComponent {
           this._autoSaveRerun = false;
           this._pendingOnDone = null;
           if (isDevMode()) console.error('[BidSheet] auto-save bids failed', err);
-          this.toastService.error(this._errorToast(err, "Failed to save bids"));
+          if (!alreadyShown(err)) this.toastService.error(this._errorToast(err, "Failed to save bids"));
           // Deliberately NOT calling onDone — preserves the edit and aborts any pending navigation.
         }
       });
@@ -3985,7 +3989,7 @@ export class BidSheetComponent {
         error: (err) => {
           this.editBidsSaving.set(false);
           if (isDevMode()) console.error('[BidSheet] save bids failed', err);
-          this.toastService.error(this._errorToast(err, "Failed to save bids"));
+          if (!alreadyShown(err)) this.toastService.error(this._errorToast(err, "Failed to save bids"));
         }
       });
   }
@@ -4504,11 +4508,9 @@ export class BidSheetComponent {
       },
       error: (err) => {
         this.showDeleteLocationConfirm.set(false);
-        // A 403 carries a reason worth reading: someone else's location, or a BarChart location, which
-        // is never deleted and has to be removed from the sheet instead.
-        this.toastService.error(err?.status === 403 && err?.message
-          ? err.message
-          : 'Failed to delete location');
+        // A 403 carries a reason worth reading (someone else's location, or a BarChart location, which
+        // is never deleted and has to be removed from the sheet instead), and the interceptor shows it.
+        if (!alreadyShown(err)) this.toastService.error('Failed to delete location');
       }
     });
   }
@@ -4539,10 +4541,10 @@ export class BidSheetComponent {
         this.filterBids();
         this._refreshMapMarkers();
       },
-      error: () => {
+      error: err => {
         this.showDeleteCropConfirm.set(false);
         this.pendingDeleteCrop.set('');
-        this.toastService.error('Failed to delete crop bids');
+        if (!alreadyShown(err)) this.toastService.error('Failed to delete crop bids');
       }
     });
   }
@@ -4742,7 +4744,7 @@ export class BidSheetComponent {
         this._loadAllMapLocations();
         this._loadAllMapLocations();
       },
-      error: () => this.toastService.error(failureMessage)
+      error: err => { if (!alreadyShown(err)) this.toastService.error(failureMessage); }
     });
   }
 
@@ -4813,7 +4815,7 @@ export class BidSheetComponent {
           this._refreshMapMarkers();
           if (this.editBidsMode()) this._buildEditGrid();
         },
-        error: () => this.toastService.error('Failed to rename location')
+        error: err => { if (!alreadyShown(err)) this.toastService.error('Failed to rename location'); }
       });
   }
 
@@ -4843,7 +4845,7 @@ export class BidSheetComponent {
         ));
         this.toastService.success(newValue ? `${name} marked as Scoular facility` : `${name} unmarked as Scoular facility`);
       },
-      error: () => this.toastService.error('Failed to update Scoular status')
+      error: err => { if (!alreadyShown(err)) this.toastService.error('Failed to update Scoular status'); }
     });
   }
 
@@ -5609,10 +5611,10 @@ export class BidSheetComponent {
         this.catalogDetailLoading.set(false);
         this.catalogDetail.set(detail);
       },
-      error: () => {
+      error: err => {
         if (gen !== this._catalogDetailGen) return;
         this.catalogDetailLoading.set(false);
-        this.toastService.error('Failed to load this location');
+        if (!alreadyShown(err)) this.toastService.error('Failed to load this location');
         this.closeCatalogDetail();
       }
     });
@@ -5756,7 +5758,7 @@ export class BidSheetComponent {
       },
       error: (err) => {
         this.catalogDetailAdding.set(false);
-        this.toastService.error(this._errorToast(err, 'Failed to add location'));
+        if (!alreadyShown(err)) this.toastService.error(this._errorToast(err, 'Failed to add location'));
       }
     });
   }

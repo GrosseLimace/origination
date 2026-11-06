@@ -2,6 +2,7 @@ import { DestroyRef, Injectable, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { forkJoin, of } from 'rxjs';
 import { catchError, map, takeUntil } from 'rxjs/operators';
+import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
@@ -103,8 +104,10 @@ export class HomePlantingStore {
     forkJoin(
       moves.map(m => this.apiService.retagPlantingIntentions(customerId, m.from, m.to).pipe(
         map(result => ({ ...m, moved: result.moved })),
-        catchError(() => {
-          this.toastService.error(`Couldn't move planting intentions from ${m.from} to ${m.to} — they're still recorded against ${m.from}.`);
+        catchError(err => {
+          if (!alreadyShown(err)) {
+            this.toastService.error(`Couldn't move planting intentions from ${m.from} to ${m.to} — they're still recorded against ${m.from}.`);
+          }
           return of({ ...m, moved: 0 });
         })
       ))
@@ -132,7 +135,11 @@ export class HomePlantingStore {
         this.page.plantingIntentions.set(merged);
         this.appState.setPlantingIntentions(merged);
       },
-      error: () => this.toastService.error('Planting intentions moved, but the list couldn\'t be refreshed — reload the page to see them.')
+      error: err => {
+        if (!alreadyShown(err)) {
+          this.toastService.error('Planting intentions moved, but the list couldn\'t be refreshed — reload the page to see them.');
+        }
+      }
     });
   }
 
@@ -160,7 +167,7 @@ export class HomePlantingStore {
         this.toastService.success('Planting intention added');
         this._ensureCommodityOnProducerDetails(sel, data.crop);
       },
-      error: (e: Error) => this.toastService.error(e?.message || 'Failed to add planting intention')
+      error: (e: Error) => { if (!alreadyShown(e)) this.toastService.error(e?.message || 'Failed to add planting intention'); }
     });
   }
 
@@ -183,7 +190,7 @@ export class HomePlantingStore {
         this.toastService.success('Planting intention updated');
         if (sel) this._ensureCommodityOnProducerDetails(sel, data.crop);
       },
-      error: (e: Error) => this.toastService.error(e?.message || 'Failed to update planting intention')
+      error: (e: Error) => { if (!alreadyShown(e)) this.toastService.error(e?.message || 'Failed to update planting intention'); }
     });
   }
 
@@ -241,7 +248,7 @@ export class HomePlantingStore {
         }
         this.toastService.success('Planting intention deleted');
       },
-      error: () => this.toastService.error('Failed to delete planting intention')
+      error: err => { if (!alreadyShown(err)) this.toastService.error('Failed to delete planting intention'); }
     });
   }
 

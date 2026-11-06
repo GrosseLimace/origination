@@ -1,5 +1,6 @@
 import { ErrorHandler, inject, Injectable, Injector, isDevMode, NgZone } from '@angular/core';
 
+import { alreadyShown } from '@core/http/shown-errors';
 import { AppInsightsService } from '@core/services/app-insights.service';
 import { ToastService } from '@core/services/toast.service';
 
@@ -26,6 +27,11 @@ export class GlobalErrorHandler implements ErrorHandler {
 
     // Skip chunk-load errors (lazy route not yet downloaded) — Angular retries automatically
     if (message.includes('ChunkLoadError') || message.includes('Loading chunk')) {
+      return;
+    }
+
+    // A 403 nobody handled: forbiddenInterceptor has already told the user what happened.
+    if (alreadyShown(error)) {
       return;
     }
 

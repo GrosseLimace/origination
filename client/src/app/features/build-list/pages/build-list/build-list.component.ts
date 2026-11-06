@@ -5,12 +5,14 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin, from, of, catchError, mergeMap, toArray, timeout, tap, Subject, takeUntil } from 'rxjs';
 import { MsalService } from '@azure/msal-angular';
+import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService, BuildListState } from '@core/services/app-state.service';
 import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { UserRolesService } from '@core/services/user-roles.service';
+import { PermissionService } from '@core/access/permission.service';
+import { HasPermissionDirective } from '@core/access/has-permission.directive';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, DpContract, SavedList, TeamMember, ProducerDetails, RefinementFilters, QueryLibraryItem, GrainOnFarmItem, DashboardPlantingEstimate, Commodity } from '@models';
 import { dpTotalBushels } from '@shared/utils/dp-aggregate';
@@ -55,6 +57,7 @@ import { environment } from '@env/environment';
     CommonModule,
     FormsModule,
     RouterLink,
+    HasPermissionDirective,
     CardComponent,
     CardContentComponent,
     CardHeaderComponent,
@@ -98,11 +101,15 @@ export class BuildListComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
   private readonly usageTracking = inject(UsageTrackingService);
-  private readonly userRoles = inject(UserRolesService);
+  private readonly access = inject(PermissionService);
 
-  /** Manager = holds the "Admin" app role (same gate as the Usage Dashboard). Drives the
-   *  manager-only "Team Lists" library category. */
-  readonly isManager = this.userRoles.isAdmin;
+  /** The "Team Lists" library category: the lists teammates built for the selected trade units. */
+  readonly canSeeTeamLists = computed(() => this.access.has('saved-lists:read:team'));
+
+  /** Building a list for a teammate, or sending one to them: picking the teammate needs the team
+   *  read, and sending the list needs the team write. */
+  readonly canAssignLists = computed(() =>
+    this.access.hasAll(['saved-lists:read:team', 'saved-lists:write:team']));
 
   // Trade units captured at init — used to detect changes on destroy
   private _initTradeUnits: string[] = [];
@@ -315,18 +322,19 @@ export class BuildListComponent {
   storedGrain = signal<StoredGrain[]>([]);
   dpContracts = signal<DpContract[]>([]);
   savedLists = signal<SavedList[]>([]);
-  /** Saved lists belonging to other users in the selected trade unit(s) — manager-only. */
+  /** Saved lists belonging to other users in the selected trade unit(s), for saved-lists:read:team. */
   teamSavedLists = signal<SavedList[]>([]);
 
-  /** Reload team lists whenever the manager status resolves or the trade-unit selection changes.
+  /** Reload team lists whenever the permissions load or the trade-unit selection changes.
    *  Scoped to the EXPLICITLY selected trade unit(s) — NOT effectiveTradeUnits(), which falls back
    *  to all of the manager's TUs and would surface teammates' lists from other groups/trade units.
-   *  Non-managers, and an empty trade-unit selection (e.g. only a group is selected), see none. */
+   *  Without saved-lists:read:team, or with an empty trade-unit selection (e.g. only a group is
+   *  selected), there are none. */
   private _teamListsEffect = effect(() => {
-    const isMgr = this.isManager();
+    const canSee = this.canSeeTeamLists();
     const tus = this.appState.selectedTradeUnits();
     untracked(() => {
-      if (!isMgr || tus.length === 0) {
+      if (!canSee || tus.length === 0) {
         this.teamSavedLists.set([]);
         return;
       }
@@ -926,13 +934,13 @@ export class BuildListComponent {
   readonly filteredLibrary = computed(() =>
     filterLibrary(this.queryLibrary(), this.librarySearchText().toLowerCase().trim(), this.selectedCategory(), environment.remindersEnabled));
 
-  readonly libraryCategories = computed(() => libraryCategories(this.queryLibrary(), this.isManager()));
+  readonly libraryCategories = computed(() => libraryCategories(this.queryLibrary(), this.canSeeTeamLists()));
 
-  /** Team lists shown in the library — manager-only, scoped to the current TU (overlap match done
+  /** Team lists shown in the library — saved-lists:read:team only, scoped to the current TU (overlap match done
    *  server-side), and matched against the library search text. Hidden when a non-'Team Lists'
    *  category is selected. */
   readonly libraryTeamLists = computed(() => {
-    if (!this.isManager()) return [];
+    if (!this.canSeeTeamLists()) return [];
     const cat = this.selectedCategory();
     if (cat && cat !== 'Team Lists') return [];
     const search = this.librarySearchText().toLowerCase().trim();
@@ -1130,7 +1138,7 @@ export class BuildListComponent {
           this.appState.setQueryLibrary(items);
           this.queryLibraryLoaded.set(true);
         },
-        error: () => { this.queryLibraryLoaded.set(true); this.toastService.error('Failed to load query library'); }
+        error: err => { this.queryLibraryLoaded.set(true); if (!alreadyShown(err)) this.toastService.error('Failed to load query library'); }
       });
     }
 
@@ -1435,13 +1443,13 @@ export class BuildListComponent {
           this._runParkedQuery();
         }
       },
-      error: () => {
+      error: err => {
         if (requestId !== this._loadRequestId) return;
         this.loading.set(false);
         this.coreDataLoaded.set(true); // Mark loaded even on error so UI isn't stuck
         this._contractsReady.set(true); // Don't strand contract-queries waiting forever on error
         this._storageReady.set(true); // Same — don't strand storage-queries waiting forever on error
-        this.toastService.error('Failed to load data');
+        if (!alreadyShown(err)) this.toastService.error('Failed to load data');
         // Same re-entry as the success path: a prompt parked during this reload must not sit on
         // "Processing query..." for a note/DP fetch that nothing started.
         if (this._parkedQuery) this._runParkedQuery();
@@ -2028,9 +2036,9 @@ export class BuildListComponent {
         // Async coverage queries own isProcessing until their fetch resolves (see _applyNlqFilter).
         if (!this._applyNlqFilter()) this.isProcessing.set(false);
       },
-      error: () => {
+      error: err => {
         if (queryGen !== this._queryGenId) return;
-        this.toastService.error('Failed to load data for query');
+        if (!alreadyShown(err)) this.toastService.error('Failed to load data for query');
         this.isProcessing.set(false);
         // Nothing more is coming, so the recovery effect will never clear these — drop the
         // spinners here or the failure reads as an endless load.
@@ -2634,8 +2642,8 @@ export class BuildListComponent {
         this._refreshSavedLists();
         this._refreshTeamLists(); // a manager may have edited a teammate's list
       },
-      error: () => {
-        this.toastService.error('Failed to save list');
+      error: err => {
+        if (!alreadyShown(err)) this.toastService.error('Failed to save list');
       }
     });
   }
@@ -2655,7 +2663,7 @@ export class BuildListComponent {
     this.teamMembersLoading.set(true);
     this.apiService.getTeamMembers(tus.join(',')).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (members) => { this.teamMembers.set(members); this.teamMembersLoading.set(false); },
-      error: () => { this.teamMembersLoading.set(false); this.toastService.error('Failed to load team members'); }
+      error: err => { this.teamMembersLoading.set(false); if (!alreadyShown(err)) this.toastService.error('Failed to load team members'); }
     });
   }
 
@@ -2716,7 +2724,7 @@ export class BuildListComponent {
     this.teamMembersLoading.set(true);
     this.apiService.getTeamMembers(tus).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (members) => { this.teamMembers.set(members); this.teamMembersLoading.set(false); },
-      error: () => { this.teamMembersLoading.set(false); this.toastService.error('Failed to load team members'); }
+      error: err => { this.teamMembersLoading.set(false); if (!alreadyShown(err)) this.toastService.error('Failed to load team members'); }
     });
   }
 
@@ -2758,9 +2766,9 @@ export class BuildListComponent {
           }
           this._refreshTeamLists();
         },
-        error: () => {
+        error: err => {
           this.assigning.set(false);
-          this.toastService.error('Failed to assign list');
+          if (!alreadyShown(err)) this.toastService.error('Failed to assign list');
         }
       });
   }
@@ -2794,8 +2802,8 @@ export class BuildListComponent {
       next: () => {
         this.toastService.info('List deleted');
       },
-      error: () => {
-        this.toastService.error('Failed to delete list');
+      error: err => {
+        if (!alreadyShown(err)) this.toastService.error('Failed to delete list');
         this._refreshSavedLists(); // Re-fetch on error to restore
         this._refreshTeamLists();
       }
@@ -2808,15 +2816,15 @@ export class BuildListComponent {
         this.savedLists.set(data);
         this.appState.setSavedLists(data);
       },
-      error: () => this.toastService.error('Failed to refresh lists')
+      error: err => { if (!alreadyShown(err)) this.toastService.error('Failed to refresh lists'); }
     });
   }
 
-  /** Reloads the manager-only team lists for the given trade units (defaults to the explicitly
+  /** Reloads the team lists for the given trade units (defaults to the explicitly
    *  selected trade unit(s) — not effectiveTradeUnits(), to avoid surfacing other groups' lists).
    *  Silent on failure — the team view is supplementary to the user's own saved lists. */
   private _refreshTeamLists(tus: string[] = this.appState.selectedTradeUnits()): void {
-    if (!this.isManager() || tus.length === 0) {
+    if (!this.canSeeTeamLists() || tus.length === 0) {
       this.teamSavedLists.set([]);
       return;
     }

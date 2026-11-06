@@ -372,19 +372,20 @@ describe('ApiService', () => {
     expect((caught as ApiError).category).toBe('unauthorized');
   });
 
-  it('still toasts the server\'s 403 message, falling back to the generic access-denied text', () => {
+  it('leaves a 403 to forbiddenInterceptor: no toast here, and the error keeps the server\'s message', () => {
+    // A toast here as well as the interceptor's would show every 403 twice.
     const spy = vi.spyOn(TestBed.inject(ToastService), 'error');
+    let caught: unknown;
 
-    service.getCustomers().subscribe({ error: () => {} });
+    service.getCustomers().subscribe({ error: e => caught = e });
     httpMock.expectOne(`${BASE}/customers`).flush(
       { error: { code: 'AUTHORIZATION_FORBIDDEN', message: 'Not your trade unit' } },
       { status: 403, statusText: 'Forbidden' }
     );
-    service.getCustomers().subscribe({ error: () => {} });
-    httpMock.expectOne(`${BASE}/customers`).flush(null, { status: 403, statusText: 'Forbidden' });
 
-    expect(spy).toHaveBeenNthCalledWith(1, 'Not your trade unit');
-    expect(spy).toHaveBeenNthCalledWith(2, 'Access denied: you are not authorized for this resource.');
+    expect(spy).not.toHaveBeenCalled();
+    expect((caught as ApiError).category).toBe('forbidden');
+    expect((caught as ApiError).message).toBe('Not your trade unit');
   });
 
   it('does not toast other failures — the call site decides how to show them', () => {

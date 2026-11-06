@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
+import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { AccessUser, ExcludedUser } from '@models';
@@ -19,8 +20,8 @@ import { formatLastActive } from '../../utils/usage-format';
  * can't be read (Graph not configured/blocked in this environment) the panel falls back to a
  * free-text short-name entry so exclusions can still be managed.
  *
- * The whole Usage Dashboard is admin-gated (the usageDashboardGuard route guard + AdminOnly
- * endpoints), so only admin accounts ever see this panel.
+ * Only holders of usage-exclusions:manage see this panel; the dashboard asks the API's can-manage
+ * endpoint, and every exclusion endpoint requires the same permission.
  */
 @Component({
   selector: 'app-excluded-users-panel',
@@ -84,8 +85,8 @@ export class ExcludedUsersPanelComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: rows => { this.excluded.set(rows); this.loading.set(false); },
-        error: () => {
-          this.toast.show('Failed to load excluded users', 'error');
+        error: err => {
+          if (!alreadyShown(err)) this.toast.show('Failed to load excluded users', 'error');
           this.loading.set(false);
         }
       });
@@ -131,7 +132,7 @@ export class ExcludedUsersPanelComponent {
         },
         error: err => {
           this.saving.set(false);
-          this.toast.show(err?.status === 409 ? 'That user is already excluded' : 'Failed to add exclusion', 'error');
+          if (!alreadyShown(err)) this.toast.show(err?.status === 409 ? 'That user is already excluded' : 'Failed to add exclusion', 'error');
         }
       });
   }
@@ -145,7 +146,7 @@ export class ExcludedUsersPanelComponent {
           this.toast.show(`${row.userId} will appear in usage reporting again`, 'success');
           this.changed.emit();
         },
-        error: () => this.toast.show('Failed to remove exclusion', 'error')
+        error: err => { if (!alreadyShown(err)) this.toast.show('Failed to remove exclusion', 'error'); }
       });
   }
 }

@@ -419,7 +419,7 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
   - A manifest or template that names a permission the server doesn't know won't compile (§5.2).
 - **`GET /api/me/permissions`** follows the style guide (its §7.2): `{ userId, roles, permissions, modules, segments }`.
   - The SPA already reads roles from the API, because its ID token carries none, so it never cares where roles come from.
-  - `/api/me` stays as it is for the `userId` the usage dashboard uses.
+  - It also carries the `userId` the usage dashboard uses, so the SPA no longer calls `/api/me`. That endpoint is unchanged.
 - **Caching and failure:**
   - Roles come from the token, so there is no lookup to cache and no outage to survive for them.
   - The grants (every role's permissions and segments) are small and the same for everyone. Each instance caches the whole map for about 5 minutes (`Access:GrantCacheDuration`), with a last-known-good copy.
@@ -680,7 +680,7 @@ export const APP_MODULES: ModuleManifest[] = [
   - Signal stores in `providedIn: 'root'` services are only instantiated when injected, so a module the user can't open never builds its store.
 - **`ApiService` (1,272 lines) splits** into per-module clients such as `features/contracts/data-access/contracts.api.ts`. The field plan's `ctrm-split-api` and `fd-cic-api` already follow that shape; they only need to move.
   - The `_dedupe` helper moves to `core/http`.
-  - The 403 toast becomes an interceptor, and it is the **only** place a 403 is shown: screens stop toasting their own 403s. eTMS showed two contradicting toasts per 403 (the global handler plus the screen). This has to be in place before Phase 2 enforces the first endpoint, so it is built in Phase 1.
+  - The 403 toast becomes an interceptor (`core/http/forbidden.interceptor.ts`), and it is the **only** place a 403 is shown: screens stop toasting their own 403s by checking `alreadyShown(err)` before their own failure message. eTMS showed two contradicting toasts per 403 (the global handler plus the screen). This has to be in place before Phase 2 enforces the first endpoint, so it is built in Phase 1.
 - **The `Customer` model sheds** `farm`, `totalAcres`, `binCapacity`, `grainOnFarm` and `linkedProducerIds`. They move to a `ProducerProfile` in `features/producers/models`.
 
 ### 5.4 Boundary enforcement

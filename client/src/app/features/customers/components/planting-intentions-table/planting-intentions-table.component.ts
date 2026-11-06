@@ -7,6 +7,7 @@ import { ButtonComponent } from '@shared/components/button/button.component';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
 import { InputComponent } from '@shared/components/input/input.component';
 import { Customer, PlantingIntention, Commodity } from '@models';
+import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { AppStateService } from '@core/services/app-state.service';
@@ -460,7 +461,7 @@ export class PlantingIntentionsTableComponent {
         error: (e: Error) => {
           this.isLoadingPlantingCommodities.set(false);
           console.error('[PlantingIntentions] Failed to load curated planting crop list', e);
-          this.toast.warning('Couldn\'t load the planting crop list — showing all commodities. Reopen to retry.');
+          if (!alreadyShown(e)) this.toast.warning('Couldn\'t load the planting crop list — showing all commodities. Reopen to retry.');
         }
       });
     }

@@ -230,10 +230,10 @@ export class CustomerProfileComponent {
   /** The user's own saved lists (enriched) the current producer can be quick-added to. Saved lists
    *  are originator-owned, so every list is offered regardless of the trade-unit selection. */
   public savedListsForCustomer = input<SavedList[]>([]);
-  /** Manager-only: team lists (all lists tied to the TU, any creator) for the Add-to-List Team tab. */
+  /** Team lists (all lists tied to the TU, any creator) for the Add-to-List Team tab. */
   public teamListsForCustomer = input<SavedList[]>([]);
-  /** True when the current user is a manager — gates the Add-to-List "Team Lists" tab. */
-  public isManager = input(false);
+  /** True when the user may add producers to teammates' lists: gates the Add-to-List "Team Lists" tab. */
+  public canEditTeamLists = input(false);
   /** Save staged saved-list membership changes for the current producer; the host persists them. */
   public onSaveSavedListMembership = output<{ listId: number; add: boolean }[]>();
   public onAddNote = output<string>();
@@ -314,10 +314,10 @@ export class CustomerProfileComponent {
   readonly activeAddToLists = computed<SavedList[]>(() =>
     this.addToListTab() === 'team' ? this.teamListsForCustomer() : this.savedListsForCustomer());
 
-  /** All lists the menu can stage changes against — own + (manager) team. Used when seeding the
+  /** All lists the menu can stage changes against — own, plus team lists when allowed. Used when seeding the
    *  staged map and computing the save diff so toggles persist across tab switches. */
   private allAddToLists(): SavedList[] {
-    return this.isManager()
+    return this.canEditTeamLists()
       ? [...this.savedListsForCustomer(), ...this.teamListsForCustomer()]
       : this.savedListsForCustomer();
   }

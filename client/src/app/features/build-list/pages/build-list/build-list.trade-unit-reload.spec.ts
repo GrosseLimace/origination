@@ -9,7 +9,7 @@ import { AppStateService } from '@core/services/app-state.service';
 import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { UserRolesService } from '@core/services/user-roles.service';
+import { providePermissions } from '@testing/permission.stub';
 import { Customer, QueryLibraryItem, SavedList } from '@models';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -95,7 +95,7 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
         { provide: DataPreloadService, useValue: {} },
         { provide: ToastService, useValue: { info: vi.fn(), error: vi.fn(), success: vi.fn() } },
         { provide: UsageTrackingService, useValue: { postClickEvent: vi.fn() } },
-        { provide: UserRolesService, useValue: { isAdmin: () => false } },
+        providePermissions(),
         { provide: MsalService, useValue: { instance: { getActiveAccount: () => null, getAllAccounts: () => [] } } },
         { provide: Router, useValue: { navigate: vi.fn() } },
         // No ?query= example link from the Help panel.

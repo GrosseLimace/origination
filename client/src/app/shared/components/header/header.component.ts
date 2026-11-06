@@ -22,7 +22,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 // Project services
 import { ThemeService } from '@core/services/theme.service';
 import { AppStateService } from '@core/services/app-state.service';
-import { UserRolesService } from '@core/services/user-roles.service';
+import { PermissionService } from '@core/access/permission.service';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
@@ -50,7 +50,7 @@ export class HeaderComponent {
   private readonly msalBroadcast = inject(MsalBroadcastService);
   private readonly http = inject(HttpClient);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly userRoles = inject(UserRolesService);
+  private readonly access = inject(PermissionService);
   private readonly userTradeUnits = inject(UserTradeUnitsService);
   /** Public: the template reads hasUnseen() and version() straight off it. */
   readonly whatsNew = inject(WhatsNewService);
@@ -63,23 +63,15 @@ export class HeaderComponent {
   // Groups (daily recap + @-mentionable in notes). On in every environment — see
   // environment.dailyDigestEnabled, which still carries the original Daily Digest name.
   readonly dailyDigestEnabled = environment.dailyDigestEnabled;
-  // Gate the Usage Dashboard nav button to users who can actually open it: the `Admin` app role.
-  // Group membership is never checked directly — each environment has its own Super Users security
-  // group (Origination App Dev / QA / Prod Super Users), where managers and IT/admin are both
-  // added, that's assigned the Admin role on that env's API Enterprise Application, and membership
-  // flows into the access token's roles claim. Route re-enforces via `usageDashboardGuard`, and
-  // every dashboard endpoint re-enforces the same policy server-side. Everyone who gets in sees the
-  // whole organisation and may filter it by any manager.
+  // Shown only to users who can open the dashboard: the route's permissionGuard and every dashboard
+  // endpoint check the same usage-reports:read.
   get usageDashboardEnabled(): boolean {
-    return environment.usageDashboardEnabled && this.userRoles.canViewUsageDashboard();
+    return environment.usageDashboardEnabled && this.access.has('usage-reports:read');
   }
 
   mobileMenuOpen = signal(false);
   profileMenuOpen = signal(false);
   profilePhotoUrl = signal<string | null>(null);
-  // Delegates to UserRolesService.isAdmin — the SPA's ID token has no `roles`
-  // claim, so we read from /api/me instead (populated by UserRolesService).
-  readonly isAdmin = this.userRoles.isAdmin;
   private readonly currentUrl = signal(this.router.url);
 
   constructor() {
@@ -98,8 +90,6 @@ export class HeaderComponent {
         const account = this._getAccount();
         if (!account) return EMPTY;
 
-        // Admin role is populated by UserRolesService via /api/me — no need to
-        // read idTokenClaims.roles here (SPA ID token doesn't carry it).
         return from(this.msalService.instance.acquireTokenSilent({
           scopes: ['User.Read'],
           account

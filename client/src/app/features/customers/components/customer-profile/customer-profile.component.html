@@ -158,8 +158,8 @@
                 </button>
                 @if (showAddToListMenu()) {
                   <div class="absolute right-0 mt-1 w-64 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg z-50">
-                    @if (isManager()) {
-                      <!-- Managers can target their own lists or any team list tied to the TU. -->
+                    @if (canEditTeamLists()) {
+                      <!-- With the team permissions, the user can target their own lists or any team list tied to the TU. -->
                       <div class="flex gap-1 p-1.5 border-b border-gray-200 dark:border-gray-600">
                         <button type="button" (click)="addToListTab.set('saved')"
                           class="flex-1 px-2 py-1.5 text-xs font-medium rounded transition-colors"
@@ -204,7 +204,7 @@
                         }
                       </div>
                     }
-                    @if (!isManager() && savedListsForCustomer().length === 0) {
+                    @if (!canEditTeamLists() && savedListsForCustomer().length === 0) {
                       <div class="border-t border-gray-200 dark:border-gray-600 p-2 flex justify-end">
                         <button type="button" (click)="cancelAddToList()" class="px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-md transition-colors">Close</button>
                       </div>

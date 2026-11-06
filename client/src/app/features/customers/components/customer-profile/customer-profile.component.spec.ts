@@ -48,7 +48,7 @@ describe('CustomerProfileComponent — Add to List (Team Lists)', () => {
   });
 
   it('stages changes across both own and team lists into one diff (manager)', () => {
-    ref.setInput('isManager', true);
+    ref.setInput('canEditTeamLists', true);
     ref.setInput('savedListsForCustomer', [makeList({ id: 1, name: 'My List' })]);
     ref.setInput('teamListsForCustomer', [makeList({ id: 2, name: "Joe's List", createdBy: 'Joe' })]);
 
@@ -73,7 +73,7 @@ describe('CustomerProfileComponent — Add to List (Team Lists)', () => {
   });
 
   it('ignores team lists in the staging diff when the user is not a manager', () => {
-    ref.setInput('isManager', false);
+    ref.setInput('canEditTeamLists', false);
     ref.setInput('savedListsForCustomer', [makeList({ id: 1, name: 'My List' })]);
     ref.setInput('teamListsForCustomer', [makeList({ id: 2, name: "Joe's List", createdBy: 'Joe' })]);
 
@@ -90,7 +90,7 @@ describe('CustomerProfileComponent — Add to List (Team Lists)', () => {
   });
 
   it('activeAddToLists follows the selected tab', () => {
-    ref.setInput('isManager', true);
+    ref.setInput('canEditTeamLists', true);
     ref.setInput('savedListsForCustomer', [makeList({ id: 1, name: 'My List' })]);
     ref.setInput('teamListsForCustomer', [makeList({ id: 2, name: "Joe's List" })]);
 
@@ -709,7 +709,7 @@ describe('CustomerProfileComponent — failed background loads (rendered)', () =
 
     it("leaves a manager's Team Lists tab as it was — the flag is about the user's own lists", () => {
       state.setSavedListsLoadFailed(true);
-      ref.setInput('isManager', true);
+      ref.setInput('canEditTeamLists', true);
       fixture.detectChanges();
       component.toggleAddToListMenu();
       component.addToListTab.set('team');

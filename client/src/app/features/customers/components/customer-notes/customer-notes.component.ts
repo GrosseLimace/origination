@@ -4,6 +4,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
+import { alreadyShown } from '@core/http/shown-errors';
 import { ToastService } from '@core/services/toast.service';
 import { ApiService } from '@core/services/api.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
@@ -580,8 +581,11 @@ export class CustomerNotesComponent {
             list.some(x => x.type === 'teams-channel' && x.id === String(registered.id))
               ? list
               : [...list, { type: 'teams-channel', id: String(registered.id), name: opt.name }]),
-          error: () => this.toastService.error(
-            `Couldn't set up "${opt.name}" for mentions. Try again, or remove it from the note.`),
+          error: err => {
+            if (!alreadyShown(err)) {
+              this.toastService.error(`Couldn't set up "${opt.name}" for mentions. Try again, or remove it from the note.`);
+            }
+          },
         });
       this.closeMentionDropdown();
       this._focusAfterMention(before + insert);
