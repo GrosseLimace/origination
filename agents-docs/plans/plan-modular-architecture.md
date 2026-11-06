@@ -278,19 +278,17 @@ public static class AppPermissions
 }
 
 // Api/Platform/Access/PermissionService.cs (scoped): the only code that reads roles
-public sealed class PermissionService(IUserRoleSource roles, IRoleGrantCache grants, IHttpContextAccessor http)
+public sealed class PermissionService(IUserRoleSource roles, IRoleGrantCache grants, IHttpContextAccessor http, …)
     : IPermissionService
 {
-    // Union of the grants of every role the user holds. Memoised per request.
-    // Grant rows naming a permission this build doesn't know are dropped and logged.
-    public Task<IReadOnlySet<string>> GetPermissionsAsync(CancellationToken cancellationToken) { … }
+    // Everything the caller may do and see, worked out once per request:
+    //   Roles        the token's roles found in dbo.Roles, plus the default roles if any apply
+    //   Permissions  the union of those roles' grants (grants naming an unknown permission were dropped
+    //                and logged when the cache loaded them)
+    //   Segments     the union of their dbo.RoleSegments. Customer queries and ICommercialScopeProvider read this.
+    //   Modules      the modules with at least one held permission: drives nav and preload on the client
+    public Task<UserAccess> GetAccessAsync(CancellationToken cancellationToken) { … }
     public Task<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken) { … }
-
-    // Union of dbo.RoleSegments across the user's roles. Customer queries and ICommercialScopeProvider read this.
-    public Task<IReadOnlySet<string>> GetAllowedSegmentsAsync(CancellationToken cancellationToken) { … }
-
-    // Modules with at least one held permission: drives nav and preload on the client.
-    public Task<IReadOnlySet<string>> GetModulesAsync(CancellationToken cancellationToken) { … }
 }
 
 // Authorization: the style guide's attribute + handler (§6.2 of the guide), never RequireRole
@@ -418,7 +416,8 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
   - `/api/me` stays as it is for the `userId` the usage dashboard uses.
 - **Caching and failure:**
   - Roles come from the token, so there is no lookup to cache and no outage to survive for them.
-  - The grants (every role's permissions and segments) are small and the same for everyone. Each instance caches the whole map for about 5 minutes, with a last-known-good copy.
+  - The grants (every role's permissions and segments) are small and the same for everyone. Each instance caches the whole map for about 5 minutes (`Access:GrantCacheDuration`), with a last-known-good copy.
+  - A failed reload keeps serving that copy and retries after 30 seconds. While one request reloads, the others get the current copy rather than waiting on the database.
   - With no copy available, the request **fails closed** (503), as `UserEntitlementService` does today.
   - So a grant change takes effect within about 5 minutes. A role change waits for the user's next access token (§7.1).
 
@@ -730,7 +729,7 @@ This is not a folder problem. The data simply isn't there yet.
      - the customer↔trade-unit pairs query the API team has not yet delivered.
    - **Watch the nightly cost.** The sync looks up about 16.8k producers in about 840 requests a night. Adding commercial counterparties adds to that, so measure it with a dry run (`POST /api/diagnostics/customer-sync/run?dryRun=true`).
    - Then add a `Segment` column to `dbo.Customer` (`Producer` / `Commercial`, derived from `IndustryCode1` during sync).
-   - Customer queries then filter by the caller's allowed segments, from `IPermissionService.GetAllowedSegmentsAsync` (§4.3).
+   - Customer queries then filter by the caller's allowed segments, from `IPermissionService.GetAccessAsync().Segments` (§4.3).
 2. **Contracts.**
    - Replace the hard-coded `'P'` with a scope value passed through the repositories:
 
@@ -773,7 +772,7 @@ This is not a folder problem. The data simply isn't there yet.
 - **`Admin` is an ordinary role.** It comes from the entitlements app like the others, and its permissions are rows like the others. Nothing in code gives it extra powers.
   - It is the style guide's required base role (§3.1 of the guide): every permission and every segment. It is a system role, so it can't be deleted and the grant editor can't change it.
   - **In production, only a named break-glass account holds it**, assigned when needed. IT has to be able to see everything in production without editing business data, so IT's everyday role is `Support` instead (§7.3). In Dev and QA, IT may hold `Admin` for testing.
-  - `PermissionService` logs a warning whenever a production request carries a system role (`IsSystem`, which only `Admin` is). Break-glass use should be rare enough that every line deserves a look.
+  - `PermissionService` logs a security warning when a production request carries a system role (`IsSystem`, which only `Admin` is), once per user per hour. Break-glass use should be rare enough that every line deserves a look; until Phase 6 moves today's Super Users off `Admin`, a per-request line would bury the one that matters.
   - The switch-over can be invisible. Today's Super Users group already puts `Admin` in the `roles` claim. If we name the entitlements role `Admin` too and it arrives in the same claim, only who assigns it changes, and the group can then be retired.
   - That group holds managers and IT alike. Before production enforces permissions, they move to `Manager` and `Support`, and production `Admin` shrinks to the break-glass account (Phase 6).
   - New permissions reach `Admin` through their grant migration, like any role. A test fails if `Admin` lacks any permission in the catalog.
@@ -792,7 +791,7 @@ This is not a folder problem. The data simply isn't there yet.
     - `Admin` gets everything.
     - `Manager` and `Support` get their §7.2 rows, and `Support` also gets every read.
     - Segments: `Originator`'s is `Producer`; `Support`'s and `Admin`'s are every segment; `Editor` and `Manager` hold none.
-  - Until the entitlements app issues persona roles, a token with no persona role (a `dbo.Roles` row whose `Kind` is `Persona`) gets `Access:DefaultRoles = ["Originator", "Editor"]`, and every use is logged. Today everyone can edit, so the default includes `Editor`.
+  - Until the entitlements app issues persona roles, a signed-in person whose token has no persona role (a `dbo.Roles` row whose `Kind` is `Persona`) gets `Access:DefaultRoles = ["Originator", "Editor"]`, and each person's use is logged once an hour. Today everyone can edit, so the default includes `Editor`. App-only tokens, such as the BarChart pipeline's, never get defaults: they carry no delegated scope.
     - `Support` counts as a persona role, so IT never picks up that default `Editor`.
     - Today's `Admin` tokens keep everything they have now, since `Admin` holds every permission.
   - **Remove that default before traders launch (Phase 6).** Otherwise a trader whose roles lag, or a token issued during an entitlements outage, would silently get producer access and edit rights.

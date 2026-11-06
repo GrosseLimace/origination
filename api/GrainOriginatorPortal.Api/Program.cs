@@ -23,6 +23,7 @@ using GrainOriginatorPortal.Infrastructure;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Json;
 using GrainOriginatorPortal.Api.Middleware;
+using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Models.Responses;
 
@@ -135,6 +136,10 @@ builder.Services.AddSingleton<
     AuthorizationAuditResultHandler>();
 
 builder.Services.AddScoped<IUserEntitlementService, UserEntitlementService>();
+
+// Permissions: roles from the token, grants from the database (plan §4.3). Nothing checks them until
+// RequirePermission lands; until then this only works out what each caller would be allowed.
+builder.Services.AddAccess(builder.Configuration);
 
 // Usage tracking: bounded in-memory channel + background batch writer
 builder.Services.AddSingleton(System.Threading.Channels.Channel.CreateBounded<GrainOriginatorPortal.Api.Middleware.UserActivityRecord>(

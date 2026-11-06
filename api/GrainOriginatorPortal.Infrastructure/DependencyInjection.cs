@@ -1,6 +1,8 @@
 using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Access.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Access.Repositories;
 using GrainOriginatorPortal.Infrastructure.Repositories;
 using GrainOriginatorPortal.Infrastructure.Sync;
 using Microsoft.EntityFrameworkCore;
@@ -143,6 +145,7 @@ public static class DependencyInjection
         services.AddScoped<CtrmProvenance>();
 
         // ── Repositories (per-domain, added incrementally during the Phase 2 migration) ──
+        services.AddScoped<IAccessGrantRepository, AccessGrantRepository>();
         services.AddScoped<IQueryLibraryRepository, QueryLibraryRepository>();
         services.AddScoped<ICommodityRepository, CommodityRepository>();
         services.AddScoped<IStoredGrainRepository, StoredGrainRepository>();
