@@ -23,8 +23,8 @@ public sealed class RolePermissionConfiguration : IEntityTypeConfiguration<RoleP
         }));
         entity.HasKey(e => new { e.RoleId, e.PermissionId });
         entity.Property(e => e.PermissionId).HasMaxLength(150);
-        entity.Property(e => e.GrantedBy).HasMaxLength(256).IsRequired();
-        entity.Property(e => e.GrantedAt).HasPrecision(3).HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
+        entity.Property(e => e.CreatedBy).HasMaxLength(256).IsRequired();
+        entity.Property(e => e.CreatedAt).HasPrecision(3).HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
 
         // Restricted: removing a role or a permission that is still granted fails, so whoever removes it
         // deletes its grants deliberately (style guide §9.2).

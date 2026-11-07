@@ -25,10 +25,8 @@ public sealed class RoleConfiguration : IEntityTypeConfiguration<Role>
         entity.Property(e => e.Kind).HasMaxLength(20).IsRequired();
         entity.Property(e => e.IsSystem).IsRequired();
         entity.Property(e => e.CreatedAt).HasPrecision(3).HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
-        entity.Property(e => e.UpdatedAt).HasPrecision(3).HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
-
-        // Restricted, like every delete in the access tables: a role with grants can't be deleted until
-        // its grants are removed deliberately (style guide §9.2).
-        entity.HasOne<Role>().WithMany().HasForeignKey(e => e.ParentRoleId).OnDelete(DeleteBehavior.Restrict);
+        entity.Property(e => e.CreatedBy).HasMaxLength(256).IsRequired();
+        entity.Property(e => e.ModifiedAt).HasPrecision(3);
+        entity.Property(e => e.ModifiedBy).HasMaxLength(256);
     }
 }

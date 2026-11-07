@@ -335,15 +335,15 @@ public sealed class PlantingIntentionsController : ControllerBase
 #### The grants tables
 
 ```
-dbo.Permissions     (Id PK 'planting-intentions:write', Resource, Action, Scope, ModuleId, Description)
+dbo.Permissions     (Id PK 'planting-intentions:write', Resource, Action, Scope, ModuleId, Description, CreatedAt, CreatedBy, ModifiedAt, ModifiedBy)
                     -- written only by migrations, from AppPermissions through EF HasData
-dbo.Roles           (Id PK Guid, Name UNIQUE, Description, Kind (Persona | AddOn | Base | Machine), IsSystem, ParentRoleId (unused), CreatedAt, UpdatedAt)
+dbo.Roles           (Id PK Guid, Name UNIQUE, Description, Kind (Persona | AddOn | Base | Machine), IsSystem, CreatedAt, CreatedBy, ModifiedAt, ModifiedBy)
                     -- data, like the grants: seeded by a migration, then the grant editor; names match the token's role values
-dbo.RolePermissions (RoleId FK, PermissionId FK, GrantedBy, GrantedAt)   PK (RoleId, PermissionId)   -- temporal
-dbo.RoleSegments    (RoleId FK, Segment, GrantedBy, GrantedAt)          PK (RoleId, Segment)        -- temporal
+dbo.RolePermissions (RoleId FK, PermissionId FK, CreatedBy, CreatedAt)   PK (RoleId, PermissionId)   -- temporal
+dbo.RoleSegments    (RoleId FK, Segment, CreatedBy, CreatedAt)          PK (RoleId, Segment)        -- temporal
 ```
 
-- **The style guide's tables (its §5.1), with two differences.** There is no `UserRoles` table, because assignments live in the entitlements app. A permission's key is its own string rather than a Guid: the catalog's strings are already unique, the `HasData` seed stays deterministic, and grant rows read plainly.
+- **The style guide's tables (its §5.1), with these differences.** There is no `UserRoles` table, because assignments live in the entitlements app. A permission's key is its own string rather than a Guid: the catalog's strings are already unique, the `HasData` seed stays deterministic, and grant rows read plainly. `Roles` has no `ParentRoleId`, because grants never inherit. The audit columns follow `sql.md` rather than §5.1.1's `UpdatedAt`, and grant rows have no `Modified` columns because they are never edited. The `AddAccessAuditColumns` migration made those last two changes on top of `AddAccessGrants`, which was already applied to Dev and can't be backed out there.
 - **Code owns the permissions; roles and grants are data.** Every permission is checked by an endpoint, so the catalog is code and `HasData` seeds `Permissions`. No code names a role: what kind a role is and whether it is the system role are columns, which the default-role rule and the `Admin` warning read (§7.1). The grant editor changes roles and grants at run time, so `HasData` must not own them, or a later migration could overwrite those edits. The first roles and grants are an `InsertData` in the `AddAccessGrants` migration. A test replays every migration and checks the result: the base role holds everything, add-on roles hold no segments, `Support` writes no business data, and `Originator` + `Editor` equals what a non-admin can do today.
 - **Adding a role needs no code change.** It is a row plus its grants and segments: a grant migration until the grant editor can create roles (Phase 1b), and the same name in the entitlements app. **Never rename a role.** Everyone whose token carries the old name would lose its grants, so create the new role and retire the old one instead.
 - **Deletes are restricted.** A migration that removes a permission or role must delete its grants first, deliberately (style guide §9.2).
@@ -965,7 +965,8 @@ Phases 1–4 deliver modularity and stand on their own even if traders slip. Pha
   - Module-first folders inside the style-guide projects.
   - Role assignments come from the entitlements app through the token, not from a `UserRoles` table in our database.
   - Resources are business-level rather than one per entity.
-  - Grants are individual rows with no role inheritance (`ParentRoleId` unused).
+  - Grants are individual rows with no role inheritance (no `ParentRoleId`).
+  - Audit columns follow `sql.md`; grant rows have no `Modified` columns.
   - One custom `write` action per resource in place of `create`, `update` and `delete` (the guide allows a custom action when its standard set doesn't fit, §4.2).
   - A permission's key is its own string (`notes:write`), not a Guid; roles keep the guide's Guid ids.
 - **SBOM** (README + CLAUDE.md): ArchUnitNET, ESLint, `@angular-eslint`, `eslint-plugin-boundaries` when they're added.

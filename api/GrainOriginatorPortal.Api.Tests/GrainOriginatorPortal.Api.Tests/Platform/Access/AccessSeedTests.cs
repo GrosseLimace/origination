@@ -157,6 +157,8 @@ public class AccessSeedTests
         // Whole words only, so a table such as UserRoles doesn't count.
         private static readonly Regex AccessTable = new(@"\b(Roles|RolePermissions|RoleSegments)\b");
 
+        private static readonly HashSet<string> AuditColumns = ["CreatedAt", "CreatedBy", "ModifiedAt", "ModifiedBy"];
+
         public Dictionary<Guid, SeededRole> Roles { get; } = [];
         public HashSet<(Guid Role, string Permission)> Grants { get; } = [];
         public HashSet<(Guid Role, string Segment)> Segments { get; } = [];
@@ -233,7 +235,9 @@ public class AccessSeedTests
 
                     break;
 
-                case UpdateDataOperation update when update.Table is "Roles" or "RolePermissions" or "RoleSegments":
+                // Filling in audit columns changes nothing anyone may do, so only other updates are flagged.
+                case UpdateDataOperation update when update.Table is "Roles" or "RolePermissions" or "RoleSegments"
+                                                     && !update.Columns.All(AuditColumns.Contains):
                     // Not folded in; a role's kind or system flag changed this way would be missed.
                     ChangesTheReplayCannotRead.Add($"{migration} (UpdateData on {update.Table})");
                     break;

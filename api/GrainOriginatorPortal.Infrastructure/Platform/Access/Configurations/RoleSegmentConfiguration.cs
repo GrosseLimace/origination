@@ -23,8 +23,8 @@ public sealed class RoleSegmentConfiguration : IEntityTypeConfiguration<RoleSegm
         }));
         entity.HasKey(e => new { e.RoleId, e.Segment });
         entity.Property(e => e.Segment).HasMaxLength(50);
-        entity.Property(e => e.GrantedBy).HasMaxLength(256).IsRequired();
-        entity.Property(e => e.GrantedAt).HasPrecision(3).HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
+        entity.Property(e => e.CreatedBy).HasMaxLength(256).IsRequired();
+        entity.Property(e => e.CreatedAt).HasPrecision(3).HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
         entity.HasOne(e => e.Role).WithMany(r => r.Segments).HasForeignKey(e => e.RoleId).OnDelete(DeleteBehavior.Restrict);
     }
 }

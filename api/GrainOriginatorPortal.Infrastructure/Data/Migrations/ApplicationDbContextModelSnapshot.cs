@@ -3200,9 +3200,28 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.Property<string>("Description")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("ModifiedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
 
                     b.Property<string>("ModuleId")
                         .IsRequired()
@@ -3228,6 +3247,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "bid-feed:manage",
                             Action = "manage",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "bid-sheet",
                             Resource = "bid-feed",
                             Scope = "global"
@@ -3236,6 +3256,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "bid-feed:read",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "bid-sheet",
                             Resource = "bid-feed",
                             Scope = "global"
@@ -3244,6 +3265,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "bid-sheet-locations:delete:global",
                             Action = "delete",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "bid-sheet",
                             Resource = "bid-sheet-locations",
                             Scope = "global"
@@ -3252,6 +3274,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "bid-sheets:read",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "bid-sheet",
                             Resource = "bid-sheets",
                             Scope = "global"
@@ -3260,6 +3283,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "bid-sheets:write",
                             Action = "write",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "bid-sheet",
                             Resource = "bid-sheets",
                             Scope = "global"
@@ -3268,6 +3292,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "carbon-intensity:read",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "producers",
                             Resource = "carbon-intensity",
                             Scope = "global"
@@ -3276,6 +3301,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "contract-pacing:read",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "producers",
                             Resource = "contract-pacing",
                             Scope = "global"
@@ -3284,6 +3310,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "contracts:read",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "contracts",
                             Resource = "contracts",
                             Scope = "global"
@@ -3292,6 +3319,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "customer-sync:manage",
                             Action = "manage",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "customers",
                             Resource = "customer-sync",
                             Scope = "global"
@@ -3300,6 +3328,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "customers:read",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "customers",
                             Resource = "customers",
                             Scope = "global"
@@ -3308,6 +3337,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "customers:write",
                             Action = "write",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "customers",
                             Resource = "customers",
                             Scope = "global"
@@ -3316,6 +3346,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "diagnostics:manage",
                             Action = "manage",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "platform",
                             Resource = "diagnostics",
                             Scope = "global"
@@ -3324,6 +3355,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "diagnostics:read",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "platform",
                             Resource = "diagnostics",
                             Scope = "global"
@@ -3332,6 +3364,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "dp-contracts:read",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "producers",
                             Resource = "dp-contracts",
                             Scope = "global"
@@ -3340,6 +3373,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "field-plans:read",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "producers",
                             Resource = "field-plans",
                             Scope = "global"
@@ -3348,6 +3382,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "field-plans:write",
                             Action = "write",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "producers",
                             Resource = "field-plans",
                             Scope = "global"
@@ -3356,6 +3391,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "notes:read",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "engagement",
                             Resource = "notes",
                             Scope = "global"
@@ -3364,6 +3400,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "notes:write",
                             Action = "write",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "engagement",
                             Resource = "notes",
                             Scope = "global"
@@ -3372,6 +3409,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "planting-estimates:read",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "producers",
                             Resource = "planting-estimates",
                             Scope = "global"
@@ -3380,6 +3418,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "planting-estimates:write",
                             Action = "write",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "producers",
                             Resource = "planting-estimates",
                             Scope = "global"
@@ -3388,6 +3427,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "planting-intentions:read",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "producers",
                             Resource = "planting-intentions",
                             Scope = "global"
@@ -3396,6 +3436,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "planting-intentions:write",
                             Action = "write",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "producers",
                             Resource = "planting-intentions",
                             Scope = "global"
@@ -3404,6 +3445,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "preferences:read:own",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "platform",
                             Resource = "preferences",
                             Scope = "own"
@@ -3412,6 +3454,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "preferences:write:own",
                             Action = "write",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "platform",
                             Resource = "preferences",
                             Scope = "own"
@@ -3420,6 +3463,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "producer-details:read",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "producers",
                             Resource = "producer-details",
                             Scope = "global"
@@ -3428,6 +3472,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "producer-details:write",
                             Action = "write",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "producers",
                             Resource = "producer-details",
                             Scope = "global"
@@ -3436,6 +3481,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "query-library:read",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "lists",
                             Resource = "query-library",
                             Scope = "global"
@@ -3444,6 +3490,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "recap-groups:read",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "engagement",
                             Resource = "recap-groups",
                             Scope = "global"
@@ -3452,6 +3499,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "recap-groups:write",
                             Action = "write",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "engagement",
                             Resource = "recap-groups",
                             Scope = "global"
@@ -3460,6 +3508,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "reference-data:read",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "platform",
                             Resource = "reference-data",
                             Scope = "global"
@@ -3468,6 +3517,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "reminders:read:own",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "engagement",
                             Resource = "reminders",
                             Scope = "own"
@@ -3476,6 +3526,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "reminders:write:own",
                             Action = "write",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "engagement",
                             Resource = "reminders",
                             Scope = "own"
@@ -3484,6 +3535,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "roles:manage",
                             Action = "manage",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "platform",
                             Resource = "roles",
                             Scope = "global"
@@ -3492,6 +3544,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "saved-lists:read:own",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "lists",
                             Resource = "saved-lists",
                             Scope = "own"
@@ -3500,6 +3553,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "saved-lists:read:team",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "lists",
                             Resource = "saved-lists",
                             Scope = "team"
@@ -3508,6 +3562,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "saved-lists:write:own",
                             Action = "write",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "lists",
                             Resource = "saved-lists",
                             Scope = "own"
@@ -3516,6 +3571,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "saved-lists:write:team",
                             Action = "write",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "lists",
                             Resource = "saved-lists",
                             Scope = "team"
@@ -3524,6 +3580,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "stored-grain:read",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "producers",
                             Resource = "stored-grain",
                             Scope = "global"
@@ -3532,6 +3589,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "teams-channels:read",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "engagement",
                             Resource = "teams-channels",
                             Scope = "global"
@@ -3540,6 +3598,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "tickets:read",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "contracts",
                             Resource = "tickets",
                             Scope = "global"
@@ -3548,6 +3607,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "usage-exclusions:manage",
                             Action = "manage",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "usage-analytics",
                             Resource = "usage-exclusions",
                             Scope = "global"
@@ -3556,6 +3616,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         {
                             Id = "usage-reports:read",
                             Action = "read",
+                            CreatedBy = "seed:AppPermissions",
                             ModuleId = "usage-analytics",
                             Resource = "usage-reports",
                             Scope = "global"
@@ -3574,6 +3635,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasDefaultValueSql("SYSUTCDATETIME()");
 
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasMaxLength(500)
@@ -3587,26 +3653,23 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<DateTime?>("ModifiedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<Guid?>("ParentRoleId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasPrecision(3)
-                        .HasColumnType("datetime2(3)")
-                        .HasDefaultValueSql("SYSUTCDATETIME()");
-
                     b.HasKey("Id");
 
                     b.HasIndex("Name")
                         .IsUnique();
-
-                    b.HasIndex("ParentRoleId");
 
                     b.ToTable("Roles", "dbo", t =>
                         {
@@ -3623,13 +3686,13 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
 
-                    b.Property<DateTime>("GrantedAt")
+                    b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasPrecision(3)
                         .HasColumnType("datetime2(3)")
                         .HasDefaultValueSql("SYSUTCDATETIME()");
 
-                    b.Property<string>("GrantedBy")
+                    b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
@@ -3671,13 +3734,13 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
-                    b.Property<DateTime>("GrantedAt")
+                    b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasPrecision(3)
                         .HasColumnType("datetime2(3)")
                         .HasDefaultValueSql("SYSUTCDATETIME()");
 
-                    b.Property<string>("GrantedBy")
+                    b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
@@ -3977,14 +4040,6 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasConstraintName("FK_ProducerReminders_Customer_CustomerId");
 
                     b.Navigation("Customer");
-                });
-
-            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Platform.Access.Entities.Role", b =>
-                {
-                    b.HasOne("GrainOriginatorPortal.Infrastructure.Platform.Access.Entities.Role", null)
-                        .WithMany()
-                        .HasForeignKey("ParentRoleId")
-                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Platform.Access.Entities.RolePermission", b =>

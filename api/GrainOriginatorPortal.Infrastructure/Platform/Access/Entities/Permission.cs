@@ -23,5 +23,22 @@ public class Permission
 
     public string? Description { get; set; }
 
+    /// <summary>Set by the database when the migration inserts the row.</summary>
+    public DateTime CreatedAt { get; set; }
+
+    /// <summary>Always <see cref="SeededBy"/>: only migrations insert permissions.</summary>
+    public string CreatedBy { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Null unless a migration that changes the row sets it. A <c>HasData</c> change to a permission updates only
+    /// the changed columns, so a migration that edits one should set these two as well.
+    /// </summary>
+    public DateTime? ModifiedAt { get; set; }
+
+    public string? ModifiedBy { get; set; }
+
     public const string GlobalScope = "global";
+
+    /// <summary>The <see cref="CreatedBy"/> of every permission: seeded from <see cref="AppPermissions"/>.</summary>
+    public const string SeededBy = "seed:AppPermissions";
 }

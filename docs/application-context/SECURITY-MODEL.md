@@ -154,6 +154,12 @@ decides otherwise.
 - **Grants** are kept in `dbo.RolePermissions` and `dbo.RoleSegments`, which are SQL temporal
   tables, so "who held what, when" is a query. Today grants change only through reviewed
   migrations. The grant editor (Phase 1b) will log a `role_modified` event for every change.
+- **Changing the two temporal tables.** Adding or renaming a column works with the `db_ddladmin`
+  rights developers and the deploy identity hold: EF 10 does both without switching system
+  versioning off. Anything that does switch it off needs CONTROL, which only the
+  infrastructure-managed `db_owner` group has. That includes dropping either table, and so backing
+  out `AddAccessGrants`. Before shipping any other change to these tables, check the
+  `dotnet ef migrations script` output for `SYSTEM_VERSIONING = OFF`.
 - **Decisions:** `SecurityAuditMiddleware` and `AuthorizationAuditResultHandler` log 401/403
   outcomes, including every `AUTHZ_PERMISSION_DENIED`.
 

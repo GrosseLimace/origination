@@ -165,8 +165,9 @@ the permissions, their grants would always move together, and the grants would b
 ### Flat grants, with no role inheritance
 `permissions-model.md` §3.4, §5.1.1 (`ParentRoleId`)
 
-Every grant is its own row, role to permission. `dbo.Roles.ParentRoleId` exists, in the guide's
-shape, but nothing sets or reads it, and there are no wildcard grants such as `*:read`.
+Every grant is its own row, role to permission, and there are no wildcard grants such as `*:read`.
+`dbo.Roles` has no `ParentRoleId`: the guide's column was created unused and dropped by the
+`AddAccessAuditColumns` migration, so nobody can set it expecting inheritance.
 
 Roles combine instead. A user holds a persona role, which decides what they see, plus add-on roles
 such as `Editor` and `Manager`, which decide what they may do with it. Their permissions are the
@@ -199,6 +200,28 @@ the guide's Guid ids.
 
 **Revisit if:** permissions need renaming in place. Today a rename is a new permission plus a grant
 migration.
+
+### Audit columns follow the SQL guide, and grant rows have no `Modified` columns
+`permissions-model.md` §5.1.1, §5.1.3; `sql.md` (Audit Columns)
+
+The two guides disagree: §5.1.1 gives `Roles` a `CreatedAt` and an `UpdatedAt`, and `sql.md` puts
+`CreatedAt`, `CreatedBy`, `ModifiedAt` and `ModifiedBy` on every table. The access tables follow
+`sql.md`, as the rest of this database does:
+
+- **`Roles` and `Permissions`** have all four. `ModifiedAt` and `ModifiedBy` stay null until the row
+  changes. A `HasData` change to a permission updates only the changed columns, so a migration that
+  edits a permission should set them too.
+- **`RolePermissions` and `RoleSegments`** have `CreatedAt` and `CreatedBy` but no `Modified`
+  columns. A grant is added or removed, never edited, so they would always be null. Both are SQL
+  temporal tables, and their history tables record when each grant was removed.
+
+They are `datetime2(3)` and `nvarchar(256)` rather than `sql.md`'s `datetime2` and `nvarchar(100)`:
+a UPN can be longer than 100 characters. There is no `RowVersion`: until the grant editor (Phase 1b)
+nothing edits these rows.
+
+**Revisit if:** the grant editor needs to stop two people editing the same role at once (add a
+`RowVersion` to `Roles`), or "who removed a grant" has to come from the database rather than the
+editor's `role_modified` log.
 
 ### A temporary default role for anyone without a persona role
 `permissions-model.md` §2.3 (deny by default)
