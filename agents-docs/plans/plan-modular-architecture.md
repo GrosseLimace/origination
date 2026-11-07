@@ -111,11 +111,11 @@ What that buys:
 
 | Module | Default grants | What it owns | Depends on |
 |---|---|---|---|
-| **Platform** (core) | everyone | Auth, `/api/me`, permissions and the grant editor, user preferences, trade units and entitlements, telemetry (including the browser's App Insights config), What's New, Help, version, geocode, diagnostics, reference data (commodities, conversions, elevators/locations), the shared CTRM GraphQL client, the Doc Store client (documents filed by category; each feature names its own), middleware and filters, the layout shell | — |
-| **Customers** | everyone | Customer master, the sync (both feeders, plus its admin diagnostics), search, trade-unit assignments, customer list, profile **shell** with its extension slots | Platform |
+| **Platform** (core) | everyone | Auth, `/api/me`, permissions and the grant editor, user preferences, trade units and entitlements, telemetry (including the browser's App Insights config), What's New, Help, version, geocode, diagnostics, reference data (commodities, the curated planting crops, conversions, harvest windows, elevators/locations), the shared CTRM GraphQL client, the Doc Store client (documents filed by category; each feature names its own), middleware and filters, the layout shell | — |
+| **Customers** | everyone | Customer master, the sync (both feeders, plus its admin diagnostics), search, the onboarding search, trade-unit assignments, customer list, profile **shell** with its extension slots | Platform |
 | **Contracts** | everyone | Contracts, tickets, pricing lines, the CTRM/ODS readers and switches, contracts and tickets tables | Customers, Platform |
 | **Engagement** | everyone *(confirm, Q6)* | Notes, reminders with the Outlook mirror, Teams mentions, daily digest | Customers, Platform |
-| **Producers** | Originator | Planting intentions, producer details, contacts and grain on farm, stored grain, DP contracts, harvest windows, pacing, producer insights, growth opportunity, linked producers, onboarding search, Planting Dashboard, the field plan (fields and CTRM splits, crop seasons, 45Z sustainability programs, the FD-CIC calculator) | Contracts, Customers, Platform |
+| **Producers** | Originator | Planting intentions, producer details, contacts and grain on farm, stored grain, DP contracts, pacing, producer insights, growth opportunity, linked producers (from Phase 4; until then `customers/linked-to` is a Customers endpoint), Planting Dashboard, the field plan (fields and CTRM splits, crop seasons, 45Z sustainability programs, the FD-CIC calculator) | Contracts, Customers, Platform |
 | **Lists & Insights** | Originator *(for now)* | Build-a-List with its customer map, NLQ engine, saved lists, query library, Actionable Insights | Producers, Contracts, Customers |
 | **Bid Sheet** | Originator | Bid sheet, the BarChart bid feed (picker reads and pipeline ingestion) | Platform |
 | **Usage Analytics** | Manager, Support | Usage dashboard | Platform |
@@ -376,7 +376,7 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 | Producers | `planting-intentions:read`, `:write` | `PlantingIntentions` GETs; POST, PUT, retag and DELETE | read to personas, write to `Editor` |
 | | `producer-details:read`, `:write` | `ProducerDetails` GETs; PUT and DELETE | the same split |
 | | `stored-grain:read`, `dp-contracts:read` | `StoredGrain`; `DpContracts` | personas |
-| | `contract-pacing:read` | `GET contracts/pacing/{customerId}`, which Phase 2 moves to Producers | personas |
+| | `contract-pacing:read` | `GET contracts/pacing/{customerId}`, moved to Producers in Phase 2 (`ContractPacingController`, same route) | personas |
 | | `planting-estimates:read`, `:write` | `DashboardPlantingEstimates` GETs; its three upserts and the actual-harvest DELETE | the same split |
 | | `field-plans:read`, `:write` | `FieldPlan` GETs, `CtrmSplits` and `TDisc`; adding, editing and removing fields, seasons and records, and confirming or reopening a record | the same split |
 | | `carbon-intensity:read` | `FdCic`, its scoring POST included, which stores nothing | personas |
@@ -454,13 +454,18 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 | Module | Controllers | Notes |
 |---|---|---|
 | Platform | Me, UserPreferences, UserTradeUnits, TradeUnits, Entitlements, Version, WhatsNew, Help, ClientTelemetry, Geocode, Diagnostics (with `DiagnosticsEnvironmentGate`); Commodities (`GET /`, `conversions`) | `CtrmGraphQlClient` moves here from `Api/Services/Ctrm`. |
-| Customers | Customers, minus `search-ods` and `linked-to`; CustomerSyncDiagnostics (`customer-sync:manage`) | `CustomerSyncService`, its background service and the whole of `Infrastructure/Sync/` move here, with the customer readers from `Infrastructure/Ctrm/` (`CtrmCustomerReader`, `CtrmCustomerQueries`, `CtrmCustomerActivityReader`). |
+| Customers | Customers, `search-ods` and `linked-to` included; CustomerSyncDiagnostics (`customer-sync:manage`) | `CustomerSyncService`, its background service and the whole of `Infrastructure/Sync/` move here, with the customer readers from `Infrastructure/Ctrm/` (`CtrmCustomerReader`, `CtrmCustomerQueries`, `CtrmCustomerActivityReader`). |
 | Contracts | Contracts (minus `pacing`, `farm`), Tickets (minus `farm`) | The contract and ticket parts of `Infrastructure/Ctrm/` move here: readers, repositories, the two switches, `CtrmMappings`, `CtrmWarmRegistry`. The shared plumbing goes to Platform. |
 | Engagement | Notes, Reminders, TeamsChannels, DailyRecapGroups | |
-| Producers | PlantingIntentions, ProducerDetails, StoredGrain, DpContracts, DashboardPlantingEstimates, FieldPlan, CtrmSplits, FdCic; **gains** `customers/search-ods`, `customers/linked-to`, `contracts/pacing`, `commodities/planting`, `commodities/harvest-windows` | Keep the **route templates unchanged**, so the SPA doesn't change. The split readers and `FieldTicketReader` come from `Infrastructure/Ctrm/`. Delete the `farm/{farmId}` endpoints on Contracts and Tickets and their `GetByFarmAsync` chain through services and repositories; the Farms controller itself is already gone. |
+| Producers | PlantingIntentions, ProducerDetails, StoredGrain, DpContracts, DashboardPlantingEstimates, FieldPlan, CtrmSplits, TDisc, FdCic; **gains** `contracts/pacing` (`ContractPacingController`) | Keep the **route templates unchanged**, so the SPA doesn't change. The split readers and `FieldTicketReader` come from `Infrastructure/Ctrm/`. Delete the `farm/{farmId}` endpoints on Contracts and Tickets and their `GetByFarmAsync` chain through services and repositories; the Farms controller itself is already gone. |
 | Lists | SavedLists, QueryLibrary | |
 | BidSheet | BidSheet, Barchart, BarchartIngest (`bid-feed:manage`, which the pipeline holds through its `Machine` role, §4.3) | |
 | UsageAnalytics | UsageDashboard (`usage-reports:read`; exclusions `usage-exclusions:manage`) | |
+
+**Changed in Phase 2 (2026-11-07):** the first draft also moved `customers/search-ods`, `customers/linked-to`, `commodities/planting` and `commodities/harvest-windows` into Producers. The Phase 1 catalog had settled them otherwise, and Phase 2 follows it:
+- **`commodities/planting` and `commodities/harvest-windows`** are reference data (`reference-data:read`, Platform). The curated crops feed Bid Sheet, Build-a-List and the calculators as well as planting intentions, and the harvest windows are preloaded for every user.
+- **`customers/search-ods`**, the onboarding search, stays with Customers (`customers:read`). Phase 5 widens onboarding to commercial customers.
+- **`customers/linked-to`** stays with Customers until Phase 4. Its producer fields (acreage, linked ids) leave `CustomerResponse` in the split below, which is when linked producers move to Producers. Until then its query reads `ProducerDetails` from the Customers repository, one of the Customers → Producers dependencies step 5 of Phase 2 has to settle.
 
 **`CustomerResponse` sheds `TotalAcres`, `FarmIds`, `LinkedProducerIds` and `Farm`.** The Producers module serves them in a `ProducerProfileResponse` instead. This one *is* a wire change, so sequence it with the frontend in Phase 4.
 

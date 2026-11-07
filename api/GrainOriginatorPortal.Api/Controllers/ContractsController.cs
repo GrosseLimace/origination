@@ -55,20 +55,7 @@ public class ContractsController : ControllerBase
         return Ok(await _service.GetByCustomerAsync(customerId, scoularId, cancellationToken));
     }
 
-    // -------------------------------------------------------------------------
-    /// <summary>Gets historical closed contracts for a customer, used by Contract Pacing year-over-year comparison.
-    /// Queries base.Contract (not vw_CurrentContracts) to retrieve prior-year closed contracts.
-    /// Open to any authenticated originator — trade-unit entitlements are a UX default,
-    /// not an access-control boundary.</summary>
-    [HttpGet("pacing/{customerId:long}")]
-    [ProducesResponseType(typeof(List<ContractResponse>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<ContractResponse>>> GetPacingHistorical(long customerId, CancellationToken cancellationToken = default)
-    {
-        // Open to any rep — no per-producer object-level authz by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
-        // Same cross-trade-unit dependency as GetByCustomer above — see the note there before
-        // adding an entitlement check here (H-069, 2026-09-21).
-        return Ok(await _service.GetHistoricalForPacingAsync(customerId, cancellationToken));
-    }
+    // GET pacing/{customerId} (Contract Pacing) is a Producers endpoint: Modules/Producers/Controllers/ContractPacingController.
 
     // -------------------------------------------------------------------------
     /// <summary>Gets ALL purchase contracts (open + closed) for a specific crop year from base.Contract,

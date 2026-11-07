@@ -110,6 +110,7 @@ The modules moved so far, each controller with its read on the class and a write
 | Producers | Planting intentions: viewing / adding, editing, retagging and deleting | `planting-intentions:read` / `:write` |
 | Producers | Producer details, contacts, grain on farm and bin sites: viewing / saving and clearing | `producer-details:read` / `:write` |
 | Producers | Stored grain; DP contracts | `stored-grain:read`; `dp-contracts:read` |
+| Producers | Contract Pacing's prior-year contracts (`GET api/contracts/pacing/{customerId}`, now its own controller) | `contract-pacing:read` |
 | Producers | Planting Dashboard estimates, market shares and actual harvest: viewing / saving, and deleting an actual harvest | `planting-estimates:read` / `:write` |
 | Producers | Field plan (fields, seasons and records, confirming and reopening, and the 45Z documents): viewing / changing, uploading, archiving and restoring | `field-plans:read` / `:write` |
 | Producers | The field plan's CTRM splits and T-DISC options | `field-plans:read` |

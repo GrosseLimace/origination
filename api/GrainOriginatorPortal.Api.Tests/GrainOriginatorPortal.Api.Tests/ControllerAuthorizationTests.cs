@@ -34,6 +34,7 @@ public class ControllerAuthorizationTests
         yield return new object[] { typeof(ClientTelemetryController) };
         yield return new object[] { typeof(CommoditiesController) };
         yield return new object[] { typeof(ContractsController) };
+        yield return new object[] { typeof(ContractPacingController) };
         yield return new object[] { typeof(CustomersController) };
         yield return new object[] { typeof(CustomerSyncDiagnosticsController) };
         yield return new object[] { typeof(DailyRecapGroupsController) };
