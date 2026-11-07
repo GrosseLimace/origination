@@ -1642,6 +1642,133 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.ToTable("FeatureUsageDaily", "dbo");
                 });
 
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.FieldPlanDocument", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Commodity")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("Commodity");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("ContentType");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("CreatedAt")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("CreatedBy");
+
+                    b.Property<string>("CreatedByName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("CreatedByName");
+
+                    b.Property<int>("CropYear")
+                        .HasColumnType("int")
+                        .HasColumnName("CropYear");
+
+                    b.Property<long>("CustomerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CustomerId");
+
+                    b.Property<string>("DocStoreId")
+                        .IsRequired()
+                        .HasMaxLength(36)
+                        .HasColumnType("nvarchar(36)")
+                        .HasColumnName("DocStoreId");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("DocumentType");
+
+                    b.Property<string>("FieldName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("FieldName");
+
+                    b.Property<int?>("FieldProgramRecordId")
+                        .HasColumnType("int")
+                        .HasColumnName("FieldProgramRecordId");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("FileName");
+
+                    b.Property<string>("ReplacedByDocStoreId")
+                        .HasMaxLength(36)
+                        .HasColumnType("nvarchar(36)")
+                        .HasColumnName("ReplacedByDocStoreId");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("SizeBytes");
+
+                    b.Property<string>("SplitId")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("SplitId");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("Current")
+                        .HasColumnName("Status");
+
+                    b.Property<DateTime?>("StatusChangedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("StatusChangedAt");
+
+                    b.Property<string>("StatusChangedBy")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("StatusChangedBy");
+
+                    b.Property<string>("StatusChangedByName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("StatusChangedByName");
+
+                    b.Property<string>("StatusNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("StatusNote");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocStoreId")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_FieldPlanDocument_DocStoreId");
+
+                    b.HasIndex("FieldProgramRecordId");
+
+                    b.HasIndex("CustomerId", "CropYear")
+                        .HasDatabaseName("IX_FieldPlanDocument_Customer_CropYear");
+
+                    b.ToTable("FieldPlanDocument", "dbo");
+                });
+
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.FieldProgramRecord", b =>
                 {
                     b.Property<int>("Id")
@@ -3323,6 +3450,22 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Group");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.FieldPlanDocument", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.Customer", null)
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_FieldPlanDocument_Customer_CustomerId");
+
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.FieldProgramRecord", null)
+                        .WithMany()
+                        .HasForeignKey("FieldProgramRecordId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("FK_FieldPlanDocument_FieldProgramRecord_FieldProgramRecordId");
                 });
 
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.FieldProgramRecord", b =>
