@@ -111,7 +111,7 @@ What that buys:
 
 | Module | Default grants | What it owns | Depends on |
 |---|---|---|---|
-| **Platform** (core) | everyone | Auth, `/api/me`, permissions and the grant editor, user preferences, trade units and entitlements, telemetry (including the browser's App Insights config), What's New, Help, version, geocode, diagnostics, reference data (commodities, conversions, elevators/locations), the shared CTRM GraphQL client, middleware and filters, the layout shell | — |
+| **Platform** (core) | everyone | Auth, `/api/me`, permissions and the grant editor, user preferences, trade units and entitlements, telemetry (including the browser's App Insights config), What's New, Help, version, geocode, diagnostics, reference data (commodities, conversions, elevators/locations), the shared CTRM GraphQL client, the Doc Store client (documents filed by category; each feature names its own), middleware and filters, the layout shell | — |
 | **Customers** | everyone | Customer master, the sync (both feeders, plus its admin diagnostics), search, trade-unit assignments, customer list, profile **shell** with its extension slots | Platform |
 | **Contracts** | everyone | Contracts, tickets, pricing lines, the CTRM/ODS readers and switches, contracts and tickets tables | Customers, Platform |
 | **Engagement** | everyone *(confirm, Q6)* | Notes, reminders with the Outlook mirror, Teams mentions, daily digest | Customers, Platform |
@@ -156,6 +156,7 @@ api/GrainOriginatorPortal.Api/
 │   ├── ReferenceData/                # Commodities (list, conversions), locations
 │   ├── Telemetry/                    # usage tracking + aggregation background services, ClientTelemetry
 │   ├── Ctrm/                         # CtrmGraphQlClient: one client, used by Customers, Contracts and Producers
+│   ├── DocStore/                     # IDocStoreClient and AddDocStore: Doc Store through APIM; each upload names its category
 │   ├── Diagnostics/  WhatsNew/  Help/  Geocode/
 │   ├── Middleware/  Filters/  Exceptions/  Json/
 │   └── PlatformModule.cs             # AddPlatform(IConfiguration)

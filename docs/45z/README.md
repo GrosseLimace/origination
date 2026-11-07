@@ -39,7 +39,7 @@ calculator gets a new version alongside the old one.
 
 ## The calculator in the API
 
-Code lives in [Services/FdCic/](../../api/GrainOriginatorPortal.Api/Services/FdCic/):
+Code lives in [Modules/Producers/FieldPlan/FdCic/](../../api/GrainOriginatorPortal.Api/Modules/Producers/FieldPlan/FdCic/):
 
 | Piece | What it does |
 |---|---|
@@ -109,7 +109,7 @@ The proposed tables, rules and endpoints are written up for approval in
   - `FieldProgramRecord.CopiedFromField`: the field a record's inputs were copied from this year, if any.
   - `FieldProgramRecord.Official` (JSON, nullable): the official result, kept apart from the estimate (see
     [Estimate vs confirmed (official) CI](#estimate-vs-confirmed-official-ci)). It may become its own table once its shape is known.
-- Access is the same as planting intentions: any signed-in user (accepted risks AR-01 to AR-03).
+- Access is the same as planting intentions: `field-plans:read` to see a producer's field plan and `field-plans:write` to change it, on any producer (accepted risks AR-01 to AR-03). The FD-CIC calculator needs `carbon-intensity:read`.
 - The server owns these rules:
   - a split is one producer's field (a split another producer holds is refused);
   - locking the harvest estimate, which rescores with `FdCicService` rather than trusting the client's number.
@@ -176,7 +176,7 @@ How the workbook rates a field ('User Input' rows 8-29):
 
 The pack holds the 93 implements, each window's list, USDA's operation lookup ("If your operation is this, use these T-DISC implements") and the limits. USDA's lookup has three names that don't match its own implement list: two typos (`RESIDUE MGMT, POWER MULCHER` and `RESIDUE MGMT, TRASH WHEEL`, a comma where the list has a colon) are fixed by the extractor, and *Cultivator, rotary on beds; Bedder, hipper, disk hiller* is left out (314 of 315 kept) because its "BEDDER DISK/DISK-HIPPER" could be either of two depths. Both are listed in the manifest.
 
-Code: `Services/TDisc/` (`TDiscPack`, `TDiscCalculator`, `TDiscService`) and `GET api/tdisc/options`. The pack is gated at startup like FD-CIC: if a file's hash, the formula fingerprint or any Excel case doesn't match, "T-DISC v1.1.1 is switched off" is logged and no-till or reduced-till fields can't be confirmed until it's fixed.
+Code: `Modules/Producers/FieldPlan/TDisc/` (`TDiscPack`, `TDiscCalculator`, `TDiscService`) and `GET api/tdisc/options`. The pack is gated at startup like FD-CIC: if a file's hash, the formula fingerprint or any Excel case doesn't match, "T-DISC v1.1.1 is switched off" is logged and no-till or reduced-till fields can't be confirmed until it's fixed.
 
 **When USDA releases a new T-DISC:** run `node tools/tdisc-extract/extract.mjs <workbook.xlsm> api/GrainOriginatorPortal.Api/Content/TDisc/v<version>`, copy in `golden-cases.json` and run `node tools/tdisc-extract/golden.mjs <workbook.xlsm> <packDir>` (Windows + Excel; macros stay off), then set `TDiscService.CurrentVersion`. A changed fingerprint means the formulas changed: review `TDiscCalculator` (and the client's mirror) before updating `FormulaFingerprint`.
 
@@ -267,7 +267,7 @@ values as metadata for anyone reading it outside the app.
     message and Download.
   The attestation is signed outside the app and uploaded here. The app still captures no attestation data
   (05d86c08); it only keeps the file.
-- **Routes** (`FieldPlanController`, any signed-in originator, as the rest of the field plan, AR-01/AR-02):
+- **Routes** (`FieldPlanController`, as the rest of the field plan: `field-plans:read` to list and download, `field-plans:write` for the rest, on any producer, AR-01/AR-02):
 
   | Route | Does |
   |---|---|
@@ -279,7 +279,7 @@ values as metadata for anyone reading it outside the app.
   | `POST customer/{customerId}/documents/{documentId}/archive` | Archives a current document (body: optional `note`, up to 500 characters) |
   | `POST customer/{customerId}/documents/{documentId}/restore` | Restores an archived document |
 
-- **Metadata the server sets** (`DocStoreMetadata`):
+- **Category and metadata the server sets** (`FieldPlanDocumentMetadata`): every document is filed under `Sustainability-45z`, with
   - on every document: `documentType` (`ProducerAttestation`, `FeedstockReport`, `MassBalanceLedger` or `Other`), `customerId`, `producerCode` (CTRM), `cropYear`, and `uploadedBy`/`uploadedByName`. Doc Store itself only sees the managed identity, so the originator is recorded here.
   - on reports and ledgers also: `splitId`, `fieldName`, `commodity` (the crop row's code), `fieldProgramRecordId` and `confirmedAt`.
   - The status (overwritten, archived) is only in the table; Doc Store's metadata isn't changed after upload.
@@ -291,7 +291,9 @@ values as metadata for anyone reading it outside the app.
   - If the row can't be written after Doc Store took the file, the error is logged as `FIELD_PLAN_DOCUMENT_ORPHANED` with the Doc Store id, for clean-up.
   - Uploads, saves, status changes and downloads are audit-logged (`AUDIT_UPLOAD`, `AUDIT_SAVE_REPORT`,
     `AUDIT_SAVE_LEDGER`, `AUDIT_OVERWRITE`, `AUDIT_ARCHIVE`, `AUDIT_RESTORE`, `AUDIT_DOWNLOAD`).
-- **Configuration** (`DocStore` in appsettings): `Mode` is one of:
+- **Configuration** (`DocStore` in appsettings): how the app reaches Doc Store, through the shared Platform client
+  (`Api/Platform/DocStore`, registered by `AddDocStore`). The category isn't configured there: the field plan names its
+  own. `Mode` is one of:
   - `""`: off. Uploads, report saves and downloads answer 503 `DOC_STORE_NOT_CONFIGURED`.
   - `InMemory`: a stand-in that forgets on restart. Local development only; the API refuses to start with it elsewhere.
   - `Http` (`HttpDocStoreClient`): Doc Store through APIM. `POST {BaseUrl}/documents` with the file base64-encoded

@@ -46,7 +46,7 @@ public static class CtrmQueries
     /// A producer's splits (combined customer IDs). PLACEHOLDER: the root field and every field name are
     /// guesses from the CTRM Customer Splits Inquiry screen, because the API blocks introspection
     /// (<c>HC0046</c>) and the splits table hasn't been identified yet. Replace the document and
-    /// <see cref="Dtos.CtrmSplitDto"/> with the confirmed ones, then set <see cref="SplitsQueryConfirmed"/>.
+    /// <c>CtrmSplitDto</c> with the confirmed ones, then set <see cref="SplitsQueryConfirmed"/>.
     /// </summary>
     public const string SplitsByCustomer = """
         query ($customerId: String!) {

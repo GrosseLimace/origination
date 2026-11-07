@@ -24,6 +24,7 @@ using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Json;
 using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Platform.Access;
+using GrainOriginatorPortal.Api.Platform.DocStore;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Modules.Producers;
@@ -124,6 +125,9 @@ builder.Services.AddScoped<IUserEntitlementService, UserEntitlementService>();
 // them through one policy per catalog permission, each of which carries the default policy's
 // requirements as well.
 builder.Services.AddAccess(builder.Configuration);
+
+// Doc Store: documents filed by category. Each feature names its own category; this is how the app reaches it.
+builder.Services.AddDocStore(builder.Configuration, builder.Environment);
 
 // Usage tracking: bounded in-memory channel + background batch writer
 builder.Services.AddSingleton(System.Threading.Channels.Channel.CreateBounded<GrainOriginatorPortal.Api.Middleware.UserActivityRecord>(
@@ -297,7 +301,7 @@ builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.Is
 builder.Services.AddScoped<IRequestContextService, RequestContextService>();
 
 // Modules: each registers its own services and, through its Infrastructure counterpart, its repositories.
-builder.Services.AddProducersModule();
+builder.Services.AddProducersModule(builder.Configuration);
 
 // Per-domain services (Api layer) — controllers depend on these.
 builder.Services.AddScoped<IQueryLibraryService, QueryLibraryService>();
@@ -333,54 +337,6 @@ builder.Services.AddScoped<IEntitlementsDirectoryService, EntitlementsDirectoryS
 // Read once: the connection string and the switch are app settings, which restart the app when changed.
 builder.Services.AddSingleton(ClientTelemetrySettings.From(builder.Configuration));
 builder.Services.AddScoped<ITeamsDirectoryService, TeamsDirectoryService>();
-// 45Z FD-CIC calculator. Singleton: the embedded USDA packs are loaded and checked against their
-// Excel test cases once, at startup (see below). Each method handles one set of USDA workbook formulas.
-builder.Services.AddSingleton(GrainOriginatorPortal.Api.Services.FdCic.FdCicSettings.From(builder.Configuration));
-builder.Services.AddSingleton<GrainOriginatorPortal.Api.Services.FdCic.IFdCicMethod, GrainOriginatorPortal.Api.Services.FdCic.FdCicMethodV1>();
-builder.Services.AddSingleton<GrainOriginatorPortal.Api.Services.FdCic.IFdCicService, GrainOriginatorPortal.Api.Services.FdCic.FdCicService>();
-builder.Services.AddSingleton<GrainOriginatorPortal.Api.Services.TDisc.ITDiscService, GrainOriginatorPortal.Api.Services.TDisc.TDiscService>();
-builder.Services.AddScoped<GrainOriginatorPortal.Api.Services.Ctrm.IProducerSplitService, GrainOriginatorPortal.Api.Services.Ctrm.ProducerSplitService>();
-builder.Services.AddScoped<GrainOriginatorPortal.Api.Services.FieldPlan.IFieldTicketService, GrainOriginatorPortal.Api.Services.FieldPlan.FieldTicketService>();
-builder.Services.AddScoped<GrainOriginatorPortal.Api.Services.FieldPlan.IFieldPlanService, GrainOriginatorPortal.Api.Services.FieldPlan.FieldPlanService>();
-builder.Services.AddScoped<GrainOriginatorPortal.Api.Services.FieldPlan.IFieldPlanDocumentService, GrainOriginatorPortal.Api.Services.FieldPlan.FieldPlanDocumentService>();
-
-// Doc Store (45Z documents). DocStore:Mode "" = off (uploads and downloads answer 503), "InMemory" = a
-// stand-in that forgets on restart, allowed ONLY in Development so no deployed environment can appear to keep
-// a document it didn't, "Http" = the real Doc Store through APIM (managed identity on App Service, your own
-// 'az login' on a laptop). "Http" without BaseUrl and Scope stays off rather than failing startup.
-builder.Services.Configure<GrainOriginatorPortal.Api.Services.DocStore.DocStoreOptions>(
-    builder.Configuration.GetSection(GrainOriginatorPortal.Api.Services.DocStore.DocStoreOptions.Section));
-var docStore = builder.Configuration.GetSection(GrainOriginatorPortal.Api.Services.DocStore.DocStoreOptions.Section)
-    .Get<GrainOriginatorPortal.Api.Services.DocStore.DocStoreOptions>() ?? new();
-if (string.Equals(docStore.Mode.Trim(), "InMemory", StringComparison.OrdinalIgnoreCase))
-{
-    if (!builder.Environment.IsDevelopment())
-        throw new InvalidOperationException("DocStore:Mode InMemory is for local development only.");
-    builder.Services.AddSingleton<GrainOriginatorPortal.Api.Services.DocStore.IDocStoreClient, GrainOriginatorPortal.Api.Services.DocStore.InMemoryDocStoreClient>();
-}
-else if (string.Equals(docStore.Mode.Trim(), "Http", StringComparison.OrdinalIgnoreCase)
-    && !string.IsNullOrWhiteSpace(docStore.BaseUrl) && !string.IsNullOrWhiteSpace(docStore.Scope))
-{
-    builder.Services.AddHttpClient(GrainOriginatorPortal.Api.Services.DocStore.HttpDocStoreClient.HttpClientName, client =>
-    {
-        client.BaseAddress = new Uri(docStore.BaseUrl.Trim().TrimEnd('/') + "/");
-        // A 10 MB file is about 14 MB as base64; uploads aren't retried (see HttpDocStoreClient).
-        client.Timeout = TimeSpan.FromSeconds(60);
-    })
-    .AddHttpMessageHandler<CorrelationIdOutboundHandler>();
-    builder.Services.AddSingleton<GrainOriginatorPortal.Api.Services.DocStore.IDocStoreClient>(sp =>
-        new GrainOriginatorPortal.Api.Services.DocStore.HttpDocStoreClient(
-            GrainOriginatorPortal.Api.Services.DocStore.HttpDocStoreClient.CreateCredential(
-                !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEBSITE_SITE_NAME"))),
-            sp.GetRequiredService<IHttpClientFactory>(),
-            sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<GrainOriginatorPortal.Api.Services.DocStore.DocStoreOptions>>(),
-            sp.GetRequiredService<ILogger<GrainOriginatorPortal.Api.Services.DocStore.HttpDocStoreClient>>()));
-}
-else
-{
-    builder.Services.AddSingleton<GrainOriginatorPortal.Api.Services.DocStore.IDocStoreClient, GrainOriginatorPortal.Api.Services.DocStore.DisabledDocStoreClient>();
-}
-
 // Graph directory client (app-access spike) — singleton so the cached Graph token is shared.
 // Credential split mirrors the Key Vault bootstrap at the top of this file: managed identity
 // on App Service, the developer's own credential locally (skip the IMDS probe).
@@ -694,8 +650,7 @@ app.Logger.LogInformation(
 
 // Load and gate the 45Z FD-CIC and T-DISC packs now, so a version that fails its Excel test cases is logged at
 // deploy time instead of on the first scoring request. A failing version doesn't stop the app.
-app.Services.GetRequiredService<GrainOriginatorPortal.Api.Services.FdCic.IFdCicService>();
-app.Services.GetRequiredService<GrainOriginatorPortal.Api.Services.TDisc.ITDiscService>();
+app.Services.LoadFieldPlanPacks();
 
 // =============================================================================
 // Development: Warm up all three DB connections in parallel at startup.

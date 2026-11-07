@@ -463,6 +463,17 @@ and when, and every change is audit-logged (`AUDIT_SAVE_LEDGER`, `AUDIT_OVERWRIT
 A document id from another producer is a 404, as for downloads. So "nothing is updated" above now means: no file and
 no metadata; only the status columns change.
 
+_Update (2026-11-07) — permissions on these routes._ Phase 2 of the modular architecture plan replaced `[Authorize]`
+on the field-plan controllers with permissions:
+- Every field-plan read needs `field-plans:read`.
+- Every write route above, including the document routes, also needs `field-plans:write`.
+- Planting intentions and producer details follow the same read/write split.
+
+The scope decision is unchanged: whoever holds the permissions may act on any producer's records. Today everyone
+holds them through the default `Originator` + `Editor` roles. Once roles come from the entitlements app, an
+originator without `Editor` can read the field plan and its documents but not change them, the same read-only rule
+as every other edit.
+
 ---
 
 ## AR-02 — Customer-scoped reads not restricted by trade-unit entitlement

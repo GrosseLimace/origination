@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Services.FdCic;
+using GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.FdCic;
 
 namespace GrainOriginatorPortal.Api.Tests.Services.FdCic;
 

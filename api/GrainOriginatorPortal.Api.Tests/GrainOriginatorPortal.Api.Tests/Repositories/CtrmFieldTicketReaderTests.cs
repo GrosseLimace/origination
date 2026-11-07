@@ -9,6 +9,7 @@ using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Ctrm;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 
