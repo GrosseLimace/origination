@@ -3,6 +3,7 @@ import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DialogComponent, DialogContentComponent, DialogDescriptionComponent, DialogFooterComponent, DialogHeaderComponent, DialogTitleComponent } from '@shared/components/dialog/dialog.component';
 import { ApiError } from '@core/errors/api-error';
+import { alreadyShown } from '@core/http/shown-errors';
 import { ToastService } from '@core/services/toast.service';
 import { FieldPlanDocument, FieldPlanDocumentStatus, FieldPlanDocumentType, FieldPlanUploadType } from '@models';
 import { FieldPlanDocumentsService } from '../../store/field-plan-documents.service';
@@ -398,7 +399,7 @@ export class FdCicDocumentsDialogComponent implements OnInit, OnDestroy {
         ? `${doc.fileName} saved to Doc Store. The previous attestation is archived in Version history.`
         : `${doc.fileName} saved to Doc Store.`);
     } catch (e) {
-      this.toast.error(this.messageOf(e, 'The document couldn\'t be uploaded.'));
+      if (!alreadyShown(e)) this.toast.error(this.messageOf(e, 'The document couldn\'t be uploaded.'));
     } finally {
       this.uploading.set(false);
     }
@@ -417,7 +418,7 @@ export class FdCicDocumentsDialogComponent implements OnInit, OnDestroy {
       this.archiving.set(null);
       this.toast.success(`${d.fileName} archived. It's in Version history.`);
     } catch (e) {
-      this.toast.error(this.messageOf(e, 'The document couldn\'t be archived.'));
+      if (!alreadyShown(e)) this.toast.error(this.messageOf(e, 'The document couldn\'t be archived.'));
     } finally {
       this.busy.set(false);
     }
@@ -430,7 +431,7 @@ export class FdCicDocumentsDialogComponent implements OnInit, OnDestroy {
       this.replace(await this.service.restore(this.customerId(), d.id));
       this.toast.success(`${d.fileName} restored to current documents.`);
     } catch (e) {
-      this.toast.error(this.messageOf(e, 'The document couldn\'t be restored.'));
+      if (!alreadyShown(e)) this.toast.error(this.messageOf(e, 'The document couldn\'t be restored.'));
     } finally {
       this.busy.set(false);
     }
@@ -522,7 +523,7 @@ export class FdCicDocumentsDialogComponent implements OnInit, OnDestroy {
       const blob = await this.service.content(this.customerId(), d.id);
       return new Blob([blob], { type: VIEWABLE.has(d.contentType) ? d.contentType : 'application/octet-stream' });
     } catch (e) {
-      this.toast.error(this.messageOf(e, 'The document couldn\'t be opened.'));
+      if (!alreadyShown(e)) this.toast.error(this.messageOf(e, 'The document couldn\'t be opened.'));
       return null;
     } finally {
       this.opening.set(false);

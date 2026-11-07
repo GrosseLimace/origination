@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ApiError } from '@core/errors/api-error';
+import { markShown } from '@core/http/shown-errors';
 import { ToastService } from '@core/services/toast.service';
 import { FieldPlanDocument } from '@models';
 import { FieldPlanDocumentsService } from '../../store/field-plan-documents.service';
@@ -126,6 +128,17 @@ describe('FdCicDocumentsDialogComponent', () => {
 
     expect(toast.error).toHaveBeenCalledWith('Upload a PDF, PNG or JPEG.');
     expect(dialog.chosen()).toBe(file);
+  });
+
+  it('should not toast a refusal the 403 interceptor has already shown', async () => {
+    const forbidden = new HttpErrorResponse({ status: 403, error: { error: { code: 'AUTHZ_PERMISSION_DENIED', message: 'Insufficient permissions.' } } });
+    markShown(forbidden);
+    service.upload.mockRejectedValue(ApiError.fromHttpErrorResponse(forbidden));
+    dialog.chosen.set(new File(['%PDF'], 'attestation.pdf'));
+
+    await dialog.upload();
+
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it('should say when the documents can\'t be loaded, and try again', async () => {
