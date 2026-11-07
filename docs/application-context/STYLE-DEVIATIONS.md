@@ -61,6 +61,29 @@ orphan rows behind any of them, so validation turns on with nothing to clean up.
 
 ## API shape and organisation
 
+### Folders by module, not by layer
+`csharp.md` "Project Structure" and "Adding New Features" · `Api/Platform`, `Api/Modules/<Module>`,
+`Infrastructure/Platform`, `Infrastructure/Modules/<Module>`
+
+The guide puts each layer in one folder per project: `Api/Controllers`, `Api/Services`,
+`Infrastructure/Repositories` and so on. From Phase 2 of the
+[modular architecture plan](../../agents-docs/plans/plan-modular-architecture.md) (2026-11-07), each
+project is organised by module first and by layer inside the module: `Api/Modules/Producers/Controllers`,
+`Infrastructure/Modules/Producers/Repositories`. Shared code sits under `Platform`. The point of the
+work is that a feature is added or removed in one place. With layer folders, a producer change touches
+six sibling directories that each mix producer and shared files, and a reviewer can't see at a glance
+whether a change crosses a module boundary.
+
+The guide's real constraints still hold: two projects, `Api → Infrastructure`, mapping in services,
+entities in Infrastructure. Two kinds of test keep the module boundaries:
+- `ModuleBoundaryTests` (ArchUnitNET) checks which module may depend on which.
+- `ControllerAuthorizationTests` requires every controller in a module folder to name its permissions.
+
+Modules move one at a time, so until Phase 2 ends some code is still in the old layer folders.
+
+**Revisit if:** a module gets its own team or its own deployment. Then lift its folders into a project
+of its own (`GrainOriginatorPortal.Modules.Producers`), which the boundary tests make a mechanical move.
+
 ### DTOs declared inline in controllers
 `dotnet.dtos-inline-in-controllers` · `EntitlementsController`, `MeController`
 

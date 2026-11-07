@@ -1,9 +1,11 @@
 // System namespaces
 using System.Reflection;
+using System.Text.RegularExpressions;
 
 // Microsoft namespaces
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Routing;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Controllers;
@@ -14,9 +16,10 @@ using GrainOriginatorPortal.Infrastructure.Platform.Access;
 namespace GrainOriginatorPortal.Api.Tests;
 
 /// <summary>
-/// Verifies every controller in the API is protected with [Authorize].
+/// Verifies every controller in the API is protected with [Authorize], and every controller in a
+/// module folder with the permissions its endpoints need.
 /// This acts as a security regression test — a failing test here means
-/// an endpoint was accidentally left unauthenticated.
+/// an endpoint was accidentally left unauthenticated or under-protected.
 /// </summary>
 public class ControllerAuthorizationTests
 {
@@ -183,5 +186,193 @@ public class ControllerAuthorizationTests
             $"These BarChart ingest actions allow anonymous access: {string.Join(", ", anonymous)}");
 
         Assert.Empty(typeof(BarchartIngestController).GetCustomAttributes<AllowAnonymousAttribute>(inherit: true));
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // A permission on every endpoint, checked module by module.
+    //
+    // These checks cover the controllers in Api.Platform and Api.Modules.<Module>. A controller still in
+    // the old Controllers folder is skipped until its module moves, so moving a module is what turns the
+    // checks on for it.
+    // -------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Controllers any signed-in user may call, so they need no permission: who you are and what you may
+    /// do, the version, help, What's New and the browser's telemetry settings.
+    /// </summary>
+    private static readonly HashSet<Type> OpenToAnySignedInUser =
+    [
+        typeof(MeController),
+        typeof(MyPermissionsController),
+        typeof(VersionController),
+        typeof(HelpController),
+        typeof(WhatsNewController),
+        typeof(ClientTelemetryController),
+    ];
+
+    /// <summary>POSTs that store no business data, so the controller's read permission is enough.</summary>
+    private static readonly HashSet<(Type Controller, string Action)> NonMutatingPosts =
+    [
+        (typeof(FdCicController), nameof(FdCicController.Score)),                // scores a field, stores nothing
+        (typeof(GeocodeController), nameof(GeocodeController.SingleGeocode)),    // address lookups, store nothing
+        (typeof(GeocodeController), nameof(GeocodeController.BatchGeocode)),
+        (typeof(QueryLibraryController), nameof(QueryLibraryController.LogSearch)), // records telemetry only
+    ];
+
+    private const string PlatformNamespace = "GrainOriginatorPortal.Api.Platform";
+    private const string ModulesNamespace = "GrainOriginatorPortal.Api.Modules.";
+
+    /// <summary>
+    /// The module a controller's folder puts it in: <c>platform</c> under <c>Api.Platform</c>, or the
+    /// folder under <c>Api.Modules</c> in kebab case (<c>Modules.BidSheet</c> is <c>bid-sheet</c>), the
+    /// same ids <see cref="AppPermissions.ModuleOf"/> uses. Null while the controller is still in the old
+    /// Controllers folder.
+    /// </summary>
+    private static string? ModuleOf(Type controller)
+    {
+        var ns = controller.Namespace ?? string.Empty;
+        if (ns == PlatformNamespace || ns.StartsWith(PlatformNamespace + ".", StringComparison.Ordinal))
+        {
+            return "platform";
+        }
+
+        if (!ns.StartsWith(ModulesNamespace, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var folder = ns[ModulesNamespace.Length..].Split('.')[0];
+        return Regex.Replace(folder, "(?<!^)([A-Z])", "-$1").ToLowerInvariant();
+    }
+
+    private static List<(Type Controller, string Module)> ModuleControllers() =>
+        AllControllerTypes()
+            .Select(row => (Type)row[0])
+            .Select(type => (Controller: type, Module: ModuleOf(type)))
+            .Where(c => c.Module is not null)
+            .Select(c => (c.Controller, c.Module!))
+            .ToList();
+
+    private static IEnumerable<(Type Controller, MethodInfo Action)> ActionsOf(IEnumerable<Type> controllers) =>
+        controllers.SelectMany(controller => controller
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(m => !m.IsSpecialName && !m.IsDefined(typeof(NonActionAttribute), inherit: true))
+            .Select(action => (controller, action)));
+
+    private static IEnumerable<string> PermissionsOn(MemberInfo member) =>
+        member.GetCustomAttributes<RequirePermissionAttribute>(inherit: true).Select(a => a.Permission);
+
+    /// <summary>Anything but GET or HEAD. An action without a verb attribute answers every verb, POST included.</summary>
+    private static bool ChangesData(MethodInfo action)
+    {
+        var verbs = action.GetCustomAttributes(inherit: true)
+            .OfType<IActionHttpMethodProvider>()
+            .SelectMany(provider => provider.HttpMethods)
+            .ToList();
+
+        return verbs.Count == 0 || verbs.Any(verb => verb is not ("GET" or "HEAD"));
+    }
+
+    /// <summary><c>write</c>, <c>manage</c>, or a scoped <c>delete</c> such as <c>bid-sheet-locations:delete:global</c>.</summary>
+    private static bool IsWrite(string permission) => permission.Split(':')[1] is "write" or "manage" or "delete";
+
+    [Fact]
+    public void TheModuleChecks_FindTheControllersAlreadyInPlatform()
+    {
+        // If the namespace test above ever stops matching, every check below would pass on nothing.
+        var found = ModuleControllers().Select(c => c.Controller).ToList();
+
+        Assert.Contains(typeof(AccessMapController), found);
+        Assert.Contains(typeof(MyPermissionsController), found);
+    }
+
+    [Fact]
+    public void ModuleControllers_SitInAModuleTheCatalogKnows()
+    {
+        // A folder name that isn't a module (Modules/Producer, say) would leave its controllers with no
+        // permissions of their own to require.
+        var modules = AppPermissions.ModuleOf.Values.ToHashSet(StringComparer.Ordinal);
+        var unknown = ModuleControllers()
+            .Where(c => !modules.Contains(c.Module))
+            .Select(c => $"{c.Controller.Name} ({c.Module})")
+            .ToList();
+
+        Assert.True(unknown.Count == 0,
+            "These controllers sit in a folder that isn't a module in AppPermissions: " + string.Join(", ", unknown));
+    }
+
+    [Fact]
+    public void ModuleControllers_CarryAClassLevelPermission_FromTheirOwnModuleOnly()
+    {
+        // The class-level permission, normally the module's read, applies to every action, so a write needs
+        // it as well as its own write permission. The add-on roles rely on that: Editor grants writes
+        // everywhere, and only the persona roles' reads decide where those writes can be used. A class-level
+        // permission from another module would make the whole controller depend on that module.
+        var wrong = ModuleControllers()
+            .Where(c => !OpenToAnySignedInUser.Contains(c.Controller))
+            .Select(c => (c.Controller, c.Module, Required: PermissionsOn(c.Controller).ToList()))
+            .Where(c => c.Required.Count == 0
+                        || c.Required.Any(p => AppPermissions.ModuleOf.GetValueOrDefault(p) != c.Module))
+            .Select(c => $"{c.Controller.Name} requires [{string.Join(", ", c.Required)}] on the class; "
+                         + $"it needs at least one, all from the {c.Module} module")
+            .ToList();
+
+        Assert.True(wrong.Count == 0, string.Join("; ", wrong));
+    }
+
+    [Fact]
+    public void ModuleControllers_RequireAPermissionOnEveryAction()
+    {
+        var guarded = ModuleControllers().Select(c => c.Controller).Where(c => !OpenToAnySignedInUser.Contains(c));
+        var open = ActionsOf(guarded)
+            .Where(a => !PermissionsOn(a.Controller).Concat(PermissionsOn(a.Action)).Any())
+            .Select(a => $"{a.Controller.Name}.{a.Action.Name}")
+            .ToList();
+
+        Assert.True(open.Count == 0, "These actions need only a sign-in: " + string.Join(", ", open));
+    }
+
+    [Fact]
+    public void ModuleControllers_RequireAWritePermission_OnEveryActionThatChangesData()
+    {
+        // A read permission on a POST, PUT or DELETE would let a read-only user change data.
+        var guarded = ModuleControllers().Select(c => c.Controller).Where(c => !OpenToAnySignedInUser.Contains(c));
+        var readOnly = ActionsOf(guarded)
+            .Where(a => ChangesData(a.Action) && !NonMutatingPosts.Contains((a.Controller, a.Action.Name)))
+            .Where(a => !PermissionsOn(a.Controller).Concat(PermissionsOn(a.Action)).Any(IsWrite))
+            .Select(a => $"{a.Controller.Name}.{a.Action.Name}")
+            .ToList();
+
+        Assert.True(readOnly.Count == 0,
+            "These actions change data but need no write or manage permission: " + string.Join(", ", readOnly));
+    }
+
+    [Fact]
+    public void ControllersOpenToAnySignedInUser_OnlyRead()
+    {
+        // They need no permission, so an action that changes data would be open to every signed-in user.
+        var writes = ActionsOf(OpenToAnySignedInUser)
+            .Where(a => ChangesData(a.Action))
+            .Select(a => $"{a.Controller.Name}.{a.Action.Name}")
+            .ToList();
+
+        Assert.True(writes.Count == 0,
+            "Move these to a controller that requires a permission: " + string.Join(", ", writes));
+    }
+
+    [Fact]
+    public void ModuleControllers_AllowNoAnonymousAccess()
+    {
+        // [AllowAnonymous] would skip the permission and the sign-in alike.
+        var controllers = ModuleControllers().Select(c => c.Controller).ToList();
+        var anonymous = controllers
+            .Where(c => c.IsDefined(typeof(AllowAnonymousAttribute), inherit: true))
+            .Select(c => c.Name)
+            .Concat(ActionsOf(controllers)
+                .Where(a => a.Action.IsDefined(typeof(AllowAnonymousAttribute), inherit: true))
+                .Select(a => $"{a.Controller.Name}.{a.Action.Name}"))
+            .ToList();
+
+        Assert.True(anonymous.Count == 0, "These allow anonymous access: " + string.Join(", ", anonymous));
     }
 }

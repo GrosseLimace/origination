@@ -445,7 +445,7 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
   - The first candidate is the `ProducerDetails`/`ProducerContact` join in customer search.
 - **Enforce these rules with architecture tests** in `Api.Tests/Architecture/`, using **ArchUnitNET** (Apache-2.0, actively maintained; NetArchTest has had no release since 2021). Two rules:
   1. `Modules.{Customers,Contracts,Engagement}.*` must not depend on `Modules.Producers.*`.
-  2. `Modules.X.*` must not depend on `Infrastructure.Modules.Y.Repositories`/`Entities` for Y ≠ X.
+  2. `Modules.X.*` must not depend on `Infrastructure.Modules.Y.Repositories`/`Interfaces`/`Entities` for Y ≠ X. `Interfaces` is where the repository interfaces live, so leaving it out would let a module inject another module's repository.
 - It is a new test dependency, so it needs an SBOM entry.
 
 ### 4.5 What moves where
@@ -910,9 +910,11 @@ Phases 1–4 deliver modularity and stand on their own even if traders slip. Pha
 
 **This plan builds on `main` only.** It doesn't wait for or plan around other branches, the mobile app's included. That work gets redone on the new structure once this lands.
 
+**Phases 1–4 reach `main` together** (decided 2026-11-07). Nothing can be tested before Phase 4 is done, so `feature_ModularArchitecture` is the integration branch. Each phase is built on its own branch cut from it, one phase at a time, and merged back. `main` is merged in at the start of each phase, and the integration branch goes to `main` once it has been tested.
+
 **Rules that apply to every phase:**
-- Each PR is independently shippable.
-- Run `dotnet test` and `ng test` on every PR.
+- Each step is a reviewed commit that is independently shippable: the build and the tests pass after every one.
+- Run `dotnet test` and `ng test` before every commit.
 - Every phase updates the affected `docs/application-context/*` files.
 
 ---

@@ -6,7 +6,7 @@ notes live in [docs/application-context/](docs/application-context/), operations
 [agents-docs/audits/AUDIT-TRACKING.json](agents-docs/audits/AUDIT-TRACKING.json).
 
 ## Software Bill of Materials (SBOM)
-Last Updated: 2026-11-04
+Last Updated: 2026-11-07
 
 Direct dependencies plus the transitive packages pinned for security. This is the compact copy
 company policy asks for here; [README.md](README.md#software-bill-of-materials-sbom) has the same
@@ -27,6 +27,7 @@ rows with the security notes behind each pin. Update BOTH in the same commit as 
 | Microsoft.Identity.Web | 3.8.4 | MIT | Azure AD / JWT Bearer authentication |
 | System.Security.Cryptography.Xml | 10.0.13 | MIT | XML crypto |
 | System.Security.Cryptography.Pkcs | 10.0.13 | MIT | PKCS / CMS crypto (pinned) |
+| TngTech.ArchUnitNET | 0.13.5 | Apache-2.0 | Module boundary tests (test only) |
 
 ### Frontend Dependencies (Angular 21 / TypeScript)
 

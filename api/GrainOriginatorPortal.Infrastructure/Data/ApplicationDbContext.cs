@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Platform.Access.Configurations;
 using GrainOriginatorPortal.Infrastructure.Platform.Access.Entities;
 using GrainOriginatorPortal.Infrastructure.Sync;
 
@@ -89,11 +88,11 @@ public class ApplicationDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        // Platform/Access. Applied by name, not discovered: the assembly also holds the other DbContexts.
-        modelBuilder.ApplyConfiguration(new RoleConfiguration());
-        modelBuilder.ApplyConfiguration(new PermissionConfiguration());
-        modelBuilder.ApplyConfiguration(new RolePermissionConfiguration());
-        modelBuilder.ApplyConfiguration(new RoleSegmentConfiguration());
+        // Every IEntityTypeConfiguration in this assembly configures this context; each module keeps its own in
+        // its Configurations folder. The read-only contexts (OriginationDbContext, DpOdsDbContext and
+        // TradeUnitPreferencesDbContext) configure their entities inline in their own OnModelCreating, and
+        // ApplicationDbContextModelTests fails if one of their entities turns up in this model.
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
 
         // Ids for producers the customer sync finds only in CTRM (they have no ODS surrogate id), drawn from the
         // reserved band [5e15, 6e15). The AddCustomerIdSequence migration creates the real sequence with a start
