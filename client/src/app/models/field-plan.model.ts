@@ -136,6 +136,45 @@ export interface OfficialResult {
   } | null;
   /** 45Z confirmed CI: the producer's recordkeeping requirements were reviewed with them. */
   recordkeepingAcknowledged?: boolean;
+  /** 45Z confirmed CI: the Doc Store id of this confirmation's Biofuel Feedstock Report; absent until it's saved. */
+  reportDocumentId?: string;
+  /** 45Z confirmed CI: the Doc Store id of this confirmation's Mass Balance Ledger (CSV); absent until it's saved. */
+  ledgerDocumentId?: string;
+}
+
+/**
+ * What a 45Z document in Doc Store is. The Biofuel Feedstock Report and Mass Balance Ledger are per field and year,
+ * saved by confirming the field's CI; the attestation and other documents are per year and uploaded.
+ */
+export type FieldPlanDocumentType = 'ProducerAttestation' | 'FeedstockReport' | 'MassBalanceLedger' | 'Other';
+export type FieldPlanUploadType = Exclude<FieldPlanDocumentType, 'FeedstockReport' | 'MassBalanceLedger'>;
+/** Current; Overwritten when the field's CI was confirmed again (by a newer report or ledger); Archived by an originator. */
+export type FieldPlanDocumentStatus = 'Current' | 'Overwritten' | 'Archived';
+
+/** One of a producer's 45Z documents in Doc Store (api/field-plan/customer/{id}/documents). */
+export interface FieldPlanDocument {
+  id: string;
+  fileName: string;
+  contentType: string;
+  size: number;
+  uploadedAt: string;
+  /** The originator's display name. */
+  uploadedBy?: string | null;
+  documentType: FieldPlanDocumentType;
+  cropYear?: number | null;
+  /** The field, for a Biofuel Feedstock Report or Mass Balance Ledger. */
+  splitId?: string | null;
+  fieldName?: string | null;
+  commodity?: string | null;
+  fieldProgramRecordId?: number | null;
+  status: FieldPlanDocumentStatus;
+  /** When it was overwritten, archived or restored, and by whom (display name). */
+  statusChangedAt?: string | null;
+  statusChangedBy?: string | null;
+  /** The reason given for archiving. */
+  statusNote?: string | null;
+  /** For an overwritten report or ledger, the id of the one that replaced it. */
+  replacedById?: string | null;
 }
 
 /** One delivery (a CTRM ticket's detail row for the field's split), as reviewed, confirmed and exported. */

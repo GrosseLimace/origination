@@ -42,8 +42,20 @@ public interface IFieldPlanRepository
 
     Task<bool> CustomerExistsAsync(long customerId, CancellationToken cancellationToken);
 
+    /// <summary>Whether the producer exists, and its CTRM code (Customer.ScoularId) when it has one.</summary>
+    Task<(bool Exists, string? ScoularId)> GetCustomerCodeAsync(long customerId, CancellationToken cancellationToken);
+
     /// <summary>The crop row's commodity code (PlantingIntention.Crop, e.g. "YC"), deleted rows included; null when it doesn't exist.</summary>
     Task<string?> GetPlantingIntentionCropAsync(int plantingIntentionId, CancellationToken cancellationToken);
+
+    /// <summary>The producer's 45Z documents, for one crop year or all of them, newest first.</summary>
+    Task<List<FieldPlanDocument>> GetDocumentsAsync(long customerId, int? cropYear, CancellationToken cancellationToken);
+
+    /// <summary>The producer's document with this Doc Store id; null when it's another producer's or doesn't exist.</summary>
+    Task<FieldPlanDocument?> GetDocumentAsync(long customerId, string docStoreId, CancellationToken cancellationToken);
+
+    /// <summary>The current (not overwritten or archived) documents of one type saved from a field's 45Z record.</summary>
+    Task<List<FieldPlanDocument>> GetCurrentRecordDocumentsAsync(int fieldProgramRecordId, string documentType, CancellationToken cancellationToken);
 
     /// <summary>The commodity code of each crop row in one query, deleted rows included; ids that don't exist are absent.</summary>
     Task<Dictionary<int, string?>> GetPlantingIntentionCropsAsync(IReadOnlyCollection<int> plantingIntentionIds, CancellationToken cancellationToken);

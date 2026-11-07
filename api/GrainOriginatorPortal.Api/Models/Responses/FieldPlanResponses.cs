@@ -112,3 +112,35 @@ public record FieldTicketResponse
     public string? SettledDate { get; init; }
     public string? Status { get; init; }
 }
+
+/// <summary>
+/// One of a producer's 45Z documents in Doc Store: a Biofuel Feedstock Report (per field, saved when its CI is
+/// confirmed), a signed producer attestation or another supporting document (per producer and crop year).
+/// </summary>
+public record FieldPlanDocumentResponse
+{
+    public required string Id { get; init; }
+    public required string FileName { get; init; }
+    public required string ContentType { get; init; }
+    public long Size { get; init; }
+    public DateTime UploadedAt { get; init; }
+    /// <summary>The originator's display name.</summary>
+    public string? UploadedBy { get; init; }
+    /// <summary>"FeedstockReport", "MassBalanceLedger", "ProducerAttestation" or "Other".</summary>
+    public required string DocumentType { get; init; }
+    public int? CropYear { get; init; }
+    /// <summary>The field, for a Biofuel Feedstock Report or a Mass Balance Ledger.</summary>
+    public string? SplitId { get; init; }
+    public string? FieldName { get; init; }
+    public string? Commodity { get; init; }
+    public int? FieldProgramRecordId { get; init; }
+    /// <summary>"Current", "Overwritten" (replaced when the field's CI was confirmed again) or "Archived".</summary>
+    public required string Status { get; init; }
+    public DateTime? StatusChangedAt { get; init; }
+    /// <summary>Who overwrote, archived or restored it (display name).</summary>
+    public string? StatusChangedBy { get; init; }
+    /// <summary>The reason given for archiving.</summary>
+    public string? StatusNote { get; init; }
+    /// <summary>For an overwritten report or ledger, the id of the document that replaced it.</summary>
+    public string? ReplacedById { get; init; }
+}

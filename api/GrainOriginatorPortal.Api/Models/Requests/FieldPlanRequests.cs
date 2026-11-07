@@ -146,3 +146,10 @@ public record TDiscPassRequest
     [Required, StringLength(100)]
     public required string Implement { get; init; }
 }
+
+/// <summary>Archiving a 45Z document: the originator's optional reason (e.g. "No longer relevant to 2026").</summary>
+public record ArchiveFieldPlanDocumentRequest
+{
+    [StringLength(500)]
+    public string? Note { get; init; }
+}
