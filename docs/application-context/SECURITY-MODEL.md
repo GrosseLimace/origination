@@ -90,7 +90,8 @@ roles lag behind would silently get producer access and edit rights.
 
 `[RequirePermission(AppPermissions.X)]` on a controller or action checks a permission. Each
 permission's policy also carries the default policy's requirements, so a permission check is never
-weaker than "signed in". **Today it guards only what used to need `Admin`:**
+weaker than "signed in". **Today it guards what used to need `Admin`, and every endpoint of the modules
+Phase 2 has moved so far.** What used to need `Admin`:
 
 | What | Permission |
 |---|---|
@@ -102,9 +103,23 @@ weaker than "signed in". **Today it guards only what used to need `Admin`:**
 | Customer sync diagnostics | `customer-sync:manage` |
 | BarChart ingest, by the pipeline or by a person re-running it | `bid-feed:manage` |
 
-**Every other endpoint still needs only a signed-in user**, as before. Phase 2 of the plan puts a
-permission on every endpoint: the read on each controller, and a write on each write action. A
-convention test will then fail on any endpoint without one, outside this exempt list:
+The modules moved so far, each controller with its read on the class and a write on each write action:
+
+| Module | What | Read / write |
+|---|---|---|
+| Producers | Planting intentions: viewing / adding, editing, retagging and deleting | `planting-intentions:read` / `:write` |
+| Producers | Producer details, contacts, grain on farm and bin sites: viewing / saving and clearing | `producer-details:read` / `:write` |
+| Producers | Stored grain; DP contracts | `stored-grain:read`; `dp-contracts:read` |
+| Producers | Planting Dashboard estimates, market shares and actual harvest: viewing / saving, and deleting an actual harvest | `planting-estimates:read` / `:write` |
+
+`Originator` + `Editor`, which everyone holds through the default roles, grants all of these, so no
+one has lost access. Only the SPA calls these endpoints, so no app-only caller needs a grant for them.
+
+**Every endpoint that hasn't moved into a module yet still needs only a signed-in user**, as before.
+Phase 2 moves one module at a time and puts a permission on every endpoint it moves.
+`ControllerAuthorizationTests` fails on a controller in `Api/Modules/` or `Api/Platform/` that lacks a
+read on the class or a write on any write action. Once every module has moved, that covers every
+endpoint outside this exempt list:
 
 - **Any signed-in user, by design:** `/api/me`, `/api/me/permissions`, `/api/version`, `/api/help`,
   `/api/whats-new`, `/api/clienttelemetry` (the browser's App Insights settings), and

@@ -26,6 +26,7 @@ using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Modules.Producers;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -295,14 +296,13 @@ builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.Is
 // Request-scoped helpers (current-user + trace id) read from HttpContext.
 builder.Services.AddScoped<IRequestContextService, RequestContextService>();
 
+// Modules: each registers its own services and, through its Infrastructure counterpart, its repositories.
+builder.Services.AddProducersModule();
+
 // Per-domain services (Api layer) — controllers depend on these.
 builder.Services.AddScoped<IQueryLibraryService, QueryLibraryService>();
 builder.Services.AddScoped<ICommodityService, CommodityService>();
-builder.Services.AddScoped<IStoredGrainService, StoredGrainService>();
-builder.Services.AddScoped<IDpContractService, DpContractService>();
 builder.Services.AddScoped<ISavedListService, SavedListService>();
-builder.Services.AddScoped<IProducerDetailsService, ProducerDetailsService>();
-builder.Services.AddScoped<IPlantingIntentionService, PlantingIntentionService>();
 builder.Services.AddScoped<INoteService, NoteService>();
 builder.Services.AddScoped<IReminderService, ReminderService>();
 // Admin diagnostics: six services the DiagnosticsController delegates to (schema, CTRM probes, commodity
@@ -311,7 +311,6 @@ builder.Services.AddDiagnosticsServices();
 builder.Services.AddScoped<IOutlookCalendarService, OutlookCalendarService>();
 builder.Services.AddScoped<ITicketService, TicketService>();
 builder.Services.AddScoped<IContractService, ContractService>();
-builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IBidSheetService, BidSheetService>();
 builder.Services.AddScoped<IBarchartIngestService, BarchartIngestService>();

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Platform.Access.Entities;
 using GrainOriginatorPortal.Infrastructure.Sync;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
 
 namespace GrainOriginatorPortal.Infrastructure.Data;
 
@@ -216,104 +217,6 @@ public class ApplicationDbContext : DbContext
                   .HasDatabaseName("IX_Notes_CreatedBy_CreatedAt");
         });
 
-        modelBuilder.Entity<PlantingIntention>(entity =>
-        {
-            entity.ToTable("ProducerPlantingIntentions", schema: "dbo");
-            entity.HasKey(e => e.Id);
-
-            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
-            // CustomerName / CustomerCode dropped from the DB (Phase 3b) — populated
-            // from the Customer FK join on reads.
-            entity.Ignore(e => e.CustomerName);
-            entity.Ignore(e => e.CustomerCode);
-            entity.Property(e => e.TradeUnit).HasColumnName("TradeUnit").HasMaxLength(100).IsRequired();
-            entity.Property(e => e.PlantingYear).HasColumnName("PlantingYear").IsRequired();
-            entity.Property(e => e.Crop).HasColumnName("Crop").HasMaxLength(100).IsRequired();
-            entity.Property(e => e.Category).HasColumnName("Category").HasMaxLength(100).IsRequired(false);
-            entity.Property(e => e.Type).HasColumnName("Type").HasMaxLength(100).IsRequired(false);
-            entity.Property(e => e.Description).HasColumnName("Description").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.Acres).HasColumnName("Acres").IsRequired();
-            entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
-            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
-            entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
-            entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.IsDeleted).HasColumnName("IsDeleted").HasDefaultValue(false).IsRequired();
-            entity.Property(e => e.DeletedAt).HasColumnName("DeletedAt").IsRequired(false);
-            entity.Property(e => e.DeletedBy).HasColumnName("DeletedBy").HasMaxLength(255).IsRequired(false);
-
-            // Soft delete is enforced HERE, once, rather than by an IsDeleted predicate on each
-            // query. Note takes the per-query approach and repeats "!IsDeleted" in eleven places:
-            // that works until someone adds a twelfth query and forgets, and then deleted rows
-            // reappear in a view. It matters more here than for notes because these rows are SUMMED
-            // — the trade-unit acreage rollups would silently over-count a deleted plan, giving a
-            // wrong number with no error. A filter on the model cannot be forgotten by new code.
-            //
-            // To read deleted rows deliberately (recovery, audit), use IgnoreQueryFilters().
-            entity.HasQueryFilter(e => !e.IsDeleted);
-
-            // FK to dbo.Customer — NoAction so cascading deletes from Customer don't
-            // wipe user-authored planting intentions.
-            entity.HasOne(e => e.Customer)
-                  .WithMany()
-                  .HasForeignKey(e => e.CustomerId)
-                  .OnDelete(DeleteBehavior.NoAction)
-                  .HasConstraintName("FK_ProducerPlantingIntentions_Customer_CustomerId");
-
-            entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_ProducerPlantingIntentions_CustomerId");
-            entity.HasIndex(e => new { e.TradeUnit, e.PlantingYear }).HasDatabaseName("IX_ProducerPlantingIntentions_TradeUnit");
-        });
-
-        modelBuilder.Entity<DashboardPlantingEstimate>(entity =>
-        {
-            entity.ToTable("DashboardPlantingEstimates", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.TradeUnitKey).HasColumnName("TradeUnitKey").HasMaxLength(500).IsRequired();
-            entity.Property(e => e.Crop).HasColumnName("Crop").HasMaxLength(100).IsRequired();
-            entity.Property(e => e.PlantingYear).HasColumnName("PlantingYear").IsRequired();
-            entity.Property(e => e.YieldEstimate).HasColumnName("YieldEstimate").HasColumnType("decimal(10,2)").IsRequired(false);
-            entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
-            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
-            entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
-            entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
-            entity.HasIndex(e => new { e.TradeUnitKey, e.Crop, e.PlantingYear }).IsUnique()
-                .HasDatabaseName("UQ_DashboardPlantingEstimates_TradeUnitKey_Crop_PlantingYear");
-        });
-
-        modelBuilder.Entity<DashboardMarketShare>(entity =>
-        {
-            entity.ToTable("DashboardMarketShares", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.TradeUnitKey).HasColumnName("TradeUnitKey").HasMaxLength(500).IsRequired();
-            entity.Property(e => e.CropCategory).HasColumnName("CropCategory").HasMaxLength(100).IsRequired();
-            entity.Property(e => e.PlantingYear).HasColumnName("PlantingYear").IsRequired();
-            entity.Property(e => e.MarketSharePct).HasColumnName("MarketSharePct").HasColumnType("decimal(5,2)").IsRequired(false);
-            entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
-            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
-            entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
-            entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
-            entity.HasIndex(e => new { e.TradeUnitKey, e.CropCategory, e.PlantingYear }).IsUnique()
-                .HasDatabaseName("UQ_DashboardMarketShares_TradeUnitKey_CropCategory_PlantingYear");
-        });
-
-        modelBuilder.Entity<DashboardActualHarvest>(entity =>
-        {
-            entity.ToTable("DashboardActualHarvests", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.TradeUnitKey).HasColumnName("TradeUnitKey").HasMaxLength(500).IsRequired();
-            entity.Property(e => e.CropCategory).HasColumnName("CropCategory").HasMaxLength(100).IsRequired();
-            entity.Property(e => e.PlantingYear).HasColumnName("PlantingYear").IsRequired();
-            entity.Property(e => e.Bushels).HasColumnName("Bushels").IsRequired();
-            entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
-            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
-            entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
-            entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
-            entity.HasIndex(e => new { e.TradeUnitKey, e.PlantingYear }).HasDatabaseName("IX_DashboardActualHarvests_TradeUnitKey_PlantingYear");
-        });
-
         modelBuilder.Entity<SavedList>(entity =>
         {
             entity.ToTable("SavedLists", schema: "dbo");
@@ -345,50 +248,6 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Guild).HasColumnName("GUID").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.UpdatedOn).HasColumnName("UpdatedOn").HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.HasIndex(e => e.CustomerCode).IsUnique().HasDatabaseName("UQ_eSignEnrollment_CustomerCode");
-        });
-
-        modelBuilder.Entity<ProducerDetails>(entity =>
-        {
-            entity.ToTable("ProducerDetails", schema: "dbo");
-            entity.HasKey(e => e.Id);
-
-            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
-            // ScoularId / CustomerName / LinkedProducerIds dropped from the DB
-            // (Phase 3b). ScoularId + CustomerName come from the Customer FK join.
-            // LinkedProducerIds is composed server-side from dbo.CustomerLink on read.
-            entity.Ignore(e => e.ScoularId);
-            entity.Ignore(e => e.CustomerName);
-            entity.Ignore(e => e.LinkedProducerIds);
-            entity.Property(e => e.TotalAcres).HasColumnName("TotalAcres").HasColumnType("decimal(18,2)").IsRequired(false);
-            entity.Property(e => e.BinSitesModifiedAt).HasColumnName("BinSitesModifiedAt").IsRequired(false);
-            entity.Property(e => e.PrimaryContact).HasColumnName("PrimaryContact").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.PrimaryPhone).HasColumnName("PrimaryPhone").HasMaxLength(50).IsRequired(false);
-            // Commodities is composed server-side from dbo.CustomerCommodity on read
-            // (Phase 4b). The column was dropped from dbo.ProducerDetails; the property
-            // stays on the DTO for API contract stability.
-            entity.Ignore(e => e.Commodities);
-            // GrainOnFarm is composed server-side from dbo.ProducerGrainOnFarm on read / rebuilt on upsert.
-            entity.Ignore(e => e.GrainOnFarm);
-            // Contacts is composed server-side from dbo.ProducerContact on read / rebuilt on upsert.
-            entity.Ignore(e => e.Contacts);
-            // BinSites is composed server-side from dbo.ProducerBinSite on read / rebuilt on upsert.
-            entity.Ignore(e => e.BinSites);
-            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
-            entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
-            entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
-
-            // FK to dbo.Customer — NoAction so cascading deletes from Customer don't
-            // wipe rep-authored producer details. UNIQUE index on CustomerId enforces
-            // the 1:1 relationship.
-            entity.HasOne(e => e.Customer)
-                  .WithMany()
-                  .HasForeignKey(e => e.CustomerId)
-                  .OnDelete(DeleteBehavior.NoAction)
-                  .HasConstraintName("FK_ProducerDetails_Customer_CustomerId");
-
-            entity.HasIndex(e => e.CustomerId).IsUnique().HasDatabaseName("IX_ProducerDetails_CustomerId");
         });
 
         modelBuilder.Entity<CustomerLink>(entity =>
@@ -443,96 +302,6 @@ public class ApplicationDbContext : DbContext
                   .HasDatabaseName("UQ_CustomerCommodity_Customer_Commodity");
             // Reverse-lookup index — "which customers grow commodity X?"
             entity.HasIndex(e => e.CommodityId).HasDatabaseName("IX_CustomerCommodity_CommodityId");
-        });
-
-        modelBuilder.Entity<ProducerGrainOnFarm>(entity =>
-        {
-            entity.ToTable("ProducerGrainOnFarm", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
-            entity.Property(e => e.BinSiteId).HasColumnName("BinSiteId").IsRequired(false);
-            entity.Property(e => e.CommodityCode).HasColumnName("CommodityCode").HasMaxLength(100).IsRequired();
-            entity.Property(e => e.BushelsOnHand).HasColumnName("BushelsOnHand").HasColumnType("decimal(18,2)").IsRequired(false);
-            entity.Property(e => e.BushelsSold).HasColumnName("BushelsSold").HasColumnType("decimal(18,2)").IsRequired(false);
-            entity.Property(e => e.TargetBushels).HasColumnName("TargetBushels").HasColumnType("decimal(18,2)").IsRequired(false);
-            entity.Property(e => e.LastBid).HasColumnName("LastBid").HasColumnType("decimal(18,4)").IsRequired(false);
-            entity.Property(e => e.Grade).HasColumnName("Grade").HasMaxLength(100).IsRequired(false);
-
-            entity.HasOne(e => e.Customer)
-                  .WithMany()
-                  .HasForeignKey(e => e.CustomerId)
-                  .OnDelete(DeleteBehavior.NoAction)
-                  .HasConstraintName("FK_ProducerGrainOnFarm_Customer");
-
-            // NoAction like every producer child table: the repository removes a site's grain rows
-            // before the site, in the same SaveChanges.
-            entity.HasOne(e => e.BinSite)
-                  .WithMany()
-                  .HasForeignKey(e => e.BinSiteId)
-                  .OnDelete(DeleteBehavior.NoAction)
-                  .HasConstraintName("FK_ProducerGrainOnFarm_BinSite");
-            entity.HasIndex(e => e.BinSiteId).HasDatabaseName("IX_ProducerGrainOnFarm_BinSiteId");
-
-            // One row per (customer, bin site, commodity code). HasFilter(null) drops EF's default
-            // "BinSiteId IS NOT NULL" filter so rows without a site stay one per commodity too
-            // (SQL Server treats NULLs as equal in a unique index). 100 chars, not a code-sized
-            // width, because rows saved before 2026-09-23 still hold a crop-group name.
-            entity.HasIndex(e => new { e.CustomerId, e.BinSiteId, e.CommodityCode })
-                  .IsUnique()
-                  .HasFilter(null)
-                  .HasDatabaseName("UQ_ProducerGrainOnFarm_Customer_Site_Commodity");
-        });
-
-        modelBuilder.Entity<ProducerContact>(entity =>
-        {
-            entity.ToTable("ProducerContact", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
-            entity.Property(e => e.Name).HasColumnName("Name").HasMaxLength(200).IsRequired();
-            entity.Property(e => e.Phone).HasColumnName("Phone").HasMaxLength(50).IsRequired(false);
-            entity.Property(e => e.Email).HasColumnName("Email").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.IsPrimary).HasColumnName("IsPrimary").HasDefaultValue(false).IsRequired();
-            entity.Property(e => e.SortOrder).HasColumnName("SortOrder").HasDefaultValue(0).IsRequired();
-
-            entity.HasOne(e => e.Customer)
-                  .WithMany()
-                  .HasForeignKey(e => e.CustomerId)
-                  .OnDelete(DeleteBehavior.NoAction)
-                  .HasConstraintName("FK_ProducerContact_Customer");
-
-            // Plain (non-unique) index — a producer can have many contacts, and names/labels can
-            // legitimately repeat (Dad's cell + Dad's shop), unlike the grain table's UQ.
-            entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_ProducerContact_CustomerId");
-        });
-
-        modelBuilder.Entity<ProducerBinSite>(entity =>
-        {
-            entity.ToTable("ProducerBinSite", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
-            // NEWID() default only backfills rows that existed before the column; the app always sets it.
-            entity.Property(e => e.SiteKey).HasColumnName("SiteKey").HasDefaultValueSql("NEWID()").IsRequired();
-            entity.Property(e => e.Name).HasColumnName("Name").HasMaxLength(BinSiteRules.NameMaxLength).IsRequired(false);
-            // decimal(18,15): three integer digits (±180) and fifteen places, so a full Google Maps
-            // paste is stored exactly as entered. Display shortens it; storage never does.
-            entity.Property(e => e.Latitude).HasColumnName("Latitude").HasColumnType("decimal(18,15)").IsRequired(false);
-            entity.Property(e => e.Longitude).HasColumnName("Longitude").HasColumnType("decimal(18,15)").IsRequired(false);
-            // Bushels, decimal(18,2) — the type the dropped ProducerDetails.BinCapacity had, so the values
-            // moved onto "Bin 1" sites landed exactly.
-            entity.Property(e => e.Capacity).HasColumnName("Capacity").HasColumnType("decimal(18,2)").IsRequired(false);
-            entity.Property(e => e.SortOrder).HasColumnName("SortOrder").HasDefaultValue(0).IsRequired();
-
-            entity.HasOne(e => e.Customer)
-                  .WithMany()
-                  .HasForeignKey(e => e.CustomerId)
-                  .OnDelete(DeleteBehavior.NoAction)
-                  .HasConstraintName("FK_ProducerBinSite_Customer");
-
-            entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_ProducerBinSite_CustomerId");
-            entity.HasIndex(e => e.SiteKey).IsUnique().HasDatabaseName("UQ_ProducerBinSite_SiteKey");
         });
 
         // -------------------------------------------------------------------------

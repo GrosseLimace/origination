@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
 
 namespace GrainOriginatorPortal.Infrastructure.Data;
 

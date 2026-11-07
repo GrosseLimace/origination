@@ -1,6 +1,5 @@
 using System.ComponentModel.DataAnnotations;
-
-using GrainOriginatorPortal.Api.Models.Requests;
+using GrainOriginatorPortal.Api.Modules.Producers.Models.Requests;
 
 namespace GrainOriginatorPortal.Api.Tests.Models;
 

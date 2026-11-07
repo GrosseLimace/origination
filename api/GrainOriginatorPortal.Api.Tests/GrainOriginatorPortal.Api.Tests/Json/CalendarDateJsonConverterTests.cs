@@ -2,8 +2,8 @@
 using System.Text.Json;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Infrastructure.Json;
+using GrainOriginatorPortal.Api.Modules.Producers.Models.Responses;
 
 namespace GrainOriginatorPortal.Api.Tests.Json;
 

@@ -12,8 +12,8 @@ using Moq;
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Filters;
-using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Modules.Producers.Models.Requests;
 
 namespace GrainOriginatorPortal.Api.Tests.Filters;
 

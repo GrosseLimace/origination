@@ -12,6 +12,7 @@ using GrainOriginatorPortal.Api.Controllers;
 using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Platform.Access.Controllers;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
+using GrainOriginatorPortal.Api.Modules.Producers.Controllers;
 
 namespace GrainOriginatorPortal.Api.Tests;
 

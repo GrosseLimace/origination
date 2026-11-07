@@ -23,6 +23,7 @@ using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
 
 namespace GrainOriginatorPortal.Api.Tests.Services.FieldPlan;
 

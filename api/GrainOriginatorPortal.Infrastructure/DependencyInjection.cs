@@ -148,16 +148,11 @@ public static class DependencyInjection
         services.AddScoped<IAccessGrantRepository, AccessGrantRepository>();
         services.AddScoped<IQueryLibraryRepository, QueryLibraryRepository>();
         services.AddScoped<ICommodityRepository, CommodityRepository>();
-        services.AddScoped<IStoredGrainRepository, StoredGrainRepository>();
-        services.AddScoped<IDpContractRepository, DpContractRepository>();
         services.AddScoped<ISavedListRepository, SavedListRepository>();
         services.AddScoped<IDisplayNameLookupRepository, DisplayNameLookupRepository>();
-        services.AddScoped<IProducerDetailsRepository, ProducerDetailsRepository>();
-        services.AddScoped<IPlantingIntentionRepository, PlantingIntentionRepository>();
         services.AddScoped<IFieldPlanRepository, FieldPlanRepository>();
         services.AddScoped<INoteRepository, NoteRepository>();
         services.AddScoped<IReminderRepository, ReminderRepository>();
-        services.AddScoped<IDashboardRepository, DashboardRepository>();
         // Tickets follow the same switch pattern as contracts. The CTRM ticket repository still needs
         // the ODS one — for the ticket-key index, the storage gate and the location lookup, none of
         // which CTRM can supply.

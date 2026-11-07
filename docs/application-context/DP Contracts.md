@@ -99,13 +99,13 @@ load), which would otherwise render as `1/1/01`.
 
 | Layer | Path |
 | --- | --- |
-| Entity | `api/GrainOriginatorPortal.Infrastructure/Data/Entities/DpContract.cs` (keyless, `SqlQueryRaw` result type — no `DbSet`) |
-| Conversion helper | `api/GrainOriginatorPortal.Infrastructure/Data/DpBushelConversion.cs` (pure static, unit-tested) |
+| Entity | `api/GrainOriginatorPortal.Infrastructure/Modules/Producers/Entities/DpContract.cs` (keyless, `SqlQueryRaw` result type — no `DbSet`) |
+| Conversion helper | `api/GrainOriginatorPortal.Infrastructure/Modules/Producers/Entities/DpBushelConversion.cs` (pure static, unit-tested) |
 | Context | `api/GrainOriginatorPortal.Infrastructure/Data/DpOdsDbContext.cs` |
-| Repository | `api/GrainOriginatorPortal.Infrastructure/Repositories/DpContractRepository.cs` |
-| Service | `api/GrainOriginatorPortal.Api/Services/DpContractService.cs` |
-| DTO / mapper | `Models/Responses/DpContractResponse.cs`, `Services/Mappings/DpContractMappings.cs` |
-| Controller | `api/GrainOriginatorPortal.Api/Controllers/DpContractsController.cs` |
+| Repository | `api/GrainOriginatorPortal.Infrastructure/Modules/Producers/Repositories/DpContractRepository.cs` |
+| Service | `api/GrainOriginatorPortal.Api/Modules/Producers/Services/DpContractService.cs` |
+| DTO / mapper | `Modules/Producers/Models/Responses/DpContractResponse.cs`, `Modules/Producers/Mappings/DpContractMappings.cs` |
+| Controller | `api/GrainOriginatorPortal.Api/Modules/Producers/Controllers/DpContractsController.cs` (`dp-contracts:read`) |
 | Client model | `client/src/app/models/dp-contract.model.ts` |
 | Tab component | `client/src/app/features/customers/components/dp-contracts-table/` |
 | Tests | `api/.../Services/DpContractTests.cs`, `client/.../dp-contracts-table.component.spec.ts` |

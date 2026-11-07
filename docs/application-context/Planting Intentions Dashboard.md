@@ -74,7 +74,7 @@ Every row in `dbo.ProducerPlantingIntentions` carries the trade unit it was reco
 | --- | --- |
 | Component | `client/src/app/features/dashboard/pages/dashboard/dashboard.component.ts` |
 | Template | `client/src/app/features/dashboard/pages/dashboard/dashboard.component.html` |
-| Controller | `api/GrainOriginatorPortal.Api/Controllers/DashboardPlantingEstimatesController.cs` |
+| Controller | `api/GrainOriginatorPortal.Api/Modules/Producers/Controllers/DashboardPlantingEstimatesController.cs` (`planting-estimates:read`; the three upserts and the actual-harvest delete also need `planting-estimates:write`) |
 | Service methods (group: Dashboard) | `GetDashboardSummaryAsync`, `GetDashboardPlantingEstimatesAsync`, `UpsertDashboardPlantingEstimatesAsync`, `GetDashboardMarketSharesAsync`, `UpsertDashboardMarketSharesAsync`, `GetDashboardActualHarvestAsync`, `UpsertDashboardActualHarvestAsync`, `DeleteDashboardActualHarvestAsync` |
 | App tables | `dbo.DashboardPlantingEstimates`, `dbo.DashboardMarketShares`, `dbo.DashboardActualHarvests`, `dbo.ProducerPlantingIntentions`, `dbo.Commodities` |
 | ODS views (via `getContractsByCropYear`) | `base.vw_CurrentContracts` |

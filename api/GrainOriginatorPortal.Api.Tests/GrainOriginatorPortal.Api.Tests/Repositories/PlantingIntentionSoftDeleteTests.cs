@@ -5,7 +5,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Repositories;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 
