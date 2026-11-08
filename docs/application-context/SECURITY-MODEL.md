@@ -117,6 +117,10 @@ The modules moved so far, each controller with its read on the class and a write
 | Engagement | Daily recap groups: viewing / creating, editing, enabling and deleting. Only a group's creator may delete it, as `DailyRecapGroupService` checks. | `recap-groups:read` / `recap-groups:write` |
 | Lists | Your own saved lists: viewing / creating, editing and deleting. They needed only a sign-in before. A teammate's list, and the team views, also need the team permissions listed above. | `saved-lists:read:own` / `saved-lists:write:own` |
 | Lists | The query library, its search-log POST included (it records only telemetry). It needed only a sign-in before. | `query-library:read` |
+| Bid Sheet | Bid sheets, locations and bids: viewing / creating, renaming, sharing and laying out sheets, adding, editing and deleting locations and their bids, and refreshing a location's bids from BarChart. They needed only a sign-in before. Deleting someone else's location also needs `bid-sheet-locations:delete:global` (listed above). | `bid-sheets:read` / `bid-sheets:write` |
+| Bid Sheet | Saving your own bid-sheet preference | `bid-sheets:read` and `preferences:write:own` |
+| Bid Sheet | The BarChart picker: feed locations and coverage. It needed only a sign-in before. | `bid-feed:read` |
+| Bid Sheet | BarChart ingest (listed above) | `bid-feed:manage` |
 | Producers | Planting intentions: viewing / adding, editing, retagging and deleting | `planting-intentions:read` / `:write` |
 | Producers | Producer details, contacts, grain on farm and bin sites: viewing / saving and clearing | `producer-details:read` / `:write` |
 | Producers | Incoming linked producers (`GET api/customers/linked-to/{id}`, now its own controller; it needed only a sign-in before) | `producer-details:read` |

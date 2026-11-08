@@ -125,9 +125,6 @@ public static class DependencyInjection
         services.AddScoped<IAccessGrantRepository, AccessGrantRepository>();
         services.AddScoped<ICommodityRepository, CommodityRepository>();
         services.AddScoped<IDisplayNameLookupRepository, DisplayNameLookupRepository>();
-        services.AddScoped<IBidSheetRepository, BidSheetRepository>();
-        services.AddScoped<IBarchartIngestRepository, BarchartIngestRepository>();
-        services.AddScoped<IBarchartCatalogRepository, BarchartCatalogRepository>();
         services.AddScoped<IUserPreferenceRepository, UserPreferenceRepository>();
         services.AddScoped<IEntitlementsRepository, EntitlementsRepository>();
         services.AddScoped<IUsageRepository, UsageRepository>();

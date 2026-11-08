@@ -5,7 +5,7 @@
 - **Route**: `/bid-sheet` (env-gated by `environment.bidSheetEnabled`)
 - **Component**: [`client/src/app/features/bid-sheet/pages/bid-sheet/bid-sheet.component.ts`](../../client/src/app/features/bid-sheet/pages/bid-sheet/bid-sheet.component.ts)
 - **Template**: [`bid-sheet.component.html`](../../client/src/app/features/bid-sheet/pages/bid-sheet/bid-sheet.component.html)
-- **Access**: any authenticated Scoular user, **and** the env flag is enabled.
+- **Access**: any signed-in Scoular user who holds `bid-sheets:read` (every persona role does), **and** the env flag is enabled. Changing sheets, locations and bids needs `bid-sheets:write`.
 - **Primary user goal**: track competitor bids on a map, compare them against Scoular's reference location, and edit bids per location/commodity/month.
 
 This is the merchandiser's competitive-pricing view. It overlays bid locations on a Leaflet map, color-coded by whether each location is matching, beating, or under reference.
@@ -56,9 +56,9 @@ flowchart LR
 | Print layout util (+ spec) | `client/src/app/features/bid-sheet/utils/print-layout.ts` — builds the `PrintLayoutModel` both the preview and the printed sheet render |
 | BarChart picker | `client/src/app/features/bid-sheet/components/barchart-picker/barchart-picker.component.ts` (+ `.html`, `.spec.ts`) |
 | Sheet multi-select | `client/src/app/features/bid-sheet/components/sheet-multi-select/sheet-multi-select.component.ts` (+ `.html`) — the checkbox list shared by the map toolbar and the Edit Bids header |
-| Controller | `api/GrainOriginatorPortal.Api/Controllers/BidSheetController.cs` |
-| BarChart catalog controller | `api/GrainOriginatorPortal.Api/Controllers/BarchartController.cs` |
-| Service methods (group: BidSheet) | `GetAllBidSheetLocationsAsync`, `CreateBidSheetLocationAsync`, `UpdateBidSheetLocationAsync`, `DeleteBidSheetLocationAsync`, `BulkUpsertBidSheetBidsAsync`, `DeleteBidSheetBidsAsync`, `GetBidSheetPreferenceAsync`, `SetBidSheetPreferenceAsync`, plus the sheet family (`GetSheetsAsync`, `CreateSheetAsync`, `RenameSheetAsync`, `SetSheetLayoutAsync`, `SetSheetSharesAsync`, `AddSheetLocationAsync`, `DeleteSheetAsync`) |
+| Controller | `api/GrainOriginatorPortal.Api/Modules/BidSheet/Controllers/BidSheetController.cs` |
+| BarChart catalog controller | `api/GrainOriginatorPortal.Api/Modules/BidSheet/Controllers/BarchartController.cs` |
+| Services | `BidSheetService` (locations, bids, preferences, sheets) and `BarchartCatalogService` (the picker), in `api/GrainOriginatorPortal.Api/Modules/BidSheet/Services/` |
 | App tables | `dbo.BidSheetLocations`, `dbo.BidSheetLocationBids`, `dbo.BidSheets`, `dbo.BidSheetShares`, `dbo.BidSheetLocationLinks`, `dbo.BidSheetPreferences` |
 | Geocode endpoint | `GET /api/geocode/search` (free-text search, returns lat/lon) |
 
@@ -572,9 +572,9 @@ ticked is NOT persisted — it is a per-print choice, like the crop/month sets i
 
 - `authGuard` — required.
 - **`environment.bidSheetEnabled`** — checked in [`client/src/app/app.routes.ts`](../../client/src/app/app.routes.ts) (around line 30). When false, the route isn't registered (deep links 404 / redirect home) and the sidebar doesn't show the link.
-- `[Authorize]` on `BidSheetController`. Creating or updating a location still validates the trade unit it is attributed to via `IUserEntitlementService.ValidateTradeUnitsOrThrowAsync`; reads are unscoped by design, and the two destructive operations (deleting a location, deleting a commodity's bids) are restricted to the row's creator or an admin. See AR-05 in `SECURITY-REVIEWS/ACCEPTED-RISKS.md`.
+- `BidSheetController` needs `bid-sheets:read`, and every write on it `bid-sheets:write`, except saving your bid-sheet preference, which needs `preferences:write:own`. Creating or updating a location still validates the trade unit it is attributed to via `IUserEntitlementService.ValidateTradeUnitsOrThrowAsync`; reads are unscoped by design, and the two destructive operations (deleting a location, deleting a commodity's bids) are restricted to the row's creator or a holder of `bid-sheet-locations:delete:global`. See AR-05 in `SECURITY-REVIEWS/ACCEPTED-RISKS.md`.
 - **`environment.barchartBidsEnabled`** — gates the "Add from BarChart" entry point and the fed-bid badges. Read directly by the component (not the router), so the screen still works normally when it's off. Currently **on for local and dev, off for QA and prod**, since the vendor feed is only loaded in dev.
-- `[Authorize]` on `BarchartController` too, but catalog reads are deliberately **not** TU-scoped: the catalog is global vendor data with no Scoular customer information in it. TU entitlement is enforced on the write that creates a placement, and on `refresh-bids`, against the row's persisted trade unit.
+- `BarchartController` needs `bid-feed:read`, and `refresh-bids` also `bid-sheets:write`. Catalog reads are deliberately **not** TU-scoped: the catalog is global vendor data with no Scoular customer information in it. TU entitlement is enforced on the write that creates a placement, and on `refresh-bids`, against the row's persisted trade unit.
 
 ## External integrations
 

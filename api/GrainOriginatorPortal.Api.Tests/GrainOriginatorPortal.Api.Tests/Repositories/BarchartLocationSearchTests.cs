@@ -1,5 +1,5 @@
 // Project namespaces
-using GrainOriginatorPortal.Infrastructure.Abstractions;
+using GrainOriginatorPortal.Infrastructure.Modules.BidSheet.Abstractions;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 

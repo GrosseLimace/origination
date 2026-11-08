@@ -1316,6 +1316,13 @@ Dev-only and gated behind `environment.barchartBidsEnabled`; it must not reach P
 
 **Rewritten by:** Origination engineering — 2026-09-02. Supersedes the 2026-06-23 acceptance.
 
+_Update (2026-11-08) — Bid Sheet module._ `BidSheetController` and `BarchartController` moved to
+`Api/Modules/BidSheet/Controllers/`. Reading sheets, locations and bids now needs `bid-sheets:read` and every change
+`bid-sheets:write`, where before they needed only a sign-in; the BarChart picker needs `bid-feed:read`. Every persona
+role holds the reads and `Editor` holds the write, so the company-wide scope this entry accepts is unchanged. Deleting a
+location is still limited to its creator, or a holder of `bid-sheet-locations:delete:global` (Phase 1's replacement
+for the admin check above).
+
 ---
 
 ## AR-06 — Production SQL hostnames / database names in source control

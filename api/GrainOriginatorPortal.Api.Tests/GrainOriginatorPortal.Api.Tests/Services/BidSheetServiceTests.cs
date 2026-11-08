@@ -5,12 +5,15 @@ using Moq;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
+using GrainOriginatorPortal.Infrastructure.Platform.Extensions;
+using GrainOriginatorPortal.Api.Modules.BidSheet.Models.Requests;
+using GrainOriginatorPortal.Api.Modules.BidSheet.Services;
+using GrainOriginatorPortal.Infrastructure.Modules.BidSheet.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.BidSheet.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 
@@ -31,7 +34,8 @@ public class BidSheetServiceTests
         _sut = new BidSheetService(
             _repo.Object, _requestContext.Object, _entitlementService.Object,
             _barchartCatalog.Object, _barchartIngest.Object,
-            _entitlements.Object, _permissions.Object, NullLogger<BidSheetService>.Instance);
+            _entitlements.Object, _permissions.Object, new Mock<IRecapGroupMembership>().Object,
+            NullLogger<BidSheetService>.Instance);
     }
 
     private static CreateBidSheetLocationRequest Request(string name = "Kansas West", string tu = "TU1") => new()

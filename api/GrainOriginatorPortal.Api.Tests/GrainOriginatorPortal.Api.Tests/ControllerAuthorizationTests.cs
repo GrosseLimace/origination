@@ -18,6 +18,8 @@ using GrainOriginatorPortal.Api.Modules.Customers.Controllers;
 using GrainOriginatorPortal.Api.Modules.Contracts.Controllers;
 using GrainOriginatorPortal.Api.Modules.Engagement.Controllers;
 using GrainOriginatorPortal.Api.Modules.Lists.Controllers;
+using GrainOriginatorPortal.Api.Modules.BidSheet.Controllers;
+using GrainOriginatorPortal.Infrastructure.Modules.BidSheet.Entities;
 
 namespace GrainOriginatorPortal.Api.Tests;
 

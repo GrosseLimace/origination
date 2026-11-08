@@ -4,11 +4,13 @@ using Microsoft.Extensions.DependencyInjection;
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Repositories;
+using GrainOriginatorPortal.Infrastructure.Platform.Extensions;
 
 namespace GrainOriginatorPortal.Infrastructure.Modules.Engagement;
 
 /// <summary>
-/// The Engagement module's repositories: notes, reminders, daily recap groups and Teams channels.
+/// The Engagement module's repositories (notes, reminders, daily recap groups and Teams channels) and the
+/// recap-group membership Bid Sheet asks for.
 /// <c>AddEngagementModule</c> in the Api calls this.
 /// </summary>
 public static class EngagementInfrastructure
@@ -19,6 +21,9 @@ public static class EngagementInfrastructure
         services.AddScoped<IReminderRepository, ReminderRepository>();
         services.AddScoped<IDailyRecapGroupRepository, DailyRecapGroupRepository>();
         services.AddScoped<ITeamsChannelRepository, TeamsChannelRepository>();
+
+        // Which recap groups a caller is in, for Bid Sheet's sharing.
+        services.AddScoped<IRecapGroupMembership, RecapGroupMembership>();
         return services;
     }
 }

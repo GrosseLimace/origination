@@ -1,7 +1,7 @@
 using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
-using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.BidSheet.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.BidSheet.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Modules.BidSheet.Repositories;
 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;

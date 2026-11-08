@@ -27,6 +27,7 @@ using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Platform.DocStore;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Modules.BidSheet;
 using GrainOriginatorPortal.Api.Modules.Contracts;
 using GrainOriginatorPortal.Api.Modules.Customers;
 using GrainOriginatorPortal.Api.Modules.Engagement;
@@ -296,15 +297,13 @@ builder.Services.AddContractsModule();
 builder.Services.AddEngagementModule();
 builder.Services.AddProducersModule(builder.Configuration);
 builder.Services.AddListsModule();
+builder.Services.AddBidSheetModule();
 
 // Per-domain services (Api layer) — controllers depend on these.
 builder.Services.AddScoped<ICommodityService, CommodityService>();
 // Admin diagnostics: six services the DiagnosticsController delegates to (schema, CTRM probes, commodity
 // seed, elevator cache, usage-rollup backfill, app-access members). Registered together in one place.
 builder.Services.AddDiagnosticsServices();
-builder.Services.AddScoped<IBidSheetService, BidSheetService>();
-builder.Services.AddScoped<IBarchartIngestService, BarchartIngestService>();
-builder.Services.AddScoped<IBarchartCatalogService, BarchartCatalogService>();
 builder.Services.AddScoped<IUserPreferenceService, UserPreferenceService>();
 builder.Services.AddScoped<IUserTradeUnitService, UserTradeUnitService>();
 builder.Services.AddScoped<ITradeUnitService, TradeUnitService>();

@@ -1,0 +1,146 @@
+using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Api.Modules.BidSheet.Models.Responses;
+using GrainOriginatorPortal.Infrastructure.Modules.BidSheet.Entities;
+
+namespace GrainOriginatorPortal.Api.Modules.BidSheet.Mappings;
+
+/// <summary>Manual entity → response mappings for the bid-sheet domain.</summary>
+public static class BidSheetMappings
+{
+    public static ElevatorCacheResponse ToResponse(this ElevatorCache e) => new()
+    {
+        ElevatorCode = e.ElevatorCode,
+        ElevatorShortName = e.ElevatorShortName,
+        ElevatorName = e.ElevatorName,
+        Address = e.Address,
+        City = e.City,
+        State = e.State,
+        ZipCode = e.ZipCode,
+        OurFacility = e.OurFacility,
+        TradeUnitCode = e.TradeUnitCode,
+        Latitude = e.Latitude,
+        Longitude = e.Longitude,
+        IsActive = e.IsActive,
+        LastRefreshedAt = e.LastRefreshedAt,
+    };
+
+    public static BidSheetLocationBidResponse ToResponse(this BidSheetLocationBid b) => new()
+    {
+        Id = b.Id,
+        LocationId = b.LocationId,
+        CommodityCode = b.CommodityCode,
+        CommodityName = b.CommodityName,
+        CommodityCategory = b.CommodityCategory,
+        CropYear = b.CropYear,
+        Month = b.Month,
+        Bid = b.Bid,
+        Source = b.Source,
+        BarchartSymbol = b.BarchartSymbol,
+        QuoteAsOf = b.QuoteAsOf,
+        BasisBid = b.BasisBid,
+        BasisSymbol = b.BasisSymbol,
+        UnderlyingFuture = b.UnderlyingFuture,
+        BasisQuoteAsOf = b.BasisQuoteAsOf,
+        CoveredByCropYear = b.CoveredByCropYear,
+        CoveredByMonth = b.CoveredByMonth,
+        CashChangedAt = b.CashChangedAt,
+        BasisChangedAt = b.BasisChangedAt,
+        CreatedBy = b.CreatedBy,
+        CreatedAt = b.CreatedAt,
+        ModifiedBy = b.ModifiedBy,
+        ModifiedAt = b.ModifiedAt,
+    };
+
+    public static BidSheetLocationResponse ToResponse(this BidSheetLocation l) => new()
+    {
+        Id = l.Id,
+        Name = l.Name,
+        Address = l.Address,
+        City = l.City,
+        State = l.State,
+        Latitude = l.Latitude,
+        Longitude = l.Longitude,
+        ElevatorCode = l.ElevatorCode,
+        BarchartLocationKey = l.BarchartLocationKey,
+        TradeUnitCode = l.TradeUnitCode,
+        GroupName = l.GroupName,
+        IsScoularFacility = l.IsScoularFacility,
+        CreatedBy = l.CreatedBy,
+        CreatedAt = l.CreatedAt,
+        ModifiedBy = l.ModifiedBy,
+        ModifiedAt = l.ModifiedAt,
+        Bids = l.Bids.Select(b => b.ToResponse()).ToList(),
+    };
+
+    public static BidSheetPreferenceResponse ToResponse(this BidSheetPreference p) => new()
+    {
+        Id = p.Id,
+        UserId = p.UserId,
+        TradeUnitKey = p.TradeUnitKey,
+        CropCode = p.CropCode,
+        Month = p.Month,
+        CropYear = p.CropYear,
+        SelectedColumns = p.SelectedColumns,
+        CropOrder = p.CropOrder,
+        HiddenCrops = p.HiddenCrops,
+        SelectedMonths = p.SelectedMonths,
+        SelectedYears = p.SelectedYears,
+        PrintLayout = p.PrintLayout,
+        PriceMode = p.PriceMode,
+        SelectedBidSheetIds = p.SelectedBidSheetIds,
+        ModifiedAt = p.ModifiedAt,
+    };
+
+    /// <summary>
+    /// A sheet with its shares and, in row order, the locations behind its links.
+    ///
+    /// <paramref name="callerUserId"/> decides <c>IsOwner</c>. It is passed rather than read from the
+    /// entity so the mapping stays a pure function of what it is given, matching every other mapping
+    /// here; the service is the only place that knows who is asking.
+    /// </summary>
+    public static BidSheetResponse ToResponse(this Infrastructure.Modules.BidSheet.Entities.BidSheet s, string callerUserId) => new()
+    {
+        Id = s.Id,
+        Name = s.Name,
+        OwnerUserId = s.OwnerUserId,
+        IsOwner = string.Equals(s.OwnerUserId, callerUserId, StringComparison.OrdinalIgnoreCase),
+        CropOrder = s.CropOrder,
+        HiddenCrops = s.HiddenCrops,
+        SelectedMonths = s.SelectedMonths,
+        SelectedYears = s.SelectedYears,
+        CreatedBy = s.CreatedBy,
+        CreatedAt = s.CreatedAt,
+        ModifiedBy = s.ModifiedBy,
+        ModifiedAt = s.ModifiedAt,
+        Shares = s.Shares
+            .OrderBy(sh => sh.MemberName ?? sh.MemberId, StringComparer.OrdinalIgnoreCase)
+            .Select(sh => sh.ToResponse())
+            .ToList(),
+        // Order again here rather than trusting the include: a sheet built in memory (a fresh create,
+        // a test) has no ordering applied, and a row order that only holds when it came from SQL is
+        // the kind of thing that works until it quietly does not.
+        // The link's DisplayName wins over the shared row's canonical Name. Locations are company-wide,
+        // so a rename has to stay private to the sheet that made it, or two originators holding the
+        // same elevator overwrite each other's label. Null means "never renamed here", which keeps
+        // following the canonical name as the feed corrects it. Everything else -- id, coords, bids --
+        // is still the shared row's.
+        Locations = s.Locations
+            .OrderBy(l => l.SortOrder)
+            .Where(l => l.Location != null)
+            .Select(l => l.Location!.ToResponse() with { Name = l.DisplayName ?? l.Location!.Name })
+            .ToList(),
+    };
+
+    public static BidSheetShareResponse ToResponse(this BidSheetShare sh) => new()
+    {
+        MemberType = sh.MemberType,
+        MemberId = sh.MemberId,
+        // Only a person share fills UserId. A desk or group id in that field would read to any older
+        // caller as somebody's user id, which is worse than an empty string.
+        UserId = sh.MemberType == BidSheetShareTypes.Person ? sh.MemberId : string.Empty,
+        Name = sh.MemberName,
+        SharedBy = sh.SharedBy,
+        SharedAt = sh.SharedAt,
+    };
+}
