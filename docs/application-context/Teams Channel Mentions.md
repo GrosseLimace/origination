@@ -145,10 +145,10 @@ one does not exist, removing the "someone must click Get email address first" st
 
 ## Files
 
-- API: `Controllers/TeamsChannelsController.cs`, `Services/TeamsChannelService.cs`,
+- API, in `Api/Modules/Engagement/`: `Controllers/TeamsChannelsController.cs`, `Services/TeamsChannelService.cs`,
   `Models/TeamsChannelAddress.cs`, `Services/NoteService.cs` (`ValidateTeamsChannelMentionsAsync`)
-- Data: `Data/Entities/TeamsChannel.cs`, migration `AddTeamsChannelRegistry`
-- Graph on-behalf-of: `Services/TeamsDirectoryService.cs`, enabled in `Program.cs`
+- Data: `Infrastructure/Modules/Engagement/Entities/TeamsChannel.cs`, migration `AddTeamsChannelRegistry`
+- Graph on-behalf-of: `Api/Modules/Engagement/Services/TeamsDirectoryService.cs`, enabled in `Program.cs`
   (`EnableTokenAcquisitionToCallDownstreamApi` + `AddInMemoryTokenCaches`)
 - Client: `core/services/teams-directory.service.ts` (now just calls our API),
   `features/customers/components/customer-notes/`

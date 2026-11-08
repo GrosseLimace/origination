@@ -1,3 +1,4 @@
+
 namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
 
 /// <summary>
@@ -8,7 +9,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
 /// This started people-only, on the argument that naming a person keeps a sheet's membership from
 /// changing when somebody's desk assignment does. In practice that made sharing with a desk a chore of
 /// adding its members one by one, and left the list stale the moment somebody moved. It now copies
-/// <see cref="DailyRecapGroupMember"/>'s discriminator taxonomy verbatim (person / trade-unit /
+/// <c>DailyRecapGroupMember</c>'s discriminator taxonomy verbatim (person / trade-unit /
 /// trade-unit-group, plus recap-group here), and membership is re-resolved on every read — so a new
 /// hire on desk 2190 can open the sheet without anyone editing it.
 ///

@@ -6,16 +6,18 @@ using Moq;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
-using GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
+using GrainOriginatorPortal.Api.Modules.Customers.Services;
+using GrainOriginatorPortal.Api.Modules.Engagement.Services;
+using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 
 public class NoteServiceTests
 {
     private readonly Mock<INoteRepository> _repositoryMock = new();
-    private readonly Mock<ICustomerRepository> _customerRepositoryMock = new();
+    private readonly Mock<ICustomerLookup> _customersMock = new();
     private readonly Mock<IDisplayNameLookupRepository> _displayNameMock = new();
     private readonly Mock<IRequestContextService> _requestContextMock = new();
     private readonly Mock<IDailyRecapGroupService> _groupsMock = new();
@@ -35,7 +37,7 @@ public class NoteServiceTests
         // entitlement-gated (trade units scope producers, not notes; AR-02).
         _sut = new NoteService(
             _repositoryMock.Object,
-            _customerRepositoryMock.Object,
+            _customersMock.Object,
             _displayNameMock.Object,
             _requestContextMock.Object,
             _groupsMock.Object, MentionTestDoubles.TeamsChannelStub(),

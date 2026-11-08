@@ -12,6 +12,7 @@ using Moq;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Modules.Engagement.Services;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

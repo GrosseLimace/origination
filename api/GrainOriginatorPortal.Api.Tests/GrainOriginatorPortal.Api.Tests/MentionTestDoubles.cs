@@ -1,7 +1,7 @@
 using Moq;
+using GrainOriginatorPortal.Api.Modules.Engagement.Models;
+using GrainOriginatorPortal.Api.Modules.Engagement.Services;
 
-using GrainOriginatorPortal.Api.Models;
-using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Tests;
 

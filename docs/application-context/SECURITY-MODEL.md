@@ -111,6 +111,10 @@ The modules moved so far, each controller with its read on the class and a write
 | Customers | Customer sync diagnostics (listed above) | `customer-sync:manage` |
 | Contracts | Contracts (the list, a customer's, by crop year) and pricing lines (by contract and by customer). They needed only a sign-in before. | `contracts:read` |
 | Contracts | Delivery tickets (the list, today's for Spot Loads, a customer's, a customer's unapplied, a contract's applied). They needed only a sign-in before. | `tickets:read` |
+| Engagement | Notes (the list, last contact, a customer's, the mention catalog): viewing / writing, editing, pinning and deleting any note. They needed only a sign-in before. | `notes:read` / `notes:write` |
+| Engagement | Your own reminders: viewing / creating, editing, completing, deleting and adding to Outlook. Every endpoint touches only the caller's own. | `reminders:read:own` / `reminders:write:own` |
+| Engagement | Teams channels: the registered list and your own channels / registering a channel picked in the note composer | `teams-channels:read` / `notes:write` |
+| Engagement | Daily recap groups: viewing / creating, editing, enabling and deleting. Only a group's creator may delete it, as `DailyRecapGroupService` checks. | `recap-groups:read` / `recap-groups:write` |
 | Producers | Planting intentions: viewing / adding, editing, retagging and deleting | `planting-intentions:read` / `:write` |
 | Producers | Producer details, contacts, grain on farm and bin sites: viewing / saving and clearing | `producer-details:read` / `:write` |
 | Producers | Incoming linked producers (`GET api/customers/linked-to/{id}`, now its own controller; it needed only a sign-in before) | `producer-details:read` |

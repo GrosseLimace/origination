@@ -4,10 +4,13 @@ using Moq;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Api.Modules.Engagement.Models.Requests;
+using GrainOriginatorPortal.Api.Modules.Engagement.Services;
+using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

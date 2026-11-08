@@ -29,6 +29,7 @@ using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Modules.Contracts;
 using GrainOriginatorPortal.Api.Modules.Customers;
+using GrainOriginatorPortal.Api.Modules.Engagement;
 using GrainOriginatorPortal.Api.Modules.Producers;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -291,18 +292,16 @@ builder.Services.AddScoped<IRequestContextService, RequestContextService>();
 // Modules: each registers its own services and, through its Infrastructure counterpart, its repositories.
 builder.Services.AddCustomersModule();
 builder.Services.AddContractsModule();
+builder.Services.AddEngagementModule();
 builder.Services.AddProducersModule(builder.Configuration);
 
 // Per-domain services (Api layer) — controllers depend on these.
 builder.Services.AddScoped<IQueryLibraryService, QueryLibraryService>();
 builder.Services.AddScoped<ICommodityService, CommodityService>();
 builder.Services.AddScoped<ISavedListService, SavedListService>();
-builder.Services.AddScoped<INoteService, NoteService>();
-builder.Services.AddScoped<IReminderService, ReminderService>();
 // Admin diagnostics: six services the DiagnosticsController delegates to (schema, CTRM probes, commodity
 // seed, elevator cache, usage-rollup backfill, app-access members). Registered together in one place.
 builder.Services.AddDiagnosticsServices();
-builder.Services.AddScoped<IOutlookCalendarService, OutlookCalendarService>();
 builder.Services.AddScoped<IBidSheetService, BidSheetService>();
 builder.Services.AddScoped<IBarchartIngestService, BarchartIngestService>();
 builder.Services.AddScoped<IBarchartCatalogService, BarchartCatalogService>();
@@ -318,12 +317,9 @@ builder.Services.AddScoped<IManagerDirectoryService, ManagerDirectoryService>();
 // Generation stamp that lets an excluded-user edit invalidate the (scoped) dashboard service's
 // cached user universes process-wide. Singleton by necessity — see the type's remarks.
 builder.Services.AddSingleton<UsageUniverseCacheState>();
-builder.Services.AddScoped<IDailyRecapGroupService, DailyRecapGroupService>();
-builder.Services.AddScoped<ITeamsChannelService, TeamsChannelService>();
 builder.Services.AddScoped<IEntitlementsDirectoryService, EntitlementsDirectoryService>();
 // Read once: the connection string and the switch are app settings, which restart the app when changed.
 builder.Services.AddSingleton(ClientTelemetrySettings.From(builder.Configuration));
-builder.Services.AddScoped<ITeamsDirectoryService, TeamsDirectoryService>();
 // Graph directory client (app-access spike) — singleton so the cached Graph token is shared.
 // Credential split mirrors the Key Vault bootstrap at the top of this file: managed identity
 // on App Service, the developer's own credential locally (skip the IMDS probe).
@@ -528,35 +524,6 @@ builder.Services.AddHttpClient(GrainOriginatorPortal.Api.Services.Ctrm.CtrmGraph
     // TimeoutRejectedException is deliberately NOT in the retry ShouldHandle above: a hung attempt should
     // fail fast to EgressBlocked, which names the remediation, rather than being retried twice more.
     pipeline.AddTimeout(TimeSpan.FromSeconds(45));
-});
-
-// A second Graph client for the ONE call that must never be re-sent: creating an Outlook calendar
-// event. POST /me/events is non-idempotent and has no idempotency key, so when Graph accepts the
-// event but the response is lost — a client timeout, a reset, a gateway 504 raised after the event
-// was already written — a retry produces a SECOND event on the user's calendar. The shared "graph"
-// client above retries on exactly those failures (HttpRequestException / TaskCanceledException,
-// which is what its 10s timeout surfaces as), so a single create could land three events.
-//
-// This is the same hazard the Instant Share Note workflow hit with Graph sendMail, where the default
-// policy mailed up to five copies of one note; that was fixed with retryPolicy: none. Reads and the
-// idempotent calendar calls (PATCH the window, DELETE the event) keep using "graph" and its retry.
-//
-// The circuit breaker is kept: it fails fast, it does not re-send.
-builder.Services.AddHttpClient("graph-no-retry", client =>
-{
-    client.BaseAddress = new Uri("https://graph.microsoft.com/v1.0/");
-    client.Timeout = TimeSpan.FromSeconds(10);
-})
-.AddHttpMessageHandler<CorrelationIdOutboundHandler>()
-.AddResilienceHandler("graph-no-retry", pipeline =>
-{
-    pipeline.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
-    {
-        FailureRatio = 0.5,
-        SamplingDuration = TimeSpan.FromSeconds(30),
-        MinimumThroughput = 5,
-        BreakDuration = TimeSpan.FromSeconds(30)
-    });
 });
 
 // =============================================================================

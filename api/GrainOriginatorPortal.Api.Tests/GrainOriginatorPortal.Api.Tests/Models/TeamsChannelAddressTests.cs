@@ -1,4 +1,5 @@
-using GrainOriginatorPortal.Api.Models;
+using GrainOriginatorPortal.Api.Modules.Engagement.Models;
+
 
 namespace GrainOriginatorPortal.Api.Tests.Models;
 

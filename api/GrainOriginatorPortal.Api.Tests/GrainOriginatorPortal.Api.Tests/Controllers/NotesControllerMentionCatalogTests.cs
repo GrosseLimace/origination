@@ -9,10 +9,11 @@ using Microsoft.Extensions.Logging;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Controllers;
-using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Data;
+using GrainOriginatorPortal.Api.Modules.Engagement.Controllers;
+using GrainOriginatorPortal.Api.Modules.Engagement.Models;
+using GrainOriginatorPortal.Api.Modules.Engagement.Services;
 using System.Security.Claims;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;

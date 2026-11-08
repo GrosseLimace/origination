@@ -16,6 +16,7 @@ using GrainOriginatorPortal.Api.Modules.Producers.Controllers;
 using GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.Controllers;
 using GrainOriginatorPortal.Api.Modules.Customers.Controllers;
 using GrainOriginatorPortal.Api.Modules.Contracts.Controllers;
+using GrainOriginatorPortal.Api.Modules.Engagement.Controllers;
 
 namespace GrainOriginatorPortal.Api.Tests;
 

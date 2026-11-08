@@ -1,3 +1,4 @@
+
 namespace GrainOriginatorPortal.Infrastructure.Interfaces;
 
 /// <summary>
@@ -6,7 +7,7 @@ namespace GrainOriginatorPortal.Infrastructure.Interfaces;
 /// list you can edit it (DELETE stays owner-only, enforced separately).
 /// </summary>
 /// <remarks>
-/// Deliberately the same shape as <see cref="RecapGroupAccess"/>, which solves the same problem for
+/// Deliberately the same shape as <c>RecapGroupAccess</c>, which solves the same problem for
 /// Daily Recap groups, plus <see cref="RecapGroupIds"/> — a bid sheet can be shared with a recap group,
 /// and recap-group membership is itself people/units/groups, so that second hop has to be resolved
 /// before the predicate runs rather than inside it.

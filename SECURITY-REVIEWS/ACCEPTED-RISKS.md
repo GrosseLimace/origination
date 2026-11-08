@@ -474,6 +474,11 @@ holds them through the default `Originator` + `Editor` roles. Once roles come fr
 originator without `Editor` can read the field plan and its documents but not change them, the same read-only rule
 as every other edit.
 
+_Update (2026-11-08) — Engagement module._ `NotesController` moved to `Api/Modules/Engagement/Controllers/`. Its three
+mutation routes listed above, and creating a note, now need `notes:write` on top of the controller's `notes:read`, where
+before they needed only a sign-in. `Editor` holds `notes:write`, so the scope decision is unchanged: whoever holds it may
+edit, pin or delete any note.
+
 ---
 
 ## AR-02 — Customer-scoped reads not restricted by trade-unit entitlement
@@ -906,6 +911,10 @@ _Update (2026-11-08) — Contracts module._ `ContractsController` and `TicketsCo
 `Api/Modules/Contracts/Controllers/`. The contract routes listed above (by customer, both pricing-line routes) now need
 `contracts:read`, and `GET /api/tickets/customer/{customerId}` needs `tickets:read`, where before they needed only a
 sign-in. Every persona role holds both, and the reads are still not scoped by trade unit, as this entry accepts.
+
+_Update (2026-11-08) — Engagement module._ `NotesController` moved to `Api/Modules/Engagement/Controllers/`. The notes
+routes listed above (by customer, the bulk list, last contact) now need `notes:read`, where before they needed only a
+sign-in. Every persona role holds it, and the reads are still not scoped by trade unit, as this entry accepts.
 
 ---
 

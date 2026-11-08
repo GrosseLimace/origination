@@ -2,13 +2,16 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Services.Mappings;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
-using GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
+using GrainOriginatorPortal.Api.Modules.Customers.Services;
+using GrainOriginatorPortal.Api.Modules.Engagement.Models;
+using GrainOriginatorPortal.Api.Modules.Engagement.Services;
+using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Interfaces;
+using GrainOriginatorPortal.Api.Modules.Engagement.Mappings;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
@@ -164,8 +167,8 @@ public class NoteMentionSerializationTests
             .Callback<long, string, string?, bool, string, CancellationToken>((_, _, mentionsJson, _, _, _) => captured.Add(mentionsJson))
             .ReturnsAsync(note);
 
-        var customerRepo = new Mock<ICustomerRepository>();
-        customerRepo.Setup(c => c.GetFirstActiveTradeUnitAsync(It.IsAny<long>(), It.IsAny<CancellationToken>())).ReturnsAsync("OMAHA");
+        var customers = new Mock<ICustomerLookup>();
+        customers.Setup(c => c.GetActiveTradeUnitCodesAsync(It.IsAny<long>(), It.IsAny<CancellationToken>())).ReturnsAsync(["OMAHA"]);
         var names = new Mock<IDisplayNameLookupRepository>();
         names.Setup(n => n.ResolveAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<string, string>());
@@ -179,7 +182,7 @@ public class NoteMentionSerializationTests
         entitlements.Setup(e => e.GetActiveUserIdsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyCollection<string> ids, CancellationToken _) => ids.ToHashSet(StringComparer.OrdinalIgnoreCase));
 
-        var svc = new NoteService(repo.Object, customerRepo.Object, names.Object, ctx.Object,
+        var svc = new NoteService(repo.Object, customers.Object, names.Object, ctx.Object,
             groups.Object, teamsChannels ?? MentionTestDoubles.TeamsChannelStub(),
             entitlements.Object, new Mock<ILogger<NoteService>>().Object);
         return (svc, captured);
@@ -531,7 +534,7 @@ public class NoteMentionSerializationTests
 
     private static NoteService BuildServiceWith(Mock<INoteRepository> repo)
     {
-        var customerRepo = new Mock<ICustomerRepository>();
+        var customers = new Mock<ICustomerLookup>();
         var names = new Mock<IDisplayNameLookupRepository>();
         names.Setup(n => n.ResolveAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<string, string>());
@@ -542,7 +545,7 @@ public class NoteMentionSerializationTests
         var entitlements = new Mock<IEntitlementsRepository>();
         entitlements.Setup(e => e.GetActiveUserIdsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyCollection<string> ids, CancellationToken _) => ids.ToHashSet(StringComparer.OrdinalIgnoreCase));
-        return new NoteService(repo.Object, customerRepo.Object, names.Object, ctx.Object,
+        return new NoteService(repo.Object, customers.Object, names.Object, ctx.Object,
             groups.Object, MentionTestDoubles.TeamsChannelStub(), entitlements.Object, new Mock<ILogger<NoteService>>().Object);
     }
 

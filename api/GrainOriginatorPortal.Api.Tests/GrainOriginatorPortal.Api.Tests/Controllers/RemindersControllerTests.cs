@@ -6,11 +6,11 @@ using Microsoft.Extensions.Logging;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Controllers;
 using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Models.Requests;
-using GrainOriginatorPortal.Api.Models.Responses;
-using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Modules.Engagement.Controllers;
+using GrainOriginatorPortal.Api.Modules.Engagement.Models.Requests;
+using GrainOriginatorPortal.Api.Modules.Engagement.Models.Responses;
+using GrainOriginatorPortal.Api.Modules.Engagement.Services;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 

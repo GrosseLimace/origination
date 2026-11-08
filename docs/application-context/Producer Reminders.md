@@ -28,7 +28,7 @@ as an "Add to Outlook" retry on the row.
 ## Data
 
 `dbo.ProducerReminders`, migration `AddProducerReminders`, entity
-`GrainOriginatorPortal.Infrastructure/Data/Entities/ProducerReminder.cs`.
+`GrainOriginatorPortal.Infrastructure/Modules/Engagement/Entities/ProducerReminder.cs`.
 
 `CustomerName` / `CustomerCode` are **not columns** — they come from the `dbo.Customer` FK join on
 read, the same decision Notes made in Phase 3b, so a producer rename cannot leave a stale copy.
@@ -38,7 +38,8 @@ pane, and `IX_ProducerReminders_CreatedBy_DueAt` (filtered `IsCompleted = 0`) fo
 
 ## API
 
-`api/reminders`, all routes `[Authorize]` and scoped to the caller.
+`api/reminders`, all routes scoped to the caller. Reading needs `reminders:read:own`, and creating, editing,
+completing, deleting or adding to Outlook also needs `reminders:write:own`; every persona role holds both.
 
 | Route | Purpose |
 |---|---|
@@ -65,7 +66,7 @@ same call and Graph needs a local time plus a zone name.
 
 The event belongs to the user, so the permission is **delegated** `Calendars.ReadWrite` — but it is
 held on the **API app registration**, not the SPA, and the API calls `POST /me/events` **on-behalf-of**
-the caller (`Api/Services/OutlookCalendarService.cs`). The browser never holds a Graph token.
+the caller (`Api/Modules/Engagement/Services/OutlookCalendarService.cs`). The browser never holds a Graph token.
 
 **Permission checklist, per environment.** This page is the record of it. `developer-docs/APP-REGISTRATIONS.md`
 used to list `Calendars.ReadWrite` on each SPA registration, but that text was out of date (it predated the
@@ -118,7 +119,7 @@ failures (`HttpRequestException` / `TaskCanceledException`, which is what its 10
 surfaces as), so a single create could have landed three events.
 
 So `CreateEventAsync` uses a separate **`"graph-no-retry"`** client: same base address, timeout and
-correlation handler, circuit breaker kept (it fails fast, it does not re-send), but no retry.
+correlation handler, circuit breaker kept (it fails fast, it does not re-send), but no retry. `AddEngagementModule` registers it.
 `UpdateEventWindowAsync` and `DeleteEventAsync` keep `"graph"` — patching the same window twice is
 the same result, and an already-missing event already counts as success. `OutlookCalendarServiceTests`
 asserts which client each of the three calls asks for, so the distinction cannot quietly regress.

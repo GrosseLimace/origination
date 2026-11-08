@@ -1,11 +1,13 @@
 using System.Threading;
 using System.Threading.Tasks;
 using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
-using GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
+using GrainOriginatorPortal.Api.Modules.Customers.Services;
+using GrainOriginatorPortal.Api.Modules.Engagement.Models;
+using GrainOriginatorPortal.Api.Modules.Engagement.Services;
+using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Interfaces;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
@@ -106,7 +108,8 @@ public class NoteMentionIdValidationTests
             .Callback<long, string, string?, string?, string, CancellationToken>((_, _, _, m, _, _) => json = m ?? string.Empty)
             .ReturnsAsync(new Note { Id = 1, CustomerId = 1, CreatedBy = "CEgr", Description = "note" });
 
-        var customerRepo = new Mock<ICustomerRepository>();
+        var customers = new Mock<ICustomerLookup>();
+        customers.Setup(c => c.GetActiveTradeUnitCodesAsync(It.IsAny<long>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
         var names = new Mock<IDisplayNameLookupRepository>();
         names.Setup(n => n.ResolveAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<string, string>());
@@ -119,7 +122,7 @@ public class NoteMentionIdValidationTests
         entitlements.Setup(e => e.GetActiveUserIdsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyCollection<string> ids, CancellationToken _) => ids.ToHashSet(System.StringComparer.OrdinalIgnoreCase));
 
-        var svc = new NoteService(repo.Object, customerRepo.Object, names.Object, ctx.Object,
+        var svc = new NoteService(repo.Object, customers.Object, names.Object, ctx.Object,
             groups.Object, MentionTestDoubles.TeamsChannelStub(), entitlements.Object, new Mock<ILogger<NoteService>>().Object);
         return (svc, () => json);
     }

@@ -127,16 +127,12 @@ public static class DependencyInjection
         services.AddScoped<ICommodityRepository, CommodityRepository>();
         services.AddScoped<ISavedListRepository, SavedListRepository>();
         services.AddScoped<IDisplayNameLookupRepository, DisplayNameLookupRepository>();
-        services.AddScoped<INoteRepository, NoteRepository>();
-        services.AddScoped<IReminderRepository, ReminderRepository>();
         services.AddScoped<IBidSheetRepository, BidSheetRepository>();
         services.AddScoped<IBarchartIngestRepository, BarchartIngestRepository>();
         services.AddScoped<IBarchartCatalogRepository, BarchartCatalogRepository>();
         services.AddScoped<IUserPreferenceRepository, UserPreferenceRepository>();
         services.AddScoped<IEntitlementsRepository, EntitlementsRepository>();
         services.AddScoped<IUsageRepository, UsageRepository>();
-        services.AddScoped<IDailyRecapGroupRepository, DailyRecapGroupRepository>();
-        services.AddScoped<ITeamsChannelRepository, TeamsChannelRepository>();
         services.AddScoped<IMbpLocationSynonymRepository, MbpLocationSynonymRepository>();
 
         return services;
