@@ -1,9 +1,10 @@
+
 namespace GrainOriginatorPortal.Infrastructure.Ctrm;
 
 /// <summary>
 /// What every CTRM GraphQL document has in common: the gateway's rules, and the limits more than one module
-/// needs. The documents themselves live with the module that sends them: <see cref="CtrmContractQueries"/>
-/// for contracts and tickets, <c>CtrmCustomerQueries</c> in Customers and <c>CtrmSplitQueries</c> in Producers.
+/// needs. The documents themselves live with the module that sends them: <c>CtrmContractQueries</c>
+/// in Contracts, <c>CtrmCustomerQueries</c> in Customers and <c>CtrmSplitQueries</c> in Producers.
 /// </summary>
 /// <remarks>
 /// <b>No '#' comment lines in any document.</b> The Application Gateway WAF in front of this API has been

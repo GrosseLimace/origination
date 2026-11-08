@@ -1,6 +1,6 @@
 // Project namespaces
-using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Extensions;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Interfaces;
 
 namespace GrainOriginatorPortal.Infrastructure.Modules.Contracts;
 

@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 

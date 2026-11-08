@@ -8,8 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Filters;
 using GrainOriginatorPortal.Infrastructure.Ctrm;
+using GrainOriginatorPortal.Api.Modules.Contracts.Filters;
 
 namespace GrainOriginatorPortal.Api.Tests.Filters;
 

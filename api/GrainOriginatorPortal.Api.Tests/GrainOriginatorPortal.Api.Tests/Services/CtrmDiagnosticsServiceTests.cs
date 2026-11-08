@@ -13,8 +13,9 @@ using Moq;
 using GrainOriginatorPortal.Api.Services.Diagnostics;
 using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

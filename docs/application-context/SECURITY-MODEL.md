@@ -109,6 +109,8 @@ The modules moved so far, each controller with its read on the class and a write
 |---|---|---|
 | Customers | Customers (the list, search, the onboarding search, by id and by code, a customer's trade units): viewing / assigning trade units, which also onboards a producer, and removing a dormant trade unit. Both needed only a sign-in before. | `customers:read` / `customers:write` |
 | Customers | Customer sync diagnostics (listed above) | `customer-sync:manage` |
+| Contracts | Contracts (the list, a customer's, by crop year) and pricing lines (by contract and by customer). They needed only a sign-in before. | `contracts:read` |
+| Contracts | Delivery tickets (the list, today's for Spot Loads, a customer's, a customer's unapplied, a contract's applied). They needed only a sign-in before. | `tickets:read` |
 | Producers | Planting intentions: viewing / adding, editing, retagging and deleting | `planting-intentions:read` / `:write` |
 | Producers | Producer details, contacts, grain on farm and bin sites: viewing / saving and clearing | `producer-details:read` / `:write` |
 | Producers | Incoming linked producers (`GET api/customers/linked-to/{id}`, now its own controller; it needed only a sign-in before) | `producer-details:read` |

@@ -14,7 +14,6 @@ using Moq;
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm.Dtos;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;

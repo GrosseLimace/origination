@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Entities;
 
 namespace GrainOriginatorPortal.Infrastructure.Data;
 

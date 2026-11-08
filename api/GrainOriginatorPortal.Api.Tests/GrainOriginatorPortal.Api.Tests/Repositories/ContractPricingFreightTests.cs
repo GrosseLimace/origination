@@ -1,6 +1,6 @@
 // Project namespaces
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Repositories;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 

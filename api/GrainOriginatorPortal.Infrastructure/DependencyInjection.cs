@@ -4,8 +4,6 @@ using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Platform.Access.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Platform.Access.Repositories;
 using GrainOriginatorPortal.Infrastructure.Repositories;
-using GrainOriginatorPortal.Infrastructure.Modules.Contracts;
-using GrainOriginatorPortal.Infrastructure.Modules.Customers.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -119,16 +117,6 @@ public static class DependencyInjection
 #endif
         });
 
-        // Singleton so one date-window fetch is shared by every request and every producer, rather
-        // than each scoped repository paging the window again. ICtrmGraphQlClient is registered in
-        // the Api project (it needs IHttpClientFactory and a credential).
-        // Live per-producer readers. Singleton so their short request-coalescing cache is shared:
-        // selecting a producer triggers the contract list, the pricing lines and the pacing card, which all
-        // want the same rows, so one CTRM call serves all three instead of three identical round trips.
-        services.AddSingleton<CtrmContractReader>();
-        services.AddSingleton<CtrmTicketReader>();
-        services.AddSingleton<CtrmWarmRegistry>();
-
         // Scoped: one per HTTP request, so the provenance middleware reports what THIS request's
         // repositories actually did rather than what was configured when it arrived.
         services.AddScoped<CtrmProvenance>();
@@ -141,21 +129,6 @@ public static class DependencyInjection
         services.AddScoped<IDisplayNameLookupRepository, DisplayNameLookupRepository>();
         services.AddScoped<INoteRepository, NoteRepository>();
         services.AddScoped<IReminderRepository, ReminderRepository>();
-        // Tickets follow the same switch pattern as contracts. The CTRM ticket repository still needs
-        // the ODS one — for the ticket-key index and the storage gate, neither of which CTRM can supply.
-        services.AddScoped<TicketRepository>();
-        services.AddScoped<CtrmTicketRepository>();
-        services.AddScoped<ITicketRepository, TicketRepositorySwitch>();
-
-        // Contracts resolve through a switch that picks ODS or CTRM per call from Ctrm:Source.
-        // Both concrete repositories are registered because the switch holds one of each, and the
-        // CTRM one delegates the reads it cannot serve (pacing history, crop year, farm, by-number)
-        // straight to the ODS one. Default is ODS — see ContractRepositorySwitch.
-        services.AddScoped<ContractRepository>();
-        services.AddScoped<CtrmContractRepository>();
-        services.AddScoped<IContractRepository, ContractRepositorySwitch>();
-        // Which trade units a producer has open contracts or unapplied tickets in, for the Customers module.
-        services.AddScoped<ICustomerActivitySource, CustomerActivitySource>();
         services.AddScoped<IBidSheetRepository, BidSheetRepository>();
         services.AddScoped<IBarchartIngestRepository, BarchartIngestRepository>();
         services.AddScoped<IBarchartCatalogRepository, BarchartCatalogRepository>();

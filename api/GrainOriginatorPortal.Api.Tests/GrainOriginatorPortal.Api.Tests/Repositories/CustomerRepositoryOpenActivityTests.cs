@@ -8,11 +8,11 @@ using Moq;
 
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Repositories;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 

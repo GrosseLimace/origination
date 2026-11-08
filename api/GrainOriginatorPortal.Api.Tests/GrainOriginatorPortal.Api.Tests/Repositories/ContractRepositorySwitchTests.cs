@@ -9,7 +9,8 @@ using Moq;
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Repositories;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 

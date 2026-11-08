@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Entities;
 
 namespace GrainOriginatorPortal.Infrastructure.Modules.Contracts;
 

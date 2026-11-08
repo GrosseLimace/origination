@@ -17,6 +17,8 @@ using GrainOriginatorPortal.Api.Services.Diagnostics;
 using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 

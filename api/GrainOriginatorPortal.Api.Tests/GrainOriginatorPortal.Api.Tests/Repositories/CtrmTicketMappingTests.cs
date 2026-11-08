@@ -1,6 +1,7 @@
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Ctrm;
-using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm.Dtos;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 

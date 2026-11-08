@@ -204,7 +204,7 @@ api/GrainOriginatorPortal.Infrastructure/
 builder.Services
     .AddPlatform(builder.Configuration)
     .AddCustomersModule()
-    .AddContractsModule(builder.Configuration)   // CTRM/ODS repository switches live here
+    .AddContractsModule()   // CTRM/ODS repository switches live here; they read Ctrm:Source on every call
     .AddEngagementModule()
     .AddProducersModule()
     .AddListsModule()
@@ -462,7 +462,7 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 |---|---|---|
 | Platform | Me, UserPreferences, UserTradeUnits, TradeUnits, Entitlements, Version, WhatsNew, Help, ClientTelemetry, Geocode, Diagnostics (with `DiagnosticsEnvironmentGate`); Commodities (`GET /`, `conversions`) | `CtrmGraphQlClient` moves here from `Api/Services/Ctrm`. |
 | Customers | Customers, `search-ods` included; CustomerSyncDiagnostics (`customer-sync:manage`) | `CustomerSyncService`, its background service and the whole of `Infrastructure/Sync/` move here, with the customer readers from `Infrastructure/Ctrm/` (`CtrmCustomerReader`, `CtrmCustomerQueries`, `CtrmCustomerActivityReader`, `CtrmCustomerCandidateId` and their DTOs). `CtrmCustomerCodes` stays with the shared CTRM plumbing: it holds the gateway's `customerIds` filter limits, and only the contract and ticket readers use it. |
-| Contracts | Contracts (minus `pacing`, `farm`), Tickets (minus `farm`) | The contract and ticket parts of `Infrastructure/Ctrm/` move here: readers, repositories, the two switches, `CtrmMappings`, `CtrmWarmRegistry`. The shared plumbing goes to Platform. |
+| Contracts | Contracts (minus `pacing`, `farm`), Tickets (minus `farm`) | The contract and ticket parts of `Infrastructure/Ctrm/` move here: readers, repositories, the two switches, `CtrmMappings`, `CtrmWarmRegistry`. The shared plumbing goes to Platform. Done in step 6b, with `SurfaceCtrmFailures` and the keep-warm service. `ContractStatusCalculator`, `TicketLocations` and `CustomerActivitySource` sit at the module root, outside `Repositories` and `Interfaces`, so Producers and Customers may use them. The shared plumbing stays in `Infrastructure/Ctrm/` until step 11. |
 | Engagement | Notes, Reminders, TeamsChannels, DailyRecapGroups | |
 | Producers | PlantingIntentions, ProducerDetails, StoredGrain, DpContracts, DashboardPlantingEstimates, FieldPlan, CtrmSplits, TDisc, FdCic; **gains** `contracts/pacing` (`ContractPacingController`) | Keep the **route templates unchanged**, so the SPA doesn't change. The split readers and `FieldTicketReader` come from `Infrastructure/Ctrm/`. Delete the `farm/{farmId}` endpoints on Contracts and Tickets and their `GetByFarmAsync` chain through services and repositories; the Farms controller itself is already gone. Done in step 6a: both always returned an empty list. |
 | Lists | SavedLists, QueryLibrary | |

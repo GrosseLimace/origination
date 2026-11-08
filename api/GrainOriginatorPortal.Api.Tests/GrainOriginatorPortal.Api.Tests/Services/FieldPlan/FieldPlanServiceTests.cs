@@ -26,6 +26,7 @@ using GrainOriginatorPortal.Infrastructure.Modules.Producers.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Repositories;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Entities;
 
 namespace GrainOriginatorPortal.Api.Tests.Services.FieldPlan;
 

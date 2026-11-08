@@ -7,8 +7,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 // Project namespaces
+using GrainOriginatorPortal.Api.Modules.Contracts;
 using GrainOriginatorPortal.Api.Modules.Customers;
 using GrainOriginatorPortal.Api.Modules.Customers.Services;
+using GrainOriginatorPortal.Api.Modules.Producers;
 using GrainOriginatorPortal.Infrastructure;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Extensions;
 
@@ -75,10 +77,14 @@ public class CustomersModuleTests
     public void EveryExtensionCustomersNeeds_IsProvidedByAnotherModule()
     {
         // Customers declares these and has no fallback of its own, so the app must register an implementation.
-        // The open-activity check is Contracts data; it is registered with the contract repositories.
+        // The open-activity check is Contracts data; AddContractsModule registers it. Registered here the way
+        // Program.cs does it, so whichever module provides an extension is found.
+        var configuration = new ConfigurationBuilder().Build();
         var services = new ServiceCollection();
-        services.AddInfrastructure(new ConfigurationBuilder().Build());
+        services.AddInfrastructure(configuration);
         services.AddCustomersModule();
+        services.AddContractsModule();
+        services.AddProducersModule(configuration);
         var registered = services.Select(d => d.ServiceType).ToHashSet();
 
         var extensions = typeof(ICustomerActivitySource).Assembly.GetTypes()

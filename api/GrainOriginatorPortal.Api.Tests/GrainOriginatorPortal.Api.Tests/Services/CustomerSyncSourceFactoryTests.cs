@@ -8,6 +8,7 @@ using Moq;
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure;
 using GrainOriginatorPortal.Infrastructure.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
@@ -31,6 +32,8 @@ public class CustomerSyncSourceFactoryTests
         services.AddSingleton<IConfiguration>(configuration);
         services.AddInfrastructure(configuration);
         services.AddCustomersInfrastructure();
+        // The customer repository asks Contracts which trade units have open activity.
+        services.AddContractsInfrastructure();
         // Registered by the Api project in the app (it needs IHttpClientFactory and a credential).
         services.AddSingleton(new Mock<ICtrmGraphQlClient>().Object);
         // The real repository needs SQL Server; the feeders only need something scoped behind the interface.

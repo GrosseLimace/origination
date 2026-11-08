@@ -902,6 +902,11 @@ returned an empty list: neither the ODS contracts nor the ODS tickets carry a fa
 only passed the call to the ODS ones. The client never called them. Scanner hits on `GetByFarm` in older baselines
 refer to code that no longer exists.
 
+_Update (2026-11-08) — Contracts module._ `ContractsController` and `TicketsController` moved to
+`Api/Modules/Contracts/Controllers/`. The contract routes listed above (by customer, both pricing-line routes) now need
+`contracts:read`, and `GET /api/tickets/customer/{customerId}` needs `tickets:read`, where before they needed only a
+sign-in. Every persona role holds both, and the reads are still not scoped by trade unit, as this entry accepts.
+
 ---
 
 ## AR-03 — Rep-driven trade-unit assignment

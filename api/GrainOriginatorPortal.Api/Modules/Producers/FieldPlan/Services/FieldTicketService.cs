@@ -7,6 +7,7 @@ using GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.Models.Responses;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Entities;
 
 namespace GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.Services;
 
