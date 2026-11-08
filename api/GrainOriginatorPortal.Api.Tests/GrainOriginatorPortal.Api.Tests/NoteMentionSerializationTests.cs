@@ -8,6 +8,7 @@ using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Services.Mappings;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;

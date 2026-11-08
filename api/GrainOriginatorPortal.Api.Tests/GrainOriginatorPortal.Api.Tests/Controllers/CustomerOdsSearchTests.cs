@@ -5,9 +5,9 @@ using Microsoft.AspNetCore.Mvc;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Controllers;
-using GrainOriginatorPortal.Api.Models.Responses;
-using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Modules.Customers.Controllers;
+using GrainOriginatorPortal.Api.Modules.Customers.Models.Responses;
+using GrainOriginatorPortal.Api.Modules.Customers.Services;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 

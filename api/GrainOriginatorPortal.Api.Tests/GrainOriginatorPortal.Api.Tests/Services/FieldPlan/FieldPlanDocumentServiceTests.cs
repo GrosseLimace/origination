@@ -20,6 +20,7 @@ using GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.Services;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Repositories;
 using GrainOriginatorPortal.Api.Platform.DocStore;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
 
 namespace GrainOriginatorPortal.Api.Tests.Services.FieldPlan;
 

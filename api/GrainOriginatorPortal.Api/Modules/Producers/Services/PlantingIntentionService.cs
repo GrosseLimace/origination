@@ -6,6 +6,7 @@ using GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Interfaces;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Modules.Producers.Mappings;
+using GrainOriginatorPortal.Api.Modules.Customers.Services;
 using Microsoft.Extensions.Logging;
 
 namespace GrainOriginatorPortal.Api.Modules.Producers.Services;

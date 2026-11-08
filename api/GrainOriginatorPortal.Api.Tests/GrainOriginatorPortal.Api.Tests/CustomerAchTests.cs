@@ -1,8 +1,8 @@
 using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
-using GrainOriginatorPortal.Infrastructure.Repositories;
-using GrainOriginatorPortal.Infrastructure.Sync;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Sync;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;

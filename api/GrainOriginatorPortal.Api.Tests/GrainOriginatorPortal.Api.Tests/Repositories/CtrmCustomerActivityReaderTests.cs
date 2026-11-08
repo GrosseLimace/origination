@@ -8,6 +8,8 @@ using Moq;
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm.Dtos;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 

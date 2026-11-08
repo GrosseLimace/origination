@@ -9,6 +9,7 @@ using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Api.Modules.Producers.Services;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Interfaces;
+using GrainOriginatorPortal.Api.Modules.Customers.Services;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

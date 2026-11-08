@@ -1,5 +1,5 @@
 using System.Text.Json.Serialization;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
 
 namespace GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
 

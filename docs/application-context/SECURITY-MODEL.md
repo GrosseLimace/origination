@@ -107,6 +107,8 @@ The modules moved so far, each controller with its read on the class and a write
 
 | Module | What | Read / write |
 |---|---|---|
+| Customers | Customers (the list, search, the onboarding search, by id and by code, a customer's trade units): viewing / assigning trade units, which also onboards a producer, and removing a dormant trade unit. Both needed only a sign-in before. | `customers:read` / `customers:write` |
+| Customers | Customer sync diagnostics (listed above) | `customer-sync:manage` |
 | Producers | Planting intentions: viewing / adding, editing, retagging and deleting | `planting-intentions:read` / `:write` |
 | Producers | Producer details, contacts, grain on farm and bin sites: viewing / saving and clearing | `producer-details:read` / `:write` |
 | Producers | Incoming linked producers (`GET api/customers/linked-to/{id}`, now its own controller; it needed only a sign-in before) | `producer-details:read` |
@@ -194,7 +196,7 @@ and the role behind it were retired when every dashboard user got the full manag
 
 - [api/GrainOriginatorPortal.Api/Filters/EnforceTradeUnitAccessAttribute.cs](../../api/GrainOriginatorPortal.Api/Filters/EnforceTradeUnitAccessAttribute.cs) — the trade-unit filter (UX scoping; fail-CLOSED on an uncached outage).
 - [api/GrainOriginatorPortal.Api/Services/UserEntitlementService.cs](../../api/GrainOriginatorPortal.Api/Services/UserEntitlementService.cs) — `ValidateCustomerAccessAsync` lives here.
-- [api/GrainOriginatorPortal.Api/Controllers/CustomersController.cs](../../api/GrainOriginatorPortal.Api/Controllers/CustomersController.cs) — example of a controller where the GETs intentionally skip the check.
+- [api/GrainOriginatorPortal.Api/Modules/Customers/Controllers/CustomersController.cs](../../api/GrainOriginatorPortal.Api/Modules/Customers/Controllers/CustomersController.cs) — example of a controller where the GETs intentionally skip the check.
 - [api/GrainOriginatorPortal.Infrastructure/Platform/Access/AppPermissions.cs](../../api/GrainOriginatorPortal.Infrastructure/Platform/Access/AppPermissions.cs) — the permission catalog.
 - [api/GrainOriginatorPortal.Api/Platform/Access/](../../api/GrainOriginatorPortal.Api/Platform/Access/) — `ClaimsUserRoleSource`, `PermissionService`, the grant cache, `[RequirePermission]` and its handler, `/api/me/permissions` and the access map.
 - [api/GrainOriginatorPortal.Api/Middleware/AuthorizationAuditResultHandler.cs](../../api/GrainOriginatorPortal.Api/Middleware/AuthorizationAuditResultHandler.cs) — the `AUTHZ_PERMISSION_DENIED` response and log.

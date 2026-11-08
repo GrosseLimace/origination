@@ -1,7 +1,7 @@
 // Project namespaces
-using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

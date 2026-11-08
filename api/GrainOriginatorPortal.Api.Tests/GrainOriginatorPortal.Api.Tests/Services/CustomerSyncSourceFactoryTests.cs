@@ -8,15 +8,18 @@ using Moq;
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure;
 using GrainOriginatorPortal.Infrastructure.Ctrm;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
-using GrainOriginatorPortal.Infrastructure.Sync;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Sync;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 
 /// <summary>
-/// The real <see cref="DependencyInjection.AddInfrastructure"/> registrations resolve both sync feeders through the
-/// factory, from a scope, with scope validation on. The service resolves the factory from each run's scope, so the
-/// feeders must be scoped (they hold the scoped sync repository) and must never be resolvable from the root.
+/// The real registrations (<see cref="DependencyInjection.AddInfrastructure"/> for the DbContexts, then
+/// <see cref="CustomersInfrastructure.AddCustomersInfrastructure"/>) resolve both sync feeders through the factory,
+/// from a scope, with scope validation on. The service resolves the factory from each run's scope, so the feeders
+/// must be scoped (they hold the scoped sync repository) and must never be resolvable from the root.
 /// </summary>
 public class CustomerSyncSourceFactoryTests
 {
@@ -27,6 +30,7 @@ public class CustomerSyncSourceFactoryTests
         services.AddLogging();
         services.AddSingleton<IConfiguration>(configuration);
         services.AddInfrastructure(configuration);
+        services.AddCustomersInfrastructure();
         // Registered by the Api project in the app (it needs IHttpClientFactory and a credential).
         services.AddSingleton(new Mock<ICtrmGraphQlClient>().Object);
         // The real repository needs SQL Server; the feeders only need something scoped behind the interface.
@@ -48,10 +52,10 @@ public class CustomerSyncSourceFactoryTests
     }
 
     [Fact]
-    public void AddInfrastructure_RegistersTheFeedersAndFactoryScoped_AndTheCustomerReadersAsSingletons()
+    public void AddCustomersInfrastructure_RegistersTheFeedersAndFactoryScoped_AndTheCustomerReadersAsSingletons()
     {
         var services = new ServiceCollection();
-        services.AddInfrastructure(new ConfigurationBuilder().Build());
+        services.AddCustomersInfrastructure();
 
         ServiceLifetime LifetimeOf<T>() => Assert.Single(services, d => d.ServiceType == typeof(T)).Lifetime;
 

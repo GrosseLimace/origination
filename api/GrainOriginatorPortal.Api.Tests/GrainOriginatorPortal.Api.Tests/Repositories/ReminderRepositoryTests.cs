@@ -9,6 +9,7 @@ using Moq;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 

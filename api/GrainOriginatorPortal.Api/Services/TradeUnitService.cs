@@ -1,5 +1,6 @@
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Services;
 

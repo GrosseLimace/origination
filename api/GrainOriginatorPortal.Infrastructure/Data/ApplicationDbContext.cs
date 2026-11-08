@@ -2,8 +2,9 @@ using Microsoft.EntityFrameworkCore;
 
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Platform.Access.Entities;
-using GrainOriginatorPortal.Infrastructure.Sync;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Sync;
 
 namespace GrainOriginatorPortal.Infrastructure.Data;
 
@@ -248,112 +249,6 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Guild).HasColumnName("GUID").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.UpdatedOn).HasColumnName("UpdatedOn").HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.HasIndex(e => e.CustomerCode).IsUnique().HasDatabaseName("UQ_eSignEnrollment_CustomerCode");
-        });
-
-        // -------------------------------------------------------------------------
-        // Customer + CustomerTradeUnit — normalized customer schema.
-        // Customer holds one row per ODS CustomerId (attribute columns); CustomerTradeUnit
-        // holds one row per (CustomerId, TradeUnit) membership.
-        // -------------------------------------------------------------------------
-        modelBuilder.Entity<Customer>(entity =>
-        {
-            entity.ToTable("Customer", schema: "dbo");
-            entity.HasKey(e => e.Id);
-
-            // Id is the ODS CustomerId — not auto-generated; provided by sync.
-            entity.Property(e => e.Id).HasColumnName("CustomerId").ValueGeneratedNever().IsRequired();
-            entity.Property(e => e.Name).HasColumnName("CustomerName").HasMaxLength(500).IsRequired();
-            // Trim on read — ODS source columns are CHAR-padded; without trimming, comparisons
-            // against Note.CustomerCode / Contract.SourceContractId (which both use Trim conversion)
-            // silently fail. Matches the pattern used in OriginationDbContext for similar columns.
-            entity.Property(e => e.ScoularId).HasColumnName("ScoularId").HasMaxLength(400).IsRequired(false)
-                  .HasConversion(v => v, v => v != null ? v.Trim() : v);
-            entity.Property(e => e.IndustryCode1).HasColumnName("IndustryCode1").HasMaxLength(50).IsRequired(false);
-            entity.Property(e => e.IndustryCode2).HasColumnName("IndustryCode2").HasMaxLength(100).IsRequired(false);
-            entity.Property(e => e.NopIdNumber).HasColumnName("NopIdNumber").HasMaxLength(100).IsRequired(false);
-            entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
-            entity.Property(e => e.IsManual).HasColumnName("IsManual").HasDefaultValue(false).IsRequired();
-            entity.Property(e => e.EffectiveStartDate).HasColumnName("EffectiveStartDate").IsRequired(false);
-            entity.Property(e => e.EffectiveEndDate).HasColumnName("EffectiveEndDate").IsRequired(false);
-
-            // Contact columns — column names mirror the ODS source view for consistency.
-            entity.Property(e => e.Phone).HasColumnName("MerchandisingPhone").HasMaxLength(100).IsRequired(false);
-            entity.Property(e => e.Email).HasColumnName("MerchandisingEmail").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.ExtendedPrimaryPhone).HasColumnName("ExtendedPrimaryPhone").HasMaxLength(100).IsRequired(false);
-            entity.Property(e => e.SupplementalEmail).HasColumnName("SupplementalEmail").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.Location).HasColumnName("MerchandisingCity").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.StateProvince).HasColumnName("MerchandisingStateProvince").HasMaxLength(50).IsRequired(false);
-            entity.Property(e => e.AddressLine1).HasColumnName("MerchandisingAddressLine1").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.PostalCode).HasColumnName("MerchandisingPostalCode").HasMaxLength(20).IsRequired(false);
-
-            // Extended address fields — more accurate location data for geocoding.
-            entity.Property(e => e.ExtendedAddressLine1).HasColumnName("ExtendedAddressLine1").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.ExtendedAddressLine2).HasColumnName("ExtendedAddressLine2").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.ExtendedAddressLine3).HasColumnName("ExtendedAddressLine3").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.ExtendedAddressLine4).HasColumnName("ExtendedAddressLine4").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.ExtendedCity).HasColumnName("ExtendedCity").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.ExtendedPostalCode).HasColumnName("ExtendedPostalCode").HasMaxLength(20).IsRequired(false);
-            entity.Property(e => e.ExtendedStateProvince).HasColumnName("ExtendedStateProvince").HasMaxLength(50).IsRequired(false);
-            entity.Property(e => e.ExtendedCountry).HasColumnName("ExtendedCountry").HasMaxLength(255).IsRequired(false);
-
-            // CTRM payment method code ('H' = ACH) — filled by the ctrm customer sync (plan E2); null on ods.
-            entity.Property(e => e.PaymentMethod).HasColumnName("PaymentMethod").HasMaxLength(Customer.PaymentMethodMaxLength).IsRequired(false);
-
-            // DTO-only fields — populated by service layer enrichment, not stored on the table.
-            entity.Ignore(e => e.CustomerCode);
-            entity.Ignore(e => e.Farm);
-            entity.Ignore(e => e.TotalAcres);
-            entity.Ignore(e => e.ESignEnabled);
-            entity.Ignore(e => e.AchEnabled);
-            entity.Ignore(e => e.ActiveTradeUnits);
-            entity.Ignore(e => e.ScoularViewRecipients);
-            entity.Ignore(e => e.Guild);
-            entity.Ignore(e => e.Coordinates);
-            entity.Ignore(e => e.FarmIds);
-            entity.Ignore(e => e.LinkedProducerIds);
-
-            entity.HasIndex(e => e.Name).HasDatabaseName("IX_Customer_CustomerName");
-            entity.HasIndex(e => e.ScoularId).HasDatabaseName("IX_Customer_ScoularId");
-        });
-
-        modelBuilder.Entity<CustomerTradeUnit>(entity =>
-        {
-            entity.ToTable("CustomerTradeUnit", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
-            entity.Property(e => e.TradeUnit).HasColumnName("TradeUnit").HasMaxLength(100).IsRequired();
-            entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
-            entity.Property(e => e.IsManual).HasColumnName("IsManual").HasDefaultValue(false).IsRequired();
-            // Additive flag (default false) — see CustomerTradeUnit.UserDeactivated. No-op for
-            // existing rows; only set when a user removes a dormant sync-sourced membership.
-            entity.Property(e => e.UserDeactivated).HasColumnName("UserDeactivated").HasDefaultValue(false).IsRequired();
-
-            // Audit columns — same convention as Notes/ProducerDetails/Dashboard*. CreatedAt
-            // defaults to GETUTCDATE() at the DB; CreatedBy is required; Modified* are nullable.
-            // The nightly sync writes "system"; manual user actions write the acting user's UPN.
-            entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
-            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
-            entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
-            entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
-
-            // FK to Customer.Id (the ODS CustomerId surrogate). NoAction like every other FK into Customer:
-            // these rows are hand-curated trade-unit assignments, and a customer delete must be blocked
-            // by them, not silently take them along. Was Cascade until 2026-10-13; production held 22,491
-            // rows behind it at the time (nothing deletes customers today, so none were ever lost).
-            entity.HasOne(e => e.Customer)
-                  .WithMany()
-                  .HasForeignKey(e => e.CustomerId)
-                  .OnDelete(DeleteBehavior.NoAction);
-
-            // One row per (customer, trade-unit) pair.
-            entity.HasIndex(e => new { e.CustomerId, e.TradeUnit })
-                  .IsUnique()
-                  .HasDatabaseName("UQ_CustomerTradeUnit_CustomerId_TradeUnit");
-
-            // Covering scope index — main TU-filtered query: WHERE TradeUnit IN (...) AND IsActive = 1.
-            entity.HasIndex(e => new { e.TradeUnit, e.IsActive })
-                  .HasDatabaseName("IX_CustomerTradeUnit_TradeUnit_IsActive");
         });
 
         modelBuilder.Entity<UserPreference>(entity =>

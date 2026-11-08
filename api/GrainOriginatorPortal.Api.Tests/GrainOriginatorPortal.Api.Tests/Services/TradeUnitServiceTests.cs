@@ -8,6 +8,7 @@ using Moq;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

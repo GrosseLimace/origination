@@ -1,6 +1,6 @@
 using GrainOriginatorPortal.Api.Modules.Producers.Models.Requests;
 using GrainOriginatorPortal.Api.Modules.Producers.Models.Responses;
-using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Modules.Customers.Models.Responses;
 
 namespace GrainOriginatorPortal.Api.Modules.Producers.Services;
 

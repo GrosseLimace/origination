@@ -1,8 +1,8 @@
 // Project namespaces
-using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Modules.Producers.Services;
 using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
+using GrainOriginatorPortal.Api.Modules.Customers.Models.Responses;
 
 namespace GrainOriginatorPortal.Api.Modules.Producers.Controllers;
 

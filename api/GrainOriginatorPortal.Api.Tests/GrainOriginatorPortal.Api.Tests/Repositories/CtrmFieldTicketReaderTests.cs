@@ -7,9 +7,9 @@ using Moq;
 using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
 using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Repositories;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 

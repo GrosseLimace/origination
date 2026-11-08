@@ -368,7 +368,7 @@ Target = `originations.vw_CustomerTradeUnits`.
 | `EffectiveStartDate/EndDate` | no GraphQL equivalent; untouched | **D-5** (permanent unless the API adds them) |
 | new customer id = ODS `CustomerId` | minted from `dbo.CustomerIdSequence` | **D-6** by decision |
 
-Files: `api/GrainOriginatorPortal.Infrastructure/Sync/*`, `api/GrainOriginatorPortal.Infrastructure/Ctrm/CtrmCustomerReader.cs`, `CtrmCustomerActivityReader.cs`, `CtrmCustomerQueries.cs`, `api/GrainOriginatorPortal.Api/Controllers/CustomerSyncDiagnosticsController.cs`, `DiagnosticsEnvironmentGate.cs`.
+Files: `api/GrainOriginatorPortal.Infrastructure/Modules/Customers/Sync/*`, `api/GrainOriginatorPortal.Infrastructure/Modules/Customers/Ctrm/CtrmCustomerReader.cs`, `CtrmCustomerActivityReader.cs`, `CtrmCustomerQueries.cs`, `api/GrainOriginatorPortal.Api/Modules/Customers/Controllers/CustomerSyncDiagnosticsController.cs`, `api/GrainOriginatorPortal.Api/Controllers/DiagnosticsEnvironmentGate.cs`.
 
 ## Testing notes
 

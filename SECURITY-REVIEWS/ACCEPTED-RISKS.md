@@ -891,6 +891,11 @@ Producers module's `LinkedProducersController`, with the same route and the same
 `producer-details:read`, where before it needed only a sign-in. Scanner hits against `LinkedProducersController.GetLinkedTo`
 are the `GetLinkedTo` this entry already covers.
 
+_Update (2026-11-07) — Customers module._ `CustomersController` moved to `Api/Modules/Customers/Controllers/`, and its
+reads (`GET /api/customers/{id}`, `by-source/{sourceId}` and `{id}/trade-units` among them) now need `customers:read`,
+where before they needed only a sign-in. Every persona role holds it, and the reads are still not scoped by trade unit,
+as this entry accepts.
+
 ---
 
 ## AR-03 — Rep-driven trade-unit assignment
@@ -991,6 +996,13 @@ to an admin/onboarding role and validate requested trade units against the calle
 
 **Accepted by:** Origination engineering — recorded 2026-06-23.
 
+_Update (2026-11-07) — a permission on both routes._ Both routes moved to the Customers module
+(`Api/Modules/Customers/Controllers/CustomersController.cs`) and now need `customers:write`, on top of the controller's
+`customers:read`. Before, any signed-in user could call them. This is the kind of role gate the "Re-evaluate if" above
+anticipates, but it narrows nothing yet: `customers:write` comes with `Editor`, and everyone holds `Originator` + `Editor`
+through the default roles today. The requested trade units are still not checked against the caller's own, so the
+residual risk above stands until `Editor` is granted more narrowly.
+
 ---
 
 ## AR-04 — ODS onboarding search exposes producer-master PII
@@ -1065,6 +1077,10 @@ regulated. At that point, trim `search-ods` to non-sensitive identification fiel
 city/state) and fetch full contact detail only for a producer the rep actually onboards.
 
 **Accepted by:** Origination engineering — recorded 2026-06-23.
+
+_Update (2026-11-07) — a permission on this route._ `GET /api/customers/search-ods` moved to the Customers module
+(`Api/Modules/Customers/Controllers/CustomersController.cs`) and now needs `customers:read`, where before it needed only a
+sign-in. Every persona role holds it, so it is still open to every originator, as this entry accepts.
 
 ---
 

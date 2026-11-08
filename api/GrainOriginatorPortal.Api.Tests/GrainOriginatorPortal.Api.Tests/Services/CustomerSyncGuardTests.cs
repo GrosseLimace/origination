@@ -2,7 +2,7 @@
 using Microsoft.Extensions.Configuration;
 
 // Project namespaces
-using GrainOriginatorPortal.Infrastructure.Sync;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Sync;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

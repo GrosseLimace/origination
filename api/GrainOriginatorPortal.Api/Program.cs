@@ -27,6 +27,7 @@ using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Platform.DocStore;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Modules.Customers;
 using GrainOriginatorPortal.Api.Modules.Producers;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -138,13 +139,6 @@ builder.Services.AddSingleton(System.Threading.Channels.Channel.CreateBounded<Gr
     { FullMode = System.Threading.Channels.BoundedChannelFullMode.DropWrite }));
 builder.Services.AddHostedService<UsageTrackingBackgroundService>();
 builder.Services.AddHostedService<UsageAggregationBackgroundService>();
-
-// Customer sync — periodic upsert from ODS vw_CustomerTradeUnits into the
-// app DB's normalized Customer + CustomerTradeUnit tables. The logic class
-// is also injected directly by DiagnosticsController so the dev-only manual
-// trigger endpoint shares the same code path.
-builder.Services.AddSingleton<CustomerSyncService>();
-builder.Services.AddHostedService<CustomerSyncBackgroundService>();
 
 // Keeps the trade-unit-wide CTRM caches warm for recently-used producer sets, so Build-a-List prompts
 // never pay for a cache that expired between uses. No-op unless Ctrm:Source is 'ctrm'.
@@ -301,6 +295,7 @@ builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.Is
 builder.Services.AddScoped<IRequestContextService, RequestContextService>();
 
 // Modules: each registers its own services and, through its Infrastructure counterpart, its repositories.
+builder.Services.AddCustomersModule();
 builder.Services.AddProducersModule(builder.Configuration);
 
 // Per-domain services (Api layer) — controllers depend on these.
@@ -315,9 +310,6 @@ builder.Services.AddDiagnosticsServices();
 builder.Services.AddScoped<IOutlookCalendarService, OutlookCalendarService>();
 builder.Services.AddScoped<ITicketService, TicketService>();
 builder.Services.AddScoped<IContractService, ContractService>();
-builder.Services.AddScoped<ICustomerService, CustomerService>();
-// What other modules ask about customers, in place of the Customers repository.
-builder.Services.AddScoped<ICustomerLookup, CustomerLookup>();
 builder.Services.AddScoped<IBidSheetService, BidSheetService>();
 builder.Services.AddScoped<IBarchartIngestService, BarchartIngestService>();
 builder.Services.AddScoped<IBarchartCatalogService, BarchartCatalogService>();

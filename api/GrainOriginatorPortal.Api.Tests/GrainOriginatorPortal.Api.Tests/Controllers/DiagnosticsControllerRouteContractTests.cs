@@ -11,8 +11,9 @@ using Microsoft.AspNetCore.Mvc.Routing;
 using GrainOriginatorPortal.Api.Controllers;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Platform.Access;
-using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
+using GrainOriginatorPortal.Api.Modules.Customers.Controllers;
+using GrainOriginatorPortal.Api.Modules.Customers.Services;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 

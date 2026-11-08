@@ -456,7 +456,7 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 | Module | Controllers | Notes |
 |---|---|---|
 | Platform | Me, UserPreferences, UserTradeUnits, TradeUnits, Entitlements, Version, WhatsNew, Help, ClientTelemetry, Geocode, Diagnostics (with `DiagnosticsEnvironmentGate`); Commodities (`GET /`, `conversions`) | `CtrmGraphQlClient` moves here from `Api/Services/Ctrm`. |
-| Customers | Customers, `search-ods` and `linked-to` included; CustomerSyncDiagnostics (`customer-sync:manage`) | `CustomerSyncService`, its background service and the whole of `Infrastructure/Sync/` move here, with the customer readers from `Infrastructure/Ctrm/` (`CtrmCustomerReader`, `CtrmCustomerQueries`, `CtrmCustomerActivityReader`). |
+| Customers | Customers, `search-ods` included; CustomerSyncDiagnostics (`customer-sync:manage`) | `CustomerSyncService`, its background service and the whole of `Infrastructure/Sync/` move here, with the customer readers from `Infrastructure/Ctrm/` (`CtrmCustomerReader`, `CtrmCustomerQueries`, `CtrmCustomerActivityReader`, `CtrmCustomerCandidateId` and their DTOs). `CtrmCustomerCodes` stays with the shared CTRM plumbing: it holds the gateway's `customerIds` filter limits, and only the contract and ticket readers use it. |
 | Contracts | Contracts (minus `pacing`, `farm`), Tickets (minus `farm`) | The contract and ticket parts of `Infrastructure/Ctrm/` move here: readers, repositories, the two switches, `CtrmMappings`, `CtrmWarmRegistry`. The shared plumbing goes to Platform. |
 | Engagement | Notes, Reminders, TeamsChannels, DailyRecapGroups | |
 | Producers | PlantingIntentions, ProducerDetails, StoredGrain, DpContracts, DashboardPlantingEstimates, FieldPlan, CtrmSplits, TDisc, FdCic; **gains** `contracts/pacing` (`ContractPacingController`) | Keep the **route templates unchanged**, so the SPA doesn't change. The split readers and `FieldTicketReader` come from `Infrastructure/Ctrm/`. Delete the `farm/{farmId}` endpoints on Contracts and Tickets and their `GetByFarmAsync` chain through services and repositories; the Farms controller itself is already gone. |
@@ -468,6 +468,11 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 - **`commodities/planting` and `commodities/harvest-windows`** are reference data (`reference-data:read`, Platform). The curated crops feed Bid Sheet, Build-a-List and the calculators as well as planting intentions, and the harvest windows are preloaded for every user.
 - **`customers/search-ods`**, the onboarding search, stays with Customers (`customers:read`). Phase 5 widens onboarding to commercial customers.
 - **`customers/linked-to`** moved to Producers after all, in step 5 (`LinkedProducersController`, `producer-details:read`, same route). Its data is all producer data (`dbo.CustomerLink` and `ProducerDetails.TotalAcres`), so Producers finds who links to a producer, asks Customers for those customers through `ICustomerLookup`, and adds the acres and links on top. That removed the Customers repository's only compiled read of a Producers table.
+
+**Found while moving Customers (2026-11-07), for the steps that follow:**
+- **Contracts:** `CtrmPage<T>` is declared in `CtrmContractDtos.cs`, and the Customers CTRM DTOs use it. It belongs with the shared CTRM plumbing. If it moved into Contracts, Customers would depend on Contracts, which the direction rule forbids.
+- **Engagement:** `NoteService` and `ReminderService` still inject `ICustomerRepository`. They switch to `ICustomerLookup` when Engagement moves, or `ModuleBoundaryTests` fails on them.
+- **Platform:** `TradeUnitService` falls back to `ICustomerRepository.GetAllActiveTradeUnitCodesAsync` when the entitlements trade-unit list is unavailable. That has Platform reading a module's repository, the wrong way round. The fix is for Platform to define the fallback as an interface that Customers implements.
 
 **`CustomerResponse` sheds `TotalAcres`, `FarmIds`, `LinkedProducerIds` and `Farm`.** The Producers module serves them in a `ProducerProfileResponse` instead. This one *is* a wire change, so sequence it with the frontend in Phase 4.
 

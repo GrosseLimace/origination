@@ -4,6 +4,7 @@ using GrainOriginatorPortal.Api.Modules.Producers.Models.Responses;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Interfaces;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Modules.Producers.Mappings;
+using GrainOriginatorPortal.Api.Modules.Customers.Services;
 
 namespace GrainOriginatorPortal.Api.Modules.Producers.Services;
 
