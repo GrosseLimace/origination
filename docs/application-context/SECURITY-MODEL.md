@@ -121,6 +121,7 @@ The modules moved so far, each controller with its read on the class and a write
 | Bid Sheet | Saving your own bid-sheet preference | `bid-sheets:read` and `preferences:write:own` |
 | Bid Sheet | The BarChart picker: feed locations and coverage. It needed only a sign-in before. | `bid-feed:read` |
 | Bid Sheet | BarChart ingest (listed above) | `bid-feed:manage` |
+| Usage Analytics | The usage dashboard (listed above; the permission now sits on the controller) / excluded users (listed above) | `usage-reports:read` / `usage-exclusions:manage` |
 | Producers | Planting intentions: viewing / adding, editing, retagging and deleting | `planting-intentions:read` / `:write` |
 | Producers | Producer details, contacts, grain on farm and bin sites: viewing / saving and clearing | `producer-details:read` / `:write` |
 | Producers | Incoming linked producers (`GET api/customers/linked-to/{id}`, now its own controller; it needed only a sign-in before) | `producer-details:read` |

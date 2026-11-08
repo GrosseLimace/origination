@@ -19,6 +19,8 @@ public interface ICustomerRepository
     Task<Customer?> GetByScoularIdAsync(string scoularId, CancellationToken cancellationToken);
     /// <summary>The active customers among <paramref name="customerIds"/>, with e-sign, ACH and trade units filled in.</summary>
     Task<List<Customer>> GetActiveByIdsAsync(IReadOnlyCollection<long> customerIds, CancellationToken cancellationToken);
+    /// <summary>The name and CTRM code of each of <paramref name="customerIds"/> that exists, active or not.</summary>
+    Task<Dictionary<long, (string Name, string? ScoularId)>> GetNamesAsync(IReadOnlyCollection<long> customerIds, CancellationToken cancellationToken);
     Task<AssignTradeUnitsOutcome> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, string? scoularId, string currentUser, CancellationToken cancellationToken);
     Task<List<CustomerTradeUnitMembership>> GetTradeUnitsAsync(long customerId, CancellationToken cancellationToken);
     /// <summary>The memberships alone, without the open-activity check (HasOpenActivity stays true).</summary>

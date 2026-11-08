@@ -1,9 +1,13 @@
-using GrainOriginatorPortal.Api.Models;
+using GrainOriginatorPortal.Api.Modules.Contracts.Services;
+using GrainOriginatorPortal.Api.Modules.Customers.Services;
+using GrainOriginatorPortal.Api.Modules.Lists.Services;
 using GrainOriginatorPortal.Infrastructure.Abstractions;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Models;
+using GrainOriginatorPortal.Infrastructure.Modules.UsageAnalytics.Interfaces;
+using GrainOriginatorPortal.Api.Services;
 using Microsoft.Extensions.Caching.Memory;
 
-namespace GrainOriginatorPortal.Api.Services;
+namespace GrainOriginatorPortal.Api.Modules.UsageAnalytics.Services;
 
 /// <inheritdoc />
 public class UsageDashboardService : IUsageDashboardService
@@ -33,20 +37,48 @@ public class UsageDashboardService : IUsageDashboardService
     private readonly IManagerDirectoryService _managerDirectory;
     private readonly IMemoryCache _cache;
     private readonly UsageUniverseCacheState _cacheState;
+    private readonly ICustomerLookup _customers;
+    private readonly IContractLookup _contracts;
+    private readonly IQueryLibraryService _queries;
 
     public UsageDashboardService(
         IUsageRepository repo,
         IAppAccessService appAccess,
         IManagerDirectoryService managerDirectory,
         IMemoryCache cache,
-        UsageUniverseCacheState cacheState)
+        UsageUniverseCacheState cacheState,
+        ICustomerLookup customers,
+        IContractLookup contracts,
+        IQueryLibraryService queries)
     {
         _repo = repo;
         _appAccess = appAccess;
         _managerDirectory = managerDirectory;
         _cache = cache;
         _cacheState = cacheState;
+        _customers = customers;
+        _contracts = contracts;
+        _queries = queries;
     }
+
+    // ── Names, from the modules that own them, keyed by id as text the way click events record targets ──
+
+    private async Task<Dictionary<string, string>> GetQueryNamesAsync(IReadOnlyCollection<int> ids, CancellationToken cancellationToken) =>
+        (await _queries.GetNamesAsync(ids, cancellationToken)).ToDictionary(q => q.Key.ToString(), q => q.Value);
+
+    private async Task<Dictionary<string, string>> GetCustomerLabelsAsync(IReadOnlyCollection<long> ids, CancellationToken cancellationToken) =>
+        (await _customers.GetNamesAsync(ids, cancellationToken)).ToDictionary(c => c.Key.ToString(), c => CustomerLabel(c.Value));
+
+    private async Task<Dictionary<string, string>> GetContractLabelsAsync(IReadOnlyCollection<long> ids, CancellationToken cancellationToken) =>
+        (await _contracts.GetNamesAsync(ids, cancellationToken)).ToDictionary(c => c.Key.ToString(), c => ContractLabel(c.Value));
+
+    /// <summary>"Name (CODE)", or the name alone for a customer with no CTRM code.</summary>
+    internal static string CustomerLabel(CustomerName customer) =>
+        string.IsNullOrEmpty(customer.ScoularId) ? customer.Name : $"{customer.Name} ({customer.ScoularId})";
+
+    /// <summary>"P123 — YC", or the contract number alone when there is no commodity.</summary>
+    internal static string ContractLabel(ContractName contract) =>
+        string.IsNullOrEmpty(contract.CommodityCode) ? contract.ContractNumber : $"{contract.ContractNumber} — {contract.CommodityCode}";
 
     /// <summary>
     /// Display labels for the features the dashboard reports on. Iterated to build the
@@ -682,7 +714,7 @@ public class UsageDashboardService : IUsageDashboardService
             .Select(r => int.TryParse(r.TargetId, out var id) ? id : 0)
             .Where(id => id > 0)
             .ToList();
-        var names = await _repo.GetQueryLibraryNamesAsync(ids, cancellationToken);
+        var names = await GetQueryNamesAsync(ids, cancellationToken);
 
         return rawUsage.Select(r => new QueryLibraryUsageDto
         {
@@ -821,7 +853,7 @@ public class UsageDashboardService : IUsageDashboardService
             .Select(q => int.TryParse(q.QueryId, out var id) ? id : 0)
             .Where(id => id > 0)
             .ToList();
-        var topQueryNames = await _repo.GetQueryLibraryNamesAsync(topQueryIds, cancellationToken);
+        var topQueryNames = await GetQueryNamesAsync(topQueryIds, cancellationToken);
 
         var buildList = new BuildListEngagementDto
         {
@@ -961,8 +993,8 @@ public class UsageDashboardService : IUsageDashboardService
 
         if (top is null) return null;
 
-        var snap = await _repo.GetCustomerNameAsync(top.CustomerId, cancellationToken);
-        return snap is null ? null : new TopProducerDto
+        var names = await _customers.GetNamesAsync([top.CustomerId], cancellationToken);
+        return !names.TryGetValue(top.CustomerId, out var snap) ? null : new TopProducerDto
         {
             CustomerId = top.CustomerId,
             CustomerName = snap.Name,
@@ -1002,9 +1034,9 @@ public class UsageDashboardService : IUsageDashboardService
         var libraryIds = rows.Where(r => IsLibraryTarget(r) && int.TryParse(r.TargetId, out _))
             .Select(r => int.Parse(r.TargetId!)).Distinct().ToList();
 
-        var customerNames = await _repo.GetCustomerDisplayNamesAsync(customerIds, cancellationToken);
-        var contractNames = await _repo.GetContractDisplayNamesAsync(contractIds, cancellationToken);
-        var libraryNames = await _repo.GetQueryLibraryNamesAsync(libraryIds, cancellationToken);
+        var customerNames = await GetCustomerLabelsAsync(customerIds, cancellationToken);
+        var contractNames = await GetContractLabelsAsync(contractIds, cancellationToken);
+        var libraryNames = await GetQueryNamesAsync(libraryIds, cancellationToken);
 
         foreach (var row in rows)
         {

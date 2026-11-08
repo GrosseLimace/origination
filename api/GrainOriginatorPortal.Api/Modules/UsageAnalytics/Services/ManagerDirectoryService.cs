@@ -1,11 +1,11 @@
 using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Infrastructure.Abstractions;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Models;
+using GrainOriginatorPortal.Infrastructure.Modules.UsageAnalytics.Interfaces;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Caching.Memory;
 
-namespace GrainOriginatorPortal.Api.Services;
+namespace GrainOriginatorPortal.Api.Modules.UsageAnalytics.Services;
 
 /// <inheritdoc />
 public class ManagerDirectoryService : IManagerDirectoryService

@@ -18,6 +18,7 @@ public static class ContractsModule
 
         services.AddScoped<IContractService, ContractService>();
         services.AddScoped<ITicketService, TicketService>();
+        services.AddScoped<IContractLookup, ContractLookup>();
 
         // Keeps the trade-unit-wide CTRM caches warm for recently-used producer sets, so Build-a-List prompts
         // never pay for a cache that expired between uses. No-op unless Ctrm:Source is 'ctrm'.

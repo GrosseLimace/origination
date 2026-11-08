@@ -1,25 +1,20 @@
-using System.Threading.Channels;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using GrainOriginatorPortal.Api.Middleware;
-using GrainOriginatorPortal.Api.Models;
-using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Platform.Access;
-using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
+using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Models;
+using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Models.Requests;
+using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Services;
 
-namespace GrainOriginatorPortal.Api.Controllers;
+namespace GrainOriginatorPortal.Api.Modules.UsageAnalytics.Controllers;
 
 [ApiController]
 [Route("api/usage-dashboard")]
-// Baseline: any authenticated user. Each data-read endpoint requires usage-reports:read, applied per
-// method because ASP.NET requires every authorization attribute that applies: one on the class would
-// also block the telemetry endpoint below, which accepts click events from every signed-in user.
-// Exclusion administration requires usage-exclusions:manage instead.
+// Reading the dashboard requires usage-reports:read. Exclusion administration also requires usage-exclusions:manage.
 // Everyone who may read sees the whole organisation and may narrow it to any manager's team with
-// `managerId` — there is no per-caller scoping beyond the permission.
-[Authorize]
+// `managerId` — there is no per-caller scoping beyond the permission. The UI's click events are recorded by
+// ClickEventsController, on the same route prefix, which needs only a sign-in.
+[RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
 [Produces("application/json")]
 public class UsageDashboardController : ControllerBase
 {
@@ -42,7 +37,6 @@ public class UsageDashboardController : ControllerBase
     // yield empty results rather than errors.
 
     [HttpGet("summary")]
-    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<UsageDashboardSummaryDto>> GetSummary(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
@@ -50,7 +44,6 @@ public class UsageDashboardController : ControllerBase
         => Ok(await _service.GetSummaryAsync(from, to, managerId, cancellationToken));
 
     [HttpGet("users")]
-    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<List<UsageDashboardUserDto>>> GetUsers(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
@@ -59,7 +52,6 @@ public class UsageDashboardController : ControllerBase
         => Ok(await _service.GetUsersAsync(from, to, managerId, status, cancellationToken));
 
     [HttpGet("daily-active")]
-    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<List<DailyActiveDto>>> GetDailyActive(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
@@ -67,7 +59,6 @@ public class UsageDashboardController : ControllerBase
         => Ok(await _service.GetDailyActiveAsync(from, to, managerId, cancellationToken));
 
     [HttpGet("feature-sessions")]
-    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<List<FeatureSessionsDto>>> GetFeatureSessions(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
@@ -77,7 +68,6 @@ public class UsageDashboardController : ControllerBase
 
     // Trend view over whole calendar weeks — deliberately not bound to the dashboard's date filter.
     [HttpGet("weekly-trend")]
-    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<List<WeeklyTrendDto>>> GetWeeklyTrend(
         [FromQuery] string? managerId = null,
         [FromQuery] int weeks = 8,
@@ -85,7 +75,6 @@ public class UsageDashboardController : ControllerBase
         => Ok(await _service.GetWeeklyTrendAsync(managerId, weeks, cancellationToken));
 
     [HttpGet("activity-breakdown")]
-    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<List<ActivityBreakdownDto>>> GetActivityBreakdown(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
@@ -93,7 +82,6 @@ public class UsageDashboardController : ControllerBase
         => Ok(await _service.GetActivityBreakdownAsync(from, to, managerId, cancellationToken));
 
     [HttpGet("underused-features")]
-    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<List<UnderusedFeatureDto>>> GetUnderusedFeatures(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
@@ -101,7 +89,6 @@ public class UsageDashboardController : ControllerBase
         => Ok(await _service.GetUnderusedFeaturesAsync(from, to, managerId, cancellationToken));
 
     [HttpGet("query-library-usage")]
-    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<List<QueryLibraryUsageDto>>> GetQueryLibraryUsage(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
@@ -109,7 +96,6 @@ public class UsageDashboardController : ControllerBase
         => Ok(await _service.GetQueryLibraryUsageAsync(from, to, managerId, cancellationToken));
 
     [HttpGet("query-search-gaps")]
-    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<List<QuerySearchGapDto>>> GetQuerySearchGaps(
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
         [FromQuery] string? managerId = null,
@@ -119,13 +105,11 @@ public class UsageDashboardController : ControllerBase
     /// <summary>Active managers for the manager filter. 503 when the TradeUnitPreferences DB is
     /// unreachable — fail closed, so the client shows "unavailable" instead of a stale roster.</summary>
     [HttpGet("managers")]
-    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<List<UsageManagerDto>>> GetManagers(CancellationToken cancellationToken = default)
         => Ok(await _service.GetManagersAsync(cancellationToken));
 
     // Per-user drill-down. Aggregates one originator's full activity profile in the window.
     [HttpGet("users/{userId}/detail")]
-    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<UserUsageDetailDto>> GetUserDetail(
         string userId,
         [FromQuery] DateOnly from, [FromQuery] DateOnly to,
@@ -148,7 +132,6 @@ public class UsageDashboardController : ControllerBase
     // Needs only usage-reports:read, so a reader who can't manage gets a clean `false` instead of a 403
     // on page load.
     [HttpGet("excluded-users/can-manage")]
-    [RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]
     public async Task<ActionResult<ExclusionPermissionsDto>> GetCanManageExclusions(CancellationToken cancellationToken = default)
         => Ok(new ExclusionPermissionsDto
         {
@@ -191,41 +174,6 @@ public class UsageDashboardController : ControllerBase
     [RequirePermission(AppPermissions.UsageAnalytics.UsageExclusionsManage)]
     public async Task<ActionResult> RemoveExcludedUser(int id, CancellationToken cancellationToken = default)
         => await _service.RemoveExcludedUserAsync(id, cancellationToken) ? NoContent() : NotFound();
-
-    // Telemetry endpoint — every signed-in user posts click events from the UI. Intentionally left
-    // without a permission so the class-level `[Authorize]` (any authenticated user) applies. Writes to a
-    // bounded channel (no DbContext) drained by the usage-tracking background service.
-    [HttpPost("click-event")]
-    public ActionResult TrackClickEvent(
-        [FromBody] ClickEventRequest request,
-        [FromServices] Channel<UserClickEventRecord> clickChannel)
-    {
-        var userId = GetCurrentUserShortName();
-        if (string.IsNullOrEmpty(userId))
-            return Unauthorized();
-
-        clickChannel.Writer.TryWrite(new UserClickEventRecord
-        {
-            UserId = userId,
-            EventType = request.EventType,
-            FeatureCode = request.FeatureCode,
-            SubFeatureCode = request.SubFeatureCode,
-            // Redact contact PII (emails / phone numbers) from free-text TargetIds before this
-            // crosses into long-lived telemetry storage and the admin usage dashboard. See M-028.
-            TargetId = ClampTargetId(TelemetrySanitizer.Redact(request.TargetId, request.SubFeatureCode)),
-            Timestamp = DateTime.UtcNow
-        });
-
-        return Accepted();
-    }
-
-    /// <summary>
-    /// Keeps a TargetId within its 200-character column. Applied after redaction, because the
-    /// redaction markers can lengthen free text, and one over-length row fails the whole background
-    /// batch insert — dropping every other user's events in it.
-    /// </summary>
-    internal static string? ClampTargetId(string? targetId) =>
-        targetId is { Length: > 200 } ? targetId[..200] : targetId;
 
     /// <summary>The signed-in user's short name (UPN before the '@'), matching how activity rows
     /// and the entitlements view key users. Null when no identity is present.</summary>

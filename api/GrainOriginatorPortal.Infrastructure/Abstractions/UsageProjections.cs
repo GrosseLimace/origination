@@ -18,7 +18,6 @@ public record UserClickRow(string EventType, string FeatureCode, string? SubFeat
 public record UserActivityRow(string? SubFeatureCode, string? HttpMethod);
 public record TargetCount(string TargetId, int Count);
 public record QuerySearchGapRow(string SearchText, int TimesSearched);
-public record CustomerNameSnapshot(long CustomerId, string Name, string? ScoularId);
 
 /// <summary>Per-user interaction pivot for the activity-breakdown table, aggregated in SQL.
 /// Profiles/contracts are distinct-by-target (opening the same producer 5 times = 1 viewed).</summary>

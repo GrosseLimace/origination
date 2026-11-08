@@ -9,10 +9,10 @@ namespace GrainOriginatorPortal.Api.Services.Diagnostics;
 /// </summary>
 public sealed class UsageRollupBackfillService : IUsageRollupBackfillService
 {
-    private readonly IUsageRepository _usageRepository;
+    private readonly IUsageTelemetryRepository _usageRepository;
     private readonly ILogger<UsageRollupBackfillService> _logger;
 
-    public UsageRollupBackfillService(IUsageRepository usageRepository, ILogger<UsageRollupBackfillService> logger)
+    public UsageRollupBackfillService(IUsageTelemetryRepository usageRepository, ILogger<UsageRollupBackfillService> logger)
     {
         _usageRepository = usageRepository;
         _logger = logger;

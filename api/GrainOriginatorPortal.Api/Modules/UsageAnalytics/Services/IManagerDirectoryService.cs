@@ -1,6 +1,7 @@
-using GrainOriginatorPortal.Api.Models;
+using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Models;
 
-namespace GrainOriginatorPortal.Api.Services;
+
+namespace GrainOriginatorPortal.Api.Modules.UsageAnalytics.Services;
 
 /// <summary>
 /// Org-hierarchy lookups for the usage dashboard's manager filter, backed by TradeUnitPreferences

@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace GrainOriginatorPortal.Api.Models.Requests;
+namespace GrainOriginatorPortal.Api.Modules.UsageAnalytics.Models.Requests;
 
 /// <summary>Inbound payload for POST /api/usage-dashboard/excluded-users — hides one account from
 /// every usage-dashboard view. Accepts either a short name or a full UPN; the service normalizes.</summary>

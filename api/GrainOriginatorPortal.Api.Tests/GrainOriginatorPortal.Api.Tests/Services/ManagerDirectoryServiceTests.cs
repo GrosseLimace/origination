@@ -12,9 +12,9 @@ using Moq;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Abstractions;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Services;
+using GrainOriginatorPortal.Infrastructure.Modules.UsageAnalytics.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

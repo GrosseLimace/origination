@@ -269,6 +269,21 @@ public class ContractRepository : IContractRepository
         return contracts;
     }
 
+    /// <summary>
+    /// The contract number and commodity of each of <paramref name="ids"/> found in ODS, for reports that name the
+    /// contracts people opened. Not on <see cref="IContractRepository"/>: it finds rows by their ODS surrogate id,
+    /// which only ODS has, whatever <c>Ctrm:Source</c> says.
+    /// </summary>
+    public async Task<Dictionary<long, (string ContractNumber, string? CommodityCode)>> GetNamesAsync(IReadOnlyCollection<long> ids, CancellationToken cancellationToken)
+    {
+        if (ids.Count == 0) return [];
+        return await _context.Contracts
+            .AsNoTracking()
+            .Where(c => ids.Contains(c.Id))
+            .Select(c => new { c.Id, c.ContractNumber, c.CommodityCode })
+            .ToDictionaryAsync(c => c.Id, c => (c.ContractNumber, c.CommodityCode), cancellationToken);
+    }
+
     public async Task<List<ContractPricingLine>> GetPricingLinesAsync(string sourceContractId, CancellationToken cancellationToken)
     {
         var lines = await _context.ContractPricingLines

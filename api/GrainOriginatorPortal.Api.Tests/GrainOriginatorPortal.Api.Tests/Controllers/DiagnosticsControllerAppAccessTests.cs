@@ -75,7 +75,7 @@ public class DiagnosticsControllerAppAccessTests
                 ods, app, httpFactory,
                 new Mock<IServiceScopeFactory>().Object,
                 new Mock<ILogger<ElevatorCacheDiagnosticsService>>().Object),
-            new UsageRollupBackfillService(new Mock<IUsageRepository>().Object, new Mock<ILogger<UsageRollupBackfillService>>().Object),
+            new UsageRollupBackfillService(new Mock<IUsageTelemetryRepository>().Object, new Mock<ILogger<UsageRollupBackfillService>>().Object),
             new AppAccessDiagnosticsService(_graphMock.Object, config, new Mock<ILogger<AppAccessDiagnosticsService>>().Object));
     }
 

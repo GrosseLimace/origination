@@ -127,7 +127,8 @@ public static class DependencyInjection
         services.AddScoped<IDisplayNameLookupRepository, DisplayNameLookupRepository>();
         services.AddScoped<IUserPreferenceRepository, UserPreferenceRepository>();
         services.AddScoped<IEntitlementsRepository, EntitlementsRepository>();
-        services.AddScoped<IUsageRepository, UsageRepository>();
+        // The usage tracking and rollup jobs write through this; the Usage Analytics module reads these tables.
+        services.AddScoped<IUsageTelemetryRepository, UsageTelemetryRepository>();
         services.AddScoped<IMbpLocationSynonymRepository, MbpLocationSynonymRepository>();
 
         return services;

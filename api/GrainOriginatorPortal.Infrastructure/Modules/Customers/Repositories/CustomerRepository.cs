@@ -650,6 +650,16 @@ public class CustomerRepository : ICustomerRepository
             .FirstOrDefaultAsync(c => c.ScoularId == scoularId, cancellationToken);
     }
 
+    public async Task<Dictionary<long, (string Name, string? ScoularId)>> GetNamesAsync(IReadOnlyCollection<long> customerIds, CancellationToken cancellationToken)
+    {
+        if (customerIds.Count == 0) return [];
+        return await _appContext.Customers
+            .AsNoTracking()
+            .Where(c => customerIds.Contains(c.Id))
+            .Select(c => new { c.Id, c.Name, c.ScoularId })
+            .ToDictionaryAsync(c => c.Id, c => (c.Name, c.ScoularId), cancellationToken);
+    }
+
     public async Task<List<Customer>> GetActiveByIdsAsync(IReadOnlyCollection<long> customerIds, CancellationToken cancellationToken)
     {
         if (customerIds.Count == 0) return [];

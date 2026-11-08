@@ -33,6 +33,7 @@ using GrainOriginatorPortal.Api.Modules.Customers;
 using GrainOriginatorPortal.Api.Modules.Engagement;
 using GrainOriginatorPortal.Api.Modules.Lists;
 using GrainOriginatorPortal.Api.Modules.Producers;
+using GrainOriginatorPortal.Api.Modules.UsageAnalytics;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -298,6 +299,7 @@ builder.Services.AddEngagementModule();
 builder.Services.AddProducersModule(builder.Configuration);
 builder.Services.AddListsModule();
 builder.Services.AddBidSheetModule();
+builder.Services.AddUsageAnalyticsModule();
 
 // Per-domain services (Api layer) — controllers depend on these.
 builder.Services.AddScoped<ICommodityService, CommodityService>();
@@ -309,13 +311,6 @@ builder.Services.AddScoped<IUserTradeUnitService, UserTradeUnitService>();
 builder.Services.AddScoped<ITradeUnitService, TradeUnitService>();
 // Singleton so the Nominatim rate-limiter + last-call timestamp are shared across requests.
 builder.Services.AddSingleton<IGeocodeService, GeocodeService>();
-builder.Services.AddScoped<IUsageDashboardService, UsageDashboardService>();
-// Scoped (not singleton like IAppAccessService) because it reads through the scoped
-// IUsageRepository/DbContext; the directory itself is shared via IMemoryCache.
-builder.Services.AddScoped<IManagerDirectoryService, ManagerDirectoryService>();
-// Generation stamp that lets an excluded-user edit invalidate the (scoped) dashboard service's
-// cached user universes process-wide. Singleton by necessity — see the type's remarks.
-builder.Services.AddSingleton<UsageUniverseCacheState>();
 builder.Services.AddScoped<IEntitlementsDirectoryService, EntitlementsDirectoryService>();
 // Read once: the connection string and the switch are app settings, which restart the app when changed.
 builder.Services.AddSingleton(ClientTelemetrySettings.From(builder.Configuration));

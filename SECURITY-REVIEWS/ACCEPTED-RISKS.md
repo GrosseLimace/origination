@@ -1720,6 +1720,12 @@ closed as declined, and AR-07's remains open. AR-10 is an authorization-scope wi
 classification choice, so whether it (and AR-07) should go to asksecurity@scoular.com is the project
 owner's call; as of 2026-10-13 that has not been done and this entry should not be read as saying it has.
 
+_Update (2026-11-08) — Usage Analytics module._ `UsageDashboardController` moved to
+`Api/Modules/UsageAnalytics/Controllers/`. `usage-reports:read` now sits on the controller instead of on each read action,
+and exclusion administration still also needs `usage-exclusions:manage`, so who can see what is unchanged: whoever holds
+the read permission sees the whole organisation, as this entry accepts. The click-event endpoint every user posts to
+moved to its own `ClickEventsController`, on the same route, and still needs only a sign-in.
+
 ---
 
 ## Dependabot #134 / #135 (2026-10-05) — accepted: NO FIX EXISTS

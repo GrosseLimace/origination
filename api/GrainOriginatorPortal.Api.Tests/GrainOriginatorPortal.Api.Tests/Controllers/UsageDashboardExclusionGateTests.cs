@@ -5,11 +5,11 @@ using Microsoft.AspNetCore.Mvc;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Controllers;
-using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Platform.Access;
-using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
+using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Controllers;
+using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Models;
+using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Services;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 

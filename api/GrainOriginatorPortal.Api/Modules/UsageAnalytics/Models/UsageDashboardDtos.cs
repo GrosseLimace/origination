@@ -1,5 +1,5 @@
 
-namespace GrainOriginatorPortal.Api.Models;
+namespace GrainOriginatorPortal.Api.Modules.UsageAnalytics.Models;
 
 public record UsageDashboardSummaryDto
 {

@@ -17,7 +17,7 @@ namespace GrainOriginatorPortal.Api.Tests.Services;
 /// </summary>
 public class UsageRollupBackfillServiceTests
 {
-    private readonly Mock<IUsageRepository> _repo = new();
+    private readonly Mock<IUsageTelemetryRepository> _repo = new();
     private readonly CapturingLogger<UsageRollupBackfillService> _logger = new();
     private readonly List<string> _calls = [];
     private readonly UsageRollupBackfillService _sut;

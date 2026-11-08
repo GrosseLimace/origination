@@ -23,6 +23,10 @@ public sealed class CustomerLookup(ICustomerRepository repository, ILogger<Custo
             ? new CustomerName(customer.Name, customer.ScoularId)
             : null;
 
+    public async Task<Dictionary<long, CustomerName>> GetNamesAsync(IReadOnlyCollection<long> customerIds, CancellationToken cancellationToken) =>
+        (await repository.GetNamesAsync(customerIds, cancellationToken))
+            .ToDictionary(c => c.Key, c => new CustomerName(c.Value.Name, c.Value.ScoularId));
+
     public async Task<List<CustomerResponse>> GetActiveAsync(IReadOnlyCollection<long> customerIds, CancellationToken cancellationToken)
     {
         if (customerIds.Count == 0) return [];

@@ -19,6 +19,12 @@ public interface ICustomerLookup
     Task<CustomerName?> GetNameAsync(long customerId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// The name and CTRM code of each of <paramref name="customerIds"/> that exists, active or not: a report about past
+    /// activity still names a customer who has since been deactivated. Ids with no customer are left out.
+    /// </summary>
+    Task<Dictionary<long, CustomerName>> GetNamesAsync(IReadOnlyCollection<long> customerIds, CancellationToken cancellationToken);
+
+    /// <summary>
     /// The active customers among <paramref name="customerIds"/>, as the customer list shows them (e-sign, ACH and
     /// trade units filled in). A database outage is a 503 <c>CUSTOMERS_DB_UNAVAILABLE</c>.
     /// </summary>

@@ -32,6 +32,18 @@ public class CustomerLookupTests
     }
 
     [Fact]
+    public async Task GetNamesAsync_MapsTheRepositorysNamesAndCodes()
+    {
+        _repositoryMock.Setup(r => r.GetNamesAsync(It.IsAny<IReadOnlyCollection<long>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<long, (string Name, string? ScoularId)> { [1] = ("Smith Farm", "SMITH"), [2] = ("Manual Farm", null) });
+
+        var names = await _sut.GetNamesAsync([1, 2], CancellationToken.None);
+
+        Assert.Equal(new CustomerName("Smith Farm", "SMITH"), names[1]);
+        Assert.Equal(new CustomerName("Manual Farm", null), names[2]);
+    }
+
+    [Fact]
     public async Task GetActiveAsync_MapsTheRepositorysCustomers_AndSkipsTheQueryForNoIds()
     {
         _repositoryMock.Setup(r => r.GetActiveByIdsAsync(It.IsAny<IReadOnlyCollection<long>>(), It.IsAny<CancellationToken>()))

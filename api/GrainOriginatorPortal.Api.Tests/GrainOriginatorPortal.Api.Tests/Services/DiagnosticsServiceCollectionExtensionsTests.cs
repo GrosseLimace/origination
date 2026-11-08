@@ -47,7 +47,7 @@ public class DiagnosticsServiceCollectionExtensionsTests
         services.AddScoped<CtrmProvenance>();
         services.AddScoped(_ => new Mock<IContractRepository>().Object);
         services.AddScoped(_ => new Mock<ITicketRepository>().Object);
-        services.AddScoped(_ => new Mock<IUsageRepository>().Object);
+        services.AddScoped(_ => new Mock<IUsageTelemetryRepository>().Object);
         services.AddSingleton(new Mock<IHttpClientFactory>().Object);
         services.AddSingleton(new Mock<IGraphDirectoryClient>().Object);
         services.AddSingleton(new Mock<IWebHostEnvironment>().Object);

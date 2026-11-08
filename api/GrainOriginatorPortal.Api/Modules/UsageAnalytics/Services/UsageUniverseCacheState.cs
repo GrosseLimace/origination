@@ -1,4 +1,4 @@
-namespace GrainOriginatorPortal.Api.Services;
+namespace GrainOriginatorPortal.Api.Modules.UsageAnalytics.Services;
 
 /// <summary>
 /// Process-wide generation stamp for the Usage Dashboard's cached "user universe" (the resolved set

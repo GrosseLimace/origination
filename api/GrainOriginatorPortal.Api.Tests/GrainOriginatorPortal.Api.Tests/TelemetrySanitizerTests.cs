@@ -94,9 +94,9 @@ public class TelemetrySanitizerTests
         var redacted = TelemetrySanitizer.Redact(question, "help-no-match");
 
         Assert.True(redacted!.Length > 200);
-        Assert.Equal(200, GrainOriginatorPortal.Api.Controllers.UsageDashboardController.ClampTargetId(redacted)!.Length);
-        Assert.Equal("short", GrainOriginatorPortal.Api.Controllers.UsageDashboardController.ClampTargetId("short"));
-        Assert.Null(GrainOriginatorPortal.Api.Controllers.UsageDashboardController.ClampTargetId(null));
+        Assert.Equal(200, GrainOriginatorPortal.Api.Controllers.ClickEventsController.ClampTargetId(redacted)!.Length);
+        Assert.Equal("short", GrainOriginatorPortal.Api.Controllers.ClickEventsController.ClampTargetId("short"));
+        Assert.Null(GrainOriginatorPortal.Api.Controllers.ClickEventsController.ClampTargetId(null));
     }
 
     [Fact]

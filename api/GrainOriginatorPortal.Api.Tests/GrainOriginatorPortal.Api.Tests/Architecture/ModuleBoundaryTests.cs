@@ -41,7 +41,8 @@ public class ModuleBoundaryTests
         ["Producers"] = ["Contracts", "Customers"],
         ["Lists"] = ["Producers", "Contracts", "Customers"],
         ["BidSheet"] = [],
-        ["UsageAnalytics"] = [],
+        // The usage dashboard names the customers, contracts and query-library prompts people used.
+        ["UsageAnalytics"] = ["Lists", "Contracts", "Customers"],
     };
 
     /// <summary>The business modules: every nested class of <see cref="AppPermissions"/> except Platform.</summary>

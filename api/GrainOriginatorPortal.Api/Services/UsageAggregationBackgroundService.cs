@@ -5,7 +5,7 @@ namespace GrainOriginatorPortal.Api.Services;
 /// <summary>
 /// Runs the usage-dashboard's periodic aggregation jobs: the daily rollups (UserActivityDaily,
 /// FeatureUsageDaily, UserFeatureUsageDaily), the weekly login rollup, the entitlements snapshot
-/// refresh, and retention cleanup. The DB work lives in IUsageRepository — this service only
+/// refresh, and retention cleanup. The DB work lives in IUsageTelemetryRepository — this service only
 /// schedules and logs.
 /// <para>
 /// The loop ticks hourly so a day's rollup lands soon after midnight and a failed attempt gets
@@ -160,10 +160,10 @@ public class UsageAggregationBackgroundService : BackgroundService
         await RunInScopeAsync((repo, ct) => repo.AggregateUserFeatureUsageDailyAsync(date, ct), cancellationToken);
     }
 
-    private async Task RunInScopeAsync(Func<IUsageRepository, CancellationToken, Task> work, CancellationToken cancellationToken)
+    private async Task RunInScopeAsync(Func<IUsageTelemetryRepository, CancellationToken, Task> work, CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
-        var repo = scope.ServiceProvider.GetRequiredService<IUsageRepository>();
+        var repo = scope.ServiceProvider.GetRequiredService<IUsageTelemetryRepository>();
         await work(repo, cancellationToken);
     }
 
@@ -172,7 +172,7 @@ public class UsageAggregationBackgroundService : BackgroundService
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var repo = scope.ServiceProvider.GetRequiredService<IUsageRepository>();
+            var repo = scope.ServiceProvider.GetRequiredService<IUsageTelemetryRepository>();
             var (unique, raw) = await repo.RefreshTradeUnitSnapshotAsync(cancellationToken);
             _lastSnapshotRefreshUtc = DateTime.UtcNow;
             _logger.LogInformation("Refreshed trade unit snapshot with {Count} unique entries (from {Raw} raw)", unique, raw);
@@ -187,7 +187,7 @@ public class UsageAggregationBackgroundService : BackgroundService
     private async Task CleanupRetentionAsync(CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
-        var repo = scope.ServiceProvider.GetRequiredService<IUsageRepository>();
+        var repo = scope.ServiceProvider.GetRequiredService<IUsageTelemetryRepository>();
 
         var (deletedActivities, deletedClicks) = await repo.CleanupUsageRetentionAsync(RawRetentionDays, cancellationToken);
         var deletedRollups = await repo.CleanupRollupRetentionAsync(RollupRetentionDays, cancellationToken);

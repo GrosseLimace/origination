@@ -111,7 +111,7 @@ public class UsageTrackingBackgroundService : BackgroundService
     private async Task FlushBatchAsync(List<UserActivityRecord> activities, List<UserClickEventRecord> clicks, CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
-        var repo = scope.ServiceProvider.GetRequiredService<IUsageRepository>();
+        var repo = scope.ServiceProvider.GetRequiredService<IUsageTelemetryRepository>();
 
         // Map incoming records to entities (feature codes derived here in the Api layer).
         var activityEntities = activities.Select(record =>

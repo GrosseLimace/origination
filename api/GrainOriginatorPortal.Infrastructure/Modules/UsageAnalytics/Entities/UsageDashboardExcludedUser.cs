@@ -1,4 +1,4 @@
-namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
+namespace GrainOriginatorPortal.Infrastructure.Modules.UsageAnalytics.Entities;
 
 /// <summary>
 /// A user kept OUT of the Usage Dashboard analytics — e.g. IT / dev / admin accounts whose activity

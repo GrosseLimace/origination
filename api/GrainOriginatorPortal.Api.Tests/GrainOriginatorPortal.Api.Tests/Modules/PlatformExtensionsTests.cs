@@ -9,6 +9,7 @@ using GrainOriginatorPortal.Api.Modules.Customers;
 using GrainOriginatorPortal.Api.Modules.Engagement;
 using GrainOriginatorPortal.Api.Modules.Lists;
 using GrainOriginatorPortal.Api.Modules.Producers;
+using GrainOriginatorPortal.Api.Modules.UsageAnalytics;
 using GrainOriginatorPortal.Infrastructure;
 using GrainOriginatorPortal.Infrastructure.Platform.Extensions;
 
@@ -36,6 +37,7 @@ public class PlatformExtensionsTests
         services.AddProducersModule(configuration);
         services.AddListsModule();
         services.AddBidSheetModule();
+        services.AddUsageAnalyticsModule();
         var registered = services.Select(d => d.ServiceType).ToHashSet();
 
         var extensions = typeof(IRecapGroupMembership).Assembly.GetTypes()

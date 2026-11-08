@@ -20,6 +20,7 @@ using GrainOriginatorPortal.Api.Modules.Engagement.Controllers;
 using GrainOriginatorPortal.Api.Modules.Lists.Controllers;
 using GrainOriginatorPortal.Api.Modules.BidSheet.Controllers;
 using GrainOriginatorPortal.Infrastructure.Modules.BidSheet.Entities;
+using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Controllers;
 
 namespace GrainOriginatorPortal.Api.Tests;
 
@@ -37,6 +38,7 @@ public class ControllerAuthorizationTests
         yield return new object[] { typeof(BarchartController) };
         yield return new object[] { typeof(BarchartIngestController) };
         yield return new object[] { typeof(BidSheetController) };
+        yield return new object[] { typeof(ClickEventsController) };
         yield return new object[] { typeof(ClientTelemetryController) };
         yield return new object[] { typeof(CommoditiesController) };
         yield return new object[] { typeof(ContractsController) };
@@ -114,15 +116,13 @@ public class ControllerAuthorizationTests
     }
 
     /// <summary>
-    /// Every usage-dashboard action reads or edits other people's activity data, so each must require a
-    /// permission — the class-level [Authorize] alone would only require a sign-in. Reads require
-    /// usage-reports:read. Exclusion administration requires usage-exclusions:manage, which reading
-    /// doesn't grant. The single exception is the telemetry endpoint, which every signed-in user posts
-    /// to. The read permission is the whole gate: whoever holds it sees the entire organisation and may
+    /// Every usage-dashboard action reads or edits other people's activity data. The controller requires
+    /// usage-reports:read, and exclusion administration also requires usage-exclusions:manage, which reading
+    /// doesn't grant. The read permission is the whole gate: whoever holds it sees the entire organisation and may
     /// filter by any manager.
     /// </summary>
     [Fact]
-    public void UsageDashboardController_EveryActionExceptClickEvent_RequiresItsPermission()
+    public void UsageDashboardController_RequiresUsageReports_AndExclusionsAlsoNeedTheirPermission()
     {
         string[] exclusionActions =
         [
@@ -132,29 +132,39 @@ public class ControllerAuthorizationTests
             nameof(UsageDashboardController.RemoveExcludedUser),
         ];
 
+        static string[] Required(MemberInfo member) =>
+            member.GetCustomAttributes<RequirePermissionAttribute>(inherit: true).Select(a => a.Permission).ToArray();
+
+        Assert.Equal([AppPermissions.UsageAnalytics.UsageReportsRead], Required(typeof(UsageDashboardController)));
+
         var actions = typeof(UsageDashboardController)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Where(m => !m.IsSpecialName)
             .ToList();
         Assert.NotEmpty(actions);
 
-        static string[] Required(MethodInfo action) =>
-            action.GetCustomAttributes<RequirePermissionAttribute>(inherit: true).Select(a => a.Permission).ToArray();
-
         var wrong = actions
-            .Where(m => m.Name != nameof(UsageDashboardController.TrackClickEvent))
             .Select(m => (m.Name, Required: Required(m), Expected: exclusionActions.Contains(m.Name)
-                ? AppPermissions.UsageAnalytics.UsageExclusionsManage
-                : AppPermissions.UsageAnalytics.UsageReportsRead))
-            .Where(a => !a.Required.SequenceEqual([a.Expected]))
-            .Select(a => $"{a.Name} requires [{string.Join(", ", a.Required)}], not {a.Expected}")
+                ? new[] { AppPermissions.UsageAnalytics.UsageExclusionsManage }
+                : []))
+            .Where(a => !a.Required.SequenceEqual(a.Expected))
+            .Select(a => $"{a.Name} requires [{string.Join(", ", a.Required)}] on the action, not [{string.Join(", ", a.Expected)}]")
             .ToList();
 
         Assert.True(wrong.Count == 0, string.Join("; ", wrong));
+    }
 
-        // And the telemetry endpoint must need only a sign-in, or the UI stops reporting usage.
-        var clickEvent = actions.Single(m => m.Name == nameof(UsageDashboardController.TrackClickEvent));
-        Assert.Empty(clickEvent.GetCustomAttributes<AuthorizeAttribute>(inherit: true));
+    /// <summary>
+    /// Every signed-in user posts click events from the UI, so the endpoint must need only a sign-in, or the UI stops
+    /// reporting usage.
+    /// </summary>
+    [Fact]
+    public void ClickEventsController_NeedsOnlyASignIn()
+    {
+        Assert.Single(typeof(ClickEventsController).GetCustomAttributes<AuthorizeAttribute>(inherit: true));
+        Assert.Empty(typeof(ClickEventsController).GetCustomAttributes<RequirePermissionAttribute>(inherit: true));
+        Assert.Empty(typeof(ClickEventsController).GetMethod(nameof(ClickEventsController.TrackClickEvent))!
+            .GetCustomAttributes<AuthorizeAttribute>(inherit: true));
     }
 
     /// <summary>

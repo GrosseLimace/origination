@@ -118,7 +118,7 @@ What that buys:
 | **Producers** | Originator | Planting intentions, producer details, contacts and grain on farm, stored grain, DP contracts, pacing, producer insights, growth opportunity, linked producers (`dbo.CustomerLink`) and the commodities a producer grows (`dbo.CustomerCommodity`), Planting Dashboard, the field plan (fields and CTRM splits, crop seasons, 45Z sustainability programs, the FD-CIC calculator) | Contracts, Customers, Platform |
 | **Lists & Insights** | Originator *(for now)* | Build-a-List with its customer map, NLQ engine, saved lists, query library, Actionable Insights | Producers, Contracts, Customers |
 | **Bid Sheet** | Originator | Bid sheet, the BarChart bid feed (picker reads and pipeline ingestion) | Platform |
-| **Usage Analytics** | Manager, Support | Usage dashboard | Platform |
+| **Usage Analytics** | Manager, Support | Usage dashboard and its excluded users. It reads what Platform's usage tracking records, and names the customers, contracts and query-library prompts people used. | Lists, Contracts, Customers, Platform |
 | **Calculators** | everyone | Frontend-only tools | Platform |
 
 ```mermaid
@@ -131,7 +131,9 @@ flowchart BT
     Producers --> Customers
     Lists[Lists & Insights] --> Producers
     BidSheet[Bid Sheet] --> Platform
-    Usage[Usage Analytics] --> Platform
+    Usage[Usage Analytics] --> Lists
+    Usage --> Contracts
+    Usage --> Customers
 ```
 
 *Arrows mean "may depend on". The reverse is forbidden: Customers and Contracts must never reference Producers. That single rule is what lets a trader-only build of the screen exist.*
@@ -154,7 +156,7 @@ api/GrainOriginatorPortal.Api/
 │   ├── Identity/                     # MeController, RequestContextService, UserEntitlementService
 │   ├── Preferences/                  # UserPreferences, UserTradeUnits, TradeUnits, Entitlements
 │   ├── ReferenceData/                # Commodities (list, conversions), locations
-│   ├── Telemetry/                    # usage tracking + aggregation background services, ClientTelemetry
+│   ├── Telemetry/                    # usage tracking + aggregation background services and UsageTelemetryRepository, ClientTelemetry, ClickEvents
 │   ├── Ctrm/                         # CtrmGraphQlClient: one client, used by Customers, Contracts and Producers
 │   ├── DocStore/                     # IDocStoreClient and AddDocStore: Doc Store through APIM; each upload names its category
 │   ├── Diagnostics/  WhatsNew/  Help/  Geocode/
@@ -471,7 +473,7 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 | Producers | PlantingIntentions, ProducerDetails, StoredGrain, DpContracts, DashboardPlantingEstimates, FieldPlan, CtrmSplits, TDisc, FdCic; **gains** `contracts/pacing` (`ContractPacingController`) | Keep the **route templates unchanged**, so the SPA doesn't change. The split readers and `FieldTicketReader` come from `Infrastructure/Ctrm/`. Delete the `farm/{farmId}` endpoints on Contracts and Tickets and their `GetByFarmAsync` chain through services and repositories; the Farms controller itself is already gone. Done in step 6a: both always returned an empty list. |
 | Lists | SavedLists, QueryLibrary | Done in step 8. Build-a-List, its customer map and Actionable Insights are browser-only, so the module's server side is saved lists and the query library. `ManagerDirectoryService` stays for Usage Analytics: only the usage dashboard uses it. |
 | BidSheet | BidSheet, Barchart, BarchartIngest (`bid-feed:manage`, which the pipeline holds through its `Machine` role, §4.3) | Done in step 9, with the BarChart catalog and ingest and their result types (`Abstractions`). The entity `BidSheet` shares its name with the module's namespace, so module code names it as `Entities.BidSheet` (or fully qualified in the Api), as `BidSheetService` already did. Saving your bid-sheet preference needs `preferences:write:own` rather than `bid-sheets:write`. |
-| UsageAnalytics | UsageDashboard (`usage-reports:read`; exclusions `usage-exclusions:manage`) | |
+| UsageAnalytics | UsageDashboard (`usage-reports:read`; exclusions `usage-exclusions:manage`) | Done in step 10. The tracking writes (the request and click logging, sessions, rollups, the entitlements snapshot and retention) split off into Platform's `UsageTelemetryRepository`, used by the tracking and aggregation jobs and the rollup backfill; the dashboard keeps `UsageRepository` for its reads. The click-event POST moved to `ClickEventsController` (same route, any signed-in user), which goes to Platform/Telemetry in step 11 with `ClientTelemetryController`. The usage projections and `ScreenTimeCalculator` stay with Platform: the rollup job uses them too. |
 
 **Changed in Phase 2 (2026-11-07):** the first draft also moved `customers/search-ods`, `customers/linked-to`, `commodities/planting` and `commodities/harvest-windows` into Producers. The Phase 1 catalog had settled them otherwise, and Phase 2 follows it:
 - **`commodities/planting` and `commodities/harvest-windows`** are reference data (`reference-data:read`, Platform). The curated crops feed Bid Sheet, Build-a-List and the calculators as well as planting intentions, and the harvest windows are preloaded for every user.
@@ -491,7 +493,7 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 - **Platform, for step 11:** the CTRM diagnostics service reads the contract and ticket repositories, the contract switch and both CTRM readers for its probes. Like `TradeUnitService`, that is Platform reading a module.
 
 **Found while moving Lists (2026-11-08), for step 10:**
-- **Usage Analytics:** `UsageRepository.GetQueryLibraryNamesAsync` reads the Lists module's `dbo.QueryLibrary` to name the prompts on the usage dashboard. Once Usage Analytics moves, that is a module with no dependencies reading a Lists entity, and `ModuleBoundaryTests` will fail on it. Either Lists provides the names (Usage Analytics would then depend on Lists), or Usage Analytics declares an extension that Lists implements, as Customers does for open activity.
+- **Usage Analytics (done in step 10, 2026-11-08):** the usage dashboard read the Lists module's `dbo.QueryLibrary`, and also the customer master and the ODS contracts, to name what people used. Decided: Usage Analytics depends on Lists, Contracts and Customers, as the module map now shows, and reads the names through `IQueryLibraryService`, `IContractLookup` (new, ODS-only: the ids are ODS ids) and `ICustomerLookup`.
 
 **`CustomerResponse` sheds `TotalAcres`, `FarmIds`, `LinkedProducerIds` and `Farm`.** The Producers module serves them in a `ProducerProfileResponse` instead. This one *is* a wire change, so sequence it with the frontend in Phase 4.
 

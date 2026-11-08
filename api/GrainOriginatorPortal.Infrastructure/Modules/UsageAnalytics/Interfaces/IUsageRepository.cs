@@ -1,14 +1,14 @@
 using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 
-namespace GrainOriginatorPortal.Infrastructure.Interfaces;
+namespace GrainOriginatorPortal.Infrastructure.Modules.UsageAnalytics.Interfaces;
 
 /// <summary>
 /// Read access to the usage-tracking tables (UserActivity, UserSession, UserClickEvent,
 /// UserActivityDaily, FeatureUsageDaily, UserFeatureUsageDaily, WeeklyLoginAggregate,
-/// UserTradeUnitSnapshot) plus the customer/contract/query-library lookups the usage dashboard needs
-/// to resolve ids to names. Aggregations stay in SQL; methods return small projection records that
-/// the service maps to DTOs.
+/// UserTradeUnitSnapshot), the excluded users and the manager directory, for the usage dashboard.
+/// Aggregations stay in SQL; methods return small projection records that the service maps to DTOs.
+/// The tracking service and the rollup jobs write these tables through <see cref="IUsageTelemetryRepository"/>.
 /// <para>
 /// Methods named <c>…FromRollupAsync</c> read the pre-aggregated daily/weekly tables and cover
 /// closed days only; the service pairs each with its raw-table counterpart for the current day.
@@ -83,44 +83,4 @@ public interface IUsageRepository
     Task<List<FeatureSubFeatureCount>> GetInteractionCountsFromRollupAsync(DateOnly fromDate, DateOnly toDateExclusive, IReadOnlyCollection<string> userIds, string? screen, CancellationToken cancellationToken);
     Task<List<FeatureUser>> GetFeatureUsersFromRollupAsync(DateOnly fromDate, DateOnly toDateExclusive, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
     Task<List<WeeklyRollup>> GetWeeklyLoginRollupAsync(DateOnly sinceWeekStart, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
-
-    // ── Name lookups ──
-    Task<Dictionary<string, string>> GetQueryLibraryNamesAsync(IReadOnlyCollection<int> ids, CancellationToken cancellationToken);
-    Task<CustomerNameSnapshot?> GetCustomerNameAsync(long customerId, CancellationToken cancellationToken);
-    Task<Dictionary<string, string>> GetCustomerDisplayNamesAsync(IReadOnlyCollection<long> ids, CancellationToken cancellationToken);
-    Task<Dictionary<string, string>> GetContractDisplayNamesAsync(IReadOnlyCollection<long> ids, CancellationToken cancellationToken);
-
-    // ── Writes (usage-tracking background service) ──
-
-    /// <summary>Persists a batch of user-activity + click-event rows in a single SaveChanges.</summary>
-    Task AddActivitiesAndClicksAsync(IReadOnlyList<UserActivity> activities, IReadOnlyList<UserClickEvent> clicks, CancellationToken cancellationToken);
-
-    /// <summary>For each user in the batch, extends their most-recent open session (within
-    /// <paramref name="sessionGap"/>) or starts a new one. DB is the source of truth.</summary>
-    Task ApplyActivitySessionsAsync(IReadOnlyList<UserActivity> activities, TimeSpan sessionGap, CancellationToken cancellationToken);
-
-    // ── Aggregation jobs (usage-aggregation background service) ──
-
-    /// <summary>Upserts the per-user daily activity rollup (UserActivityDaily) for the given date.</summary>
-    Task AggregateUserActivityDailyAsync(DateOnly date, CancellationToken cancellationToken);
-
-    /// <summary>Upserts the per-feature daily usage rollup (FeatureUsageDaily) for the given date.</summary>
-    Task AggregateFeatureUsageDailyAsync(DateOnly date, CancellationToken cancellationToken);
-
-    /// <summary>Upserts the per-user-per-feature daily rollup (UserFeatureUsageDaily) for the given date.</summary>
-    Task AggregateUserFeatureUsageDailyAsync(DateOnly date, CancellationToken cancellationToken);
-
-    /// <summary>Upserts the per-user weekly login rollup (WeeklyLoginAggregate) for the given week.</summary>
-    Task AggregateWeeklyLoginsAsync(DateOnly weekStart, CancellationToken cancellationToken);
-
-    /// <summary>Rebuilds dbo.UserTradeUnitSnapshot from the TradeUnitPreferences DB. Returns (unique entries written, raw rows read).</summary>
-    Task<(int Unique, int Raw)> RefreshTradeUnitSnapshotAsync(CancellationToken cancellationToken);
-
-    /// <summary>Deletes raw UserActivity/UserClickEvent rows older than the retention window, in
-    /// batches. Returns (activities, clicks) deleted.</summary>
-    Task<(int Activities, int Clicks)> CleanupUsageRetentionAsync(int retentionDays, CancellationToken cancellationToken);
-
-    /// <summary>Deletes rollup rows older than the (much longer) rollup retention window, in
-    /// batches. Returns the total rows deleted across the rollup tables.</summary>
-    Task<int> CleanupRollupRetentionAsync(int rollupRetentionDays, CancellationToken cancellationToken);
 }

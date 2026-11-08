@@ -8,6 +8,7 @@ using GrainOriginatorPortal.Infrastructure.Modules.Customers.Sync;
 using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Lists.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.BidSheet.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.UsageAnalytics.Entities;
 
 namespace GrainOriginatorPortal.Infrastructure.Data;
 
@@ -337,20 +338,6 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
             entity.Property(e => e.SearchText).HasMaxLength(500).IsRequired();
             entity.Property(e => e.Timestamp).HasPrecision(3).HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
-        });
-
-        modelBuilder.Entity<UsageDashboardExcludedUser>(entity =>
-        {
-            entity.ToTable("UsageDashboardExcludedUsers", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
-            entity.Property(e => e.Reason).HasMaxLength(500).IsRequired(false);
-            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
-            entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired().HasDefaultValue("system");
-            // Unique so the same account can't be excluded twice; SQL Server's default CI collation
-            // makes it case-insensitive, matching how the dashboard keys users.
-            entity.HasIndex(e => e.UserId).IsUnique().HasDatabaseName("IX_UsageDashboardExcludedUsers_UserId");
         });
 
         modelBuilder.Entity<MbpLocationSynonym>(entity =>

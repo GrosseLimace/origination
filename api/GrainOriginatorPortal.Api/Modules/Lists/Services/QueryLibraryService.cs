@@ -27,6 +27,10 @@ public class QueryLibraryService : IQueryLibraryService
     }
 
     /// <inheritdoc />
+    public Task<Dictionary<int, string>> GetNamesAsync(IReadOnlyCollection<int> ids, CancellationToken cancellationToken) =>
+        _repository.GetNamesAsync(ids, cancellationToken);
+
+    /// <inheritdoc />
     public async Task LogSearchAsync(string searchText, int? matchedQueryId, CancellationToken cancellationToken)
     {
         // Redact contact PII (emails, phone numbers, bare digit runs) before persisting: the raw

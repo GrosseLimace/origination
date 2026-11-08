@@ -1,6 +1,7 @@
-using GrainOriginatorPortal.Api.Models;
+using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Models;
 
-namespace GrainOriginatorPortal.Api.Services;
+
+namespace GrainOriginatorPortal.Api.Modules.UsageAnalytics.Services;
 
 /// <summary>Admin usage-dashboard read models — adoption summary, per-user tables, daily/weekly
 /// trends, feature/activity breakdowns, query-library usage, and the per-user drill-down.
