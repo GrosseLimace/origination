@@ -17,6 +17,8 @@ using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Api.Modules.Customers.Services;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Extensions;
+using GrainOriginatorPortal.Api.Modules.Contracts.Services;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 
@@ -48,12 +50,15 @@ public class DiagnosticsServiceCollectionExtensionsTests
         services.AddScoped(_ => new Mock<IContractRepository>().Object);
         services.AddScoped(_ => new Mock<ITicketRepository>().Object);
         services.AddScoped(_ => new Mock<IUsageTelemetryRepository>().Object);
+        services.AddScoped(_ => new Mock<IContractCommodities>().Object);
         services.AddSingleton(new Mock<IHttpClientFactory>().Object);
         services.AddSingleton(new Mock<IGraphDirectoryClient>().Object);
         services.AddSingleton(new Mock<IWebHostEnvironment>().Object);
         services.AddSingleton<CustomerSyncService>();
 
         services.AddDiagnosticsServices();
+        // The CTRM probes the controller also needs; the Contracts module registers them in the app.
+        services.AddScoped<ICtrmDiagnosticsService, CtrmDiagnosticsService>();
 
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
     }
@@ -61,7 +66,6 @@ public class DiagnosticsServiceCollectionExtensionsTests
     public static IEnumerable<object[]> ServiceInterfaces()
     {
         yield return [typeof(ISchemaDiagnosticsService), typeof(SchemaDiagnosticsService)];
-        yield return [typeof(ICtrmDiagnosticsService), typeof(CtrmDiagnosticsService)];
         yield return [typeof(ICommoditySeedService), typeof(CommoditySeedService)];
         yield return [typeof(IElevatorCacheDiagnosticsService), typeof(ElevatorCacheDiagnosticsService)];
         yield return [typeof(IUsageRollupBackfillService), typeof(UsageRollupBackfillService)];
@@ -97,7 +101,7 @@ public class DiagnosticsServiceCollectionExtensionsTests
         var services = new ServiceCollection();
 
         Assert.Same(services, services.AddDiagnosticsServices());
-        Assert.Equal(6, services.Count);
+        Assert.Equal(5, services.Count);
         Assert.All(services, d => Assert.Equal(ServiceLifetime.Scoped, d.Lifetime));
     }
 }

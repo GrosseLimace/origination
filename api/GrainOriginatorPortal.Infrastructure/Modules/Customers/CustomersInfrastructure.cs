@@ -6,6 +6,7 @@ using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Repositories;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Sync;
+using GrainOriginatorPortal.Infrastructure.Platform.Extensions;
 
 namespace GrainOriginatorPortal.Infrastructure.Modules.Customers;
 
@@ -19,6 +20,8 @@ public static class CustomersInfrastructure
     {
         services.AddScoped<ICustomerRepository, CustomerRepository>();
         services.AddScoped<ICustomerSyncRepository, CustomerSyncRepository>();
+        // Which trade units customers belong to, for Platform's access check and trade-unit catalog.
+        services.AddScoped<ICustomerTradeUnits, CustomerTradeUnits>();
 
         // Customer sync. The CTRM customer readers are singletons like CtrmContractReader: they share the
         // singleton ICtrmGraphQlClient and hold no per-request state. The feeders and the factory are SCOPED

@@ -5,6 +5,7 @@ using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Repositories;
 using GrainOriginatorPortal.Infrastructure.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;

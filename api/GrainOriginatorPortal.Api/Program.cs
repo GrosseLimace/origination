@@ -303,8 +303,8 @@ builder.Services.AddUsageAnalyticsModule();
 
 // Per-domain services (Api layer) — controllers depend on these.
 builder.Services.AddScoped<ICommodityService, CommodityService>();
-// Admin diagnostics: six services the DiagnosticsController delegates to (schema, CTRM probes, commodity
-// seed, elevator cache, usage-rollup backfill, app-access members). Registered together in one place.
+// Admin diagnostics: the services the DiagnosticsController delegates to (schema, commodity seed, elevator
+// cache, usage-rollup backfill, app-access members). The CTRM probes come from the Contracts module.
 builder.Services.AddDiagnosticsServices();
 builder.Services.AddScoped<IUserPreferenceService, UserPreferenceService>();
 builder.Services.AddScoped<IUserTradeUnitService, UserTradeUnitService>();

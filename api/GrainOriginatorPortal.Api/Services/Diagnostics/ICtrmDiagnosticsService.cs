@@ -4,6 +4,7 @@ namespace GrainOriginatorPortal.Api.Services.Diagnostics;
 /// CTRM GraphQL probes behind the non-production diagnostics routes (<c>ctrm</c>,
 /// <c>ctrm/contracts</c>, <c>ctrm/alias-batch</c>, <c>ctrm/producer-timing</c>). Every method
 /// answers 200-shaped data; the environment gate and request validation stay in the controller.
+/// The probes run the contract and ticket repositories and readers, so the Contracts module implements this.
 /// </summary>
 public interface ICtrmDiagnosticsService
 {

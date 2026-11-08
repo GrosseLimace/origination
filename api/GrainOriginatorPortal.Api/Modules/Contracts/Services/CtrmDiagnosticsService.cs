@@ -9,8 +9,9 @@ using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Interfaces;
+using GrainOriginatorPortal.Api.Services.Diagnostics;
 
-namespace GrainOriginatorPortal.Api.Services.Diagnostics;
+namespace GrainOriginatorPortal.Api.Modules.Contracts.Services;
 
 /// <summary>
 /// Extracted verbatim from DiagnosticsController (audit finding

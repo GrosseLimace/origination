@@ -6,6 +6,7 @@ using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Repositories;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Extensions;
+using GrainOriginatorPortal.Infrastructure.Platform.Extensions;
 
 namespace GrainOriginatorPortal.Infrastructure.Modules.Contracts;
 
@@ -43,6 +44,8 @@ public static class ContractsInfrastructure
 
         // Which trade units a producer has open contracts or unapplied tickets in, for the Customers module.
         services.AddScoped<ICustomerActivitySource, CustomerActivitySource>();
+        // The commodities on purchase contracts, for Platform's commodity seed.
+        services.AddScoped<IContractCommodities, ContractCommodities>();
         return services;
     }
 }

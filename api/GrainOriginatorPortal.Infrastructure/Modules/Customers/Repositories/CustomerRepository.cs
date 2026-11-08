@@ -998,17 +998,6 @@ public class CustomerRepository : ICustomerRepository
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<List<string>> GetAllActiveTradeUnitCodesAsync(CancellationToken cancellationToken)
-    {
-        return await _appContext.CustomerTradeUnits
-            .AsNoTracking()
-            .Where(ctu => ctu.IsActive)
-            .Select(ctu => ctu.TradeUnit)
-            .Distinct()
-            .OrderBy(t => t)
-            .ToListAsync(cancellationToken);
-    }
-
     /// <summary>The producer to onboard: by ScoularId when one was sent (E4), else by ODS id - on the ODS source
     /// only. On the <c>ctrm</c> source an id alone is never looked up in the ODS: every CTRM candidate carries its
     /// code, so a request without one is not a CTRM onboarding and yields null (CustomerNotFound). A placeholder id

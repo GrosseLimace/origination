@@ -2,7 +2,7 @@ using GrainOriginatorPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
-namespace GrainOriginatorPortal.Infrastructure.Ctrm;
+namespace GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm;
 
 /// <summary>
 /// Resolves the producer code a CTRM read was asked for.

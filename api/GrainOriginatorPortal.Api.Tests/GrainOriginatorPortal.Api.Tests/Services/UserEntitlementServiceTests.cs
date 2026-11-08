@@ -13,6 +13,7 @@ using Moq;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Extensions;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 
@@ -26,6 +27,7 @@ public class UserEntitlementServiceTests
 {
     private readonly Mock<IEntitlementsRepository> _entitlementsMock = new();
     private readonly Mock<IRequestContextService> _requestContextMock = new();
+    private readonly Mock<ICustomerTradeUnits> _customerTradeUnitsMock = new();
     private readonly MemoryCache _sharedCache = new(new MemoryCacheOptions { SizeLimit = 128 });
     private readonly UserEntitlementService _sut;
 
@@ -42,6 +44,7 @@ public class UserEntitlementServiceTests
         _entitlementsMock.Object,
         _requestContextMock.Object,
         _sharedCache,
+        _customerTradeUnitsMock.Object,
         NullLogger<UserEntitlementService>.Instance);
 
     /// <summary>SqlException has no accessible constructor, so allocate one without running a
@@ -226,8 +229,8 @@ public class UserEntitlementServiceTests
     public async Task ValidateCustomerAccessAsync_WhenCustomerHasNoTradeUnitMapping_ThrowsForbidden()
     {
         // Arrange — customer resolves to zero trade-unit codes (unmapped / not-yet-synced).
-        _entitlementsMock
-            .Setup(e => e.GetCustomerTradeUnitCodesAsync(123L, It.IsAny<CancellationToken>()))
+        _customerTradeUnitsMock
+            .Setup(e => e.GetActiveCodesAsync(123L, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<string>());
 
         // Act + Assert — access is denied rather than silently allowed.
@@ -243,8 +246,8 @@ public class UserEntitlementServiceTests
     [Fact]
     public async Task ValidateCustomerAccessAsync_WhenCallerSharesNoTradeUnitWithCustomer_ThrowsForbidden()
     {
-        _entitlementsMock
-            .Setup(e => e.GetCustomerTradeUnitCodesAsync(123L, It.IsAny<CancellationToken>()))
+        _customerTradeUnitsMock
+            .Setup(e => e.GetActiveCodesAsync(123L, It.IsAny<CancellationToken>()))
             .ReturnsAsync(["TU9"]);
         SetupUserTradeUnits("TU1");
 
@@ -256,8 +259,8 @@ public class UserEntitlementServiceTests
     public async Task ValidateCustomerAccessAsync_WhenCallerSharesOneTradeUnit_DoesNotThrow()
     {
         // One overlapping trade unit is enough — a customer may sit in several.
-        _entitlementsMock
-            .Setup(e => e.GetCustomerTradeUnitCodesAsync(123L, It.IsAny<CancellationToken>()))
+        _customerTradeUnitsMock
+            .Setup(e => e.GetActiveCodesAsync(123L, It.IsAny<CancellationToken>()))
             .ReturnsAsync(["TU9", "TU1"]);
         SetupUserTradeUnits("TU1");
 

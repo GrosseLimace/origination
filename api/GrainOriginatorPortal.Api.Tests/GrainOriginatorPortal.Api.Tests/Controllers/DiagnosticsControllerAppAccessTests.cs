@@ -19,6 +19,8 @@ using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Interfaces;
+using GrainOriginatorPortal.Api.Modules.Contracts.Services;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 
@@ -70,7 +72,7 @@ public class DiagnosticsControllerAppAccessTests
                 new CtrmContractReader(ctrmClient, config, new Mock<ILogger<CtrmContractReader>>().Object),
                 new CtrmTicketReader(ctrmClient, config, new Mock<ILogger<CtrmTicketReader>>().Object),
                 app),
-            new CommoditySeedService(ods, app),
+            new CommoditySeedService(new ContractCommodities(ods), app),
             new ElevatorCacheDiagnosticsService(
                 ods, app, httpFactory,
                 new Mock<IServiceScopeFactory>().Object,

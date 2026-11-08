@@ -60,7 +60,7 @@
            Repositories/CustomerRepositoryCtrmOnboardingTests.cs
            Repositories/CustomerRepositoryOnboardingTests.cs
            Repositories/CustomerSyncRepositoryReserveIdsTests.cs
-           Repositories/EntitlementsRepositoryCustomerTradeUnitTests.cs
+           Repositories/CustomerTradeUnitsTests.cs
            Repositories/UsageTelemetryRepositoryTests.cs
            Repositories/CustomerRepositoryNamesTests.cs
            Services/ContractLookupTests.cs

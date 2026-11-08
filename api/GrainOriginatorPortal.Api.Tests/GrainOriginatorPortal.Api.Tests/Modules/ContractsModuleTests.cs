@@ -12,6 +12,7 @@ using GrainOriginatorPortal.Api.Modules.Contracts;
 using GrainOriginatorPortal.Api.Modules.Contracts.Services;
 using GrainOriginatorPortal.Api.Modules.Customers;
 using GrainOriginatorPortal.Api.Modules.Producers;
+using GrainOriginatorPortal.Api.Services.Diagnostics;
 
 namespace GrainOriginatorPortal.Api.Tests.Modules;
 
@@ -89,6 +90,16 @@ public class ContractsModuleTests
 
         Assert.NotEmpty(needs);
         Assert.True(missing.Count == 0, "Not registered by AddContractsModule: " + string.Join("; ", missing));
+    }
+
+    [Fact]
+    public void TheCtrmProbes_AreProvidedForTheDiagnosticsPage()
+    {
+        // Platform's diagnostics controller asks for them; the probes run this module's repositories and readers.
+        var services = new ServiceCollection();
+        services.AddContractsModule();
+
+        Assert.Single(services, d => d.ServiceType == typeof(ICtrmDiagnosticsService) && d.ImplementationType == typeof(CtrmDiagnosticsService));
     }
 
     [Fact]

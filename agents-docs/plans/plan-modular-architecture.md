@@ -178,7 +178,7 @@ api/GrainOriginatorPortal.Infrastructure/
 ├── Platform/
 │   ├── Access/                       # AppPermissions (the catalog; here so EF HasData can seed dbo.Permissions), Entities/, Configurations/.
 │   │                                 #   Built in Phase 1: the first code in this layout, and the pattern Phase 2 follows
-│   ├── Data/                         # all DbContexts, Migrations/, ApplicationDbContextFactory
+│   ├── Data/                         # all DbContexts, Migrations/, ApplicationDbContextFactory. Decided in step 11: this stays at Infrastructure/Data, which counts as Platform; moving it would rewrite 215 generated migrations for no runtime change
 │   ├── Ctrm/                         # ICtrmGraphQlClient, CtrmConfig, throttle, retry, synthetic ids, provenance
 │   └── DependencyInjection.cs        # AddPlatformInfrastructure(): DbContexts and the CTRM plumbing
 └── Modules/
@@ -456,7 +456,12 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 - **When neither module may depend on the other, Platform declares the extension.** Built in step 9 (2026-11-08) for Bid Sheet → Engagement:
   - A bid sheet can be shared with a Daily Recap group, so Bid Sheet must know which groups the caller is in. Recap groups are Engagement's, and Bid Sheet depends on no module.
   - Platform declares `IRecapGroupMembership` in `Infrastructure/Platform/Extensions`, Engagement implements it (`RecapGroupMembership`, the same query Bid Sheet used to run itself), and `BidSheetService` asks it.
-  - No fallback, as above. `PlatformExtensionsTests` checks that the app registers an implementation of every Platform extension. The step-11 fix for `TradeUnitService` takes the same shape.
+  - No fallback, as above. `PlatformExtensionsTests` checks that the app registers an implementation of every Platform extension.
+- **Platform itself uses the same shape when it needs a module's answer** (step 11a, 2026-11-08):
+  - `ICustomerTradeUnits` (Customers implements): a customer's trade units for the per-customer access check, and every customer's for the trade-unit catalog's fallback. It replaced `TradeUnitService's` use of `ICustomerRepository` and the entitlements repository's read of `dbo.CustomerTradeUnit`.
+  - `IContractCommodities` (Contracts implements): the commodities on ODS purchase contracts, for the diagnostics page's commodity seed.
+  - `ICtrmDiagnosticsService` stays in Platform's diagnostics services, where `DiagnosticsController` uses it, and Contracts implements it and registers it: the probes run its repositories and readers.
+  - `ModuleBoundaryTests.Platform_DependsOnNoModule` now fails any Platform type that uses a module, except the DbContexts and their migrations in `Infrastructure.Data`, which map every module's tables.
 - **Enforce these rules with architecture tests** in `Api.Tests/Architecture/`, using **ArchUnitNET** (Apache-2.0, actively maintained; NetArchTest has had no release since 2021). `ModuleBoundaryTests` has two rules, and a check that every catalog module declares what it builds on:
   1. `Modules.X.*` depends on no `Modules.Y.*` (Api or Infrastructure) unless X builds on Y.
   2. `Modules.X.*` doesn't depend on `Infrastructure.Modules.Y.Repositories` or `Interfaces` for any Y ≠ X. `Interfaces` is where the repository interfaces live, so leaving it out would let a module inject another module's repository.
@@ -483,14 +488,14 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 **Found while moving Customers (2026-11-07), for the steps that follow:**
 - **Contracts (done in step 6a):** `CtrmPage<T>` was declared in `CtrmContractDtos.cs`, and the Customers CTRM DTOs use it. It now sits with the shared CTRM plumbing in `CtrmPageDtos.cs`.
 - **Engagement (done in step 7):** `NoteService` and `ReminderService` injected `ICustomerRepository`. They now use `ICustomerLookup`: a new note takes the first of the customer's ordered trade units, and a reminder takes the customer's name. That left `ICustomerRepository.GetFirstActiveTradeUnitAsync` unused, so it is gone.
-- **Platform:** `TradeUnitService` falls back to `ICustomerRepository.GetAllActiveTradeUnitCodesAsync` when the entitlements trade-unit list is unavailable. That has Platform reading a module's repository, the wrong way round. The fix is for Platform to define the fallback as an interface that Customers implements.
+- **Platform (done in step 11a):** `TradeUnitService` fell back to `ICustomerRepository.GetAllActiveTradeUnitCodesAsync` when the entitlements trade-unit list was unavailable. It now asks `ICustomerTradeUnits`, a Platform extension Customers implements (§4.4).
 
 **Found while untangling Contracts (2026-11-08):**
 - **Done in step 6a:**
   - Customers no longer reads the contract and ticket repositories; it asks `ICustomerActivitySource` (above).
   - Producers' field-ticket reader no longer borrows `TicketRepository` for ticket locations. The lookup is `TicketLocations` in Contracts, which both ticket repositories also use.
   - `CtrmQueries` is split by owner. `CtrmContractQueries` holds the contract and ticket documents, `CtrmSplitQueries` (Producers) the splits document, and `CtrmQueries` keeps what every document shares: the WAF rule and the 366-day ticket range. `CtrmQueryDocumentTests` now checks every module's query class, `CtrmCustomerQueries` included, which it never covered before.
-- **Platform, for step 11:** the CTRM diagnostics service reads the contract and ticket repositories, the contract switch and both CTRM readers for its probes. Like `TradeUnitService`, that is Platform reading a module.
+- **Platform (done in step 11a):** the CTRM diagnostics service read the contract and ticket repositories, the contract switch and both CTRM readers for its probes. It moved into Contracts, behind Platform's `ICtrmDiagnosticsService` (§4.4). Also found then: the commodity seed read ODS contracts, now through `IContractCommodities`, and the shared `CtrmProducerCode` read the customer master, so it moved into Customers' `Ctrm` folder, where Contracts and Producers still reach it.
 
 **Found while moving Lists (2026-11-08), for step 10:**
 - **Usage Analytics (done in step 10, 2026-11-08):** the usage dashboard read the Lists module's `dbo.QueryLibrary`, and also the customer master and the ODS contracts, to name what people used. Decided: Usage Analytics depends on Lists, Contracts and Customers, as the module map now shows, and reads the names through `IQueryLibraryService`, `IContractLookup` (new, ODS-only: the ids are ODS ids) and `ICustomerLookup`.

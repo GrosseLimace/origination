@@ -18,9 +18,8 @@ namespace GrainOriginatorPortal.Api.Tests.Architecture;
 /// </summary>
 /// <remarks>
 /// A module's code lives in <c>Api.Modules.&lt;Module&gt;</c> and <c>Infrastructure.Modules.&lt;Module&gt;</c>,
-/// and each rule matches on those namespaces. Code that hasn't moved into its module yet isn't checked,
-/// so a rule starts to bite as soon as the modules it names have moved. Platform isn't under
-/// <c>Modules</c>: every module may use it.
+/// and each rule matches on those namespaces. Platform is everything else in the two assemblies: every module may
+/// use it, and it may use no module.
 /// </remarks>
 public class ModuleBoundaryTests
 {
@@ -98,6 +97,30 @@ public class ModuleBoundaryTests
             .WithoutRequiringPositiveResults();
 
         AssertHolds(rule);
+    }
+
+    /// <summary>
+    /// Platform may use no module, since every module uses Platform. When Platform needs an answer only a module has,
+    /// it declares an extension the module implements (<c>Infrastructure.Platform.Extensions</c>), as the access check
+    /// does for a customer's trade units. The exception is the DbContexts and their migrations in
+    /// <c>Infrastructure.Data</c>: one <c>ApplicationDbContext</c> maps every module's tables. Program.cs, which
+    /// registers the modules, is in no namespace and so isn't matched.
+    /// </summary>
+    [Fact]
+    public void Platform_DependsOnNoModule()
+    {
+        const string platform = @"^GrainOriginatorPortal.(Api|Infrastructure)(?!.Modules(.|$))(..+)?$";
+        const string data = @"^GrainOriginatorPortal.Infrastructure.Data(..+)?$";
+        var anyModule = Types().That().ResideInNamespaceMatching(@"^GrainOriginatorPortal.(Api|Infrastructure).Modules..+$");
+
+        var rule = Types().That().ResideInNamespaceMatching(platform).And().DoNotResideInNamespaceMatching(data)
+            .Should().NotDependOnAny(anyModule);
+
+        AssertHolds(rule);
+
+        // Not vacuous: the same rule over the DbContexts as well fails, because they do map module entities.
+        var withTheDbContexts = Types().That().ResideInNamespaceMatching(platform).Should().NotDependOnAny(anyModule);
+        Assert.Contains(withTheDbContexts.Evaluate(Code), result => !result.Passed);
     }
 
     [Fact]

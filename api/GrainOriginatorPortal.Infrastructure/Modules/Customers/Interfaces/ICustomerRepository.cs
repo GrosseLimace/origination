@@ -36,7 +36,4 @@ public interface ICustomerRepository
     /// by code. Empty when the producer has no membership rows (contracts-only / not yet synced).</summary>
     Task<List<string>> GetActiveTradeUnitCodesAsync(long customerId, CancellationToken cancellationToken);
 
-    /// <summary>All distinct active trade-unit codes from dbo.CustomerTradeUnit, ordered — the
-    /// fallback TU catalog when the TradeUnitPreferences DB is unavailable.</summary>
-    Task<List<string>> GetAllActiveTradeUnitCodesAsync(CancellationToken cancellationToken);
 }

@@ -1,5 +1,6 @@
 // Project namespaces
 using GrainOriginatorPortal.Api.Modules.Contracts.Services;
+using GrainOriginatorPortal.Api.Services.Diagnostics;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts;
 
 namespace GrainOriginatorPortal.Api.Modules.Contracts;
@@ -19,6 +20,8 @@ public static class ContractsModule
         services.AddScoped<IContractService, ContractService>();
         services.AddScoped<ITicketService, TicketService>();
         services.AddScoped<IContractLookup, ContractLookup>();
+        // The CTRM probes the diagnostics page runs; Platform's diagnostics controller declares what it needs.
+        services.AddScoped<ICtrmDiagnosticsService, CtrmDiagnosticsService>();
 
         // Keeps the trade-unit-wide CTRM caches warm for recently-used producer sets, so Build-a-List prompts
         // never pay for a cache that expired between uses. No-op unless Ctrm:Source is 'ctrm'.

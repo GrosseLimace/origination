@@ -1,5 +1,6 @@
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Extensions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Caching.Memory;
 
@@ -21,6 +22,7 @@ public class UserEntitlementService : IUserEntitlementService
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(10);
 
     private readonly IEntitlementsRepository _entitlements;
+    private readonly ICustomerTradeUnits _customerTradeUnits;
     private readonly IRequestContextService _requestContext;
     private readonly IMemoryCache _cache;
     private readonly ILogger<UserEntitlementService> _logger;
@@ -32,9 +34,11 @@ public class UserEntitlementService : IUserEntitlementService
         IEntitlementsRepository entitlements,
         IRequestContextService requestContext,
         IMemoryCache cache,
+        ICustomerTradeUnits customerTradeUnits,
         ILogger<UserEntitlementService> logger)
     {
         _entitlements = entitlements;
+        _customerTradeUnits = customerTradeUnits;
         _requestContext = requestContext;
         _cache = cache;
         _logger = logger;
@@ -141,8 +145,8 @@ public class UserEntitlementService : IUserEntitlementService
     /// </summary>
     public async Task ValidateCustomerAccessAsync(long customerId, CancellationToken cancellationToken = default)
     {
-        // Look up customer's trade unit(s) from the live ODS view
-        var customerTradeUnits = await _entitlements.GetCustomerTradeUnitCodesAsync(customerId, cancellationToken);
+        // The customer's trade units, from the Customers module (dbo.CustomerTradeUnit)
+        var customerTradeUnits = await _customerTradeUnits.GetActiveCodesAsync(customerId, cancellationToken);
 
         if (customerTradeUnits.Count == 0)
         {

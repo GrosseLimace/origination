@@ -8,12 +8,10 @@ namespace GrainOriginatorPortal.Infrastructure.Repositories;
 public class EntitlementsRepository : IEntitlementsRepository
 {
     private readonly TradeUnitPreferencesDbContext _entitlementsContext;
-    private readonly ApplicationDbContext _appContext;
 
-    public EntitlementsRepository(TradeUnitPreferencesDbContext entitlementsContext, ApplicationDbContext appContext)
+    public EntitlementsRepository(TradeUnitPreferencesDbContext entitlementsContext)
     {
         _entitlementsContext = entitlementsContext;
-        _appContext = appContext;
     }
 
     public async Task<List<UserTradeUnitPreference>> GetByUserAsync(string userId, CancellationToken cancellationToken)
@@ -49,14 +47,6 @@ public class EntitlementsRepository : IEntitlementsRepository
             .Select(u => u.TradeUnitCode)
             .Distinct()
             .ToListAsync(cancellationToken);
-    }
-
-    public async Task<List<string>> GetCustomerTradeUnitCodesAsync(long customerId, CancellationToken cancellationToken)
-    {
-        var codes = await _appContext.CustomerTradeUnits.AsNoTracking()
-            .Where(t => t.CustomerId == customerId && t.IsActive)
-            .Select(t => t.TradeUnit).ToListAsync(cancellationToken);
-        return codes.Select(c => c.Trim()).Where(c => c.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     public async Task<HashSet<string>> GetActiveUserIdsAsync(IReadOnlyCollection<string> userIds, CancellationToken cancellationToken)

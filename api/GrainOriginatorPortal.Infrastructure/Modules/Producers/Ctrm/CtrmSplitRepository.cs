@@ -1,5 +1,6 @@
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm;
 using Microsoft.Extensions.Logging;
 
 namespace GrainOriginatorPortal.Infrastructure.Modules.Producers.Ctrm;

@@ -1,6 +1,6 @@
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
-using GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Extensions;
 
 namespace GrainOriginatorPortal.Api.Services;
 
@@ -8,16 +8,16 @@ namespace GrainOriginatorPortal.Api.Services;
 public class TradeUnitService : ITradeUnitService
 {
     private readonly IEntitlementsRepository _entitlements;
-    private readonly ICustomerRepository _customerRepository;
+    private readonly ICustomerTradeUnits _customerTradeUnits;
     private readonly ILogger<TradeUnitService> _logger;
 
     public TradeUnitService(
         IEntitlementsRepository entitlements,
-        ICustomerRepository customerRepository,
+        ICustomerTradeUnits customerTradeUnits,
         ILogger<TradeUnitService> logger)
     {
         _entitlements = entitlements;
-        _customerRepository = customerRepository;
+        _customerTradeUnits = customerTradeUnits;
         _logger = logger;
     }
 
@@ -40,7 +40,7 @@ public class TradeUnitService : ITradeUnitService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Entitlements TU catalog unavailable — falling back to dbo.CustomerTradeUnit");
-            var codes = await _customerRepository.GetAllActiveTradeUnitCodesAsync(cancellationToken);
+            var codes = await _customerTradeUnits.GetAllActiveCodesAsync(cancellationToken);
             return codes.Select(c => new TradeUnitOptionResponse { Code = c }).ToList();
         }
     }
