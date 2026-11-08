@@ -316,6 +316,8 @@ builder.Services.AddScoped<IOutlookCalendarService, OutlookCalendarService>();
 builder.Services.AddScoped<ITicketService, TicketService>();
 builder.Services.AddScoped<IContractService, ContractService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
+// What other modules ask about customers, in place of the Customers repository.
+builder.Services.AddScoped<ICustomerLookup, CustomerLookup>();
 builder.Services.AddScoped<IBidSheetService, BidSheetService>();
 builder.Services.AddScoped<IBarchartIngestService, BarchartIngestService>();
 builder.Services.AddScoped<IBarchartCatalogService, BarchartCatalogService>();

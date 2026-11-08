@@ -11,16 +11,16 @@ namespace GrainOriginatorPortal.Api.Modules.Producers.Services;
 public class DpContractService : IDpContractService
 {
     private readonly IDpContractRepository _repository;
-    private readonly ICustomerRepository _customerRepository;
+    private readonly ICustomerLookup _customers;
     private readonly IUserEntitlementService _entitlementService;
 
     public DpContractService(
         IDpContractRepository repository,
-        ICustomerRepository customerRepository,
+        ICustomerLookup customers,
         IUserEntitlementService entitlementService)
     {
         _repository = repository;
-        _customerRepository = customerRepository;
+        _customers = customers;
         _entitlementService = entitlementService;
     }
 
@@ -37,7 +37,7 @@ public class DpContractService : IDpContractService
             throw new GrainOriginatorPortal.Api.Exceptions.InfrastructureException(
                 "Authorization data is temporarily unavailable. Please retry shortly.",
                 "ENTITLEMENTS_DB_UNAVAILABLE", StatusCodes.Status503ServiceUnavailable);
-        var allowedCustomerIds = await _customerRepository.GetActiveCustomerIdsInTradeUnitsAsync(allowed, cancellationToken);
+        var allowedCustomerIds = await _customers.GetActiveCustomerIdsInTradeUnitsAsync(allowed, cancellationToken);
         contracts = contracts.Where(d => allowedCustomerIds.Contains(d.CustomerId)).ToList();
 
         return contracts.Select(d => d.ToResponse()).ToList();

@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
+using GrainOriginatorPortal.Infrastructure.Data.Entities;
 
-namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
+namespace GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
 
 /// <summary>
 /// Join table linking a customer to one of the commodities they grow.

@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
+using GrainOriginatorPortal.Infrastructure.Data.Entities;
 
-namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
+namespace GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
 
 /// <summary>
 /// Bidirectional link between two customers (producers). One row per

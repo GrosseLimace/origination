@@ -886,6 +886,11 @@ producer's trade units or a named group). Record that answer here with a date. M
 - Files are served with the type decided at upload, so the browser only renders PDF or an image.
 - Every download is audit-logged (`AUDIT_DOWNLOAD`), and Doc Store keeps its own access log.
 
+_Update (2026-11-07) — linked-to moved._ `GET /api/customers/linked-to/{sourceId}` moved from `CustomersController` to the
+Producers module's `LinkedProducersController`, with the same route and the same unscoped behaviour. It now needs
+`producer-details:read`, where before it needed only a sign-in. Scanner hits against `LinkedProducersController.GetLinkedTo`
+are the `GetLinkedTo` this entry already covers.
+
 ---
 
 ## AR-03 — Rep-driven trade-unit assignment

@@ -19,7 +19,8 @@ namespace GrainOriginatorPortal.Api.Tests.Architecture;
 /// <remarks>
 /// A module's code lives in <c>Api.Modules.&lt;Module&gt;</c> and <c>Infrastructure.Modules.&lt;Module&gt;</c>,
 /// and each rule matches on those namespaces. Code that hasn't moved into its module yet isn't checked,
-/// so a rule starts to bite as soon as the modules it names have moved.
+/// so a rule starts to bite as soon as the modules it names have moved. Platform isn't under
+/// <c>Modules</c>: every module may use it.
 /// </remarks>
 public class ModuleBoundaryTests
 {
@@ -27,46 +28,72 @@ public class ModuleBoundaryTests
         .LoadAssemblies(typeof(MeController).Assembly, typeof(ApplicationDbContext).Assembly)
         .Build();
 
+    /// <summary>
+    /// The modules each module builds on, as the module map's "Depends on" column has them. The reverse is
+    /// never allowed: Customers, Contracts and Engagement must work without any producer code, which is what
+    /// lets a trader see a customer without the producer screens.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string[]> DependsOn = new Dictionary<string, string[]>
+    {
+        ["Customers"] = [],
+        ["Contracts"] = ["Customers"],
+        ["Engagement"] = ["Customers"],
+        ["Producers"] = ["Contracts", "Customers"],
+        ["Lists"] = ["Producers", "Contracts", "Customers"],
+        ["BidSheet"] = [],
+        ["UsageAnalytics"] = [],
+    };
+
     /// <summary>The business modules: every nested class of <see cref="AppPermissions"/> except Platform.</summary>
-    public static TheoryData<string> Modules() =>
-        new(typeof(AppPermissions).GetNestedTypes(BindingFlags.Public)
+    private static IEnumerable<string> ModuleNames() =>
+        typeof(AppPermissions).GetNestedTypes(BindingFlags.Public)
             .Select(module => module.Name)
-            .Where(name => name != nameof(AppPermissions.Platform)));
+            .Where(name => name != nameof(AppPermissions.Platform));
+
+    public static TheoryData<string> Modules() => new(ModuleNames());
 
     private static string InModule(string module) =>
         $@"^GrainOriginatorPortal\.(Api|Infrastructure)\.Modules\.{module}(\..+)?$";
 
+    [Fact]
+    public void EveryModule_SaysWhichModulesItBuildsOn()
+    {
+        Assert.Equal(
+            ModuleNames().Order(StringComparer.Ordinal),
+            DependsOn.Keys.Order(StringComparer.Ordinal));
+    }
+
     /// <summary>
-    /// Producers builds on Customers, Contracts and Engagement, never the other way round. The shared
-    /// modules must work without any producer code, which is what lets a trader see a customer without
-    /// the producer screens.
+    /// A module may use the modules it builds on (their services, models and, in the one shared DbContext,
+    /// their entities for joins and foreign keys) and no others.
     /// </summary>
     [Theory]
-    [InlineData("Customers")]
-    [InlineData("Contracts")]
-    [InlineData("Engagement")]
-    public void SharedModules_DoNotDependOnProducers(string module)
+    [MemberData(nameof(Modules))]
+    public void AModule_DependsOnlyOnTheModulesItBuildsOn(string module)
     {
+        var allowed = string.Join("|", DependsOn[module].Append(module));
+        var anyOtherModule = $@"^GrainOriginatorPortal\.(Api|Infrastructure)\.Modules\.(?!(?:{allowed})(?:\.|$))[^.]+(\..+)?$";
+
         var rule = Types().That().ResideInNamespaceMatching(InModule(module))
-            .Should().NotDependOnAny(Types().That().ResideInNamespaceMatching(InModule("Producers")))
+            .Should().NotDependOnAny(Types().That().ResideInNamespaceMatching(anyOtherModule))
             .WithoutRequiringPositiveResults();
 
         AssertHolds(rule);
     }
 
     /// <summary>
-    /// A module reaches another module's data only through that module's services, never through its
-    /// repositories, their interfaces, or its entities (which a DbSet on the shared DbContext would expose).
+    /// Even a module it builds on is reached through its services, never its repositories or their
+    /// interfaces: a repository is how a module keeps its own rules (scoping, soft deletes, audit) in one place.
     /// </summary>
     [Theory]
     [MemberData(nameof(Modules))]
-    public void AModule_UsesNoOtherModulesRepositoriesOrEntities(string module)
+    public void AModule_UsesNoOtherModulesRepositories(string module)
     {
-        var anotherModulesData =
-            $@"^GrainOriginatorPortal\.Infrastructure\.Modules\.(?!{module}\.)[^.]+\.(Repositories|Interfaces|Entities)(\..+)?$";
+        var anotherModulesRepositories =
+            $@"^GrainOriginatorPortal\.Infrastructure\.Modules\.(?!{module}\.)[^.]+\.(Repositories|Interfaces)(\..+)?$";
 
         var rule = Types().That().ResideInNamespaceMatching(InModule(module))
-            .Should().NotDependOnAny(Types().That().ResideInNamespaceMatching(anotherModulesData))
+            .Should().NotDependOnAny(Types().That().ResideInNamespaceMatching(anotherModulesRepositories))
             .WithoutRequiringPositiveResults();
 
         AssertHolds(rule);
@@ -75,7 +102,7 @@ public class ModuleBoundaryTests
     [Fact]
     public void TheRules_SeeARealDependency()
     {
-        // Until modules move, the rules above match nothing and pass. This proves a rule of the same shape
+        // Until modules move, the rules above match little and pass. This proves a rule of the same shape
         // does fail on a dependency the code really has: the access endpoints use the permission catalog.
         var rule = Types().That().ResideInNamespaceMatching(@"^GrainOriginatorPortal\.Api\.Platform\.Access(\..+)?$")
             .Should().NotDependOnAny(

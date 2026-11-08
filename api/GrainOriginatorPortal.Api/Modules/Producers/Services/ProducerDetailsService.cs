@@ -7,6 +7,7 @@ using GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Interfaces;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Modules.Producers.Mappings;
+using GrainOriginatorPortal.Api.Models.Responses;
 using Microsoft.Data.SqlClient;
 
 namespace GrainOriginatorPortal.Api.Modules.Producers.Services;
@@ -15,7 +16,7 @@ namespace GrainOriginatorPortal.Api.Modules.Producers.Services;
 public class ProducerDetailsService : IProducerDetailsService
 {
     private readonly IProducerDetailsRepository _repository;
-    private readonly ICustomerRepository _customerRepository;
+    private readonly ICustomerLookup _customers;
     private readonly IUserEntitlementService _entitlementService;
     private readonly IDisplayNameLookupRepository _displayNameLookup;
     private readonly IRequestContextService _requestContext;
@@ -23,14 +24,14 @@ public class ProducerDetailsService : IProducerDetailsService
 
     public ProducerDetailsService(
         IProducerDetailsRepository repository,
-        ICustomerRepository customerRepository,
+        ICustomerLookup customers,
         IUserEntitlementService entitlementService,
         IDisplayNameLookupRepository displayNameLookup,
         IRequestContextService requestContext,
         ILogger<ProducerDetailsService> logger)
     {
         _repository = repository;
-        _customerRepository = customerRepository;
+        _customers = customers;
         _entitlementService = entitlementService;
         _displayNameLookup = displayNameLookup;
         _requestContext = requestContext;
@@ -72,7 +73,7 @@ public class ProducerDetailsService : IProducerDetailsService
             throw new GrainOriginatorPortal.Api.Exceptions.InfrastructureException(
                 "Authorization data is temporarily unavailable. Please retry shortly.",
                 "ENTITLEMENTS_DB_UNAVAILABLE", StatusCodes.Status503ServiceUnavailable);
-        var allowedCustomerIds = await _customerRepository.GetActiveCustomerIdsInTradeUnitsAsync(allowed, cancellationToken);
+        var allowedCustomerIds = await _customers.GetActiveCustomerIdsInTradeUnitsAsync(allowed, cancellationToken);
         all = all.Where(d => allowedCustomerIds.Contains(d.CustomerId)).ToList();
 
         return all.Select(p => p.ToResponse(nameMap)).ToList();
@@ -207,6 +208,40 @@ public class ProducerDetailsService : IProducerDetailsService
         return await _repository.DeleteAsync(customerId, _requestContext.GetCurrentUser(), cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async Task<List<CustomerResponse>> GetLinkedToAsync(string scoularId, CancellationToken cancellationToken)
+    {
+        var linkingIds = await ReadLinkedAsync(() => _repository.GetCustomerIdsLinkingToAsync(scoularId, cancellationToken));
+        if (linkingIds.Count == 0) return [];
+
+        // The Customers module fills each customer in as its list shows it (e-sign, ACH, trade units); the
+        // producer fields go on top.
+        var customers = await _customers.GetActiveAsync(linkingIds, cancellationToken);
+        var fields = await ReadLinkedAsync(() => _repository.GetLinkFieldsAsync(customers.Select(c => c.Id).ToList(), cancellationToken));
+
+        return customers
+            .Select(c => fields.TryGetValue(c.Id, out var f)
+                ? c with { TotalAcres = f.TotalAcres ?? c.TotalAcres, LinkedProducerIds = f.LinkedProducerIds }
+                : c)
+            .ToList();
+    }
+
+    /// <summary>A database outage while reading linked producers is a retryable 503, as it was before the move.</summary>
+    private async Task<T> ReadLinkedAsync<T>(Func<Task<T>> read)
+    {
+        try
+        {
+            return await read();
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            _logger.LogError(ex, "Transient DB error retrieving {Context} — surfacing as retryable", "incoming linked customers");
+            throw new InfrastructureException(
+                "The customer data source is temporarily unavailable. Please retry shortly.",
+                "CUSTOMERS_DB_UNAVAILABLE", ex, StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+
     /// <summary>Throws unless the caller holds a trade unit the customer belongs to. Used by the
     /// DELETE path only — see GetByCustomerAsync for why reads are NOT gated this way.
     /// <para>
@@ -229,7 +264,7 @@ public class ProducerDetailsService : IProducerDetailsService
                 "Authorization data is temporarily unavailable. Please retry shortly.",
                 "ENTITLEMENTS_DB_UNAVAILABLE", StatusCodes.Status503ServiceUnavailable);
 
-        var allowedCustomerIds = await _customerRepository.GetActiveCustomerIdsInTradeUnitsAsync(allowed, cancellationToken);
+        var allowedCustomerIds = await _customers.GetActiveCustomerIdsInTradeUnitsAsync(allowed, cancellationToken);
         if (allowedCustomerIds.Contains(customerId)) return;
 
         _logger.LogWarning(

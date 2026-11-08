@@ -35,10 +35,6 @@ public class CustomerService : ICustomerService
         SafeListAsync(ct => _repository.SearchOdsAsync(searchTerm, ct), "ODS customer search", cancellationToken);
 
     /// <inheritdoc />
-    public Task<List<CustomerResponse>> GetLinkedToAsync(string scoularId, CancellationToken cancellationToken) =>
-        SafeListAsync(ct => _repository.GetLinkedToAsync(scoularId, ct), "incoming linked customers", cancellationToken);
-
-    /// <inheritdoc />
     public async Task<CustomerResponse?> GetByIdAsync(long id, CancellationToken cancellationToken)
     {
         var customer = await _repository.GetByIdAsync(id, cancellationToken);

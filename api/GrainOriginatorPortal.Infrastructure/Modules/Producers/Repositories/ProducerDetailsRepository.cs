@@ -609,6 +609,57 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
         return true;
     }
 
+    public async Task<List<long>> GetCustomerIdsLinkingToAsync(string scoularId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(scoularId)) return [];
+
+        // Resolve the target's ScoularId to a CustomerId, then find every FromCustomerId in dbo.CustomerLink whose
+        // ToCustomerId matches.
+        var toCustomerId = await _appContext.Customers.AsNoTracking()
+            .Where(c => c.ScoularId == scoularId)
+            .Select(c => c.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (toCustomerId == 0) return [];
+
+        return await _appContext.CustomerLinks.AsNoTracking()
+            .Where(l => l.ToCustomerId == toCustomerId)
+            .Select(l => l.FromCustomerId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<Dictionary<long, ProducerLinkFields>> GetLinkFieldsAsync(IReadOnlyCollection<long> customerIds, CancellationToken cancellationToken)
+    {
+        if (customerIds.Count == 0) return [];
+        var ids = customerIds.Distinct().ToList();
+
+        // Project to just (CustomerId, TotalAcres) so EF emits SELECT on those two columns only — the full
+        // ProducerDetails row has ~12 columns we'd otherwise pull across the wire and discard.
+        var acresByCustomerId = await _appContext.ProducerDetails.AsNoTracking()
+            .Where(pd => ids.Contains(pd.CustomerId) && pd.TotalAcres != null)
+            .Select(pd => new { pd.CustomerId, Acres = pd.TotalAcres!.Value })
+            .ToDictionaryAsync(x => x.CustomerId, x => x.Acres, cancellationToken);
+
+        // Every outgoing CustomerLink row for the set at once, grouped in memory, so the client can follow chains.
+        var links = await _appContext.CustomerLinks.AsNoTracking()
+            .Where(l => ids.Contains(l.FromCustomerId))
+            .Join(_appContext.Customers.AsNoTracking(),
+                  l => l.ToCustomerId,
+                  cust => cust.Id,
+                  (l, cust) => new { l.FromCustomerId, cust.ScoularId })
+            .Where(x => x.ScoularId != null)
+            .ToListAsync(cancellationToken);
+        var linksByFrom = links
+            .GroupBy(x => x.FromCustomerId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.ScoularId!).ToList());
+
+        return acresByCustomerId.Keys.Union(linksByFrom.Keys).ToDictionary(
+            id => id,
+            id => new ProducerLinkFields(
+                acresByCustomerId.TryGetValue(id, out var acres) ? (int)acres : null,
+                linksByFrom.TryGetValue(id, out var linked) ? linked : []));
+    }
+
     /// <summary>
     /// Composes the comma-separated list of linked-producer ScoularIds for a given
     /// from-customer by joining dbo.CustomerLink → dbo.Customer.ScoularId. Returns

@@ -161,7 +161,7 @@ public class DpBushelConversionTests
 public class DpContractServiceTests
 {
     private readonly Mock<IDpContractRepository> _repositoryMock = new();
-    private readonly Mock<ICustomerRepository> _customerRepositoryMock = new();
+    private readonly Mock<ICustomerLookup> _customersMock = new();
     private readonly Mock<IUserEntitlementService> _entitlementMock = new();
     private readonly DpContractService _sut;
 
@@ -171,7 +171,7 @@ public class DpContractServiceTests
         _entitlementMock
             .Setup(e => e.GetAllowedTradeUnitCodesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new HashSet<string> { "2115" });
-        _sut = new DpContractService(_repositoryMock.Object, _customerRepositoryMock.Object, _entitlementMock.Object);
+        _sut = new DpContractService(_repositoryMock.Object, _customersMock.Object, _entitlementMock.Object);
     }
 
     [Fact]
@@ -183,7 +183,7 @@ public class DpContractServiceTests
                 new DpContract { Id = "entitled", CustomerId = 1 },
                 new DpContract { Id = "not-entitled", CustomerId = 2 },
             ]);
-        _customerRepositoryMock
+        _customersMock
             .Setup(c => c.GetActiveCustomerIdsInTradeUnitsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([1L]);
 
@@ -222,7 +222,7 @@ public class DpContractServiceTests
         var result = await _sut.GetByCustomerAsync(42L, CancellationToken.None);
 
         Assert.Single(result);
-        _customerRepositoryMock.Verify(
+        _customersMock.Verify(
             c => c.GetActiveCustomerIdsInTradeUnitsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }

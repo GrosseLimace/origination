@@ -127,7 +127,7 @@ public class UserEntitlementService : IUserEntitlementService
     /// a UX default, not an access boundary: originators must be able to pull up any producer.
     ///
     /// Security scans repeatedly flag the customer-scoped reads (CustomersController GetById /
-    /// GetBySourceId / GetLinkedTo / GetTradeUnits, NotesController GetByCustomer) as CWE-639 and
+    /// GetBySourceId / GetTradeUnits, LinkedProducersController GetLinkedTo, NotesController GetByCustomer) as CWE-639 and
     /// suggest calling this method. Triage those hits against AR-02 rather than wiring this up — doing
     /// so would break three shipped or in-flight behaviours:
     ///   • cross-trade-unit coverage (a rep covering for someone else's producers),

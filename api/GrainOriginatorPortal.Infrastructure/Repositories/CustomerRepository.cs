@@ -302,7 +302,10 @@ public class CustomerRepository : ICustomerRepository
         // a parameterized LIKE-per-word AND-across-words match. TU scope is applied via
         // EXISTS against dbo.CustomerTradeUnit. PrimaryContact match is still a correlated
         // subquery against dbo.ProducerDetails — that's an app-DB join that EF LINQ would
-        // generate inefficiently, so we keep raw SQL.
+        // generate inefficiently, so we keep raw SQL. The ProducerDetails and ProducerContact
+        // subqueries are the Customers module's one remaining read of Producers tables: a search
+        // contributor from Producers, which checks the caller's permission, replaces them before
+        // traders search customers.
         var (sql, parameters) = BuildSearchSql(searchWords, hasTradeUnitFilter ? SanitizeCsv(tradeUnits!) : null);
 
         var customers = await _appContext.Customers
@@ -647,71 +650,15 @@ public class CustomerRepository : ICustomerRepository
             .FirstOrDefaultAsync(c => c.ScoularId == scoularId, cancellationToken);
     }
 
-    public async Task<List<Customer>> GetLinkedToAsync(string scoularId, CancellationToken cancellationToken)
+    public async Task<List<Customer>> GetActiveByIdsAsync(IReadOnlyCollection<long> customerIds, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(scoularId)) return [];
+        if (customerIds.Count == 0) return [];
 
-        // Resolve the target's ScoularId to a CustomerId, then find all FromCustomerIds
-        // in dbo.CustomerLink whose ToCustomerId matches. This replaces the prior
-        // CSV-substring search against ProducerDetails.LinkedProducerIds (column dropped
-        // in Phase 3b in favor of the dbo.CustomerLink join table).
-        var toCustomerId = await _appContext.Customers.AsNoTracking()
-            .Where(c => c.ScoularId == scoularId)
-            .Select(c => c.Id)
-            .FirstOrDefaultAsync(cancellationToken);
-        if (toCustomerId == 0) return [];
-
-        var matchingCustomerIds = await _appContext.CustomerLinks.AsNoTracking()
-            .Where(l => l.ToCustomerId == toCustomerId)
-            .Select(l => l.FromCustomerId)
-            .Distinct()
-            .ToListAsync(cancellationToken);
-
-        if (matchingCustomerIds.Count == 0) return [];
-
+        var ids = customerIds.Distinct().ToList();
         var customers = await _appContext.Customers
             .AsNoTracking()
-            .Where(c => c.IsActive && matchingCustomerIds.Contains(c.Id))
+            .Where(c => c.IsActive && ids.Contains(c.Id))
             .ToListAsync(cancellationToken);
-
-        // Enrich with LinkedProducerIds (composed from dbo.CustomerLink) so the
-        // frontend can follow chains. Other ProducerDetails fields (bin capacity,
-        // primary contact, commodities) are applied by the frontend via its
-        // producerDetailsMap() cache.
-        //
-        // Project to just (CustomerId, TotalAcres) so EF emits SELECT on those
-        // two columns only — the full ProducerDetails row has ~12 columns we'd
-        // otherwise pull across the wire and discard.
-        var acresByCustomerId = await _appContext.ProducerDetails.AsNoTracking()
-            .Where(pd => matchingCustomerIds.Contains(pd.CustomerId) && pd.TotalAcres != null)
-            .Select(pd => new { pd.CustomerId, Acres = pd.TotalAcres!.Value })
-            .ToDictionaryAsync(x => x.CustomerId, x => x.Acres, cancellationToken);
-
-        // Batch-fetch all outgoing CustomerLink rows for the customer set, then
-        // group in memory to assign LinkedProducerIds CSVs.
-        var allLinks = await _appContext.CustomerLinks.AsNoTracking()
-            .Where(l => matchingCustomerIds.Contains(l.FromCustomerId))
-            .Join(_appContext.Customers.AsNoTracking(),
-                  l => l.ToCustomerId,
-                  cust => cust.Id,
-                  (l, cust) => new { l.FromCustomerId, cust.ScoularId })
-            .Where(x => x.ScoularId != null)
-            .ToListAsync(cancellationToken);
-        var linksByFrom = allLinks
-            .GroupBy(x => x.FromCustomerId)
-            .ToDictionary(g => g.Key, g => g.Select(x => x.ScoularId!).ToList());
-
-        foreach (var c in customers)
-        {
-            if (acresByCustomerId.TryGetValue(c.Id, out var acres))
-            {
-                c.TotalAcres = (int)acres;
-            }
-            if (linksByFrom.TryGetValue(c.Id, out var linked))
-            {
-                c.LinkedProducerIds = linked;
-            }
-        }
 
         await EnrichCustomersWithESignAsync(customers, cancellationToken);
         await EnrichCustomersWithAchAsync(customers, cancellationToken);

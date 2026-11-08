@@ -14,7 +14,7 @@ namespace GrainOriginatorPortal.Api.Modules.Producers.Services;
 public class PlantingIntentionService : IPlantingIntentionService
 {
     private readonly IPlantingIntentionRepository _repository;
-    private readonly ICustomerRepository _customerRepository;
+    private readonly ICustomerLookup _customers;
     private readonly IUserEntitlementService _entitlementService;
     private readonly IDisplayNameLookupRepository _displayNameLookup;
     private readonly IRequestContextService _requestContext;
@@ -22,14 +22,14 @@ public class PlantingIntentionService : IPlantingIntentionService
 
     public PlantingIntentionService(
         IPlantingIntentionRepository repository,
-        ICustomerRepository customerRepository,
+        ICustomerLookup customers,
         IUserEntitlementService entitlementService,
         IDisplayNameLookupRepository displayNameLookup,
         IRequestContextService requestContext,
         ILogger<PlantingIntentionService> logger)
     {
         _repository = repository;
-        _customerRepository = customerRepository;
+        _customers = customers;
         _entitlementService = entitlementService;
         _displayNameLookup = displayNameLookup;
         _requestContext = requestContext;
@@ -79,7 +79,7 @@ public class PlantingIntentionService : IPlantingIntentionService
         // Customer name/code come from the authoritative dbo.Customer row rather than the client. The
         // trade unit is the originator's choice — a producer on several trade units plants different
         // acres for each — validated against the producer's memberships in ResolveTradeUnitAsync.
-        var customer = await _customerRepository.GetByIdAsync(customerId, cancellationToken);
+        var customer = await _customers.GetNameAsync(customerId, cancellationToken);
 
         var resolvedName = customer?.Name ?? customerName ?? string.Empty;
         var resolvedCode = customer?.ScoularId ?? customerCode ?? string.Empty;
@@ -142,7 +142,7 @@ public class PlantingIntentionService : IPlantingIntentionService
     private async Task<string> ResolveTradeUnitAsync(long customerId, string? requestedTradeUnit, bool customerFound,
         string crop, CancellationToken cancellationToken)
     {
-        var producerTradeUnits = await _customerRepository.GetActiveTradeUnitCodesAsync(customerId, cancellationToken);
+        var producerTradeUnits = await _customers.GetActiveTradeUnitCodesAsync(customerId, cancellationToken);
         var requested = requestedTradeUnit?.Trim();
 
         if (!string.IsNullOrEmpty(requested))

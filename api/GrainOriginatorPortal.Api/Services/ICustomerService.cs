@@ -13,7 +13,6 @@ public interface ICustomerService
     Task<List<CustomerResponse>> SearchOdsAsync(string searchTerm, CancellationToken cancellationToken);
     Task<CustomerResponse?> GetByIdAsync(long id, CancellationToken cancellationToken);
     Task<CustomerResponse?> GetByScoularIdAsync(string scoularId, CancellationToken cancellationToken);
-    Task<List<CustomerResponse>> GetLinkedToAsync(string scoularId, CancellationToken cancellationToken);
 
 
     Task<List<CustomerTradeUnitInfo>> GetTradeUnitsAsync(long customerId, CancellationToken cancellationToken);

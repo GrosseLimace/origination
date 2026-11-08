@@ -115,7 +115,7 @@ What that buys:
 | **Customers** | everyone | Customer master, the sync (both feeders, plus its admin diagnostics), search, the onboarding search, trade-unit assignments, customer list, profile **shell** with its extension slots | Platform |
 | **Contracts** | everyone | Contracts, tickets, pricing lines, the CTRM/ODS readers and switches, contracts and tickets tables | Customers, Platform |
 | **Engagement** | everyone *(confirm, Q6)* | Notes, reminders with the Outlook mirror, Teams mentions, daily digest | Customers, Platform |
-| **Producers** | Originator | Planting intentions, producer details, contacts and grain on farm, stored grain, DP contracts, pacing, producer insights, growth opportunity, linked producers (from Phase 4; until then `customers/linked-to` is a Customers endpoint), Planting Dashboard, the field plan (fields and CTRM splits, crop seasons, 45Z sustainability programs, the FD-CIC calculator) | Contracts, Customers, Platform |
+| **Producers** | Originator | Planting intentions, producer details, contacts and grain on farm, stored grain, DP contracts, pacing, producer insights, growth opportunity, linked producers (`dbo.CustomerLink`) and the commodities a producer grows (`dbo.CustomerCommodity`), Planting Dashboard, the field plan (fields and CTRM splits, crop seasons, 45Z sustainability programs, the FD-CIC calculator) | Contracts, Customers, Platform |
 | **Lists & Insights** | Originator *(for now)* | Build-a-List with its customer map, NLQ engine, saved lists, query library, Actionable Insights | Producers, Contracts, Customers |
 | **Bid Sheet** | Originator | Bid sheet, the BarChart bid feed (picker reads and pipeline ingestion) | Platform |
 | **Usage Analytics** | Manager, Support | Usage dashboard | Platform |
@@ -374,7 +374,7 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 | | `teams-channels:read` | `TeamsChannels` GETs | personas |
 | | `recap-groups:read`, `recap-groups:write` | `DailyRecapGroups` GET; POST, PUT, enable and DELETE. Only a group's creator may delete it, as the service checks today. | read to personas, write to `Editor` |
 | Producers | `planting-intentions:read`, `:write` | `PlantingIntentions` GETs; POST, PUT, retag and DELETE | read to personas, write to `Editor` |
-| | `producer-details:read`, `:write` | `ProducerDetails` GETs; PUT and DELETE | the same split |
+| | `producer-details:read`, `:write` | `ProducerDetails` GETs and `customers/linked-to` (moved to Producers in Phase 2); PUT and DELETE | the same split |
 | | `stored-grain:read`, `dp-contracts:read` | `StoredGrain`; `DpContracts` | personas |
 | | `contract-pacing:read` | `GET contracts/pacing/{customerId}`, moved to Producers in Phase 2 (`ContractPacingController`, same route) | personas |
 | | `planting-estimates:read`, `:write` | `DashboardPlantingEstimates` GETs; its three upserts and the actual-harvest DELETE | the same split |
@@ -430,10 +430,12 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 
 ### 4.4 Cross-module rules
 
-- **Allowed:** a module may inject another module's **service interfaces**, and only in the direction of the diagram in section 3.
-- **Not allowed:**
-  - A module never injects another module's repository, entity or DbContext set.
-  - Customers, Contracts and Engagement never reference anything in `Modules.Producers`.
+- **Direction:** a module depends only on the modules it builds on, the "Depends on" column of the module map (§3), and on Platform. Never the other way: Customers, Contracts and Engagement never reference anything in `Modules.Producers`.
+- **Allowed, in that direction:**
+  - Another module's **service interfaces** and API models. Producers asks Customers through `ICustomerLookup` (trade-unit scoping, a customer's name, customers by id).
+  - Another module's **entities**, for joins and foreign keys in the one shared DbContext. A producer table has a foreign key to `dbo.Customer` and joins it for names and trade units.
+- **Not allowed, in any direction:** another module's repositories or their interfaces. A repository is where a module keeps its own rules (scoping, soft deletes, audit), so other modules go through its services.
+- **Changed in Phase 2 (2026-11-07):** the first draft banned other modules' entities too. Producers joins the customer tables in about 25 queries across 7 repositories. Rewriting those as service calls would turn each join into two queries (or N+1) and make Phase 2 a rewrite rather than a move, so entities follow the direction rule instead.
 - **When a shared module needs producer behaviour, invert the dependency:**
   - Customers defines an extension interface, e.g. `ICustomerSearchContributor`.
   - Producers implements it and registers it in `AddProducersModule()`.
@@ -443,10 +445,10 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
     - The Customers code that calls contributors asks `IPermissionService` first, and skips any contributor whose permission the user doesn't hold.
     - Where a contributor works on a single customer, it also skips customers outside its segments.
     - This is the same check the frontend registry applies to contributions (§5.2).
-  - The first candidate is the `ProducerDetails`/`ProducerContact` join in customer search.
-- **Enforce these rules with architecture tests** in `Api.Tests/Architecture/`, using **ArchUnitNET** (Apache-2.0, actively maintained; NetArchTest has had no release since 2021). Two rules:
-  1. `Modules.{Customers,Contracts,Engagement}.*` must not depend on `Modules.Producers.*`.
-  2. `Modules.X.*` must not depend on `Infrastructure.Modules.Y.Repositories`/`Interfaces`/`Entities` for Y ≠ X. `Interfaces` is where the repository interfaces live, so leaving it out would let a module inject another module's repository.
+  - The first candidate is the `ProducerDetails`/`ProducerContact` join in customer search. Until it is replaced (Phase 4 or 5, before traders search customers), that SQL is the one known Customers → Producers dependency, and the architecture tests can't see it because it's SQL text.
+- **Enforce these rules with architecture tests** in `Api.Tests/Architecture/`, using **ArchUnitNET** (Apache-2.0, actively maintained; NetArchTest has had no release since 2021). `ModuleBoundaryTests` has two rules, and a check that every catalog module declares what it builds on:
+  1. `Modules.X.*` depends on no `Modules.Y.*` (Api or Infrastructure) unless X builds on Y.
+  2. `Modules.X.*` doesn't depend on `Infrastructure.Modules.Y.Repositories` or `Interfaces` for any Y ≠ X. `Interfaces` is where the repository interfaces live, so leaving it out would let a module inject another module's repository.
 - It is a new test dependency, so it needs an SBOM entry.
 
 ### 4.5 What moves where
@@ -465,7 +467,7 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 **Changed in Phase 2 (2026-11-07):** the first draft also moved `customers/search-ods`, `customers/linked-to`, `commodities/planting` and `commodities/harvest-windows` into Producers. The Phase 1 catalog had settled them otherwise, and Phase 2 follows it:
 - **`commodities/planting` and `commodities/harvest-windows`** are reference data (`reference-data:read`, Platform). The curated crops feed Bid Sheet, Build-a-List and the calculators as well as planting intentions, and the harvest windows are preloaded for every user.
 - **`customers/search-ods`**, the onboarding search, stays with Customers (`customers:read`). Phase 5 widens onboarding to commercial customers.
-- **`customers/linked-to`** stays with Customers until Phase 4. Its producer fields (acreage, linked ids) leave `CustomerResponse` in the split below, which is when linked producers move to Producers. Until then its query reads `ProducerDetails` from the Customers repository, one of the Customers → Producers dependencies step 5 of Phase 2 has to settle.
+- **`customers/linked-to`** moved to Producers after all, in step 5 (`LinkedProducersController`, `producer-details:read`, same route). Its data is all producer data (`dbo.CustomerLink` and `ProducerDetails.TotalAcres`), so Producers finds who links to a producer, asks Customers for those customers through `ICustomerLookup`, and adds the acres and links on top. That removed the Customers repository's only compiled read of a Producers table.
 
 **`CustomerResponse` sheds `TotalAcres`, `FarmIds`, `LinkedProducerIds` and `Farm`.** The Producers module serves them in a `ProducerProfileResponse` instead. This one *is* a wire change, so sequence it with the frontend in Phase 4.
 

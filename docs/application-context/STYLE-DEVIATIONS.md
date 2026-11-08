@@ -76,7 +76,8 @@ whether a change crosses a module boundary.
 
 The guide's real constraints still hold: two projects, `Api → Infrastructure`, mapping in services,
 entities in Infrastructure. Two kinds of test keep the module boundaries:
-- `ModuleBoundaryTests` (ArchUnitNET) checks which module may depend on which.
+- `ModuleBoundaryTests` (ArchUnitNET) checks which module may depend on which. A module uses only the modules it
+  builds on, and never their repositories. It may join their entities, since every module shares one DbContext.
 - `ControllerAuthorizationTests` requires every controller in a module folder to name its permissions.
 
 Modules move one at a time, so until Phase 2 ends some code is still in the old layer folders.

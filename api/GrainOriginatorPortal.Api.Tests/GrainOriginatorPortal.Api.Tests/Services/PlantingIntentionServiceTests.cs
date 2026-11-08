@@ -26,7 +26,7 @@ public class PlantingIntentionServiceTests
     private const long CustomerId = 4821;
 
     private readonly Mock<IPlantingIntentionRepository> _repositoryMock = new();
-    private readonly Mock<ICustomerRepository> _customerRepositoryMock = new();
+    private readonly Mock<ICustomerLookup> _customersMock = new();
     private readonly Mock<IUserEntitlementService> _entitlementMock = new();
     private readonly Mock<IDisplayNameLookupRepository> _displayNameMock = new();
     private readonly Mock<IRequestContextService> _requestContextMock = new();
@@ -38,9 +38,9 @@ public class PlantingIntentionServiceTests
             .Setup(d => d.ResolveAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<string, string>());
         _requestContextMock.Setup(r => r.GetCurrentUser()).Returns("tester@scoular.com");
-        _customerRepositoryMock
-            .Setup(c => c.GetByIdAsync(CustomerId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Customer { Id = CustomerId, Name = "Sample Farms", ScoularId = "SAMPFRM" });
+        _customersMock
+            .Setup(c => c.GetNameAsync(CustomerId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CustomerName("Sample Farms", "SAMPFRM"));
 
         // AddAsync / UpdateAsync echo the trade unit they were given so assertions can read it back.
         _repositoryMock
@@ -75,7 +75,7 @@ public class PlantingIntentionServiceTests
 
         _sut = new PlantingIntentionService(
             _repositoryMock.Object,
-            _customerRepositoryMock.Object,
+            _customersMock.Object,
             _entitlementMock.Object,
             _displayNameMock.Object,
             _requestContextMock.Object,
@@ -83,7 +83,7 @@ public class PlantingIntentionServiceTests
     }
 
     private void ProducerHasTradeUnits(params string[] codes) =>
-        _customerRepositoryMock
+        _customersMock
             .Setup(c => c.GetActiveTradeUnitCodesAsync(CustomerId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(codes.ToList());
 
@@ -250,7 +250,7 @@ public class PlantingIntentionServiceTests
         Assert.Equal("UNCHANGED", result!.TradeUnit);
         _repositoryMock.Verify(r => r.UpdateAsync(7, "Soybeans", null, null, null, 400, 2026, null,
             "tester@scoular.com", It.IsAny<CancellationToken>()), Times.Once);
-        _customerRepositoryMock.Verify(c => c.GetActiveTradeUnitCodesAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
+        _customersMock.Verify(c => c.GetActiveTradeUnitCodesAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // -------------------------------------------------------------------------

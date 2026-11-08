@@ -1,0 +1,42 @@
+// Microsoft namespaces
+using Microsoft.Data.SqlClient;
+
+// Project namespaces
+using GrainOriginatorPortal.Api.Exceptions;
+using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Services.Mappings;
+using GrainOriginatorPortal.Infrastructure.Interfaces;
+
+namespace GrainOriginatorPortal.Api.Services;
+
+/// <inheritdoc cref="ICustomerLookup"/>
+public sealed class CustomerLookup(ICustomerRepository repository, ILogger<CustomerLookup> logger) : ICustomerLookup
+{
+    public Task<HashSet<long>> GetActiveCustomerIdsInTradeUnitsAsync(IReadOnlyCollection<string> tradeUnits, CancellationToken cancellationToken) =>
+        repository.GetActiveCustomerIdsInTradeUnitsAsync(tradeUnits, cancellationToken);
+
+    public Task<List<string>> GetActiveTradeUnitCodesAsync(long customerId, CancellationToken cancellationToken) =>
+        repository.GetActiveTradeUnitCodesAsync(customerId, cancellationToken);
+
+    public async Task<CustomerName?> GetNameAsync(long customerId, CancellationToken cancellationToken) =>
+        await repository.GetByIdAsync(customerId, cancellationToken) is { } customer
+            ? new CustomerName(customer.Name, customer.ScoularId)
+            : null;
+
+    public async Task<List<CustomerResponse>> GetActiveAsync(IReadOnlyCollection<long> customerIds, CancellationToken cancellationToken)
+    {
+        if (customerIds.Count == 0) return [];
+        try
+        {
+            var customers = await repository.GetActiveByIdsAsync(customerIds, cancellationToken);
+            return customers.Select(c => c.ToResponse()).ToList();
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            logger.LogError(ex, "Transient DB error retrieving {Context} — surfacing as retryable", "customers by id");
+            throw new InfrastructureException(
+                "The customer data source is temporarily unavailable. Please retry shortly.",
+                "CUSTOMERS_DB_UNAVAILABLE", ex, StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+}

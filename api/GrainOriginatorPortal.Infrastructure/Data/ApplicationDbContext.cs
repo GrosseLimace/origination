@@ -250,60 +250,6 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.CustomerCode).IsUnique().HasDatabaseName("UQ_eSignEnrollment_CustomerCode");
         });
 
-        modelBuilder.Entity<CustomerLink>(entity =>
-        {
-            entity.ToTable("CustomerLink", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.FromCustomerId).HasColumnName("FromCustomerId").IsRequired();
-            entity.Property(e => e.ToCustomerId).HasColumnName("ToCustomerId").IsRequired();
-
-            entity.HasOne(e => e.FromCustomer)
-                  .WithMany()
-                  .HasForeignKey(e => e.FromCustomerId)
-                  .OnDelete(DeleteBehavior.NoAction)
-                  .HasConstraintName("FK_CustomerLink_Customer_From");
-            entity.HasOne(e => e.ToCustomer)
-                  .WithMany()
-                  .HasForeignKey(e => e.ToCustomerId)
-                  .OnDelete(DeleteBehavior.NoAction)
-                  .HasConstraintName("FK_CustomerLink_Customer_To");
-
-            // One row per directed pair.
-            entity.HasIndex(e => new { e.FromCustomerId, e.ToCustomerId })
-                  .IsUnique()
-                  .HasDatabaseName("UQ_CustomerLink_From_To");
-            // Reverse-lookup index — "who links TO this customer?"
-            entity.HasIndex(e => e.ToCustomerId).HasDatabaseName("IX_CustomerLink_ToCustomerId");
-        });
-
-        modelBuilder.Entity<CustomerCommodity>(entity =>
-        {
-            entity.ToTable("CustomerCommodity", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
-            entity.Property(e => e.CommodityId).HasColumnName("CommodityId").IsRequired();
-
-            entity.HasOne(e => e.Customer)
-                  .WithMany()
-                  .HasForeignKey(e => e.CustomerId)
-                  .OnDelete(DeleteBehavior.NoAction)
-                  .HasConstraintName("FK_CustomerCommodity_Customer");
-            entity.HasOne(e => e.Commodity)
-                  .WithMany()
-                  .HasForeignKey(e => e.CommodityId)
-                  .OnDelete(DeleteBehavior.NoAction)
-                  .HasConstraintName("FK_CustomerCommodity_Commodity");
-
-            // One row per (customer, commodity) — duplicates make no sense.
-            entity.HasIndex(e => new { e.CustomerId, e.CommodityId })
-                  .IsUnique()
-                  .HasDatabaseName("UQ_CustomerCommodity_Customer_Commodity");
-            // Reverse-lookup index — "which customers grow commodity X?"
-            entity.HasIndex(e => e.CommodityId).HasDatabaseName("IX_CustomerCommodity_CommodityId");
-        });
-
         // -------------------------------------------------------------------------
         // Customer + CustomerTradeUnit — normalized customer schema.
         // Customer holds one row per ODS CustomerId (attribute columns); CustomerTradeUnit

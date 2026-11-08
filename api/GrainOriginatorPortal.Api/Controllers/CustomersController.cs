@@ -86,7 +86,7 @@ public class CustomersController : ControllerBase
         // linked producer who is NOT in the caller's roster ("Linked customer is in a different
         // trade unit — fetch them from the API") and calls exactly this endpoint. The stored-
         // trade-unit re-authorization H-073 (2026-09-21) suggests would 403 that path and break
-        // the linked-producer profile. Same for GetBySourceId and GetLinkedTo below, which
+        // the linked-producer profile. Same for GetBySourceId below and LinkedProducersController.GetLinkedTo, which
         // _fetchMissingLinkedProducers uses to pull in producers outside the roster.
         //
         // The test that separates these from routes that HAVE been scoped (H-061, H-062) is
@@ -109,19 +109,7 @@ public class CustomersController : ControllerBase
         return Ok(customer);
     }
 
-    // -------------------------------------------------------------------------
-    /// <summary>Gets customers whose ProducerDetails.LinkedProducerIds contains the given source id —
-    /// i.e. customers that link TO this one (incoming / reverse links). Used by the cross-customer
-    /// search path so the customer profile can show bidirectional linked producers even when no TU
-    /// is selected.</summary>
-    [HttpGet("linked-to/{sourceId}")]
-    [ProducesResponseType(typeof(List<CustomerResponse>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<CustomerResponse>>> GetLinkedTo(string sourceId, CancellationToken cancellationToken = default)
-    {
-        // No per-producer object-level authz is intentional — linked producers deliberately span
-        // trade units; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
-        return Ok(await _service.GetLinkedToAsync(sourceId, cancellationToken));
-    }
+    // GET linked-to/{sourceId} (incoming linked producers) is a Producers endpoint: Modules/Producers/Controllers/LinkedProducersController.
 
     // -------------------------------------------------------------------------
     /// <summary>Gets a producer's active trade-unit memberships (code + IsManual flag) so the
@@ -135,7 +123,7 @@ public class CustomersController : ControllerBase
     {
         // No per-producer object-level authz is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
         //
-        // NOTE: unlike GetById / GetBySourceId / GetLinkedTo above, this route is NOT part of the
+        // NOTE: unlike GetById / GetBySourceId above and GetLinkedTo, this route is NOT part of the
         // linked-producer flow — it feeds the edit dialog's membership list. It rests on AR-02's
         // general position instead. H-073 (2026-09-21) argued it also hands an attacker the trade-
         // unit codes to aim at AssignTradeUnits (AR-03); that chaining is real but adds nothing,

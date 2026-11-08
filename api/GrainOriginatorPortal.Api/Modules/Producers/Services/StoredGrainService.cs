@@ -11,16 +11,16 @@ namespace GrainOriginatorPortal.Api.Modules.Producers.Services;
 public class StoredGrainService : IStoredGrainService
 {
     private readonly IStoredGrainRepository _repository;
-    private readonly ICustomerRepository _customerRepository;
+    private readonly ICustomerLookup _customers;
     private readonly IUserEntitlementService _entitlementService;
 
     public StoredGrainService(
         IStoredGrainRepository repository,
-        ICustomerRepository customerRepository,
+        ICustomerLookup customers,
         IUserEntitlementService entitlementService)
     {
         _repository = repository;
-        _customerRepository = customerRepository;
+        _customers = customers;
         _entitlementService = entitlementService;
     }
 
@@ -37,7 +37,7 @@ public class StoredGrainService : IStoredGrainService
             throw new GrainOriginatorPortal.Api.Exceptions.InfrastructureException(
                 "Authorization data is temporarily unavailable. Please retry shortly.",
                 "ENTITLEMENTS_DB_UNAVAILABLE", StatusCodes.Status503ServiceUnavailable);
-        var allowedCustomerIds = await _customerRepository.GetActiveCustomerIdsInTradeUnitsAsync(allowed, cancellationToken);
+        var allowedCustomerIds = await _customers.GetActiveCustomerIdsInTradeUnitsAsync(allowed, cancellationToken);
         grain = grain.Where(g => allowedCustomerIds.Contains(g.CustomerId)).ToList();
 
         return grain.Select(g => g.ToResponse()).ToList();
