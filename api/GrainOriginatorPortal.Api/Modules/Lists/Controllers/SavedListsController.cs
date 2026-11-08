@@ -1,16 +1,16 @@
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Models.Requests;
-using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Platform.Access;
-using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
+using GrainOriginatorPortal.Api.Modules.Lists.Models.Requests;
+using GrainOriginatorPortal.Api.Modules.Lists.Models.Responses;
+using GrainOriginatorPortal.Api.Modules.Lists.Services;
 
-namespace GrainOriginatorPortal.Api.Controllers;
+namespace GrainOriginatorPortal.Api.Modules.Lists.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
+[RequirePermission(AppPermissions.Lists.SavedListsReadOwn)]
 [Produces("application/json")]
 public class SavedListsController : ControllerBase
 {
@@ -79,6 +79,7 @@ public class SavedListsController : ControllerBase
     // -------------------------------------------------------------------------
     /// <summary>Creates a new saved customer list.</summary>
     [HttpPost]
+    [RequirePermission(AppPermissions.Lists.SavedListsWriteOwn)]
     [ProducesResponseType(typeof(SavedListResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<SavedListResponse>> Create([FromBody] CreateSavedListRequest request, CancellationToken cancellationToken = default)
@@ -93,6 +94,7 @@ public class SavedListsController : ControllerBase
     // -------------------------------------------------------------------------
     /// <summary>Updates an existing saved list by ID.</summary>
     [HttpPut("{id:int}")]
+    [RequirePermission(AppPermissions.Lists.SavedListsWriteOwn)]
     [ProducesResponseType(typeof(SavedListResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<SavedListResponse>> Update(int id, [FromBody] CreateSavedListRequest request, CancellationToken cancellationToken = default)
@@ -108,6 +110,7 @@ public class SavedListsController : ControllerBase
     // -------------------------------------------------------------------------
     /// <summary>Deletes a saved list by ID.</summary>
     [HttpDelete("{id:int}")]
+    [RequirePermission(AppPermissions.Lists.SavedListsWriteOwn)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<ActionResult> Delete(int id, CancellationToken cancellationToken = default)
     {

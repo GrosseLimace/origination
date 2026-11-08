@@ -1,11 +1,14 @@
-using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Services.Mappings;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
+using GrainOriginatorPortal.Api.Modules.Lists.Models.Responses;
+using GrainOriginatorPortal.Infrastructure.Modules.Lists.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Lists.Interfaces;
+using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Modules.Lists.Mappings;
 
-namespace GrainOriginatorPortal.Api.Services;
+namespace GrainOriginatorPortal.Api.Modules.Lists.Services;
 
 /// <inheritdoc />
 public class SavedListService : ISavedListService

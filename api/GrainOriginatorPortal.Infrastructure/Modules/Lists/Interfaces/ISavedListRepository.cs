@@ -1,6 +1,7 @@
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Lists.Entities;
 
-namespace GrainOriginatorPortal.Infrastructure.Interfaces;
+
+namespace GrainOriginatorPortal.Infrastructure.Modules.Lists.Interfaces;
 
 /// <summary>Persistence for a user's saved customer lists. The owning user id is supplied by the
 /// caller (read from the request context) — the repository stays free of HttpContext.</summary>

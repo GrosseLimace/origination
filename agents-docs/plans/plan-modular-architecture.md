@@ -465,7 +465,7 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 | Contracts | Contracts (minus `pacing`, `farm`), Tickets (minus `farm`) | The contract and ticket parts of `Infrastructure/Ctrm/` move here: readers, repositories, the two switches, `CtrmMappings`, `CtrmWarmRegistry`. The shared plumbing goes to Platform. Done in step 6b, with `SurfaceCtrmFailures` and the keep-warm service. `ContractStatusCalculator`, `TicketLocations` and `CustomerActivitySource` sit at the module root, outside `Repositories` and `Interfaces`, so Producers and Customers may use them. The shared plumbing stays in `Infrastructure/Ctrm/` until step 11. |
 | Engagement | Notes, Reminders, TeamsChannels, DailyRecapGroups | Done in step 7, with the Outlook calendar and Teams directory services and the no-retry Graph client the calendar uses to create events. The shared `graph` client and `GraphDirectoryClient` stay with Platform: app access uses them, Engagement doesn't. |
 | Producers | PlantingIntentions, ProducerDetails, StoredGrain, DpContracts, DashboardPlantingEstimates, FieldPlan, CtrmSplits, TDisc, FdCic; **gains** `contracts/pacing` (`ContractPacingController`) | Keep the **route templates unchanged**, so the SPA doesn't change. The split readers and `FieldTicketReader` come from `Infrastructure/Ctrm/`. Delete the `farm/{farmId}` endpoints on Contracts and Tickets and their `GetByFarmAsync` chain through services and repositories; the Farms controller itself is already gone. Done in step 6a: both always returned an empty list. |
-| Lists | SavedLists, QueryLibrary | |
+| Lists | SavedLists, QueryLibrary | Done in step 8. Build-a-List, its customer map and Actionable Insights are browser-only, so the module's server side is saved lists and the query library. `ManagerDirectoryService` stays for Usage Analytics: only the usage dashboard uses it. |
 | BidSheet | BidSheet, Barchart, BarchartIngest (`bid-feed:manage`, which the pipeline holds through its `Machine` role, §4.3) | |
 | UsageAnalytics | UsageDashboard (`usage-reports:read`; exclusions `usage-exclusions:manage`) | |
 
@@ -485,6 +485,9 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
   - Producers' field-ticket reader no longer borrows `TicketRepository` for ticket locations. The lookup is `TicketLocations` in Contracts, which both ticket repositories also use.
   - `CtrmQueries` is split by owner. `CtrmContractQueries` holds the contract and ticket documents, `CtrmSplitQueries` (Producers) the splits document, and `CtrmQueries` keeps what every document shares: the WAF rule and the 366-day ticket range. `CtrmQueryDocumentTests` now checks every module's query class, `CtrmCustomerQueries` included, which it never covered before.
 - **Platform, for step 11:** the CTRM diagnostics service reads the contract and ticket repositories, the contract switch and both CTRM readers for its probes. Like `TradeUnitService`, that is Platform reading a module.
+
+**Found while moving Lists (2026-11-08), for step 10:**
+- **Usage Analytics:** `UsageRepository.GetQueryLibraryNamesAsync` reads the Lists module's `dbo.QueryLibrary` to name the prompts on the usage dashboard. Once Usage Analytics moves, that is a module with no dependencies reading a Lists entity, and `ModuleBoundaryTests` will fail on it. Either Lists provides the names (Usage Analytics would then depend on Lists), or Usage Analytics declares an extension that Lists implements, as Customers does for open activity.
 
 **`CustomerResponse` sheds `TotalAcres`, `FarmIds`, `LinkedProducerIds` and `Farm`.** The Producers module serves them in a `ProducerProfileResponse` instead. This one *is* a wire change, so sequence it with the frontend in Phase 4.
 

@@ -1,9 +1,10 @@
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Modules.Lists.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Lists.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
-namespace GrainOriginatorPortal.Infrastructure.Repositories;
+namespace GrainOriginatorPortal.Infrastructure.Modules.Lists.Repositories;
 
 public class QueryLibraryRepository : IQueryLibraryRepository
 {

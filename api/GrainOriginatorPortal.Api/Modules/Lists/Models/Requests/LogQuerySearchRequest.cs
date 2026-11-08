@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace GrainOriginatorPortal.Api.Models.Requests;
+namespace GrainOriginatorPortal.Api.Modules.Lists.Models.Requests;
 
 public record LogQuerySearchRequest
 {

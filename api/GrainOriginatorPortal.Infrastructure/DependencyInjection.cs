@@ -123,9 +123,7 @@ public static class DependencyInjection
 
         // ── Repositories (per-domain, added incrementally during the Phase 2 migration) ──
         services.AddScoped<IAccessGrantRepository, AccessGrantRepository>();
-        services.AddScoped<IQueryLibraryRepository, QueryLibraryRepository>();
         services.AddScoped<ICommodityRepository, CommodityRepository>();
-        services.AddScoped<ISavedListRepository, SavedListRepository>();
         services.AddScoped<IDisplayNameLookupRepository, DisplayNameLookupRepository>();
         services.AddScoped<IBidSheetRepository, BidSheetRepository>();
         services.AddScoped<IBarchartIngestRepository, BarchartIngestRepository>();

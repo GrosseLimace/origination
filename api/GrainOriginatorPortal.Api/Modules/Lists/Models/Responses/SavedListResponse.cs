@@ -1,4 +1,4 @@
-namespace GrainOriginatorPortal.Api.Models.Responses;
+namespace GrainOriginatorPortal.Api.Modules.Lists.Models.Responses;
 
 /// <summary>Wire shape for a saved customer list. Entity-shaped (Decision 1); CreatedBy/ModifiedBy
 /// are resolved to display names by the service.</summary>

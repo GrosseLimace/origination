@@ -1,7 +1,8 @@
-using GrainOriginatorPortal.Api.Models.Responses;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Api.Modules.Lists.Models.Responses;
+using GrainOriginatorPortal.Infrastructure.Modules.Lists.Entities;
 
-namespace GrainOriginatorPortal.Api.Services.Mappings;
+
+namespace GrainOriginatorPortal.Api.Modules.Lists.Mappings;
 
 /// <summary>Manual entity → response mappings for the query-library domain.</summary>
 public static class QueryLibraryMappings

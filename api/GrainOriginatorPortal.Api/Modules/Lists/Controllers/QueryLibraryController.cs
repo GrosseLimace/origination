@@ -1,12 +1,15 @@
-using GrainOriginatorPortal.Api.Models.Requests;
-using GrainOriginatorPortal.Api.Models.Responses;
-using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Modules.Lists.Models.Requests;
+using GrainOriginatorPortal.Api.Modules.Lists.Models.Responses;
+using GrainOriginatorPortal.Api.Modules.Lists.Services;
+using GrainOriginatorPortal.Api.Platform.Access;
+using GrainOriginatorPortal.Infrastructure.Platform.Access;
 
-namespace GrainOriginatorPortal.Api.Controllers;
+
+namespace GrainOriginatorPortal.Api.Modules.Lists.Controllers;
 
 [ApiController]
 [Route("api/query-library")]
-[Authorize]
+[RequirePermission(AppPermissions.Lists.QueryLibraryRead)]
 [Produces("application/json")]
 public class QueryLibraryController : ControllerBase
 {

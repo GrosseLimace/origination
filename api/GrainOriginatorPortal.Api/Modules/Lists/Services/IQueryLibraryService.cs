@@ -1,6 +1,7 @@
-using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Modules.Lists.Models.Responses;
 
-namespace GrainOriginatorPortal.Api.Services;
+
+namespace GrainOriginatorPortal.Api.Modules.Lists.Services;
 
 /// <summary>Business logic for the query library (curated NLQ examples) and search-gap logging.</summary>
 public interface IQueryLibraryService

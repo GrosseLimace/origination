@@ -30,6 +30,7 @@ using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Modules.Contracts;
 using GrainOriginatorPortal.Api.Modules.Customers;
 using GrainOriginatorPortal.Api.Modules.Engagement;
+using GrainOriginatorPortal.Api.Modules.Lists;
 using GrainOriginatorPortal.Api.Modules.Producers;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -294,11 +295,10 @@ builder.Services.AddCustomersModule();
 builder.Services.AddContractsModule();
 builder.Services.AddEngagementModule();
 builder.Services.AddProducersModule(builder.Configuration);
+builder.Services.AddListsModule();
 
 // Per-domain services (Api layer) — controllers depend on these.
-builder.Services.AddScoped<IQueryLibraryService, QueryLibraryService>();
 builder.Services.AddScoped<ICommodityService, CommodityService>();
-builder.Services.AddScoped<ISavedListService, SavedListService>();
 // Admin diagnostics: six services the DiagnosticsController delegates to (schema, CTRM probes, commodity
 // seed, elevator cache, usage-rollup backfill, app-access members). Registered together in one place.
 builder.Services.AddDiagnosticsServices();

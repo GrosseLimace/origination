@@ -7,6 +7,9 @@ using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
+using GrainOriginatorPortal.Api.Modules.Lists.Services;
+using GrainOriginatorPortal.Infrastructure.Modules.Lists.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Lists.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

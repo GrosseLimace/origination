@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace GrainOriginatorPortal.Api.Models.Requests;
+namespace GrainOriginatorPortal.Api.Modules.Lists.Models.Requests;
 
 /// <summary>A manager assigning a copy of a built list to one or more team members. The list content
 /// mirrors <see cref="CreateSavedListRequest"/>; <see cref="TargetUserIds"/> are the recipients'

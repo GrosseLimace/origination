@@ -1,6 +1,7 @@
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Lists.Entities;
 
-namespace GrainOriginatorPortal.Infrastructure.Interfaces;
+namespace GrainOriginatorPortal.Infrastructure.Modules.Lists.Interfaces;
 
 /// <summary>Data access for the NLQ query library and its search-gap log.</summary>
 public interface IQueryLibraryRepository

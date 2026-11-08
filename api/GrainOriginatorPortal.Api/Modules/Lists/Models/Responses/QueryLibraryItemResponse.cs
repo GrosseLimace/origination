@@ -1,4 +1,4 @@
-namespace GrainOriginatorPortal.Api.Models.Responses;
+namespace GrainOriginatorPortal.Api.Modules.Lists.Models.Responses;
 
 /// <summary>
 /// Wire shape for a query-library item. Entity-shaped for now (matches QueryLibraryItem

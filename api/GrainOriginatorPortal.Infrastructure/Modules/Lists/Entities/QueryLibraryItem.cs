@@ -1,4 +1,4 @@
-namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
+namespace GrainOriginatorPortal.Infrastructure.Modules.Lists.Entities;
 
 public class QueryLibraryItem
 {

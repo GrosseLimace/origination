@@ -1,6 +1,7 @@
-using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Modules.Lists.Models.Responses;
 
-namespace GrainOriginatorPortal.Api.Services;
+
+namespace GrainOriginatorPortal.Api.Modules.Lists.Services;
 
 /// <summary>Saved customer lists owned by the current user. Create/Update validate the requested
 /// trade units against the caller's entitlements.</summary>

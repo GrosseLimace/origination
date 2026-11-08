@@ -6,6 +6,7 @@ using GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Sync;
 using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Lists.Entities;
 
 namespace GrainOriginatorPortal.Infrastructure.Data;
 
@@ -123,25 +124,6 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.PlantingCategory).HasColumnName("PlantingCategory").HasMaxLength(100).IsRequired(false);
 
             entity.HasIndex(e => e.Code).IsUnique().HasDatabaseName("IX_Commodities_Code");
-        });
-
-        modelBuilder.Entity<SavedList>(entity =>
-        {
-            entity.ToTable("SavedLists", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.Name).HasColumnName("Name").HasMaxLength(100).IsRequired();
-            entity.Property(e => e.Query).HasColumnName("Query").HasMaxLength(500).IsRequired();
-            entity.Property(e => e.TradeUnits).HasColumnName("TradeUnits").HasMaxLength(500).IsRequired(false);
-            entity.Property(e => e.Filters).HasColumnName("Filters").HasColumnType("nvarchar(max)").IsRequired(false);
-            entity.Property(e => e.IncludedCustomerIds).HasColumnName("IncludedCustomerIds").HasColumnType("nvarchar(max)").IsRequired(false);
-            entity.Property(e => e.ExcludedCustomerIds).HasColumnName("ExcludedCustomerIds").HasColumnType("nvarchar(max)").IsRequired(false);
-            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
-            entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
-            entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
-            entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
-            entity.Property(e => e.AssignedTo).HasColumnName("AssignedTo").HasMaxLength(255).IsRequired(false);
         });
 
         modelBuilder.Entity<ESignEnrollment>(entity =>
@@ -561,21 +543,6 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.GroupName).HasMaxLength(100);
             entity.Property(e => e.SnapshotDate).HasDefaultValueSql("CAST(SYSUTCDATETIME() AS DATE)").IsRequired();
             entity.HasIndex(e => e.TradeUnitCode).HasDatabaseName("IX_UserTradeUnitSnapshot_TradeUnitCode");
-        });
-
-        modelBuilder.Entity<QueryLibraryItem>(entity =>
-        {
-            entity.ToTable("QueryLibrary", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.Category).HasMaxLength(100).IsRequired();
-            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
-            entity.Property(e => e.Description).HasMaxLength(500);
-            entity.Property(e => e.QueryText).HasMaxLength(500).IsRequired();
-            entity.Property(e => e.Tags).HasMaxLength(500);
-            entity.Property(e => e.SortOrder).HasDefaultValue(0).IsRequired();
-            entity.Property(e => e.IsActive).HasDefaultValue(true).IsRequired();
-            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
         });
 
         modelBuilder.Entity<QuerySearchLog>(entity =>

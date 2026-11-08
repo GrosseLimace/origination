@@ -1,7 +1,9 @@
-using GrainOriginatorPortal.Api.Models.Responses;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Api.Modules.Lists.Models.Responses;
+using GrainOriginatorPortal.Infrastructure.Modules.Lists.Entities;
+using GrainOriginatorPortal.Api.Services.Mappings;
 
-namespace GrainOriginatorPortal.Api.Services.Mappings;
+
+namespace GrainOriginatorPortal.Api.Modules.Lists.Mappings;
 
 /// <summary>Manual entity → response mappings for the saved-list domain.</summary>
 public static class SavedListMappings

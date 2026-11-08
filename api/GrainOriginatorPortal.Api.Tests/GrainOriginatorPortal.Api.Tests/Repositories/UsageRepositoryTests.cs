@@ -8,6 +8,7 @@ using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Repositories;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Lists.Entities;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 
