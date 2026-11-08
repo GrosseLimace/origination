@@ -2,7 +2,7 @@ using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
 
 namespace GrainOriginatorPortal.Infrastructure.Modules.Producers.Ctrm.Dtos;
 
-/// <summary>Envelope for the splits root field. PLACEHOLDER: field names unconfirmed, see <see cref="CtrmQueries.SplitsByCustomer"/>.</summary>
+/// <summary>Envelope for the splits root field. PLACEHOLDER: field names unconfirmed, see <see cref="CtrmSplitQueries.SplitsByCustomer"/>.</summary>
 public sealed class CtrmSplitsResponse
 {
     public CtrmPage<CtrmSplitDto>? CustomerSplits { get; set; }

@@ -14,7 +14,6 @@ public interface ITicketRepository
     Task<List<Ticket>> GetByCustomerAsync(long customerId, string? scoularId, CancellationToken cancellationToken);
     Task<List<Ticket>> GetUnappliedByCustomerAsync(long customerId, string? scoularId, CancellationToken cancellationToken);
     Task<List<Ticket>> GetAppliedByContractAsync(string sourceContractId, CancellationToken cancellationToken);
-    Task<List<Ticket>> GetByFarmAsync(string farmId, CancellationToken cancellationToken);
 
     /// <summary>
     /// Commodity codes each customer currently holds in active customer storage, keyed by Scoular

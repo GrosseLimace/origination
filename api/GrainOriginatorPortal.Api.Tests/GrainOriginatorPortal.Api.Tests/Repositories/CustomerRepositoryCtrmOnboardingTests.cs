@@ -14,12 +14,12 @@ using Moq;
 using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
 using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm.Dtos;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Extensions;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 
@@ -41,8 +41,7 @@ public class CustomerRepositoryCtrmOnboardingTests
     {
         public TestableCustomerRepository(OriginationDbContext ods, ApplicationDbContext app, string source, ICustomerSyncRepository? sync)
             : base(ods, app,
-                new Mock<ITicketRepository>(MockBehavior.Strict).Object,
-                new Mock<IContractRepository>(MockBehavior.Strict).Object,
+                new Mock<ICustomerActivitySource>(MockBehavior.Strict).Object,
                 new Mock<ILogger<CustomerRepository>>().Object,
                 new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["CustomerSync:Source"] = source }).Build(),
                 ctrmCustomers: null, syncRepository: sync)
@@ -285,8 +284,7 @@ public class CustomerRepositoryCtrmOnboardingTests
         sync.Setup(s => s.ReserveCustomerIdsAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync([MintedId]);
         var client = new OneRowPerCodeClient();
         var sut = new CustomerRepository(ods, app,
-            new Mock<ITicketRepository>(MockBehavior.Strict).Object,
-            new Mock<IContractRepository>(MockBehavior.Strict).Object,
+            new Mock<ICustomerActivitySource>(MockBehavior.Strict).Object,
             new Mock<ILogger<CustomerRepository>>().Object,
             config,
             new CtrmCustomerReader(client, config, NullLogger<CtrmCustomerReader>.Instance),

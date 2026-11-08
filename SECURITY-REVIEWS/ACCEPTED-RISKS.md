@@ -522,7 +522,7 @@ that producer's profile and related data outside their entitled trade units:
 - `GET /api/customers/{id}/trade-units` (membership list for the edit dialog)
 - `GET /api/contracts/customer/{customerId}`
 - `GET /api/contracts/pacing/{customerId}` (Contract Pacing year-over-year; reads `base.Contract` for prior-year closed contracts) (added 2026-09-09 — see the update below)
-- `GET /api/contracts/farm/{farmId}` (farm-scoped contracts) (added 2026-09-09 — see the update below)
+- ~~`GET /api/contracts/farm/{farmId}` (farm-scoped contracts) (added 2026-09-09 — see the update below)~~ deleted 2026-11-08, see the update below
 - `GET /api/contracts/pricing-lines` (by `sourceContractId`) (added 2026-09-09 — see the update below)
 - `GET /api/contracts/pricing-lines/by-customer` (by `scoularId`) (added 2026-09-09 — see the update below)
 - `GET /api/tickets/customer/{customerId}`
@@ -895,6 +895,12 @@ _Update (2026-11-07) — Customers module._ `CustomersController` moved to `Api/
 reads (`GET /api/customers/{id}`, `by-source/{sourceId}` and `{id}/trade-units` among them) now need `customers:read`,
 where before they needed only a sign-in. Every persona role holds it, and the reads are still not scoped by trade unit,
 as this entry accepts.
+
+_Update (2026-11-08) — the farm routes are gone._ `GET /api/contracts/farm/{farmId}` and `GET /api/tickets/farm/{farmId}`
+were deleted with their whole chain through the services and repositories. Read to the last layer, both always
+returned an empty list: neither the ODS contracts nor the ODS tickets carry a farm id, and the CTRM repositories
+only passed the call to the ODS ones. The client never called them. Scanner hits on `GetByFarm` in older baselines
+refer to code that no longer exists.
 
 ---
 

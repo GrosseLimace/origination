@@ -63,9 +63,6 @@ public sealed class TicketRepositorySwitch : ITicketRepository
     public Task<List<Ticket>> GetAppliedByContractAsync(string sourceContractId, CancellationToken cancellationToken)
         => Active.GetAppliedByContractAsync(sourceContractId, cancellationToken);
 
-    public Task<List<Ticket>> GetByFarmAsync(string farmId, CancellationToken cancellationToken)
-        => Active.GetByFarmAsync(farmId, cancellationToken);
-
     public Task<Dictionary<string, HashSet<string>>> GetActiveStorageCommoditiesAsync(
         IReadOnlyCollection<string> customerCodes, CancellationToken cancellationToken)
         => Active.GetActiveStorageCommoditiesAsync(customerCodes, cancellationToken);

@@ -446,6 +446,11 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
     - Where a contributor works on a single customer, it also skips customers outside its segments.
     - This is the same check the frontend registry applies to contributions (§5.2).
   - The first candidate is the `ProducerDetails`/`ProducerContact` join in customer search. Until it is replaced (Phase 4 or 5, before traders search customers), that SQL is the one known Customers → Producers dependency, and the architecture tests can't see it because it's SQL text.
+- **The same inversion works for any module a shared module needs, not only Producers.** The first one built (Phase 2, 2026-11-08) is Customers → Contracts:
+  - Customers locks a trade-unit membership while the producer has an open contract or an unapplied ticket there. That is contract data.
+  - Customers declares `ICustomerActivitySource`, and Contracts implements it from its contract and ticket repositories (`CustomerActivitySource`).
+  - Extension interfaces sit in the declaring module's `Extensions` folder, not `Interfaces`. Rule 2 below bars other modules from `Interfaces`, which would stop them implementing it.
+  - Customers has no fallback. A missing implementation fails when the customer repository is resolved, rather than treating every trade unit as dormant. `CustomersModuleTests` checks that the app registers one.
 - **Enforce these rules with architecture tests** in `Api.Tests/Architecture/`, using **ArchUnitNET** (Apache-2.0, actively maintained; NetArchTest has had no release since 2021). `ModuleBoundaryTests` has two rules, and a check that every catalog module declares what it builds on:
   1. `Modules.X.*` depends on no `Modules.Y.*` (Api or Infrastructure) unless X builds on Y.
   2. `Modules.X.*` doesn't depend on `Infrastructure.Modules.Y.Repositories` or `Interfaces` for any Y ≠ X. `Interfaces` is where the repository interfaces live, so leaving it out would let a module inject another module's repository.
@@ -459,7 +464,7 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 | Customers | Customers, `search-ods` included; CustomerSyncDiagnostics (`customer-sync:manage`) | `CustomerSyncService`, its background service and the whole of `Infrastructure/Sync/` move here, with the customer readers from `Infrastructure/Ctrm/` (`CtrmCustomerReader`, `CtrmCustomerQueries`, `CtrmCustomerActivityReader`, `CtrmCustomerCandidateId` and their DTOs). `CtrmCustomerCodes` stays with the shared CTRM plumbing: it holds the gateway's `customerIds` filter limits, and only the contract and ticket readers use it. |
 | Contracts | Contracts (minus `pacing`, `farm`), Tickets (minus `farm`) | The contract and ticket parts of `Infrastructure/Ctrm/` move here: readers, repositories, the two switches, `CtrmMappings`, `CtrmWarmRegistry`. The shared plumbing goes to Platform. |
 | Engagement | Notes, Reminders, TeamsChannels, DailyRecapGroups | |
-| Producers | PlantingIntentions, ProducerDetails, StoredGrain, DpContracts, DashboardPlantingEstimates, FieldPlan, CtrmSplits, TDisc, FdCic; **gains** `contracts/pacing` (`ContractPacingController`) | Keep the **route templates unchanged**, so the SPA doesn't change. The split readers and `FieldTicketReader` come from `Infrastructure/Ctrm/`. Delete the `farm/{farmId}` endpoints on Contracts and Tickets and their `GetByFarmAsync` chain through services and repositories; the Farms controller itself is already gone. |
+| Producers | PlantingIntentions, ProducerDetails, StoredGrain, DpContracts, DashboardPlantingEstimates, FieldPlan, CtrmSplits, TDisc, FdCic; **gains** `contracts/pacing` (`ContractPacingController`) | Keep the **route templates unchanged**, so the SPA doesn't change. The split readers and `FieldTicketReader` come from `Infrastructure/Ctrm/`. Delete the `farm/{farmId}` endpoints on Contracts and Tickets and their `GetByFarmAsync` chain through services and repositories; the Farms controller itself is already gone. Done in step 6a: both always returned an empty list. |
 | Lists | SavedLists, QueryLibrary | |
 | BidSheet | BidSheet, Barchart, BarchartIngest (`bid-feed:manage`, which the pipeline holds through its `Machine` role, §4.3) | |
 | UsageAnalytics | UsageDashboard (`usage-reports:read`; exclusions `usage-exclusions:manage`) | |
@@ -470,9 +475,16 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 - **`customers/linked-to`** moved to Producers after all, in step 5 (`LinkedProducersController`, `producer-details:read`, same route). Its data is all producer data (`dbo.CustomerLink` and `ProducerDetails.TotalAcres`), so Producers finds who links to a producer, asks Customers for those customers through `ICustomerLookup`, and adds the acres and links on top. That removed the Customers repository's only compiled read of a Producers table.
 
 **Found while moving Customers (2026-11-07), for the steps that follow:**
-- **Contracts:** `CtrmPage<T>` is declared in `CtrmContractDtos.cs`, and the Customers CTRM DTOs use it. It belongs with the shared CTRM plumbing. If it moved into Contracts, Customers would depend on Contracts, which the direction rule forbids.
+- **Contracts (done in step 6a):** `CtrmPage<T>` was declared in `CtrmContractDtos.cs`, and the Customers CTRM DTOs use it. It now sits with the shared CTRM plumbing in `CtrmPageDtos.cs`.
 - **Engagement:** `NoteService` and `ReminderService` still inject `ICustomerRepository`. They switch to `ICustomerLookup` when Engagement moves, or `ModuleBoundaryTests` fails on them.
 - **Platform:** `TradeUnitService` falls back to `ICustomerRepository.GetAllActiveTradeUnitCodesAsync` when the entitlements trade-unit list is unavailable. That has Platform reading a module's repository, the wrong way round. The fix is for Platform to define the fallback as an interface that Customers implements.
+
+**Found while untangling Contracts (2026-11-08):**
+- **Done in step 6a:**
+  - Customers no longer reads the contract and ticket repositories; it asks `ICustomerActivitySource` (above).
+  - Producers' field-ticket reader no longer borrows `TicketRepository` for ticket locations. The lookup is `TicketLocations` in Contracts, which both ticket repositories also use.
+  - `CtrmQueries` is split by owner. `CtrmContractQueries` holds the contract and ticket documents, `CtrmSplitQueries` (Producers) the splits document, and `CtrmQueries` keeps what every document shares: the WAF rule and the 366-day ticket range. `CtrmQueryDocumentTests` now checks every module's query class, `CtrmCustomerQueries` included, which it never covered before.
+- **Platform, for step 11:** the CTRM diagnostics service reads the contract and ticket repositories, the contract switch and both CTRM readers for its probes. Like `TradeUnitService`, that is Platform reading a module.
 
 **`CustomerResponse` sheds `TotalAcres`, `FarmIds`, `LinkedProducerIds` and `Farm`.** The Producers module serves them in a `ProducerProfileResponse` instead. This one *is* a wire change, so sequence it with the frontend in Phase 4.
 

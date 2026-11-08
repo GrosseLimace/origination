@@ -131,19 +131,6 @@ public class ContractServiceTests
         Assert.Equal(3, Assert.Single(byCropYear).Id);
     }
 
-    // Documents (does not endorse) that GetByFarmAsync is the one contract read outside the
-    // SafeContractsAsync wrapper: a SqlException propagates raw instead of becoming a 503 or [].
-    // If it is brought in line with its siblings, update this test in the same change.
-    [Fact]
-    public async Task GetByFarmAsync_IsNotWrapped_SoASqlExceptionPropagatesRaw()
-    {
-        _repositoryMock
-            .Setup(r => r.GetByFarmAsync("farm-1", It.IsAny<CancellationToken>()))
-            .ThrowsAsync(SqlExceptionDoubles.Transient());
-
-        await Assert.ThrowsAsync<SqlException>(() => _sut.GetByFarmAsync("farm-1", CancellationToken.None));
-    }
-
     [Fact]
     public async Task GetPricingLinesAsync_MapsLinesIncludingTheComputedPricedQtyAndCashPrice()
     {

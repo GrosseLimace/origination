@@ -53,7 +53,7 @@ public sealed class CtrmTicketDetailDto
     public string? CustomerCode { get; set; }
 
     /// <summary>The split ID the row was delivered under (e.g. "TATOB43"), on every party's row of a split
-    /// ticket; null when the load wasn't split. Requested only by <see cref="CtrmQueries.TicketsBySplitProducer"/>.</summary>
+    /// ticket; null when the load wasn't split. Requested only by <see cref="CtrmContractQueries.TicketsBySplitProducer"/>.</summary>
     public string? CombinedCustomerId { get; set; }
 
     public string? OrganizationCode { get; set; }

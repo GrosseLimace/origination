@@ -70,19 +70,6 @@ public class ContractsController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Gets all contracts for a specific farm. Open to any authenticated originator —
-    /// trade-unit entitlements are a UX default, not an access-control boundary.</summary>
-    [HttpGet("farm/{farmId}")]
-    [ProducesResponseType(typeof(List<ContractResponse>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<ContractResponse>>> GetByFarm(string farmId, CancellationToken cancellationToken = default)
-    {
-        // Open to any rep — no per-farm object-level authz by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
-        // Same cross-trade-unit dependency as GetByCustomer above — see the note there before
-        // adding an entitlement check here (H-069, 2026-09-21).
-        return Ok(await _service.GetByFarmAsync(farmId, cancellationToken));
-    }
-
-    // -------------------------------------------------------------------------
     /// <summary>Gets pricing lines for a specific contract by its sourceContractId.
     /// Open to any authenticated originator — trade-unit entitlements are a UX default,
     /// not an access-control boundary.</summary>

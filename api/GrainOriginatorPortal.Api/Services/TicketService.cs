@@ -39,10 +39,6 @@ public class TicketService : ITicketService
     public Task<List<TicketResponse>> GetAppliedByContractAsync(string sourceContractId, CancellationToken cancellationToken) =>
         SafeFetchAsync(ct => _repository.GetAppliedByContractAsync(sourceContractId, ct), $"applied tickets for contract {sourceContractId}", cancellationToken);
 
-    /// <inheritdoc />
-    public Task<List<TicketResponse>> GetByFarmAsync(string farmId, CancellationToken cancellationToken) =>
-        SafeFetchAsync(ct => _repository.GetByFarmAsync(farmId, ct), $"tickets for farm {farmId}", cancellationToken);
-
     /// <summary>
     /// Runs a ticket fetch and maps to DTOs, degrading to an empty list only when the ODS ticket
     /// view is missing a mapped column / object (SQL 207/208) or EF hits a mapping mismatch — a

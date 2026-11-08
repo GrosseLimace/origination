@@ -3,6 +3,7 @@ using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -170,7 +171,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
         // REQUIRES them. They enrich and subtract from a CTRM-derived set; they never add tickets.
         var beforeGate = tickets.Count;
         tickets = await ApplyStorageGateAsync(tickets, code, cancellationToken);
-        await _ods.PopulateElevatorLocations(tickets, cancellationToken);
+        await TicketLocations.PopulateElevatorLocationsAsync(_appContext, _logger, tickets, cancellationToken);
 
         tickets = tickets.OrderByDescending(t => t.Date).ToList();
 
@@ -247,7 +248,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
 
         // ODS parity: its version of this method fills quality and elevator together. Quality arrives
         // inline from CTRM, so only the elevator lookup is left to do.
-        await _ods.PopulateElevatorLocations(tickets, cancellationToken);
+        await TicketLocations.PopulateElevatorLocationsAsync(_appContext, _logger, tickets, cancellationToken);
 
         _provenance.RecordTickets("ctrm", "Ok", tickets.Count);
         return tickets;
@@ -324,7 +325,7 @@ public sealed class CtrmTicketRepository : ITicketRepository
         var tickets = byId.Values.ToList();
         var beforeGate = tickets.Count;
         tickets = await ApplyStorageGateAsync(tickets, codes, cancellationToken);
-        await _ods.PopulateElevatorLocations(tickets, cancellationToken);
+        await TicketLocations.PopulateElevatorLocationsAsync(_appContext, _logger, tickets, cancellationToken);
         tickets = tickets.OrderByDescending(t => t.Date).ToList();
 
         var truncated = read.Status == CtrmReadStatus.PartialSuccess;
@@ -500,10 +501,6 @@ public sealed class CtrmTicketRepository : ITicketRepository
 
         return tickets;
     }
-
-    /// <summary>Delegated. CTRM exposes no farm concept.</summary>
-    public Task<List<Ticket>> GetByFarmAsync(string farmId, CancellationToken cancellationToken)
-        => DelegateAsync("ByFarm", _ods.GetByFarmAsync(farmId, cancellationToken));
 
     /// <summary>
     /// Delegated by design: storage lives in <c>ctrm.vw_GNTA39D1</c> on ODS and CTRM has no storage

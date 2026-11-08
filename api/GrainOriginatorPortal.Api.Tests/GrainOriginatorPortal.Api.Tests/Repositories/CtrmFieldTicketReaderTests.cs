@@ -7,7 +7,6 @@ using Moq;
 using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
 using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Infrastructure.Repositories;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
 
@@ -74,12 +73,9 @@ public class CtrmFieldTicketReaderTests
             .UseInMemoryDatabase($"field-tickets-app-{Guid.NewGuid()}").Options);
         app.Customers.Add(new Customer { Id = 1, ScoularId = scoularId, Name = "Test Farm", IsActive = true });
         app.SaveChanges();
-        var ods = new OriginationDbContext(new DbContextOptionsBuilder<OriginationDbContext>()
-            .UseInMemoryDatabase($"field-tickets-ods-{Guid.NewGuid()}").Options);
         return new CtrmFieldTicketReader(
             new CtrmTicketReader(client, config, new Mock<ILogger<CtrmTicketReader>>().Object),
             new CtrmContractReader(client, config, new Mock<ILogger<CtrmContractReader>>().Object),
-            new TicketRepository(ods, app, new Mock<ILogger<TicketRepository>>().Object),
             app,
             new Mock<ILogger<CtrmFieldTicketReader>>().Object);
     }
@@ -129,7 +125,7 @@ public class CtrmFieldTicketReaderTests
         Assert.Equal(2025, read.Value.ContractCropYears["PWW000001"]);
         Assert.Equal(2026, read.Value.ContractCropYears["PWW000002"]);
         Assert.Equal([Producer, Partner], client.ContractCustomers);
-        Assert.All(client.TicketDocuments, d => Assert.Equal(CtrmQueries.TicketsBySplitProducer, d));
+        Assert.All(client.TicketDocuments, d => Assert.Equal(CtrmContractQueries.TicketsBySplitProducer, d));
     }
 
     [Fact]

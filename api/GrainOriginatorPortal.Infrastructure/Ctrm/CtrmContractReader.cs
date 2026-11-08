@@ -520,7 +520,7 @@ public sealed class CtrmContractReader
             // even though the identical re-send would have succeeded from the server's cache.
             var result = await CtrmServerTimeoutRetry.RunAsync(
                 () => _client.QueryAsync<CtrmContractsResponse>(
-                    CtrmQueries.ContractsByCustomer,
+                    CtrmContractQueries.ContractsByCustomer,
                     new
                     {
                         customerId = scoularId,
@@ -769,7 +769,7 @@ public sealed class CtrmContractReader
     {
         var result = await CtrmTradeUnitThrottle.RunContractBatchAsync(_configuration, () => CtrmServerTimeoutRetry.RunAsync(
             () => _client.QueryAsync<CtrmContractsResponse>(
-                CtrmQueries.ContractsByTradeUnit,
+                CtrmContractQueries.ContractsByTradeUnit,
                 new
                 {
                     tradeUnit = unit,
@@ -1005,7 +1005,7 @@ public sealed class CtrmContractReader
     private async Task<CtrmReadResult<List<CtrmContractDto>>> FetchAliasBatchAsync(List<string> batch, int codesPerAlias, int[] topUps, bool retryServerTimeout = true)
     {
         var groups = batch.Chunk(codesPerAlias).Select(g => (IReadOnlyList<string>)g.ToList()).ToList();
-        var document = CtrmQueries.ContractsByCustomersAliased(groups, PageSize, CtrmMappings.PurchasePrefix);
+        var document = CtrmContractQueries.ContractsByCustomersAliased(groups, PageSize, CtrmMappings.PurchasePrefix);
 
         Task<CtrmReadResult<Dictionary<string, CtrmPage<CtrmContractDto>>>> Send() =>
             _client.QueryAsync<Dictionary<string, CtrmPage<CtrmContractDto>>>(document, null, CancellationToken.None);
@@ -1090,7 +1090,7 @@ public sealed class CtrmContractReader
 
             var result = await CtrmServerTimeoutRetry.RunAsync(
                 () => _client.QueryAsync<CtrmContractsResponse>(
-                    CtrmQueries.ContractsByCustomerCore,
+                    CtrmContractQueries.ContractsByCustomerCore,
                     new { customerId = code, prefix = CtrmMappings.PurchasePrefix, skip, take = PageSize },
                     CancellationToken.None),
                 _configuration, _logger, $"contracts page skip={skip} for one producer",
@@ -1232,7 +1232,7 @@ public sealed class CtrmContractReader
         // reads a user is clicking on.
         var result = await CtrmTradeUnitThrottle.RunAsync(_configuration, () => CtrmServerTimeoutRetry.RunAsync(
             () => _client.QueryAsync<CtrmContractsResponse>(
-                CtrmQueries.ContractsByCustomers,
+                CtrmContractQueries.ContractsByCustomers,
                 new
                 {
                     customerIds = chunk,

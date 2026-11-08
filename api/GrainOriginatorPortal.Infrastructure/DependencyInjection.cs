@@ -4,6 +4,8 @@ using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Platform.Access.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Platform.Access.Repositories;
 using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -140,8 +142,7 @@ public static class DependencyInjection
         services.AddScoped<INoteRepository, NoteRepository>();
         services.AddScoped<IReminderRepository, ReminderRepository>();
         // Tickets follow the same switch pattern as contracts. The CTRM ticket repository still needs
-        // the ODS one — for the ticket-key index, the storage gate and the location lookup, none of
-        // which CTRM can supply.
+        // the ODS one — for the ticket-key index and the storage gate, neither of which CTRM can supply.
         services.AddScoped<TicketRepository>();
         services.AddScoped<CtrmTicketRepository>();
         services.AddScoped<ITicketRepository, TicketRepositorySwitch>();
@@ -153,6 +154,8 @@ public static class DependencyInjection
         services.AddScoped<ContractRepository>();
         services.AddScoped<CtrmContractRepository>();
         services.AddScoped<IContractRepository, ContractRepositorySwitch>();
+        // Which trade units a producer has open contracts or unapplied tickets in, for the Customers module.
+        services.AddScoped<ICustomerActivitySource, CustomerActivitySource>();
         services.AddScoped<IBidSheetRepository, BidSheetRepository>();
         services.AddScoped<IBarchartIngestRepository, BarchartIngestRepository>();
         services.AddScoped<IBarchartCatalogRepository, BarchartCatalogRepository>();

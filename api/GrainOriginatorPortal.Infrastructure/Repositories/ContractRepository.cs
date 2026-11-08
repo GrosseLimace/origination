@@ -254,14 +254,6 @@ public class ContractRepository : IContractRepository
         return contracts;
     }
 
-    public Task<List<Contract>> GetByFarmAsync(string farmId, CancellationToken cancellationToken)
-    {
-        // Note: FarmId is not mapped in the current DbContext configuration
-        // Returning empty list until proper mapping is established
-        _logger.LogWarning("Contract.FarmId is not mapped - returning empty list for farm {FarmId}", farmId);
-        return Task.FromResult(new List<Contract>());
-    }
-
     public async Task<List<Contract>> GetBySourceIdAsync(string sourceContractId, CancellationToken cancellationToken)
     {
         var contracts = await _context.Contracts

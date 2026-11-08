@@ -14,7 +14,6 @@ public interface IContractRepository
     Task<List<Contract>> GetByCustomerAsync(long customerId, string? scoularId, CancellationToken cancellationToken);
     Task<List<Contract>> GetHistoricalForPacingAsync(long customerId, CancellationToken cancellationToken);
     Task<List<Contract>> GetByCropYearAsync(int cropYear, List<string>? tradeUnits, CancellationToken cancellationToken);
-    Task<List<Contract>> GetByFarmAsync(string farmId, CancellationToken cancellationToken);
     Task<List<Contract>> GetBySourceIdAsync(string sourceContractId, CancellationToken cancellationToken);
     Task<List<ContractPricingLine>> GetPricingLinesAsync(string sourceContractId, CancellationToken cancellationToken);
     Task<List<ContractPricingLine>> GetPricingLinesByCustomerAsync(string scoularId, CancellationToken cancellationToken);

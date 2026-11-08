@@ -3,11 +3,14 @@ using System.Reflection;
 
 // Microsoft namespaces
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Modules.Customers;
 using GrainOriginatorPortal.Api.Modules.Customers.Services;
+using GrainOriginatorPortal.Infrastructure;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Extensions;
 
 namespace GrainOriginatorPortal.Api.Tests.Modules;
 
@@ -20,6 +23,9 @@ public class CustomersModuleTests
 {
     private const string ApiModule = "GrainOriginatorPortal.Api.Modules.Customers";
     private const string InfrastructureModule = "GrainOriginatorPortal.Infrastructure.Modules.Customers";
+
+    /// <summary>Interfaces Customers declares and other modules implement, such as the open-activity check.</summary>
+    private const string Extensions = "GrainOriginatorPortal.Infrastructure.Modules.Customers.Extensions";
 
     private static bool InModule(Type type) =>
         type.Namespace is { } ns && (ns.StartsWith(ApiModule, StringComparison.Ordinal)
@@ -46,7 +52,7 @@ public class CustomersModuleTests
             .SelectMany(type => type.GetConstructors(BindingFlags.Public | BindingFlags.Instance)
                 .SelectMany(ctor => ctor.GetParameters())
                 .Select(parameter => (Needer: type, Needed: parameter.ParameterType)))
-            .Where(x => InModule(x.Needed) && !registered.Contains(x.Needed))
+            .Where(x => InModule(x.Needed) && x.Needed.Namespace != Extensions && !registered.Contains(x.Needed))
             .Select(x => $"{x.Needer.Name} needs {x.Needed.Name}")
             .Distinct()
             .ToList();
@@ -63,5 +69,23 @@ public class CustomersModuleTests
         services.AddCustomersModule();
 
         Assert.Single(services, d => d.ServiceType == typeof(ICustomerLookup) && d.ImplementationType == typeof(CustomerLookup));
+    }
+
+    [Fact]
+    public void EveryExtensionCustomersNeeds_IsProvidedByAnotherModule()
+    {
+        // Customers declares these and has no fallback of its own, so the app must register an implementation.
+        // The open-activity check is Contracts data; it is registered with the contract repositories.
+        var services = new ServiceCollection();
+        services.AddInfrastructure(new ConfigurationBuilder().Build());
+        services.AddCustomersModule();
+        var registered = services.Select(d => d.ServiceType).ToHashSet();
+
+        var extensions = typeof(ICustomerActivitySource).Assembly.GetTypes()
+            .Where(t => t.IsInterface && t.Namespace == Extensions)
+            .ToList();
+
+        Assert.NotEmpty(extensions);
+        Assert.All(extensions, e => Assert.Contains(e, registered));
     }
 }

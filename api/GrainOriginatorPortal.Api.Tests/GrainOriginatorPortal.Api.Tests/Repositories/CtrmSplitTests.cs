@@ -27,7 +27,7 @@ public class CtrmSplitTests
         public Task<CtrmReadResult<T>> QueryAsync<T>(string document, object? variables, CancellationToken cancellationToken)
         {
             Calls++;
-            Assert.Equal(CtrmQueries.SplitsByCustomer, document);
+            Assert.Equal(CtrmSplitQueries.SplitsByCustomer, document);
             if (Status is not (CtrmReadStatus.Ok or CtrmReadStatus.PartialSuccess))
                 return Task.FromResult(new CtrmReadResult<T> { Status = Status });
             object value = new CtrmSplitsResponse { CustomerSplits = new CtrmPage<CtrmSplitDto> { Items = [.. Rows] } };
@@ -151,7 +151,7 @@ public class CtrmSplitTests
     [InlineData("ods")]
     public void Registration_RefusesCtrmWhileTheQueryIsAPlaceholder_AndUnknownSources(string source)
     {
-        Assert.False(CtrmQueries.SplitsQueryConfirmed);
+        Assert.False(CtrmSplitQueries.SplitsQueryConfirmed);
         Assert.Throws<InvalidOperationException>(() => ProducersInfrastructure.AddCtrmSplits(new ServiceCollection(), Config(("Ctrm:SplitsSource", source))));
     }
 

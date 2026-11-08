@@ -351,10 +351,6 @@ public sealed class CtrmContractRepository : IContractRepository
         return contracts;
     }
 
-    /// <summary>Delegated. CTRM exposes no farm concept.</summary>
-    public Task<List<Contract>> GetByFarmAsync(string farmId, CancellationToken cancellationToken)
-        => DelegateAsync("ByFarm", _ods.GetByFarmAsync(farmId, cancellationToken));
-
     /// <summary>Delegated. No lookup-by-contract-number root field exists.</summary>
     public Task<List<Contract>> GetBySourceIdAsync(string sourceContractId, CancellationToken cancellationToken)
         => DelegateAsync("BySourceId", _ods.GetBySourceIdAsync(sourceContractId, cancellationToken));

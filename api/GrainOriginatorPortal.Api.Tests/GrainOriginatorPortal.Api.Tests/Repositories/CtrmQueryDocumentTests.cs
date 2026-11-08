@@ -4,6 +4,8 @@ using System.Text.RegularExpressions;
 
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Ctrm;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 
@@ -22,20 +24,40 @@ namespace GrainOriginatorPortal.Api.Tests.Repositories;
 /// </remarks>
 public class CtrmQueryDocumentTests
 {
-    /// <summary>Every string constant on <see cref="CtrmQueries"/>, public or private.</summary>
+    /// <summary>The classes that hold CTRM documents: each module keeps its own.</summary>
+    private static readonly Type[] QueryClasses =
+        [typeof(CtrmContractQueries), typeof(CtrmCustomerQueries), typeof(CtrmSplitQueries)];
+
+    /// <summary>Every string constant on the query classes, public or private.</summary>
     public static TheoryData<string, string> AllDocuments()
     {
         var data = new TheoryData<string, string>();
 
-        foreach (var field in typeof(CtrmQueries)
-                     .GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
-                     .Where(f => f.IsLiteral && f.FieldType == typeof(string))
-                     .OrderBy(f => f.Name))
+        foreach (var type in QueryClasses)
         {
-            data.Add(field.Name, (string)field.GetRawConstantValue()!);
+            foreach (var field in type
+                         .GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
+                         .Where(f => f.IsLiteral && f.FieldType == typeof(string))
+                         .OrderBy(f => f.Name))
+            {
+                data.Add($"{type.Name}.{field.Name}", (string)field.GetRawConstantValue()!);
+            }
         }
 
         return data;
+    }
+
+    [Fact]
+    public void EveryQueryClassIsCovered()
+    {
+        // A query class added under another module would otherwise go unchecked until someone listed it.
+        var found = typeof(CtrmQueries).Assembly.GetTypes()
+            .Where(t => t is { IsAbstract: true, IsSealed: true } && t.Name.StartsWith("Ctrm", StringComparison.Ordinal)
+                        && t.Name.EndsWith("Queries", StringComparison.Ordinal) && t != typeof(CtrmQueries))
+            .OrderBy(t => t.Name)
+            .ToList();
+
+        Assert.Equal(QueryClasses.OrderBy(t => t.Name), found);
     }
 
     // -------------------------------------------------------------------------
@@ -95,7 +117,7 @@ public class CtrmQueryDocumentTests
         // last field of the first half has to survive the join as its own token. This is the precise
         // failure that shipped: it became "priceMarketMonthDescriptionprices".
         const string lastCoreField = "priceMarketMonthDescription";
-        var document = CtrmQueries.ContractsByCustomer;
+        var document = CtrmContractQueries.ContractsByCustomer;
 
         var index = document.IndexOf(lastCoreField, StringComparison.Ordinal);
         Assert.True(index >= 0, $"The contract projection no longer includes {lastCoreField}.");
@@ -112,7 +134,7 @@ public class CtrmQueryDocumentTests
     {
         // ToContract reads these; losing one to a bad seam or an edit would null a column on screen
         // rather than fail, which is the harder failure to notice.
-        foreach (var document in new[] { CtrmQueries.ContractsByCustomer, CtrmQueries.ContractsByCustomers, CtrmQueries.ContractsByCustomerCore })
+        foreach (var document in new[] { CtrmContractQueries.ContractsByCustomer, CtrmContractQueries.ContractsByCustomers, CtrmContractQueries.ContractsByCustomerCore })
         {
             Assert.Contains("contractId", document);
             Assert.Contains("customerId", document);
@@ -127,15 +149,15 @@ public class CtrmQueryDocumentTests
     public void OnlyThePerProducerContractReadPaysForPricingLines()
     {
         // Pricing lines roughly double a contract page's cost, and a contract LIST never reads them.
-        Assert.Contains("prices", CtrmQueries.ContractsByCustomer);
-        Assert.DoesNotContain("prices", CtrmQueries.ContractsByCustomers);
+        Assert.Contains("prices", CtrmContractQueries.ContractsByCustomer);
+        Assert.DoesNotContain("prices", CtrmContractQueries.ContractsByCustomers);
     }
 
     // -------------------------------------------------------------------------
     [Fact]
     public void BothTicketDocumentsAskTheServerToExcludeCancelledAndConsolidatedRows()
     {
-        foreach (var document in new[] { CtrmQueries.TicketsByCustomer, CtrmQueries.TicketsByContractNumbers, CtrmQueries.TicketsBySplitProducer })
+        foreach (var document in new[] { CtrmContractQueries.TicketsByCustomer, CtrmContractQueries.TicketsByContractNumbers, CtrmContractQueries.TicketsBySplitProducer })
         {
             Assert.Contains("excludeCancelled: true", document);
             Assert.Contains("excludeConsolidated: true", document);
@@ -147,13 +169,13 @@ public class CtrmQueryDocumentTests
     public void OnlyTheFieldPlanTicketReadAsksForTheSplitId()
     {
         // An API without combinedCustomerId answers HTTP 400; on the shared projection that would fail every ticket screen.
-        Assert.Contains("customerCode combinedCustomerId", CtrmQueries.TicketsBySplitProducer);
-        Assert.DoesNotContain("combinedCustomerId", CtrmQueries.TicketsByCustomer);
-        Assert.DoesNotContain("combinedCustomerId", CtrmQueries.TicketsByContractNumbers);
-        Assert.DoesNotContain("combinedCustomerId", CtrmQueries.TicketsByCustomers);
+        Assert.Contains("customerCode combinedCustomerId", CtrmContractQueries.TicketsBySplitProducer);
+        Assert.DoesNotContain("combinedCustomerId", CtrmContractQueries.TicketsByCustomer);
+        Assert.DoesNotContain("combinedCustomerId", CtrmContractQueries.TicketsByContractNumbers);
+        Assert.DoesNotContain("combinedCustomerId", CtrmContractQueries.TicketsByCustomers);
 
         // Otherwise the same projection as the shared one, so the mapping reads the same fields.
-        Assert.Equal(CtrmQueries.TicketsByCustomer, CtrmQueries.TicketsBySplitProducer.Replace(" combinedCustomerId", ""));
+        Assert.Equal(CtrmContractQueries.TicketsByCustomer, CtrmContractQueries.TicketsBySplitProducer.Replace(" combinedCustomerId", ""));
     }
 
     // -------------------------------------------------------------------------

@@ -36,7 +36,7 @@ public class CtrmContractReaderAliasedTests
         public List<string> Documents { get; } = [];
         public int Calls => Documents.Count;
         public int AliasedCalls => Documents.Count(d => d.StartsWith("query {"));
-        public int SingularPagedCalls => Documents.Count(d => d == CtrmQueries.ContractsByCustomerCore);
+        public int SingularPagedCalls => Documents.Count(d => d == CtrmContractQueries.ContractsByCustomerCore);
 
         /// <summary>Codes whose batch fails while the request still uses two-code lists.</summary>
         public HashSet<string> FailWhilePaired { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -69,7 +69,7 @@ public class CtrmContractReaderAliasedTests
             lock (Documents) Documents.Add(document);
             Assert.DoesNotContain('#', document);
 
-            if (document == CtrmQueries.ContractsByCustomerCore)
+            if (document == CtrmContractQueries.ContractsByCustomerCore)
                 return Task.FromResult(Singular<T>(variables!));
 
             var matches = Alias.Matches(document);
@@ -351,7 +351,7 @@ public class CtrmContractReaderAliasedTests
     {
         var groups = new List<IReadOnlyList<string>> { new[] { "AAA", "BBB" }, new[] { "CCC" } };
 
-        var document = CtrmQueries.ContractsByCustomersAliased(groups, 500, "P");
+        var document = CtrmContractQueries.ContractsByCustomersAliased(groups, 500, "P");
 
         Assert.Contains("a0: contracts(skip: 0, take: 500, customerIds: [\"AAA\",\"BBB\"], contractPrefixType: \"P\")", document);
         Assert.Contains("a1: contracts(skip: 0, take: 500, customerId: \"CCC\", contractPrefixType: \"P\")", document);

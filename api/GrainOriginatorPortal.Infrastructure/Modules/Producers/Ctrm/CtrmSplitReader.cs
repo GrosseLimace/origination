@@ -7,8 +7,8 @@ namespace GrainOriginatorPortal.Infrastructure.Modules.Producers.Ctrm;
 
 /// <summary>
 /// A producer's splits from the CTRM GraphQL API. Built ahead of the confirmed query so that switching from
-/// <see cref="SampleCtrmSplitReader"/> is a change to <see cref="CtrmQueries.SplitsByCustomer"/> and
-/// <see cref="CtrmSplitDto"/> only; see <see cref="CtrmQueries.SplitsQueryConfirmed"/>.
+/// <see cref="SampleCtrmSplitReader"/> is a change to <see cref="CtrmSplitQueries.SplitsByCustomer"/> and
+/// <see cref="CtrmSplitDto"/> only; see <see cref="CtrmSplitQueries.SplitsQueryConfirmed"/>.
 /// </summary>
 /// <remarks>
 /// Splits change rarely, so each producer's list is cached for <c>Ctrm:TradeUnitCacheMinutes</c>, with one
@@ -51,7 +51,7 @@ public sealed class CtrmSplitReader : ICtrmSplitReader
     // Not tied to the first caller's token: the read is shared, so one caller leaving mustn't cancel it for the rest.
     private async Task<CtrmReadResult<IReadOnlyList<CtrmSplit>>> ReadAsync(string code)
     {
-        var read = await _client.QueryAsync<CtrmSplitsResponse>(CtrmQueries.SplitsByCustomer, new { customerId = code }, CancellationToken.None);
+        var read = await _client.QueryAsync<CtrmSplitsResponse>(CtrmSplitQueries.SplitsByCustomer, new { customerId = code }, CancellationToken.None);
         if (!read.Ok)
             return new() { Status = read.Status, HttpStatus = read.HttpStatus, Detail = read.Detail, ErrorCode = read.ErrorCode };
 

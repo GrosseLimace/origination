@@ -36,13 +36,6 @@ public class ContractService : IContractService
         SafeContractsAsync(ct => _repository.GetByCropYearAsync(cropYear, tradeUnits, ct), $"contracts for crop year {cropYear}", cancellationToken);
 
     /// <inheritdoc />
-    public async Task<List<ContractResponse>> GetByFarmAsync(string farmId, CancellationToken cancellationToken)
-    {
-        var contracts = await _repository.GetByFarmAsync(farmId, cancellationToken);
-        return contracts.Select(c => c.ToResponse()).ToList();
-    }
-
-    /// <inheritdoc />
     public async Task<List<ContractPricingLineResponse>> GetPricingLinesAsync(string sourceContractId, CancellationToken cancellationToken)
     {
         try

@@ -11,5 +11,4 @@ public interface ITicketService
     Task<List<TicketResponse>> GetByCustomerAsync(long customerId, string? scoularId, CancellationToken cancellationToken);
     Task<List<TicketResponse>> GetUnappliedByCustomerAsync(long customerId, string? scoularId, CancellationToken cancellationToken);
     Task<List<TicketResponse>> GetAppliedByContractAsync(string sourceContractId, CancellationToken cancellationToken);
-    Task<List<TicketResponse>> GetByFarmAsync(string farmId, CancellationToken cancellationToken);
 }

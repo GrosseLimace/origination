@@ -1,6 +1,7 @@
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -123,7 +124,7 @@ public class TicketRepository : ITicketRepository
             ticketsWithProtein, wheatTickets);
 
         // Populate elevator city/state from ElevatorCache lookup
-        await PopulateElevatorLocations(tickets, cancellationToken);
+        await TicketLocations.PopulateElevatorLocationsAsync(_appContext, _logger, tickets, cancellationToken);
 
         // Log diagnostic info about ticket-contract relationships
         var ticketsWithContractId = tickets.Count(t => t.ContractId.HasValue);
@@ -282,7 +283,7 @@ public class TicketRepository : ITicketRepository
             }
         }
 
-        await PopulateElevatorLocations(tickets, cancellationToken);
+        await TicketLocations.PopulateElevatorLocationsAsync(_appContext, _logger, tickets, cancellationToken);
 
         _logger.LogInformation("Found {TicketCount} tickets for customer {CustomerId} (ScoularId: {ScoularId})",
             tickets.Count, customerId, scoularId);
@@ -359,13 +360,6 @@ public class TicketRepository : ITicketRepository
         _logger.LogInformation("Found {TicketCount} applied tickets for contract {ContractNumber}",
             tickets.Count, trimmed);
         return tickets;
-    }
-
-    public Task<List<Ticket>> GetByFarmAsync(string farmId, CancellationToken cancellationToken)
-    {
-        // Note: FarmId is not in ODS tickets view - cannot filter by farm
-        _logger.LogWarning("Ticket.FarmId is not mapped in ODS - returning empty list for farm {FarmId}", farmId);
-        return Task.FromResult(new List<Ticket>());
     }
 
     private async Task<List<Ticket>> LoadTicketsByContractAndCustomerScopeAsync(
@@ -554,60 +548,6 @@ public class TicketRepository : ITicketRepository
         return tickets;
     }
 
-    // Resolves each ticket's display location from dbo.MbpLocationSynonym (the MBPLOCSYN master):
-    // LocationId = "{OrganizationCode}-{ElevatorCode}" -> DisplayName (e.g. 1075 + MADRID => "Madrid, NE").
-    // ONLY tickets carrying BOTH an organization code AND an elevator code are matched; a ticket with no
-    // elevator code, or with no matching row, is left blank. This fully replaces the former
-    // vw_GNP026 / vw_GNP003 elevator lookup. DisplayName is already the full "City, ST" string the UI
-    // shows, so it goes in ElevatorCity (ElevatorState left null) and renders verbatim on the unapplied /
-    // applied / storage ticket views with no client change.
-    // internal rather than private so CtrmTicketRepository can reuse it. Location display comes from
-    // the MbpLocationSynonym table, which CTRM has no equivalent for, and reusing this is what keeps
-    // the location column identical whichever source supplied the ticket.
-    internal async Task PopulateElevatorLocations(List<Ticket> tickets, CancellationToken cancellationToken)
-    {
-        // Only org+elevator tickets resolve; their key is "{Org}-{Elevator}", matched to LocationId.
-        var keyed = tickets
-            .Where(t => !string.IsNullOrWhiteSpace(t.OrganizationCode) && !string.IsNullOrWhiteSpace(t.ElevatorCode))
-            .ToList();
-        if (keyed.Count == 0) return;
-
-        var locationIds = keyed
-            .Select(t => $"{t.OrganizationCode!.Trim()}-{t.ElevatorCode!.Trim()}")
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        try
-        {
-            var rows = await _appContext.MbpLocationSynonyms
-                .AsNoTracking()
-                .Where(m => locationIds.Contains(m.LocationId) && m.DisplayName != null)
-                .Select(m => new { m.LocationId, m.DisplayName })
-                .ToListAsync(cancellationToken);
-
-            var lookup = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var r in rows)
-                if (!string.IsNullOrWhiteSpace(r.DisplayName))
-                    lookup[r.LocationId.Trim()] = r.DisplayName!.Trim();
-
-            foreach (var ticket in keyed)
-            {
-                var key = $"{ticket.OrganizationCode!.Trim()}-{ticket.ElevatorCode!.Trim()}";
-                if (lookup.TryGetValue(key, out var display))
-                {
-                    // DisplayName is the full "City, ST" text → ElevatorCity (state left null) so the
-                    // existing UI shows it verbatim. Unmatched tickets stay blank.
-                    ticket.ElevatorCity = display;
-                    ticket.ElevatorState = null;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "MbpLocationSynonym location lookup failed — tickets will load without location display");
-        }
-    }
-
     /// <summary>
     /// Commodity codes each customer currently holds in active customer storage (ctrm.vw_GNTA39D1,
     /// latest snapshot, net qty &gt; 0), keyed by Scoular customer code. Used to gate C-prefix
@@ -703,7 +643,7 @@ public class TicketRepository : ITicketRepository
             }
         }
 
-        await PopulateElevatorLocations(tickets, cancellationToken);
+        await TicketLocations.PopulateElevatorLocationsAsync(_appContext, _logger, tickets, cancellationToken);
     }
     /// <summary>
     /// The producer codes whose recent unapplied tickets feed Spot Loads.

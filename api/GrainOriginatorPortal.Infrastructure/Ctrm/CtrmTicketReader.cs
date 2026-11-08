@@ -132,7 +132,7 @@ public sealed class CtrmTicketReader
     }
 
     /// <summary>
-    /// This producer's tickets with each detail row's split ID (<see cref="CtrmQueries.TicketsBySplitProducer"/>),
+    /// This producer's tickets with each detail row's split ID (<see cref="CtrmContractQueries.TicketsBySplitProducer"/>),
     /// across the same lookback as <see cref="GetForProducerAsync"/>. For the field plan's 45Z review.
     /// </summary>
     public Task<CtrmReadResult<List<CtrmTicketDto>>> GetForSplitProducerAsync(
@@ -146,7 +146,7 @@ public sealed class CtrmTicketReader
         return GetCachedAsync(new Scope(
             CacheKey: $"split-producer:{code}",
             Description: $"producer {code} (with split IDs)",
-            Document: CtrmQueries.TicketsBySplitProducer,
+            Document: CtrmContractQueries.TicketsBySplitProducer,
             Filter: new { customerId = code },
             Interactive: true));
     }
@@ -167,7 +167,7 @@ public sealed class CtrmTicketReader
         var scope = new Scope(
             CacheKey: $"customer:{code}",
             Description: $"producer {code}",
-            Document: CtrmQueries.TicketsByCustomer,
+            Document: CtrmContractQueries.TicketsByCustomer,
             Filter: new { customerId = code },
             Interactive: true);
 
@@ -285,7 +285,7 @@ public sealed class CtrmTicketReader
         return GetCachedAsync(new Scope(
             CacheKey: $"contracts:{string.Join(',', numbers)}",
             Description: numbers.Count == 1 ? $"contract {numbers[0]}" : $"{numbers.Count} contracts",
-            Document: CtrmQueries.TicketsByContractNumbers,
+            Document: CtrmContractQueries.TicketsByContractNumbers,
             Filter: new { contractNumbers = numbers },
             Interactive: true));
     }
@@ -656,7 +656,7 @@ public sealed class CtrmTicketReader
                     new Scope(
                         CacheKey: string.Empty,
                         Description: $"{chunk.Length} producer(s)",
-                        Document: CtrmQueries.TicketsByCustomers,
+                        Document: CtrmContractQueries.TicketsByCustomers,
                         Filter: new { customerIds = chunk },
                         Interactive: interactive),
                     from, to, maxPages);

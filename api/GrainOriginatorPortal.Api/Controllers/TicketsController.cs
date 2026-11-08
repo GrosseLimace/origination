@@ -69,14 +69,4 @@ public class TicketsController : ControllerBase
     {
         return Ok(await _service.GetAppliedByContractAsync(sourceContractId, cancellationToken));
     }
-
-    // -------------------------------------------------------------------------
-    /// <summary>Gets all delivery tickets for a specific farm. Open to any authenticated originator —
-    /// trade-unit entitlements are a UX default, not an access-control boundary.</summary>
-    [HttpGet("farm/{farmId}")]
-    [ProducesResponseType(typeof(List<TicketResponse>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<TicketResponse>>> GetByFarm(string farmId, CancellationToken cancellationToken = default)
-    {
-        return Ok(await _service.GetByFarmAsync(farmId, cancellationToken));
-    }
 }

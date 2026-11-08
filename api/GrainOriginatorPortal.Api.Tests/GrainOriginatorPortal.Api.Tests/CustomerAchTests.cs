@@ -1,8 +1,8 @@
 using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Repositories;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Sync;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -58,8 +58,7 @@ public class CustomerAchTests
 
         // Strict: listing customers must not read contracts or tickets.
         return new CustomerRepository(ods, app,
-            new Mock<ITicketRepository>(MockBehavior.Strict).Object,
-            new Mock<IContractRepository>(MockBehavior.Strict).Object,
+            new Mock<ICustomerActivitySource>(MockBehavior.Strict).Object,
             new Mock<ILogger<CustomerRepository>>().Object,
             config);
     }

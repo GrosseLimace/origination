@@ -70,9 +70,6 @@ public sealed class ContractRepositorySwitch : IContractRepository
     public Task<List<Contract>> GetByCropYearAsync(int cropYear, List<string>? tradeUnits, CancellationToken cancellationToken)
         => Active.GetByCropYearAsync(cropYear, tradeUnits, cancellationToken);
 
-    public Task<List<Contract>> GetByFarmAsync(string farmId, CancellationToken cancellationToken)
-        => Active.GetByFarmAsync(farmId, cancellationToken);
-
     public Task<List<Contract>> GetBySourceIdAsync(string sourceContractId, CancellationToken cancellationToken)
         => Active.GetBySourceIdAsync(sourceContractId, cancellationToken);
 

@@ -142,8 +142,8 @@ public class CtrmTicketPagingTests
         // running a count query for every page we fetch.
         foreach (var document in new[]
                  {
-                     CtrmQueries.TicketsByCustomer, CtrmQueries.TicketsBySplitProducer,
-                     CtrmQueries.TicketsByContractNumbers, CtrmQueries.TicketsByCustomers,
+                     CtrmContractQueries.TicketsByCustomer, CtrmContractQueries.TicketsBySplitProducer,
+                     CtrmContractQueries.TicketsByContractNumbers, CtrmContractQueries.TicketsByCustomers,
                      CtrmCustomerQueries.TicketLinksInWindow,
                  })
         {

@@ -25,8 +25,8 @@ namespace GrainOriginatorPortal.Api.Tests.Repositories;
 /// all reach <c>FromSqlInterpolated</c> over <c>base.vw_CurrentTickets</c> (STRING_SPLIT + UNION ALL)
 /// or call <c>SetCommandTimeout</c>, neither of which the InMemory provider can run, and
 /// <c>GetActiveStorageCommoditiesAsync</c> is a <c>SqlQueryRaw</c> over <c>ctrm.vw_GNTA39D1</c>.
-/// <c>PopulateElevatorLocations</c> is internal (no InternalsVisibleTo) and only reachable through
-/// those same loads. All of that needs the real-SQL harness; what is covered below is everything
+/// The location lookup moved out to <c>TicketLocations</c> and isn't covered here either. All of that
+/// needs the real-SQL harness; what is covered below is everything
 /// that sits in front of or behind that SQL.
 /// </remarks>
 public class TicketRepositoryTests
@@ -292,17 +292,6 @@ public class TicketRepositoryTests
         var (sut, _, _) = Build();
 
         var tickets = await sut.GetAppliedByContractAsync(sourceContractId!, CancellationToken.None);
-
-        Assert.Empty(tickets);
-    }
-
-    // -------------------------------------------------------------------------
-    [Fact]
-    public async Task GetByFarmAsync_FarmIsNotInOds_ReturnsEmpty()
-    {
-        var (sut, _, _) = Build();
-
-        var tickets = await sut.GetByFarmAsync("FARM-1", CancellationToken.None);
 
         Assert.Empty(tickets);
     }

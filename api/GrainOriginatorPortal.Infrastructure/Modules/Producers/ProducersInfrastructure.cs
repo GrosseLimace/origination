@@ -31,7 +31,7 @@ public static class ProducersInfrastructure
     /// <summary>
     /// A producer's CTRM splits (field-plan fields) come from <c>Ctrm:SplitsSource</c>: <c>manual</c> (the
     /// go-live default: typed by hand, no list) or <c>sample</c> (local demos) until the CTRM splits query is confirmed, then <c>ctrm</c>. Asking for <c>ctrm</c> before
-    /// <see cref="CtrmQueries.SplitsQueryConfirmed"/> stops startup, so a guessed query is never sent.
+    /// <see cref="CtrmSplitQueries.SplitsQueryConfirmed"/> stops startup, so a guessed query is never sent.
     /// </summary>
     public static void AddCtrmSplits(IServiceCollection services, IConfiguration configuration)
     {
@@ -45,12 +45,12 @@ public static class ProducersInfrastructure
             case "sample":
                 services.AddSingleton<ICtrmSplitReader, SampleCtrmSplitReader>();
                 break;
-            case "ctrm" when CtrmQueries.SplitsQueryConfirmed:
+            case "ctrm" when CtrmSplitQueries.SplitsQueryConfirmed:
                 services.AddSingleton<ICtrmSplitReader, CtrmSplitReader>();
                 break;
             case "ctrm":
                 throw new InvalidOperationException(
-                    "Ctrm:SplitsSource is 'ctrm', but the CTRM splits query is still a placeholder (CtrmQueries.SplitsQueryConfirmed). Use 'manual' until it is confirmed.");
+                    "Ctrm:SplitsSource is 'ctrm', but the CTRM splits query is still a placeholder (CtrmSplitQueries.SplitsQueryConfirmed). Use 'manual' until it is confirmed.");
             default:
                 throw new InvalidOperationException($"Ctrm:SplitsSource must be 'manual', 'sample' or 'ctrm', not '{source}'.");
         }

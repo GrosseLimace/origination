@@ -33,11 +33,11 @@ public class CtrmContractReaderTradeUnitTests
         public Dictionary<string, List<CtrmContractDto>> ByUnit { get; } = new(StringComparer.OrdinalIgnoreCase);
         public HashSet<string> FailUnits { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-        public int TradeUnitCalls => Calls.Count(c => c.Document == CtrmQueries.ContractsByTradeUnit);
-        public int SingularCalls => Calls.Count(c => c.Document == CtrmQueries.ContractsByCustomerCore);
+        public int TradeUnitCalls => Calls.Count(c => c.Document == CtrmContractQueries.ContractsByTradeUnit);
+        public int SingularCalls => Calls.Count(c => c.Document == CtrmContractQueries.ContractsByCustomerCore);
         public int AliasedCalls => Calls.Count(c => c.Document.StartsWith("query {", StringComparison.Ordinal));
         public IEnumerable<Dictionary<string, object?>> TradeUnitVariables =>
-            Calls.Where(c => c.Document == CtrmQueries.ContractsByTradeUnit).Select(c => c.Variables);
+            Calls.Where(c => c.Document == CtrmContractQueries.ContractsByTradeUnit).Select(c => c.Variables);
 
         public void Add(string unit, string producer, params string[] contractIds)
         {
@@ -54,7 +54,7 @@ public class CtrmContractReaderTradeUnitTests
             lock (Calls) Calls.Add((document, vars));
             Assert.DoesNotContain('#', document);
 
-            if (document == CtrmQueries.ContractsByTradeUnit)
+            if (document == CtrmContractQueries.ContractsByTradeUnit)
             {
                 var unit = (string)vars["tradeUnit"]!;
                 if (FailUnits.Contains(unit))
@@ -63,7 +63,7 @@ public class CtrmContractReaderTradeUnitTests
                 return Task.FromResult(Page<T>(all, Convert.ToInt32(vars["skip"]), Convert.ToInt32(vars["take"])));
             }
 
-            if (document == CtrmQueries.ContractsByCustomerCore)
+            if (document == CtrmContractQueries.ContractsByCustomerCore)
             {
                 var code = (string)vars["customerId"]!;
                 var all = ByUnit.Values.SelectMany(r => r).Where(r => r.CustomerId == code).ToList();

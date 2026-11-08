@@ -1,6 +1,6 @@
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts;
 using GrainOriginatorPortal.Infrastructure.Ctrm;
 using Microsoft.Extensions.Logging;
 
@@ -29,23 +29,21 @@ public interface IFieldTicketReader
 /// decision 2026-11-03). A split row only a partner holds, on a ticket with no row for the producer, isn't
 /// reached: <c>tickets</c> has no split filter. Unlike the producer ticket screens, nothing is gated: stored and
 /// settled grain counts toward the field's CI. Contract crop years come from the CTRM contracts of each party on
-/// those rows; a contract none of them holds leaves the ticket to the date window. Locations are the ODS elevator
-/// lookup, as on every ticket read.
+/// those rows; a contract none of them holds leaves the ticket to the date window. Locations come from
+/// <see cref="TicketLocations"/>, as on every ticket read.
 /// </summary>
 public sealed class CtrmFieldTicketReader : IFieldTicketReader
 {
     private readonly CtrmTicketReader _tickets;
     private readonly CtrmContractReader _contracts;
-    private readonly TicketRepository _ods;
     private readonly ApplicationDbContext _appContext;
     private readonly ILogger<CtrmFieldTicketReader> _logger;
 
-    public CtrmFieldTicketReader(CtrmTicketReader tickets, CtrmContractReader contracts, TicketRepository ods,
+    public CtrmFieldTicketReader(CtrmTicketReader tickets, CtrmContractReader contracts,
         ApplicationDbContext appContext, ILogger<CtrmFieldTicketReader> logger)
     {
         _tickets = tickets;
         _contracts = contracts;
-        _ods = ods;
         _appContext = appContext;
         _logger = logger;
     }
@@ -80,7 +78,7 @@ public sealed class CtrmFieldTicketReader : IFieldTicketReader
 
         try
         {
-            await _ods.PopulateElevatorLocations(tickets, cancellationToken);
+            await TicketLocations.PopulateElevatorLocationsAsync(_appContext, _logger, tickets, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
