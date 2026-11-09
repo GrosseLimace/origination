@@ -9,10 +9,12 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Api.Platform.Identity;
+using GrainOriginatorPortal.Api.Platform.Preferences;
+using GrainOriginatorPortal.Infrastructure.Platform.Preferences.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.ReferenceData.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

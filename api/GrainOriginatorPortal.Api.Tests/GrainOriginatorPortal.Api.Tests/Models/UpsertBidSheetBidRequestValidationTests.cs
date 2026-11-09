@@ -1,8 +1,8 @@
 using System.Collections;
 using System.ComponentModel.DataAnnotations;
 using System.Reflection;
+using GrainOriginatorPortal.Api.Modules.BidSheet.Models.Requests;
 
-using GrainOriginatorPortal.Api.Models.Requests;
 
 namespace GrainOriginatorPortal.Api.Tests.Models;
 

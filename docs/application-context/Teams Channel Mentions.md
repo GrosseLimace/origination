@@ -93,7 +93,7 @@ identical either way, because the user's identity flows through the exchange.
 
 On-behalf-of makes this API a confidential client, so it must prove its own identity to Entra. That
 is **configuration, not code** — `AzureAd:ClientCredentials` — so either answer below works without
-touching `Program.cs`:
+touching code (`AddSignIn` in `Api/Platform/Identity/IdentityServiceCollectionExtensions.cs`):
 
 **Answered by IT Security on 2026-09-17 — the secretless route, and it is live in Dev.** A federated
 identity credential on the `Origination API - Dev` registration is bound to the
@@ -145,10 +145,10 @@ one does not exist, removing the "someone must click Get email address first" st
 
 ## Files
 
-- API: `Controllers/TeamsChannelsController.cs`, `Services/TeamsChannelService.cs`,
+- API, in `Api/Modules/Engagement/`: `Controllers/TeamsChannelsController.cs`, `Services/TeamsChannelService.cs`,
   `Models/TeamsChannelAddress.cs`, `Services/NoteService.cs` (`ValidateTeamsChannelMentionsAsync`)
-- Data: `Data/Entities/TeamsChannel.cs`, migration `AddTeamsChannelRegistry`
-- Graph on-behalf-of: `Services/TeamsDirectoryService.cs`, enabled in `Program.cs`
+- Data: `Infrastructure/Modules/Engagement/Entities/TeamsChannel.cs`, migration `AddTeamsChannelRegistry`
+- Graph on-behalf-of: `Api/Modules/Engagement/Services/TeamsDirectoryService.cs`, enabled in `AddSignIn` (`Api/Platform/Identity/IdentityServiceCollectionExtensions.cs`)
   (`EnableTokenAcquisitionToCallDownstreamApi` + `AddInMemoryTokenCaches`)
 - Client: `core/services/teams-directory.service.ts` (now just calls our API),
   `features/customers/components/customer-notes/`

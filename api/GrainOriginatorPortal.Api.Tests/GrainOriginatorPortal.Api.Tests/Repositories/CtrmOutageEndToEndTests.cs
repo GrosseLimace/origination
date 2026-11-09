@@ -13,13 +13,15 @@ using Microsoft.AspNetCore.Routing;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Filters;
-using GrainOriginatorPortal.Infrastructure.Ctrm;
-using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
 using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
+using GrainOriginatorPortal.Api.Modules.Contracts.Filters;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm.Dtos;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Repositories;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm.Dtos;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 

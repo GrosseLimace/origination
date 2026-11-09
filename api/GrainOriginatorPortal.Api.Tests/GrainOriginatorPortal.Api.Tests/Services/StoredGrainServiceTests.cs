@@ -2,10 +2,12 @@
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Api.Modules.Producers.Services;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Interfaces;
+using GrainOriginatorPortal.Api.Modules.Customers.Services;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Api.Platform.Identity;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 
@@ -18,7 +20,7 @@ namespace GrainOriginatorPortal.Api.Tests.Services;
 public class StoredGrainServiceTests
 {
     private readonly Mock<IStoredGrainRepository> _repositoryMock = new();
-    private readonly Mock<ICustomerRepository> _customerRepositoryMock = new();
+    private readonly Mock<ICustomerLookup> _customersMock = new();
     private readonly Mock<IUserEntitlementService> _entitlementMock = new();
     private readonly StoredGrainService _sut;
 
@@ -29,7 +31,7 @@ public class StoredGrainServiceTests
             .Setup(e => e.GetAllowedTradeUnitCodesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new HashSet<string> { "2115" });
         _sut = new StoredGrainService(
-            _repositoryMock.Object, _customerRepositoryMock.Object, _entitlementMock.Object);
+            _repositoryMock.Object, _customersMock.Object, _entitlementMock.Object);
     }
 
     [Fact]
@@ -41,7 +43,7 @@ public class StoredGrainServiceTests
                 new StoredGrain { Id = "entitled", CustomerId = 1 },
                 new StoredGrain { Id = "not-entitled", CustomerId = 2 },
             ]);
-        _customerRepositoryMock
+        _customersMock
             .Setup(c => c.GetActiveCustomerIdsInTradeUnitsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([1L]);
 
@@ -76,7 +78,7 @@ public class StoredGrainServiceTests
         _repositoryMock
             .Setup(r => r.GetAsync(It.IsAny<IEnumerable<string>?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([new StoredGrain { Id = "any", CustomerId = 1 }]);
-        _customerRepositoryMock
+        _customersMock
             .Setup(c => c.GetActiveCustomerIdsInTradeUnitsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
 
@@ -99,7 +101,7 @@ public class StoredGrainServiceTests
         Assert.Single(result);
         _entitlementMock.Verify(
             e => e.GetAllowedTradeUnitCodesAsync(It.IsAny<CancellationToken>()), Times.Never);
-        _customerRepositoryMock.Verify(
+        _customersMock.Verify(
             c => c.GetActiveCustomerIdsInTradeUnitsAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }

@@ -11,7 +11,9 @@ using Microsoft.Identity.Web;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Modules.Engagement.Services;
+using GrainOriginatorPortal.Api.Platform.Identity;
+using GrainOriginatorPortal.Api.Platform.Middleware;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

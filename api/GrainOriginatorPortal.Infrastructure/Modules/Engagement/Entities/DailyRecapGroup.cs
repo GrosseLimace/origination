@@ -1,0 +1,32 @@
+namespace GrainOriginatorPortal.Infrastructure.Modules.Engagement.Entities;
+
+/// <summary>
+/// A user-configured Daily Recap group: a named set of recipients (people / trade units /
+/// trade-unit groups) plus optional CC addresses, delivered by Email or posted to a Microsoft
+/// Teams channel. The external Logic App reads these groups and re-resolves trade-unit / group
+/// members against entitlements (vw_UserTradeUnitPreferences) at send time, so membership changes and
+/// departures are reflected without the group being re-saved.
+/// </summary>
+public class DailyRecapGroup
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    /// <summary>"email" or "teams" — where EVERYTHING for this group goes. "email" sends the daily
+    /// recap and any @-mention of the group to its members. "teams" sends both to
+    /// <see cref="TeamsChannelEmail"/> instead, and the members are not emailed at all; they only
+    /// grant visibility. This single field is the routing decision — there is no separate per-channel
+    /// mention switch.</summary>
+    public string DeliveryMethod { get; set; } = "email";
+    /// <summary>Microsoft Teams channel email — populated only when DeliveryMethod is "teams".</summary>
+    public string? TeamsChannelEmail { get; set; }
+    /// <summary>UI on/off toggle. The Logic App only sends for enabled groups.</summary>
+    public bool Enabled { get; set; } = true;
+
+    public string CreatedBy { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+    public string? ModifiedBy { get; set; }
+    public DateTime? ModifiedAt { get; set; }
+
+    public List<DailyRecapGroupMember> Members { get; set; } = [];
+    public List<DailyRecapGroupCcEmail> CcEmails { get; set; } = [];
+}

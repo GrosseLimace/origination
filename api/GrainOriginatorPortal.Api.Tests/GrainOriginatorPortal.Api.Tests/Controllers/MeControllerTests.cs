@@ -6,7 +6,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Controllers;
+using GrainOriginatorPortal.Api.Platform.Identity.Controllers;
+using GrainOriginatorPortal.Api.Platform.Middleware;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 

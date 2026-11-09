@@ -1,6 +1,6 @@
 # Plan: Modular architecture and a Trader persona
 
-*Created 2026-10-08. Refreshed against `main` on 2026-11-03, and the access design switched to the company permissions model the same day. On 2026-11-04 roles became persona roles plus add-on roles, with read-only the default. [Changes since the first draft](#changes-since-the-first-draft-2026-11-03) lists all three. Status: proposal, awaiting review.*
+*Created 2026-10-08. Refreshed against `main` on 2026-11-03, and the access design switched to the company permissions model the same day. On 2026-11-04 roles became persona roles plus add-on roles, with read-only the default. [Changes since the first draft](#changes-since-the-first-draft-2026-11-03) lists all three. Status: Phase 1 (access plumbing) is built on the integration branch, and Phase 2 (backend modules) is built on its phase branch, finished 2026-11-08 ([§8](#8-phased-rollout)). Phase 1b and Phases 3–6 haven't started, and nothing has reached `main`.*
 
 ---
 
@@ -111,14 +111,14 @@ What that buys:
 
 | Module | Default grants | What it owns | Depends on |
 |---|---|---|---|
-| **Platform** (core) | everyone | Auth, `/api/me`, permissions and the grant editor, user preferences, trade units and entitlements, telemetry (including the browser's App Insights config), What's New, Help, version, geocode, diagnostics, reference data (commodities, conversions, elevators/locations), the shared CTRM GraphQL client, middleware and filters, the layout shell | — |
-| **Customers** | everyone | Customer master, the sync (both feeders, plus its admin diagnostics), search, trade-unit assignments, customer list, profile **shell** with its extension slots | Platform |
+| **Platform** (core) | everyone | Auth, `/api/me`, permissions and the grant editor, user preferences, trade units and entitlements, telemetry (including the browser's App Insights config), What's New, Help, version, geocode, diagnostics, reference data (commodities, the curated planting crops, conversions, harvest windows, elevators/locations), the shared CTRM GraphQL client, the Doc Store client (documents filed by category; each feature names its own), middleware and filters, the layout shell | — |
+| **Customers** | everyone | Customer master, the sync (both feeders, plus its admin diagnostics), search, the onboarding search, trade-unit assignments, customer list, profile **shell** with its extension slots | Platform |
 | **Contracts** | everyone | Contracts, tickets, pricing lines, the CTRM/ODS readers and switches, contracts and tickets tables | Customers, Platform |
 | **Engagement** | everyone *(confirm, Q6)* | Notes, reminders with the Outlook mirror, Teams mentions, daily digest | Customers, Platform |
-| **Producers** | Originator | Planting intentions, producer details, contacts and grain on farm, stored grain, DP contracts, harvest windows, pacing, producer insights, growth opportunity, linked producers, onboarding search, Planting Dashboard, the field plan (fields and CTRM splits, crop seasons, 45Z sustainability programs, the FD-CIC calculator) | Contracts, Customers, Platform |
+| **Producers** | Originator | Planting intentions, producer details, contacts and grain on farm, stored grain, DP contracts, pacing, producer insights, growth opportunity, linked producers (`dbo.CustomerLink`) and the commodities a producer grows (`dbo.CustomerCommodity`), Planting Dashboard, the field plan (fields and CTRM splits, crop seasons, 45Z sustainability programs, the FD-CIC calculator) | Contracts, Customers, Platform |
 | **Lists & Insights** | Originator *(for now)* | Build-a-List with its customer map, NLQ engine, saved lists, query library, Actionable Insights | Producers, Contracts, Customers |
 | **Bid Sheet** | Originator | Bid sheet, the BarChart bid feed (picker reads and pipeline ingestion) | Platform |
-| **Usage Analytics** | Manager, Support | Usage dashboard | Platform |
+| **Usage Analytics** | Manager, Support | Usage dashboard and its excluded users. It reads what Platform's usage tracking records, and names the customers, contracts and query-library prompts people used. | Lists, Contracts, Customers, Platform |
 | **Calculators** | everyone | Frontend-only tools | Platform |
 
 ```mermaid
@@ -131,7 +131,9 @@ flowchart BT
     Producers --> Customers
     Lists[Lists & Insights] --> Producers
     BidSheet[Bid Sheet] --> Platform
-    Usage[Usage Analytics] --> Platform
+    Usage[Usage Analytics] --> Lists
+    Usage --> Contracts
+    Usage --> Customers
 ```
 
 *Arrows mean "may depend on". The reverse is forbidden: Customers and Contracts must never reference Producers. That single rule is what lets a trader-only build of the screen exist.*
@@ -148,17 +150,18 @@ Keep the style guide's two projects and its `Api → Infrastructure` reference r
 
 ```
 api/GrainOriginatorPortal.Api/
-├── Program.cs                        # ~150 lines: AddPlatform() + AddXModule() calls + pipeline
-├── Platform/
+├── Program.cs                        # ~260 lines (built in step 11): Key Vault bootstrap, AddPlatform() + AddXModule() calls, pipeline
+├── Platform/                         # each area registers itself (AddSignIn, AddPreferences, AddCtrmClient, …); PlatformModule calls them
 │   ├── Access/                       # PermissionService, RequirePermission, grant cache, grant editor API
-│   ├── Identity/                     # MeController, RequestContextService, UserEntitlementService
+│   ├── Identity/                     # MeController, RequestContextService, UserEntitlementService, DisplayNames; the Graph directory client and app access
 │   ├── Preferences/                  # UserPreferences, UserTradeUnits, TradeUnits, Entitlements
-│   ├── ReferenceData/                # Commodities (list, conversions), locations
-│   ├── Telemetry/                    # usage tracking + aggregation background services, ClientTelemetry
+│   ├── ReferenceData/                # Commodities (list, planting, conversions, harvest windows)
+│   ├── Telemetry/                    # usage tracking + aggregation background services, ClientTelemetry, ClickEvents, TelemetrySanitizer
 │   ├── Ctrm/                         # CtrmGraphQlClient: one client, used by Customers, Contracts and Producers
-│   ├── Diagnostics/  WhatsNew/  Help/  Geocode/
-│   ├── Middleware/  Filters/  Exceptions/  Json/
-│   └── PlatformModule.cs             # AddPlatform(IConfiguration)
+│   ├── DocStore/                     # IDocStoreClient and AddDocStore: Doc Store through APIM; each upload names its category
+│   ├── Diagnostics/  WhatsNew/  Help/  Geocode/  Version/
+│   ├── Middleware/  Filters/  Exceptions/   # Exceptions/ includes ApiErrorResponse, the error envelope
+│   └── PlatformModule.cs             # AddPlatform(IConfiguration, IHostEnvironment); also the web-host plumbing: errors, JSON, CORS, rate limiting, compression, health checks
 └── Modules/
     ├── Customers/
     │   ├── Controllers/  Services/  Mappings/
@@ -175,9 +178,12 @@ api/GrainOriginatorPortal.Infrastructure/
 ├── Platform/
 │   ├── Access/                       # AppPermissions (the catalog; here so EF HasData can seed dbo.Permissions), Entities/, Configurations/.
 │   │                                 #   Built in Phase 1: the first code in this layout, and the pattern Phase 2 follows
-│   ├── Data/                         # all DbContexts, Migrations/, ApplicationDbContextFactory
-│   ├── Ctrm/                         # ICtrmGraphQlClient, CtrmConfig, throttle, retry, synthetic ids, provenance
-│   └── DependencyInjection.cs        # AddPlatformInfrastructure(): DbContexts and the CTRM plumbing
+│   ├── Data/                         # all DbContexts, Migrations/, ApplicationDbContextFactory. Decided in step 11: this stays at Infrastructure/Data, which counts as Platform; moving it would rewrite 215 generated migrations for no runtime change. Platform's own entities stay in Data/Entities with it, configured in ApplicationDbContext
+│   ├── Ctrm/                         # ICtrmGraphQlClient, CtrmConfig, throttle, retry, synthetic ids, provenance, CtrmPage
+│   ├── Telemetry/  Preferences/  ReferenceData/  Identity/   # Platform's repositories (Interfaces/, Repositories/); Telemetry also has the usage projections and ScreenTimeCalculator
+│   ├── Json/                         # the DateOnly, calendar-date and UTC DateTime converters
+│   ├── Extensions/                   # what Platform or a module asks another module for (§4.4)
+│   └── PlatformInfrastructure.cs     # AddPlatformInfrastructure(): DbContexts, CTRM provenance, Platform's repositories
 └── Modules/
     ├── Customers/   Entities/  Configurations/  Interfaces/  Repositories/  Sync/  Ctrm/   # customer master + link discovery readers
     ├── Contracts/   Entities/  Configurations/  Interfaces/  Repositories/  Ctrm/          # contract/ticket readers, switches, CtrmMappings
@@ -201,11 +207,11 @@ api/GrainOriginatorPortal.Infrastructure/
 ```csharp
 // Program.cs
 builder.Services
-    .AddPlatform(builder.Configuration)
+    .AddPlatform(builder.Configuration, builder.Environment)
     .AddCustomersModule()
-    .AddContractsModule(builder.Configuration)   // CTRM/ODS repository switches live here
+    .AddContractsModule()   // CTRM/ODS repository switches live here; they read Ctrm:Source on every call
     .AddEngagementModule()
-    .AddProducersModule()
+    .AddProducersModule(builder.Configuration)
     .AddListsModule()
     .AddBidSheetModule()
     .AddUsageAnalyticsModule();
@@ -373,9 +379,9 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 | | `teams-channels:read` | `TeamsChannels` GETs | personas |
 | | `recap-groups:read`, `recap-groups:write` | `DailyRecapGroups` GET; POST, PUT, enable and DELETE. Only a group's creator may delete it, as the service checks today. | read to personas, write to `Editor` |
 | Producers | `planting-intentions:read`, `:write` | `PlantingIntentions` GETs; POST, PUT, retag and DELETE | read to personas, write to `Editor` |
-| | `producer-details:read`, `:write` | `ProducerDetails` GETs; PUT and DELETE | the same split |
+| | `producer-details:read`, `:write` | `ProducerDetails` GETs and `customers/linked-to` (moved to Producers in Phase 2); PUT and DELETE | the same split |
 | | `stored-grain:read`, `dp-contracts:read` | `StoredGrain`; `DpContracts` | personas |
-| | `contract-pacing:read` | `GET contracts/pacing/{customerId}`, which Phase 2 moves to Producers | personas |
+| | `contract-pacing:read` | `GET contracts/pacing/{customerId}`, moved to Producers in Phase 2 (`ContractPacingController`, same route) | personas |
 | | `planting-estimates:read`, `:write` | `DashboardPlantingEstimates` GETs; its three upserts and the actual-harvest DELETE | the same split |
 | | `field-plans:read`, `:write` | `FieldPlan` GETs, `CtrmSplits` and `TDisc`; adding, editing and removing fields, seasons and records, and confirming or reopening a record | the same split |
 | | `carbon-intensity:read` | `FdCic`, its scoring POST included, which stores nothing | personas |
@@ -407,7 +413,8 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
   - Every controller carries a class-level permission from its own module, normally its read, so a write action always needs it too. The add-on roles rely on this (§7.3). The exempt list below is excluded.
   - Every non-GET action carries a write permission, unless it is on the non-mutating list.
   - Every permission is in `AppPermissions`, and every resource belongs to exactly one module.
-  - **Exempt list:** `me` (including `/api/me/permissions`), `version`, `help`, `whats-new`, the client-telemetry config and the usage click event. Any signed-in user may call them.
+  - **Exempt list:** `me` (including `/api/me/permissions`), `version`, `help`, `whats-new`, the client-telemetry config and the usage click event. Any signed-in user may call them. The click event is the one write among them: it records the caller's own clicks, so the test lists it separately (`OwnTelemetryPosts`) rather than letting the exempt list hold writes.
+  - Every controller sits in `Api.Platform` or `Api.Modules`, so none escapes these checks (added in step 11, when the last controllers moved).
   - **Machine callers are roles too.** The pipeline's `Origination.Application` app role has a `dbo.Roles` row of kind `Machine` (migration `AddPipelineRole`) that grants `bid-feed:manage` and no segments. `BarchartIngest` is an ordinary `[RequirePermission(bid-feed:manage)]`, which a person re-running the feed by hand also passes, so no role name appears in code. The grant editor refuses to change `Machine` roles (Phase 1b).
 - **Grants stay honest without a code map:**
   - `dbo.Permissions` is generated from `AppPermissions` through EF `HasData`. Adding a permission constant without a migration is a pending model change, and a test calling `HasPendingModelChanges()` fails on it. `RolePermission` has a foreign key to it.
@@ -429,10 +436,12 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 
 ### 4.4 Cross-module rules
 
-- **Allowed:** a module may inject another module's **service interfaces**, and only in the direction of the diagram in section 3.
-- **Not allowed:**
-  - A module never injects another module's repository, entity or DbContext set.
-  - Customers, Contracts and Engagement never reference anything in `Modules.Producers`.
+- **Direction:** a module depends only on the modules it builds on, the "Depends on" column of the module map (§3), and on Platform. Never the other way: Customers, Contracts and Engagement never reference anything in `Modules.Producers`.
+- **Allowed, in that direction:**
+  - Another module's **service interfaces** and API models. Producers asks Customers through `ICustomerLookup` (trade-unit scoping, a customer's name, customers by id).
+  - Another module's **entities**, for joins and foreign keys in the one shared DbContext. A producer table has a foreign key to `dbo.Customer` and joins it for names and trade units.
+- **Not allowed, in any direction:** another module's repositories or their interfaces. A repository is where a module keeps its own rules (scoping, soft deletes, audit), so other modules go through its services.
+- **Changed in Phase 2 (2026-11-07):** the first draft banned other modules' entities too. Producers joins the customer tables in about 25 queries across 7 repositories. Rewriting those as service calls would turn each join into two queries (or N+1) and make Phase 2 a rewrite rather than a move, so entities follow the direction rule instead.
 - **When a shared module needs producer behaviour, invert the dependency:**
   - Customers defines an extension interface, e.g. `ICustomerSearchContributor`.
   - Producers implements it and registers it in `AddProducersModule()`.
@@ -442,24 +451,63 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
     - The Customers code that calls contributors asks `IPermissionService` first, and skips any contributor whose permission the user doesn't hold.
     - Where a contributor works on a single customer, it also skips customers outside its segments.
     - This is the same check the frontend registry applies to contributions (§5.2).
-  - The first candidate is the `ProducerDetails`/`ProducerContact` join in customer search.
-- **Enforce these rules with architecture tests** in `Api.Tests/Architecture/`, using **ArchUnitNET** (Apache-2.0, actively maintained; NetArchTest has had no release since 2021). Two rules:
-  1. `Modules.{Customers,Contracts,Engagement}.*` must not depend on `Modules.Producers.*`.
-  2. `Modules.X.*` must not depend on `Infrastructure.Modules.Y.Repositories`/`Entities` for Y ≠ X.
+  - The first candidate is the `ProducerDetails`/`ProducerContact` join in customer search. Until it is replaced (Phase 4 or 5, before traders search customers), that SQL is the one known Customers → Producers dependency, and the architecture tests can't see it because it's SQL text.
+- **The same inversion works for any module a shared module needs, not only Producers.** The first one built (Phase 2, 2026-11-08) is Customers → Contracts:
+  - Customers locks a trade-unit membership while the producer has an open contract or an unapplied ticket there. That is contract data.
+  - Customers declares `ICustomerActivitySource`, and Contracts implements it from its contract and ticket repositories (`CustomerActivitySource`).
+  - Extension interfaces sit in the declaring module's `Extensions` folder, not `Interfaces`. Rule 2 below bars other modules from `Interfaces`, which would stop them implementing it.
+  - Customers has no fallback. A missing implementation fails when the customer repository is resolved, rather than treating every trade unit as dormant. `CustomersModuleTests` checks that the app registers one.
+- **When neither module may depend on the other, Platform declares the extension.** Built in step 9 (2026-11-08) for Bid Sheet → Engagement:
+  - A bid sheet can be shared with a Daily Recap group, so Bid Sheet must know which groups the caller is in. Recap groups are Engagement's, and Bid Sheet depends on no module.
+  - Platform declares `IRecapGroupMembership` in `Infrastructure/Platform/Extensions`, Engagement implements it (`RecapGroupMembership`, the same query Bid Sheet used to run itself), and `BidSheetService` asks it.
+  - No fallback, as above. `PlatformExtensionsTests` checks that the app registers an implementation of every Platform extension.
+- **Platform itself uses the same shape when it needs a module's answer** (step 11a, 2026-11-08):
+  - `ICustomerTradeUnits` (Customers implements): a customer's trade units for the per-customer access check, and every customer's for the trade-unit catalog's fallback. It replaced `TradeUnitService's` use of `ICustomerRepository` and the entitlements repository's read of `dbo.CustomerTradeUnit`.
+  - `IContractCommodities` (Contracts implements): the commodities on ODS purchase contracts, for the diagnostics page's commodity seed.
+  - `ICtrmDiagnosticsService` stays in Platform's diagnostics services, where `DiagnosticsController` uses it, and Contracts implements it and registers it: the probes run its repositories and readers.
+  - `ModuleBoundaryTests.Platform_DependsOnNoModule` now fails any Platform type that uses a module, except the DbContexts and their migrations in `Infrastructure.Data`, which map every module's tables.
+- **Enforce these rules with architecture tests** in `Api.Tests/Architecture/`, using **ArchUnitNET** (Apache-2.0, actively maintained; NetArchTest has had no release since 2021). `ModuleBoundaryTests` has two rules, and a check that every catalog module declares what it builds on:
+  1. `Modules.X.*` depends on no `Modules.Y.*` (Api or Infrastructure) unless X builds on Y.
+  2. `Modules.X.*` doesn't depend on `Infrastructure.Modules.Y.Repositories` or `Interfaces` for any Y ≠ X. `Interfaces` is where the repository interfaces live, so leaving it out would let a module inject another module's repository.
 - It is a new test dependency, so it needs an SBOM entry.
 
 ### 4.5 What moves where
 
 | Module | Controllers | Notes |
 |---|---|---|
-| Platform | Me, UserPreferences, UserTradeUnits, TradeUnits, Entitlements, Version, WhatsNew, Help, ClientTelemetry, Geocode, Diagnostics (with `DiagnosticsEnvironmentGate`); Commodities (`GET /`, `conversions`) | `CtrmGraphQlClient` moves here from `Api/Services/Ctrm`. |
-| Customers | Customers, minus `search-ods` and `linked-to`; CustomerSyncDiagnostics (`customer-sync:manage`) | `CustomerSyncService`, its background service and the whole of `Infrastructure/Sync/` move here, with the customer readers from `Infrastructure/Ctrm/` (`CtrmCustomerReader`, `CtrmCustomerQueries`, `CtrmCustomerActivityReader`). |
-| Contracts | Contracts (minus `pacing`, `farm`), Tickets (minus `farm`) | The contract and ticket parts of `Infrastructure/Ctrm/` move here: readers, repositories, the two switches, `CtrmMappings`, `CtrmWarmRegistry`. The shared plumbing goes to Platform. |
-| Engagement | Notes, Reminders, TeamsChannels, DailyRecapGroups | |
-| Producers | PlantingIntentions, ProducerDetails, StoredGrain, DpContracts, DashboardPlantingEstimates, FieldPlan, CtrmSplits, FdCic; **gains** `customers/search-ods`, `customers/linked-to`, `contracts/pacing`, `commodities/planting`, `commodities/harvest-windows` | Keep the **route templates unchanged**, so the SPA doesn't change. The split readers and `FieldTicketReader` come from `Infrastructure/Ctrm/`. Delete the `farm/{farmId}` endpoints on Contracts and Tickets and their `GetByFarmAsync` chain through services and repositories; the Farms controller itself is already gone. |
-| Lists | SavedLists, QueryLibrary | |
-| BidSheet | BidSheet, Barchart, BarchartIngest (`bid-feed:manage`, which the pipeline holds through its `Machine` role, §4.3) | |
-| UsageAnalytics | UsageDashboard (`usage-reports:read`; exclusions `usage-exclusions:manage`) | |
+| Platform | Me, UserPreferences, UserTradeUnits, TradeUnits, Entitlements, Version, WhatsNew, Help, ClientTelemetry, ClickEvents, Geocode, Diagnostics (with `DiagnosticsEnvironmentGate`); Commodities (`GET /`, `planting`, `conversions`, `harvest-windows`) | Done in step 11 (2026-11-08): 11a untangled Platform from the modules (§4.4); 11b moved every remaining file into `Api/Platform/<Area>` and `Infrastructure/Platform/<Area>` (the layout in §4.1) and put the catalog's permissions on UserPreferences and UserTradeUnits (`preferences:read:own`, the PUT `preferences:write:own`) and on TradeUnits, Entitlements, Commodities and Geocode (`reference-data:read`); 11c moved the registrations out of Program.cs into `AddPlatform`. `CtrmGraphQlClient` is in `Api/Platform/Ctrm`. |
+| Customers | Customers, `search-ods` included; CustomerSyncDiagnostics (`customer-sync:manage`) | `CustomerSyncService`, its background service and the whole of `Infrastructure/Sync/` move here, with the customer readers from `Infrastructure/Ctrm/` (`CtrmCustomerReader`, `CtrmCustomerQueries`, `CtrmCustomerActivityReader`, `CtrmCustomerCandidateId` and their DTOs). `CtrmCustomerCodes` stays with the shared CTRM plumbing: it holds the gateway's `customerIds` filter limits, and only the contract and ticket readers use it. |
+| Contracts | Contracts (minus `pacing`, `farm`), Tickets (minus `farm`) | The contract and ticket parts of `Infrastructure/Ctrm/` move here: readers, repositories, the two switches, `CtrmMappings`, `CtrmWarmRegistry`. The shared plumbing goes to Platform. Done in step 6b, with `SurfaceCtrmFailures` and the keep-warm service. `ContractStatusCalculator`, `TicketLocations` and `CustomerActivitySource` sit at the module root, outside `Repositories` and `Interfaces`, so Producers and Customers may use them. The shared plumbing moved to `Infrastructure/Platform/Ctrm/` in step 11. |
+| Engagement | Notes, Reminders, TeamsChannels, DailyRecapGroups | Done in step 7, with the Outlook calendar and Teams directory services and the no-retry Graph client the calendar uses to create events. The shared `graph` client and `GraphDirectoryClient` stay with Platform: app access uses them, Engagement doesn't. |
+| Producers | PlantingIntentions, ProducerDetails, StoredGrain, DpContracts, DashboardPlantingEstimates, FieldPlan, CtrmSplits, TDisc, FdCic; **gains** `contracts/pacing` (`ContractPacingController`) | Keep the **route templates unchanged**, so the SPA doesn't change. The split readers and `FieldTicketReader` come from `Infrastructure/Ctrm/`. Delete the `farm/{farmId}` endpoints on Contracts and Tickets and their `GetByFarmAsync` chain through services and repositories; the Farms controller itself is already gone. Done in step 6a: both always returned an empty list. |
+| Lists | SavedLists, QueryLibrary | Done in step 8. Build-a-List, its customer map and Actionable Insights are browser-only, so the module's server side is saved lists and the query library. `ManagerDirectoryService` stays for Usage Analytics: only the usage dashboard uses it. |
+| BidSheet | BidSheet, Barchart, BarchartIngest (`bid-feed:manage`, which the pipeline holds through its `Machine` role, §4.3) | Done in step 9, with the BarChart catalog and ingest and their result types (`Abstractions`). The entity `BidSheet` shares its name with the module's namespace, so module code names it as `Entities.BidSheet` (or fully qualified in the Api), as `BidSheetService` already did. Saving your bid-sheet preference needs `preferences:write:own` rather than `bid-sheets:write`. |
+| UsageAnalytics | UsageDashboard (`usage-reports:read`; exclusions `usage-exclusions:manage`) | Done in step 10. The tracking writes (the request and click logging, sessions, rollups, the entitlements snapshot and retention) split off into Platform's `UsageTelemetryRepository`, used by the tracking and aggregation jobs and the rollup backfill; the dashboard keeps `UsageRepository` for its reads. The click-event POST moved to `ClickEventsController` (same route, any signed-in user), which went to Platform/Telemetry in step 11 with `ClientTelemetryController`. The usage projections and `ScreenTimeCalculator` stay with Platform: the rollup job uses them too. |
+
+**Changed in Phase 2 (2026-11-07):** the first draft also moved `customers/search-ods`, `customers/linked-to`, `commodities/planting` and `commodities/harvest-windows` into Producers. The Phase 1 catalog had settled them otherwise, and Phase 2 follows it:
+- **`commodities/planting` and `commodities/harvest-windows`** are reference data (`reference-data:read`, Platform). The curated crops feed Bid Sheet, Build-a-List and the calculators as well as planting intentions, and the harvest windows are preloaded for every user.
+- **`customers/search-ods`**, the onboarding search, stays with Customers (`customers:read`). Phase 5 widens onboarding to commercial customers.
+- **`customers/linked-to`** moved to Producers after all, in step 5 (`LinkedProducersController`, `producer-details:read`, same route). Its data is all producer data (`dbo.CustomerLink` and `ProducerDetails.TotalAcres`), so Producers finds who links to a producer, asks Customers for those customers through `ICustomerLookup`, and adds the acres and links on top. That removed the Customers repository's only compiled read of a Producers table.
+
+**Found while moving Customers (2026-11-07), for the steps that follow:**
+- **Contracts (done in step 6a):** `CtrmPage<T>` was declared in `CtrmContractDtos.cs`, and the Customers CTRM DTOs use it. It now sits with the shared CTRM plumbing in `CtrmPageDtos.cs`.
+- **Engagement (done in step 7):** `NoteService` and `ReminderService` injected `ICustomerRepository`. They now use `ICustomerLookup`: a new note takes the first of the customer's ordered trade units, and a reminder takes the customer's name. That left `ICustomerRepository.GetFirstActiveTradeUnitAsync` unused, so it is gone.
+- **Platform (done in step 11a):** `TradeUnitService` fell back to `ICustomerRepository.GetAllActiveTradeUnitCodesAsync` when the entitlements trade-unit list was unavailable. It now asks `ICustomerTradeUnits`, a Platform extension Customers implements (§4.4).
+
+**Found while untangling Contracts (2026-11-08):**
+- **Done in step 6a:**
+  - Customers no longer reads the contract and ticket repositories; it asks `ICustomerActivitySource` (above).
+  - Producers' field-ticket reader no longer borrows `TicketRepository` for ticket locations. The lookup is `TicketLocations` in Contracts, which both ticket repositories also use.
+  - `CtrmQueries` is split by owner. `CtrmContractQueries` holds the contract and ticket documents, `CtrmSplitQueries` (Producers) the splits document, and `CtrmQueries` keeps what every document shares: the WAF rule and the 366-day ticket range. `CtrmQueryDocumentTests` now checks every module's query class, `CtrmCustomerQueries` included, which it never covered before.
+- **Platform (done in step 11a):** the CTRM diagnostics service read the contract and ticket repositories, the contract switch and both CTRM readers for its probes. It moved into Contracts, behind Platform's `ICtrmDiagnosticsService` (§4.4). Also found then: the commodity seed read ODS contracts, now through `IContractCommodities`, and the shared `CtrmProducerCode` read the customer master, so it moved into Customers' `Ctrm` folder, where Contracts and Producers still reach it.
+
+**Found while moving Lists (2026-11-08), for step 10:**
+- **Usage Analytics (done in step 10, 2026-11-08):** the usage dashboard read the Lists module's `dbo.QueryLibrary`, and also the customer master and the ODS contracts, to name what people used. Decided: Usage Analytics depends on Lists, Contracts and Customers, as the module map now shows, and reads the names through `IQueryLibraryService`, `IContractLookup` (new, ODS-only: the ids are ODS ids) and `ICustomerLookup`.
+
+**Found while moving Platform (2026-11-08, step 11b):**
+- **Two Api responses belonged to one module each:** `CoordinatesResponse` (only `CustomerResponse` uses it) moved to Customers, and `ElevatorCacheResponse` (only the bid-sheet mappings) to Bid Sheet, rather than to Platform.
+- **Program.cs comments that no longer matched the code,** fixed as the registrations moved: the rate limiter said 300 requests a minute where it allows 1000, and `IHttpContextAccessor` was said to be for `SqlDataService`, which is long gone. The nominatim client's per-attempt timeout carries a comment about CTRM contract pages, which it was evidently copied from; it moved unchanged.
+- **A doc reference that pointed nowhere:** `CustomerIdMinting` linked to `Ctrm.CtrmSyntheticId`, which from inside Customers resolves to the module's own `Ctrm` folder, not the shared one. It now names `Platform.Ctrm.CtrmSyntheticId`.
 
 **`CustomerResponse` sheds `TotalAcres`, `FarmIds`, `LinkedProducerIds` and `Farm`.** The Producers module serves them in a `ProducerProfileResponse` instead. This one *is* a wire change, so sequence it with the frontend in Phase 4.
 
@@ -908,11 +956,19 @@ Phases 1–4 deliver modularity and stand on their own even if traders slip. Pha
 | **5. Trader data scope** | L | Customer `Segment`; widen the CTRM sync, search and onboarding from `PR` to the agreed industry codes; backfill commercial trade-unit links (§6.1); `CommercialScope` through the contracts and tickets repositories and the CTRM readers and caches; outbound ticket semantics; tests; wording | traders see their own customers |
 | **6. Trader launch** | S | In the entitlements app: assign `Trader`, plus `Editor` to traders who edit; confirm every originator holds `Originator` and `Editor` there; move today's Super Users onto `Manager` (with their persona role) or `Support`, and give production `Admin` only to the break-glass account; **remove the temporary default role**; QA with real traders; app-context doc for the trader view; `SECURITY-MODEL.md` update | traders onboarded |
 
+**Phase 2 was done on 2026-11-08,** on `feature_ModularArchitecture-Phase2`, in twelve reviewed steps (fifteen commits) rather than a PR per module: the convention tests first, Producers in three steps, then Customers, Contracts (untangled first), Engagement, Lists, Bid Sheet, Usage Analytics, Platform, and a docs close-out. Where it differs from the row above:
+- **Program.cs is ~260 lines, not ~150.** The Key Vault bootstrap, the dev warm-up and the commented pipeline stayed; every registration moved into `AddPlatform` and the modules.
+- **`Infrastructure/Data` stayed where it was** (decided in step 11): the DbContexts, all 215 migrations, and Platform's own entities, whose configurations are still inline in `ApplicationDbContext`. Module entities have their own `IEntityTypeConfiguration` classes, and `Model_HasNoChangesWithoutAMigration` shows the moves changed nothing in the database.
+- **Platform needs no module, and that is enforced too.** Where Platform needs a module's answer, it declares an extension the module implements (§4.4).
+- **Not yet checked by running the app.** The tests are reflection- and unit-level; no test starts the app. Click through each module once the app is up on the integration branch.
+
 **This plan builds on `main` only.** It doesn't wait for or plan around other branches, the mobile app's included. That work gets redone on the new structure once this lands.
 
+**Phases 1–4 reach `main` together** (decided 2026-11-07). Nothing can be tested before Phase 4 is done, so `feature_ModularArchitecture` is the integration branch. Each phase is built on its own branch cut from it, one phase at a time, and merged back. `main` is merged in at the start of each phase, and the integration branch goes to `main` once it has been tested.
+
 **Rules that apply to every phase:**
-- Each PR is independently shippable.
-- Run `dotnet test` and `ng test` on every PR.
+- Each step is a reviewed commit that is independently shippable: the build and the tests pass after every one.
+- Run `dotnet test` and `ng test` before every commit.
 - Every phase updates the affected `docs/application-context/*` files.
 
 ---

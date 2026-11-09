@@ -11,8 +11,8 @@ using Microsoft.Extensions.Logging;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Models.Requests;
-using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Platform.Geocode;
+using GrainOriginatorPortal.Api.Platform.Geocode.Models.Requests;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

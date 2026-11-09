@@ -1,6 +1,7 @@
 // Project namespaces
-using GrainOriginatorPortal.Infrastructure.Ctrm;
-using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm.Dtos;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 
@@ -418,7 +419,7 @@ public class CtrmTicketMappingTests
             new("T", "064558", "A", "2025-11-20", "SOY")
         };
 
-        var (document, variables) = CtrmQueries.BuildTicketBatch(keys);
+        var (document, variables) = CtrmContractQueries.BuildTicketBatch(keys);
 
         Assert.Contains("t0: ticket(", document);
         Assert.Contains("t1: ticket(", document);
@@ -442,7 +443,7 @@ public class CtrmTicketMappingTests
     {
         // The WAF reads '#' as a SQL comment sequence and rejects the body with an HTML 403 the API
         // never sees.
-        var (document, _) = CtrmQueries.BuildTicketBatch([new("T", "1", "", "2026-01-01", "YC")]);
+        var (document, _) = CtrmContractQueries.BuildTicketBatch([new("T", "1", "", "2026-01-01", "YC")]);
 
         Assert.DoesNotContain('#', document);
     }
@@ -451,7 +452,7 @@ public class CtrmTicketMappingTests
     [Fact]
     public void BatchDocument_RejectsAnEmptyKeyList()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => CtrmQueries.BuildTicketBatch([]));
+        Assert.Throws<ArgumentOutOfRangeException>(() => CtrmContractQueries.BuildTicketBatch([]));
     }
 
     // -------------------------------------------------------------------------

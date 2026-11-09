@@ -2,7 +2,7 @@
 using System.Text.RegularExpressions;
 
 // Project namespaces
-using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Repositories;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 

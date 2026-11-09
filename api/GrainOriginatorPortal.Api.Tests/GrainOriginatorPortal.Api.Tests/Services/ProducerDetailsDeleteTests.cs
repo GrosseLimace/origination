@@ -3,10 +3,13 @@ using Microsoft.Extensions.Logging;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Api.Modules.Producers.Services;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Interfaces;
+using GrainOriginatorPortal.Api.Modules.Customers.Services;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Api.Platform.Identity;
+using GrainOriginatorPortal.Infrastructure.Platform.Identity.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 
@@ -25,7 +28,7 @@ public class ProducerDetailsDeleteTests
     private const long ForeignCustomerId = 42;
 
     private readonly Mock<IProducerDetailsRepository> _repositoryMock = new();
-    private readonly Mock<ICustomerRepository> _customerRepositoryMock = new();
+    private readonly Mock<ICustomerLookup> _customersMock = new();
     private readonly Mock<IUserEntitlementService> _entitlementMock = new();
     private readonly Mock<IDisplayNameLookupRepository> _displayNameMock = new();
     private readonly Mock<IRequestContextService> _requestContextMock = new();
@@ -39,7 +42,7 @@ public class ProducerDetailsDeleteTests
             .ReturnsAsync(new HashSet<string> { "2090" });
 
         // Only the entitled customer is a member of the caller's trade units.
-        _customerRepositoryMock
+        _customersMock
             .Setup(c => c.GetActiveCustomerIdsInTradeUnitsAsync(
                 It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new HashSet<long> { EntitledCustomerId });
@@ -52,7 +55,7 @@ public class ProducerDetailsDeleteTests
 
         _sut = new ProducerDetailsService(
             _repositoryMock.Object,
-            _customerRepositoryMock.Object,
+            _customersMock.Object,
             _entitlementMock.Object,
             _displayNameMock.Object,
             _requestContextMock.Object,
@@ -139,7 +142,7 @@ public class ProducerDetailsDeleteTests
     public async Task DeleteAsync_ResolvesEntitlementBeforeDeleting()
     {
         var sequence = new List<string>();
-        _customerRepositoryMock
+        _customersMock
             .Setup(c => c.GetActiveCustomerIdsInTradeUnitsAsync(
                 It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new HashSet<long> { EntitledCustomerId })

@@ -5,9 +5,10 @@ using Microsoft.Extensions.Logging;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Extensions;
+using GrainOriginatorPortal.Api.Platform.Preferences;
+using GrainOriginatorPortal.Infrastructure.Platform.Preferences.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 
@@ -19,12 +20,12 @@ namespace GrainOriginatorPortal.Api.Tests.Services;
 public class TradeUnitServiceTests
 {
     private readonly Mock<IEntitlementsRepository> _entitlementsMock = new();
-    private readonly Mock<ICustomerRepository> _customerRepositoryMock = new();
+    private readonly Mock<ICustomerTradeUnits> _customerTradeUnitsMock = new();
     private readonly TradeUnitService _sut;
 
     public TradeUnitServiceTests()
     {
-        _sut = new TradeUnitService(_entitlementsMock.Object, _customerRepositoryMock.Object, new Mock<ILogger<TradeUnitService>>().Object);
+        _sut = new TradeUnitService(_entitlementsMock.Object, _customerTradeUnitsMock.Object, new Mock<ILogger<TradeUnitService>>().Object);
     }
 
     [Fact]
@@ -43,7 +44,7 @@ public class TradeUnitServiceTests
         var result = await _sut.GetAllAsync(CancellationToken.None);
 
         Assert.Equal(["2090", "2115", "ab12"], result.Select(o => o.Code));
-        _customerRepositoryMock.Verify(c => c.GetAllActiveTradeUnitCodesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _customerTradeUnitsMock.Verify(c => c.GetAllActiveCodesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // Descriptions are per-row and often blank on the entitlement side; take the first real one
@@ -87,7 +88,7 @@ public class TradeUnitServiceTests
         var result = await _sut.GetAllAsync(CancellationToken.None);
 
         Assert.Empty(result);
-        _customerRepositoryMock.Verify(c => c.GetAllActiveTradeUnitCodesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _customerTradeUnitsMock.Verify(c => c.GetAllActiveCodesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -96,8 +97,8 @@ public class TradeUnitServiceTests
         _entitlementsMock
             .Setup(e => e.GetAllAsync(It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("entitlements DB unreachable"));
-        _customerRepositoryMock
-            .Setup(c => c.GetAllActiveTradeUnitCodesAsync(It.IsAny<CancellationToken>()))
+        _customerTradeUnitsMock
+            .Setup(c => c.GetAllActiveCodesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(["2291", "2090"]);
 
         var result = await _sut.GetAllAsync(CancellationToken.None);
@@ -115,8 +116,8 @@ public class TradeUnitServiceTests
         _entitlementsMock
             .Setup(e => e.GetAllAsync(It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("entitlements DB unreachable"));
-        _customerRepositoryMock
-            .Setup(c => c.GetAllActiveTradeUnitCodesAsync(It.IsAny<CancellationToken>()))
+        _customerTradeUnitsMock
+            .Setup(c => c.GetAllActiveCodesAsync(It.IsAny<CancellationToken>()))
             .ThrowsAsync(new TimeoutException("app DB unreachable"));
 
         await Assert.ThrowsAsync<TimeoutException>(() => _sut.GetAllAsync(CancellationToken.None));

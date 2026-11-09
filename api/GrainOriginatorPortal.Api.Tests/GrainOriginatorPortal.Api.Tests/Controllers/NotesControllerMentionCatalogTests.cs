@@ -1,5 +1,4 @@
 // Microsoft namespaces
-using GrainOriginatorPortal.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -9,10 +8,13 @@ using Microsoft.Extensions.Logging;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Controllers;
-using GrainOriginatorPortal.Api.Models;
-using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Data;
+using GrainOriginatorPortal.Api.Modules.Engagement.Controllers;
+using GrainOriginatorPortal.Api.Modules.Engagement.Models;
+using GrainOriginatorPortal.Api.Modules.Engagement.Services;
+using GrainOriginatorPortal.Api.Platform.Identity;
+using GrainOriginatorPortal.Api.Platform.Middleware;
+using GrainOriginatorPortal.Api.Platform.Preferences;
 using System.Security.Claims;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;

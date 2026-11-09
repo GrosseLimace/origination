@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Repositories;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 

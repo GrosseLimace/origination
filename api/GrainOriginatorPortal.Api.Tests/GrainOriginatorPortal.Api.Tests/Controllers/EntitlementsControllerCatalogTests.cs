@@ -7,9 +7,11 @@ using Microsoft.Extensions.Logging;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Controllers;
-using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Data;
+using GrainOriginatorPortal.Api.Platform.Identity;
+using GrainOriginatorPortal.Api.Platform.Middleware;
+using GrainOriginatorPortal.Api.Platform.Preferences;
+using GrainOriginatorPortal.Api.Platform.Preferences.Controllers;
 using System.Security.Claims;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;

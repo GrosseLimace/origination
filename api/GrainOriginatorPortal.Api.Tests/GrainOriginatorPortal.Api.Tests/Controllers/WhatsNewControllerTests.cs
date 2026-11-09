@@ -5,8 +5,8 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Controllers;
-using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Platform.WhatsNew.Controllers;
+using GrainOriginatorPortal.Api.Platform.WhatsNew.Models.Responses;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 

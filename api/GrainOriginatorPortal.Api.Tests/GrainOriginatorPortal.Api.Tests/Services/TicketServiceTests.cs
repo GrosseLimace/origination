@@ -5,10 +5,10 @@ using Microsoft.Extensions.Logging;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Api.Modules.Contracts.Services;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Interfaces;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 
@@ -139,13 +139,11 @@ public class TicketServiceTests
         _repositoryMock.Setup(r => r.GetByCustomerAsync(42L, "SC-42", It.IsAny<CancellationToken>())).ReturnsAsync([new Ticket { Id = 2 }]);
         _repositoryMock.Setup(r => r.GetUnappliedByCustomerAsync(42L, null, It.IsAny<CancellationToken>())).ReturnsAsync([new Ticket { Id = 3 }]);
         _repositoryMock.Setup(r => r.GetAppliedByContractAsync("P123456", It.IsAny<CancellationToken>())).ReturnsAsync([new Ticket { Id = 4 }]);
-        _repositoryMock.Setup(r => r.GetByFarmAsync("farm-1", It.IsAny<CancellationToken>())).ReturnsAsync([new Ticket { Id = 5 }]);
 
         Assert.Equal(1, Assert.Single(await _sut.GetTodaysAsync(tradeUnits, CancellationToken.None)).Id);
         Assert.Equal(2, Assert.Single(await _sut.GetByCustomerAsync(42L, "SC-42", CancellationToken.None)).Id);
         Assert.Equal(3, Assert.Single(await _sut.GetUnappliedByCustomerAsync(42L, null, CancellationToken.None)).Id);
         Assert.Equal(4, Assert.Single(await _sut.GetAppliedByContractAsync("P123456", CancellationToken.None)).Id);
-        Assert.Equal(5, Assert.Single(await _sut.GetByFarmAsync("farm-1", CancellationToken.None)).Id);
     }
 
     // Every read goes through the same wrapper, so the 503 contract holds on the per-producer

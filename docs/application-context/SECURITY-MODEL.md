@@ -90,7 +90,8 @@ roles lag behind would silently get producer access and edit rights.
 
 `[RequirePermission(AppPermissions.X)]` on a controller or action checks a permission. Each
 permission's policy also carries the default policy's requirements, so a permission check is never
-weaker than "signed in". **Today it guards only what used to need `Admin`:**
+weaker than "signed in". **Today it guards every endpoint outside the exempt list below**, including
+everything that used to need `Admin`:
 
 | What | Permission |
 |---|---|
@@ -102,9 +103,44 @@ weaker than "signed in". **Today it guards only what used to need `Admin`:**
 | Customer sync diagnostics | `customer-sync:manage` |
 | BarChart ingest, by the pipeline or by a person re-running it | `bid-feed:manage` |
 
-**Every other endpoint still needs only a signed-in user**, as before. Phase 2 of the plan puts a
-permission on every endpoint: the read on each controller, and a write on each write action. A
-convention test will then fail on any endpoint without one, outside this exempt list:
+Every module and Platform, each controller with its read on the class and a write on each write action:
+
+| Module | What | Read / write |
+|---|---|---|
+| Platform | Your own trade-unit and group preferences, and your own trade units: viewing / saving your preferences. They needed only a sign-in before. | `preferences:read:own` / `preferences:write:own` |
+| Platform | Reference data: commodities (the list, planting crops, conversions and harvest windows), the trade-unit list, the entitlements catalog the recap-group picker reads, and geocoding, its two lookup POSTs included (they store nothing). They needed only a sign-in before. | `reference-data:read` |
+| Platform | Diagnostics (listed above) | `diagnostics:read` / `diagnostics:manage` |
+| Customers | Customers (the list, search, the onboarding search, by id and by code, a customer's trade units): viewing / assigning trade units, which also onboards a producer, and removing a dormant trade unit. Both needed only a sign-in before. | `customers:read` / `customers:write` |
+| Customers | Customer sync diagnostics (listed above) | `customer-sync:manage` |
+| Contracts | Contracts (the list, a customer's, by crop year) and pricing lines (by contract and by customer). They needed only a sign-in before. | `contracts:read` |
+| Contracts | Delivery tickets (the list, today's for Spot Loads, a customer's, a customer's unapplied, a contract's applied). They needed only a sign-in before. | `tickets:read` |
+| Engagement | Notes (the list, last contact, a customer's, the mention catalog): viewing / writing, editing, pinning and deleting any note. They needed only a sign-in before. | `notes:read` / `notes:write` |
+| Engagement | Your own reminders: viewing / creating, editing, completing, deleting and adding to Outlook. Every endpoint touches only the caller's own. | `reminders:read:own` / `reminders:write:own` |
+| Engagement | Teams channels: the registered list and your own channels / registering a channel picked in the note composer | `teams-channels:read` / `notes:write` |
+| Engagement | Daily recap groups: viewing / creating, editing, enabling and deleting. Only a group's creator may delete it, as `DailyRecapGroupService` checks. | `recap-groups:read` / `recap-groups:write` |
+| Lists | Your own saved lists: viewing / creating, editing and deleting. They needed only a sign-in before. A teammate's list, and the team views, also need the team permissions listed above. | `saved-lists:read:own` / `saved-lists:write:own` |
+| Lists | The query library, its search-log POST included (it records only telemetry). It needed only a sign-in before. | `query-library:read` |
+| Bid Sheet | Bid sheets, locations and bids: viewing / creating, renaming, sharing and laying out sheets, adding, editing and deleting locations and their bids, and refreshing a location's bids from BarChart. They needed only a sign-in before. Deleting someone else's location also needs `bid-sheet-locations:delete:global` (listed above). | `bid-sheets:read` / `bid-sheets:write` |
+| Bid Sheet | Saving your own bid-sheet preference | `bid-sheets:read` and `preferences:write:own` |
+| Bid Sheet | The BarChart picker: feed locations and coverage. It needed only a sign-in before. | `bid-feed:read` |
+| Bid Sheet | BarChart ingest (listed above) | `bid-feed:manage` |
+| Usage Analytics | The usage dashboard (listed above; the permission now sits on the controller) / excluded users (listed above) | `usage-reports:read` / `usage-exclusions:manage` |
+| Producers | Planting intentions: viewing / adding, editing, retagging and deleting | `planting-intentions:read` / `:write` |
+| Producers | Producer details, contacts, grain on farm and bin sites: viewing / saving and clearing | `producer-details:read` / `:write` |
+| Producers | Incoming linked producers (`GET api/customers/linked-to/{id}`, now its own controller; it needed only a sign-in before) | `producer-details:read` |
+| Producers | Stored grain; DP contracts | `stored-grain:read`; `dp-contracts:read` |
+| Producers | Contract Pacing's prior-year contracts (`GET api/contracts/pacing/{customerId}`, now its own controller) | `contract-pacing:read` |
+| Producers | Planting Dashboard estimates, market shares and actual harvest: viewing / saving, and deleting an actual harvest | `planting-estimates:read` / `:write` |
+| Producers | Field plan (fields, seasons and records, confirming and reopening, and the 45Z documents): viewing / changing, uploading, archiving and restoring | `field-plans:read` / `:write` |
+| Producers | The field plan's CTRM splits and T-DISC options | `field-plans:read` |
+| Producers | The FD-CIC calculator, its scoring POST included (it stores nothing) | `carbon-intensity:read` |
+
+`Originator` + `Editor`, which everyone holds through the default roles, grants all of these, so no
+one has lost access. Only the SPA calls these endpoints, so no app-only caller needs a grant for them.
+
+Every controller sits in `Api/Modules/` or `Api/Platform/`. `ControllerAuthorizationTests` fails on one
+anywhere else, and on one that lacks a read on the class or a write on any write action. That covers
+every endpoint outside this exempt list:
 
 - **Any signed-in user, by design:** `/api/me`, `/api/me/permissions`, `/api/version`, `/api/help`,
   `/api/whats-new`, `/api/clienttelemetry` (the browser's App Insights settings), and
@@ -172,10 +208,10 @@ and the role behind it were retired when every dashboard user got the full manag
 
 ## Relevant code
 
-- [api/GrainOriginatorPortal.Api/Filters/EnforceTradeUnitAccessAttribute.cs](../../api/GrainOriginatorPortal.Api/Filters/EnforceTradeUnitAccessAttribute.cs) — the trade-unit filter (UX scoping; fail-CLOSED on an uncached outage).
-- [api/GrainOriginatorPortal.Api/Services/UserEntitlementService.cs](../../api/GrainOriginatorPortal.Api/Services/UserEntitlementService.cs) — `ValidateCustomerAccessAsync` lives here.
-- [api/GrainOriginatorPortal.Api/Controllers/CustomersController.cs](../../api/GrainOriginatorPortal.Api/Controllers/CustomersController.cs) — example of a controller where the GETs intentionally skip the check.
+- [api/GrainOriginatorPortal.Api/Platform/Filters/EnforceTradeUnitAccessAttribute.cs](../../api/GrainOriginatorPortal.Api/Platform/Filters/EnforceTradeUnitAccessAttribute.cs) — the trade-unit filter (UX scoping; fail-CLOSED on an uncached outage).
+- [api/GrainOriginatorPortal.Api/Platform/Identity/UserEntitlementService.cs](../../api/GrainOriginatorPortal.Api/Platform/Identity/UserEntitlementService.cs) — `ValidateCustomerAccessAsync` lives here.
+- [api/GrainOriginatorPortal.Api/Modules/Customers/Controllers/CustomersController.cs](../../api/GrainOriginatorPortal.Api/Modules/Customers/Controllers/CustomersController.cs) — example of a controller where the GETs intentionally skip the check.
 - [api/GrainOriginatorPortal.Infrastructure/Platform/Access/AppPermissions.cs](../../api/GrainOriginatorPortal.Infrastructure/Platform/Access/AppPermissions.cs) — the permission catalog.
 - [api/GrainOriginatorPortal.Api/Platform/Access/](../../api/GrainOriginatorPortal.Api/Platform/Access/) — `ClaimsUserRoleSource`, `PermissionService`, the grant cache, `[RequirePermission]` and its handler, `/api/me/permissions` and the access map.
-- [api/GrainOriginatorPortal.Api/Middleware/AuthorizationAuditResultHandler.cs](../../api/GrainOriginatorPortal.Api/Middleware/AuthorizationAuditResultHandler.cs) — the `AUTHZ_PERMISSION_DENIED` response and log.
+- [api/GrainOriginatorPortal.Api/Platform/Middleware/AuthorizationAuditResultHandler.cs](../../api/GrainOriginatorPortal.Api/Platform/Middleware/AuthorizationAuditResultHandler.cs) — the `AUTHZ_PERMISSION_DENIED` response and log.
 - [client/src/app/core/access/](../../client/src/app/core/access/) — the SPA's `PermissionService`, `permissionGuard`, `*appHasPermission` and the generated permission ids.

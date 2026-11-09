@@ -1,9 +1,11 @@
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Services.Ctrm;
-using GrainOriginatorPortal.Infrastructure;
-using GrainOriginatorPortal.Infrastructure.Ctrm;
-using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
+using GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.Services;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Ctrm.Dtos;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm.Dtos;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -25,7 +27,7 @@ public class CtrmSplitTests
         public Task<CtrmReadResult<T>> QueryAsync<T>(string document, object? variables, CancellationToken cancellationToken)
         {
             Calls++;
-            Assert.Equal(CtrmQueries.SplitsByCustomer, document);
+            Assert.Equal(CtrmSplitQueries.SplitsByCustomer, document);
             if (Status is not (CtrmReadStatus.Ok or CtrmReadStatus.PartialSuccess))
                 return Task.FromResult(new CtrmReadResult<T> { Status = Status });
             object value = new CtrmSplitsResponse { CustomerSplits = new CtrmPage<CtrmSplitDto> { Items = [.. Rows] } };
@@ -118,7 +120,7 @@ public class CtrmSplitTests
     public void Registration_IsManualByDefault_SampleOnRequest(string? source, Type expected)
     {
         var services = new ServiceCollection();
-        DependencyInjection.AddCtrmSplits(services, source is null ? Config() : Config(("Ctrm:SplitsSource", source)));
+        ProducersInfrastructure.AddCtrmSplits(services, source is null ? Config() : Config(("Ctrm:SplitsSource", source)));
         Assert.Contains(services, d => d.ServiceType == typeof(ICtrmSplitReader) && d.ImplementationType == expected);
     }
 
@@ -149,8 +151,8 @@ public class CtrmSplitTests
     [InlineData("ods")]
     public void Registration_RefusesCtrmWhileTheQueryIsAPlaceholder_AndUnknownSources(string source)
     {
-        Assert.False(CtrmQueries.SplitsQueryConfirmed);
-        Assert.Throws<InvalidOperationException>(() => DependencyInjection.AddCtrmSplits(new ServiceCollection(), Config(("Ctrm:SplitsSource", source))));
+        Assert.False(CtrmSplitQueries.SplitsQueryConfirmed);
+        Assert.Throws<InvalidOperationException>(() => ProducersInfrastructure.AddCtrmSplits(new ServiceCollection(), Config(("Ctrm:SplitsSource", source))));
     }
 
     // -------------------------------------------------------------------------

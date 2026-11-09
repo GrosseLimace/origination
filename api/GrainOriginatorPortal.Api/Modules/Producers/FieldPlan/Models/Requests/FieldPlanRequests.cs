@@ -1,0 +1,155 @@
+using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
+
+namespace GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.Models.Requests;
+
+/// <summary>
+/// Adds one of the producer's splits as a field. With CTRM's splits query (<c>Ctrm:SplitsSource</c> = ctrm) the
+/// name, split % and effective date come from CTRM and these are ignored. SPLITS-GRAPHQL: until then they are
+/// typed by the originator (the go-live "manual" source).
+/// </summary>
+public record CreateProducerFieldRequest
+{
+    [Range(1, long.MaxValue)]
+    public required long CustomerId { get; init; }
+
+    /// <summary>CTRM split (customer) codes are at most 7 letters/digits; checked in the service.</summary>
+    [Required, StringLength(20, MinimumLength = 1)]
+    public required string SplitId { get; init; }
+
+    /// <summary>Manual splits only; defaults to the split ID.</summary>
+    [StringLength(255)]
+    public string? Name { get; init; }
+
+    /// <summary>Manual splits only: the producer's share, defaults to 100.</summary>
+    [Range(0.001, 100)]
+    public decimal? SplitPercent { get; init; }
+
+    /// <summary>Manual splits only, yyyy-MM-dd.</summary>
+    public DateOnly? EffectiveDate { get; init; }
+
+    [StringLength(2)]
+    public string? State { get; init; }
+
+    [StringLength(100)]
+    public string? County { get; init; }
+}
+
+/// <summary>A field's location, and for a split typed by hand its name and share (CTRM's are read-only).</summary>
+public record UpdateProducerFieldRequest
+{
+    [StringLength(2)]
+    public string? State { get; init; }
+
+    [StringLength(100)]
+    public string? County { get; init; }
+
+    /// <summary>Manual splits only; ignored for CTRM splits.</summary>
+    [StringLength(255)]
+    public string? Name { get; init; }
+
+    /// <summary>Manual splits only; ignored for CTRM splits.</summary>
+    [Range(0.001, 100)]
+    public decimal? SplitPercent { get; init; }
+}
+
+public record CreateFieldSeasonRequest
+{
+    [Required, StringLength(20, MinimumLength = 1)]
+    public required string FieldKey { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public required int PlantingIntentionId { get; init; }
+
+    [Range(2000, 2100)]
+    public required int Year { get; init; }
+
+    [Required, StringLength(100, MinimumLength = 1)]
+    public required string CropLabel { get; init; }
+
+    [Range(0, 1_000_000)]
+    public decimal? Acres { get; init; }
+}
+
+/// <summary>A season's acres: the only part of a season that changes after it's added.</summary>
+public record UpdateFieldSeasonRequest
+{
+    [Range(0, 1_000_000)]
+    public decimal? Acres { get; init; }
+}
+
+public record CreateFieldProgramRecordRequest
+{
+    [Required, StringLength(20, MinimumLength = 1)]
+    public required string SeasonId { get; init; }
+
+    [Required, StringLength(30, MinimumLength = 1)]
+    public required string ProgramKey { get; init; }
+
+    /// <summary>The program's inputs (blank, or carried forward from last year).</summary>
+    public required JsonElement Data { get; init; }
+
+    [Range(2000, 2100)]
+    public int? CopiedFromYear { get; init; }
+}
+
+/// <summary>Saves a record's inputs. Draft/Ready is worked out by the server; locking is its own call.</summary>
+public record UpdateFieldProgramRecordRequest
+{
+    public required JsonElement Data { get; init; }
+
+    /// <summary>Set when the inputs were copied from another field this year.</summary>
+    [StringLength(255)]
+    public string? CopiedFromField { get; init; }
+}
+
+public record FieldPlanReasonRequest
+{
+    [Required, StringLength(500, MinimumLength = 1)]
+    public required string Reason { get; init; }
+}
+
+/// <summary>Confirms a 45Z field after harvest with the tickets reviewed with the producer.</summary>
+public record ConfirmFieldProgramRecordRequest
+{
+    /// <summary>bu/ac, prefilled on screen from the included tickets ÷ acres and editable.</summary>
+    [Range(0.01, 1000)]
+    public required double ActualYield { get; init; }
+
+    /// <summary>The included tickets' keys, from GET records/{id}/tickets.</summary>
+    [Required, MinLength(1), MaxLength(1000)]
+    public required List<string> TicketKeys { get; init; }
+
+    /// <summary>
+    /// The originator's tick on the review's recordkeeping step: the records the producer must keep were
+    /// reviewed with them. Must be true.
+    /// </summary>
+    public required bool ReviewedWithProducer { get; init; }
+
+    /// <summary>
+    /// The field's passes from last harvest through this one, for USDA T-DISC (api/tdisc/options lists the
+    /// windows and implements). Required when the field's tillage is No till or Reduced till, ignored
+    /// otherwise. The rating is worked out on the server from these.
+    /// </summary>
+    [MaxLength(20)]
+    public List<TDiscPassRequest>? TDiscPasses { get; init; }
+}
+
+/// <summary>One field pass for T-DISC: the tillage window it fell in and the T-DISC implement used.</summary>
+public record TDiscPassRequest
+{
+    /// <summary>A window key, e.g. "Field_Preparation".</summary>
+    [Required, StringLength(40)]
+    public required string Window { get; init; }
+
+    /// <summary>A T-DISC implement name, as api/tdisc/options lists it.</summary>
+    [Required, StringLength(100)]
+    public required string Implement { get; init; }
+}
+
+/// <summary>Archiving a 45Z document: the originator's optional reason (e.g. "No longer relevant to 2026").</summary>
+public record ArchiveFieldPlanDocumentRequest
+{
+    [StringLength(500)]
+    public string? Note { get; init; }
+}

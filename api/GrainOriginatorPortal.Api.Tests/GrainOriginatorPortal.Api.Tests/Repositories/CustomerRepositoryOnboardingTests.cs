@@ -7,11 +7,11 @@ using Microsoft.Extensions.Logging;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
-using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Extensions;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 
@@ -29,8 +29,7 @@ public class CustomerRepositoryOnboardingTests
     {
         public TestableCustomerRepository(OriginationDbContext ods, ApplicationDbContext app)
             : base(ods, app,
-                new Mock<ITicketRepository>(MockBehavior.Strict).Object,
-                new Mock<IContractRepository>(MockBehavior.Strict).Object,
+                new Mock<ICustomerActivitySource>(MockBehavior.Strict).Object,
                 new Mock<ILogger<CustomerRepository>>().Object, new ConfigurationBuilder().Build())
         {
         }

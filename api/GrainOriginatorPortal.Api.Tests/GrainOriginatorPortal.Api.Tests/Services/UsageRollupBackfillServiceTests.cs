@@ -5,8 +5,8 @@ using Microsoft.Extensions.Logging;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Services.Diagnostics;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Api.Platform.Diagnostics;
+using GrainOriginatorPortal.Infrastructure.Platform.Telemetry.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 
@@ -17,7 +17,7 @@ namespace GrainOriginatorPortal.Api.Tests.Services;
 /// </summary>
 public class UsageRollupBackfillServiceTests
 {
-    private readonly Mock<IUsageRepository> _repo = new();
+    private readonly Mock<IUsageTelemetryRepository> _repo = new();
     private readonly CapturingLogger<UsageRollupBackfillService> _logger = new();
     private readonly List<string> _calls = [];
     private readonly UsageRollupBackfillService _sut;

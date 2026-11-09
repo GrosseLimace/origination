@@ -4,14 +4,15 @@ using Microsoft.EntityFrameworkCore;
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.Lists.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Lists.Repositories;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 
 /// <summary>
 /// Direct coverage of <see cref="QueryLibraryRepository"/> against an InMemory database: the
-/// active-only read in Category → SortOrder → Name order that drives the Build-a-List library, and
-/// the search-log append.
+/// active-only read in Category → SortOrder → Name order that drives the Build-a-List library, the
+/// names read the usage dashboard uses, and the search-log append.
 /// </summary>
 public class QueryLibraryRepositoryTests
 {
@@ -43,6 +44,21 @@ public class QueryLibraryRepositoryTests
         var items = await sut.GetActiveAsync(CancellationToken.None);
 
         Assert.Equal(new[] { "Recent notes", "Zebra corn", "Corn", "Wheat" }, items.Select(i => i.Name));
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task GetNamesAsync_NamesActiveAndRetiredQueries_AndLeavesOutUnknownIds()
+    {
+        // The usage dashboard names prompts people used in the past, so a retired one still has its name.
+        var (sut, db) = Build();
+        db.QueryLibrary.AddRange(Item(7, "Crops", 1, "Corn producers"), Item(8, "Crops", 2, "Retired", isActive: false));
+        await db.SaveChangesAsync();
+
+        Assert.Empty(await sut.GetNamesAsync([], CancellationToken.None));
+        var names = await sut.GetNamesAsync([7, 8, 99], CancellationToken.None);
+
+        Assert.Equal(new Dictionary<int, string> { [7] = "Corn producers", [8] = "Retired" }, names);
     }
 
     // -------------------------------------------------------------------------

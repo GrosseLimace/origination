@@ -2,10 +2,11 @@
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Models.Requests;
-using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Api.Modules.Producers.Models.Requests;
+using GrainOriginatorPortal.Api.Modules.Producers.Services;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Interfaces;
+using GrainOriginatorPortal.Api.Platform.Identity;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

@@ -13,11 +13,11 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Middleware;
-using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Tests.Platform.Access;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Api.Platform.Middleware;
 
 namespace GrainOriginatorPortal.Api.Tests.Middleware;
 

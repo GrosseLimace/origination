@@ -10,19 +10,23 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Models.Requests;
-using GrainOriginatorPortal.Api.Models.Responses;
-using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Api.Services.Ctrm;
-using GrainOriginatorPortal.Api.Services.FdCic;
-using GrainOriginatorPortal.Api.Services.FieldPlan;
-using GrainOriginatorPortal.Api.Services.TDisc;
-using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
-using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.FdCic;
+using GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.Models.Requests;
+using GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.Models.Responses;
+using GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.Services;
+using GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.TDisc;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Entities;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Api.Platform.Identity;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Platform.ReferenceData.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Services.FieldPlan;
 

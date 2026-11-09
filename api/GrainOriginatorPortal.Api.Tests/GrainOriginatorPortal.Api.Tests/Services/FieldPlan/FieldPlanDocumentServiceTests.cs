@@ -12,13 +12,15 @@ using Microsoft.Extensions.Options;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Api.Services.DocStore;
-using GrainOriginatorPortal.Api.Services.FieldPlan;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.Services;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Producers.Repositories;
+using GrainOriginatorPortal.Api.Platform.DocStore;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Api.Platform.Identity;
 
 namespace GrainOriginatorPortal.Api.Tests.Services.FieldPlan;
 
@@ -81,11 +83,13 @@ public class FieldPlanDocumentServiceTests
         Assert.Equal("TATOB43", saved.SplitId);
         Assert.Equal("YC", saved.Commodity);
         Assert.Equal("Tess Tester", saved.UploadedBy);
+        // Filed under the 45Z category, which the app's managed identity is granted in each environment.
+        Assert.Equal("Sustainability-45z", h.DocStore.Categories[saved.Id]);
         var metadata = h.DocStore.Metadata[saved.Id];
-        Assert.Equal("260843", metadata[DocStoreMetadata.CustomerId]);
-        Assert.Equal("TATOBIN", metadata[DocStoreMetadata.ProducerCode]);
-        Assert.Equal("TATOB43", metadata[DocStoreMetadata.SplitId]);
-        Assert.Equal("2026-11-04T15:00:00.0000000Z", metadata[DocStoreMetadata.ConfirmedAt]);
+        Assert.Equal("260843", metadata[FieldPlanDocumentMetadata.CustomerId]);
+        Assert.Equal("TATOBIN", metadata[FieldPlanDocumentMetadata.ProducerCode]);
+        Assert.Equal("TATOB43", metadata[FieldPlanDocumentMetadata.SplitId]);
+        Assert.Equal("2026-11-04T15:00:00.0000000Z", metadata[FieldPlanDocumentMetadata.ConfirmedAt]);
         var row = await h.Db.FieldPlanDocuments.SingleAsync();
         Assert.Equal((saved.Id, Tobin, 2026, (int?)ConfirmedRecord, "tester@scoular.com"), (row.DocStoreId, row.CustomerId, row.CropYear, row.FieldProgramRecordId, row.CreatedBy));
         var official = JsonNode.Parse((await h.Db.FieldProgramRecords.FindAsync(ConfirmedRecord))!.Official!)!;
@@ -201,7 +205,7 @@ public class FieldPlanDocumentServiceTests
             (ledger.DocumentType, ledger.ContentType, ledger.SplitId, ledger.FieldName, ledger.CropYear, ledger.Status));
         Assert.Equal("45Z-Mass-Balance-Ledger_TATOBIN_2026_20261104.csv", ledger.FileName);
         Assert.Equal(ledger.Id, again.Id);
-        Assert.Equal("JARBOE WEST", h.DocStore.Metadata[ledger.Id][DocStoreMetadata.FieldName]);
+        Assert.Equal("JARBOE WEST", h.DocStore.Metadata[ledger.Id][FieldPlanDocumentMetadata.FieldName]);
         var official = JsonNode.Parse((await h.Db.FieldProgramRecords.FindAsync(ConfirmedRecord))!.Official!)!;
         Assert.Equal(ledger.Id, official["ledgerDocumentId"]!.GetValue<string>());
     }
@@ -323,7 +327,7 @@ public class FieldPlanDocumentServiceTests
     public async Task Disabled_UploadsAndDownloadsAre503sThatSayDocStoreIsntSetUp()
     {
         var off = new DisabledDocStoreClient();
-        var ex = await Assert.ThrowsAsync<InfrastructureException>(() => off.UploadAsync(new DocStoreUpload("a.pdf", "application/pdf", Pdf, new Dictionary<string, string>()), default));
+        var ex = await Assert.ThrowsAsync<InfrastructureException>(() => off.UploadAsync(new DocStoreUpload(FieldPlanDocumentMetadata.Category, "a.pdf", "application/pdf", Pdf, new Dictionary<string, string>()), default));
         Assert.Equal(503, ex.HttpStatusCode);
         await Assert.ThrowsAsync<InfrastructureException>(() => off.DownloadAsync(Guid.NewGuid().ToString(), default));
     }

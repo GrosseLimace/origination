@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 
 // Project namespaces
-using GrainOriginatorPortal.Infrastructure.Json;
+using GrainOriginatorPortal.Infrastructure.Platform.Json;
 
 namespace GrainOriginatorPortal.Api.Tests.Json;
 

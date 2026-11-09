@@ -2,7 +2,7 @@
 using Microsoft.AspNetCore.Http;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Middleware;
+using GrainOriginatorPortal.Api.Platform.Middleware;
 
 namespace GrainOriginatorPortal.Api.Tests.Middleware;
 

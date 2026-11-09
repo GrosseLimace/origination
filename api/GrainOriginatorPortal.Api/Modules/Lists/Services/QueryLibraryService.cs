@@ -1,0 +1,51 @@
+using GrainOriginatorPortal.Api.Platform.ReferenceData.Mappings;
+using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Api.Modules.Lists.Models.Responses;
+using GrainOriginatorPortal.Infrastructure.Modules.Lists.Interfaces;
+using GrainOriginatorPortal.Api.Modules.Lists.Mappings;
+using GrainOriginatorPortal.Api.Platform.Identity;
+using GrainOriginatorPortal.Api.Platform.Telemetry;
+
+namespace GrainOriginatorPortal.Api.Modules.Lists.Services;
+
+/// <inheritdoc />
+public class QueryLibraryService : IQueryLibraryService
+{
+    private readonly IQueryLibraryRepository _repository;
+    private readonly IRequestContextService _requestContext;
+
+    public QueryLibraryService(IQueryLibraryRepository repository, IRequestContextService requestContext)
+    {
+        _repository = repository;
+        _requestContext = requestContext;
+    }
+
+    /// <inheritdoc />
+    public async Task<List<QueryLibraryItemResponse>> GetAllAsync(CancellationToken cancellationToken)
+    {
+        var items = await _repository.GetActiveAsync(cancellationToken);
+        return items.Select(i => i.ToResponse()).ToList();
+    }
+
+    /// <inheritdoc />
+    public Task<Dictionary<int, string>> GetNamesAsync(IReadOnlyCollection<int> ids, CancellationToken cancellationToken) =>
+        _repository.GetNamesAsync(ids, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task LogSearchAsync(string searchText, int? matchedQueryId, CancellationToken cancellationToken)
+    {
+        // Redact contact PII (emails, phone numbers, bare digit runs) before persisting: the raw
+        // search box is free-text and can contain producer emails/phones, and this log is later
+        // surfaced to admins via the usage dashboard's query-search-gaps endpoint. Only sensitive
+        // tokens are masked, so search terms stay intact for gap analysis.
+        // UserId + timestamp are request/business context, so the entity is built here and the
+        // repository just persists it.
+        await _repository.AddSearchLogAsync(new QuerySearchLog
+        {
+            UserId = _requestContext.GetCurrentUser(),
+            SearchText = TelemetrySanitizer.Redact(searchText, "library-search") ?? searchText,
+            MatchedQueryId = matchedQueryId,
+            Timestamp = DateTime.UtcNow
+        }, cancellationToken);
+    }
+}

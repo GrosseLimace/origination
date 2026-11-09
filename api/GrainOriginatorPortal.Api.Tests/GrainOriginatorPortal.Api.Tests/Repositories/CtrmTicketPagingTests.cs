@@ -6,8 +6,11 @@ using Microsoft.Extensions.Logging;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Infrastructure.Ctrm;
-using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm.Dtos;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm.Dtos;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 
@@ -141,8 +144,8 @@ public class CtrmTicketPagingTests
         // running a count query for every page we fetch.
         foreach (var document in new[]
                  {
-                     CtrmQueries.TicketsByCustomer, CtrmQueries.TicketsBySplitProducer,
-                     CtrmQueries.TicketsByContractNumbers, CtrmQueries.TicketsByCustomers,
+                     CtrmContractQueries.TicketsByCustomer, CtrmContractQueries.TicketsBySplitProducer,
+                     CtrmContractQueries.TicketsByContractNumbers, CtrmContractQueries.TicketsByCustomers,
                      CtrmCustomerQueries.TicketLinksInWindow,
                  })
         {

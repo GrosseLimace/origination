@@ -3,9 +3,9 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Infrastructure.Platform.Access.Interfaces;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Tests.Platform.Access;
 

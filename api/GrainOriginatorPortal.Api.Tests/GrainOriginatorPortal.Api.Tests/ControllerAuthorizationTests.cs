@@ -1,22 +1,42 @@
 // System namespaces
 using System.Reflection;
+using System.Text.RegularExpressions;
 
 // Microsoft namespaces
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Routing;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Controllers;
 using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Platform.Access.Controllers;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
+using GrainOriginatorPortal.Api.Modules.Producers.Controllers;
+using GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.Controllers;
+using GrainOriginatorPortal.Api.Modules.Customers.Controllers;
+using GrainOriginatorPortal.Api.Modules.Contracts.Controllers;
+using GrainOriginatorPortal.Api.Modules.Engagement.Controllers;
+using GrainOriginatorPortal.Api.Modules.Lists.Controllers;
+using GrainOriginatorPortal.Api.Modules.BidSheet.Controllers;
+using GrainOriginatorPortal.Infrastructure.Modules.BidSheet.Entities;
+using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Controllers;
+using GrainOriginatorPortal.Api.Platform.Diagnostics.Controllers;
+using GrainOriginatorPortal.Api.Platform.Geocode.Controllers;
+using GrainOriginatorPortal.Api.Platform.Help.Controllers;
+using GrainOriginatorPortal.Api.Platform.Identity.Controllers;
+using GrainOriginatorPortal.Api.Platform.Preferences.Controllers;
+using GrainOriginatorPortal.Api.Platform.ReferenceData.Controllers;
+using GrainOriginatorPortal.Api.Platform.Telemetry.Controllers;
+using GrainOriginatorPortal.Api.Platform.Version.Controllers;
+using GrainOriginatorPortal.Api.Platform.WhatsNew.Controllers;
 
 namespace GrainOriginatorPortal.Api.Tests;
 
 /// <summary>
-/// Verifies every controller in the API is protected with [Authorize].
+/// Verifies every controller in the API is protected with [Authorize], and every controller in a
+/// module folder with the permissions its endpoints need.
 /// This acts as a security regression test — a failing test here means
-/// an endpoint was accidentally left unauthenticated.
+/// an endpoint was accidentally left unauthenticated or under-protected.
 /// </summary>
 public class ControllerAuthorizationTests
 {
@@ -26,15 +46,18 @@ public class ControllerAuthorizationTests
         yield return new object[] { typeof(BarchartController) };
         yield return new object[] { typeof(BarchartIngestController) };
         yield return new object[] { typeof(BidSheetController) };
+        yield return new object[] { typeof(ClickEventsController) };
         yield return new object[] { typeof(ClientTelemetryController) };
         yield return new object[] { typeof(CommoditiesController) };
         yield return new object[] { typeof(ContractsController) };
+        yield return new object[] { typeof(ContractPacingController) };
         yield return new object[] { typeof(CustomersController) };
         yield return new object[] { typeof(CustomerSyncDiagnosticsController) };
         yield return new object[] { typeof(DailyRecapGroupsController) };
         yield return new object[] { typeof(DashboardPlantingEstimatesController) };
         yield return new object[] { typeof(DiagnosticsController) };
         yield return new object[] { typeof(DpContractsController) };
+        yield return new object[] { typeof(LinkedProducersController) };
         yield return new object[] { typeof(EntitlementsController) };
         yield return new object[] { typeof(FdCicController) };
         yield return new object[] { typeof(CtrmSplitsController) };
@@ -101,15 +124,13 @@ public class ControllerAuthorizationTests
     }
 
     /// <summary>
-    /// Every usage-dashboard action reads or edits other people's activity data, so each must require a
-    /// permission — the class-level [Authorize] alone would only require a sign-in. Reads require
-    /// usage-reports:read. Exclusion administration requires usage-exclusions:manage, which reading
-    /// doesn't grant. The single exception is the telemetry endpoint, which every signed-in user posts
-    /// to. The read permission is the whole gate: whoever holds it sees the entire organisation and may
+    /// Every usage-dashboard action reads or edits other people's activity data. The controller requires
+    /// usage-reports:read, and exclusion administration also requires usage-exclusions:manage, which reading
+    /// doesn't grant. The read permission is the whole gate: whoever holds it sees the entire organisation and may
     /// filter by any manager.
     /// </summary>
     [Fact]
-    public void UsageDashboardController_EveryActionExceptClickEvent_RequiresItsPermission()
+    public void UsageDashboardController_RequiresUsageReports_AndExclusionsAlsoNeedTheirPermission()
     {
         string[] exclusionActions =
         [
@@ -119,29 +140,39 @@ public class ControllerAuthorizationTests
             nameof(UsageDashboardController.RemoveExcludedUser),
         ];
 
+        static string[] Required(MemberInfo member) =>
+            member.GetCustomAttributes<RequirePermissionAttribute>(inherit: true).Select(a => a.Permission).ToArray();
+
+        Assert.Equal([AppPermissions.UsageAnalytics.UsageReportsRead], Required(typeof(UsageDashboardController)));
+
         var actions = typeof(UsageDashboardController)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Where(m => !m.IsSpecialName)
             .ToList();
         Assert.NotEmpty(actions);
 
-        static string[] Required(MethodInfo action) =>
-            action.GetCustomAttributes<RequirePermissionAttribute>(inherit: true).Select(a => a.Permission).ToArray();
-
         var wrong = actions
-            .Where(m => m.Name != nameof(UsageDashboardController.TrackClickEvent))
             .Select(m => (m.Name, Required: Required(m), Expected: exclusionActions.Contains(m.Name)
-                ? AppPermissions.UsageAnalytics.UsageExclusionsManage
-                : AppPermissions.UsageAnalytics.UsageReportsRead))
-            .Where(a => !a.Required.SequenceEqual([a.Expected]))
-            .Select(a => $"{a.Name} requires [{string.Join(", ", a.Required)}], not {a.Expected}")
+                ? new[] { AppPermissions.UsageAnalytics.UsageExclusionsManage }
+                : []))
+            .Where(a => !a.Required.SequenceEqual(a.Expected))
+            .Select(a => $"{a.Name} requires [{string.Join(", ", a.Required)}] on the action, not [{string.Join(", ", a.Expected)}]")
             .ToList();
 
         Assert.True(wrong.Count == 0, string.Join("; ", wrong));
+    }
 
-        // And the telemetry endpoint must need only a sign-in, or the UI stops reporting usage.
-        var clickEvent = actions.Single(m => m.Name == nameof(UsageDashboardController.TrackClickEvent));
-        Assert.Empty(clickEvent.GetCustomAttributes<AuthorizeAttribute>(inherit: true));
+    /// <summary>
+    /// Every signed-in user posts click events from the UI, so the endpoint must need only a sign-in, or the UI stops
+    /// reporting usage.
+    /// </summary>
+    [Fact]
+    public void ClickEventsController_NeedsOnlyASignIn()
+    {
+        Assert.Single(typeof(ClickEventsController).GetCustomAttributes<AuthorizeAttribute>(inherit: true));
+        Assert.Empty(typeof(ClickEventsController).GetCustomAttributes<RequirePermissionAttribute>(inherit: true));
+        Assert.Empty(typeof(ClickEventsController).GetMethod(nameof(ClickEventsController.TrackClickEvent))!
+            .GetCustomAttributes<AuthorizeAttribute>(inherit: true));
     }
 
     /// <summary>
@@ -183,5 +214,205 @@ public class ControllerAuthorizationTests
             $"These BarChart ingest actions allow anonymous access: {string.Join(", ", anonymous)}");
 
         Assert.Empty(typeof(BarchartIngestController).GetCustomAttributes<AllowAnonymousAttribute>(inherit: true));
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // A permission on every endpoint, checked module by module.
+    //
+    // These checks cover the controllers in Api.Platform and Api.Modules.<Module>, which is every
+    // controller: EveryController_SitsInPlatformOrAModule fails on one anywhere else.
+    // -------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Controllers any signed-in user may call, so they need no permission: who you are and what you may
+    /// do, the version, help, What's New, the browser's telemetry settings and its click events.
+    /// </summary>
+    private static readonly HashSet<Type> OpenToAnySignedInUser =
+    [
+        typeof(MeController),
+        typeof(MyPermissionsController),
+        typeof(VersionController),
+        typeof(HelpController),
+        typeof(WhatsNewController),
+        typeof(ClientTelemetryController),
+        typeof(ClickEventsController),
+    ];
+
+    /// <summary>
+    /// The only writes open to any signed-in user: every screen records the caller's own clicks for the
+    /// usage dashboard. It stores usage telemetry about the caller, never business data.
+    /// </summary>
+    private static readonly HashSet<(Type Controller, string Action)> OwnTelemetryPosts =
+    [
+        (typeof(ClickEventsController), nameof(ClickEventsController.TrackClickEvent)),
+    ];
+
+    /// <summary>POSTs that store no business data, so the controller's read permission is enough.</summary>
+    private static readonly HashSet<(Type Controller, string Action)> NonMutatingPosts =
+    [
+        (typeof(FdCicController), nameof(FdCicController.Score)),                // scores a field, stores nothing
+        (typeof(GeocodeController), nameof(GeocodeController.SingleGeocode)),    // address lookups, store nothing
+        (typeof(GeocodeController), nameof(GeocodeController.BatchGeocode)),
+        (typeof(QueryLibraryController), nameof(QueryLibraryController.LogSearch)), // records telemetry only
+    ];
+
+    private const string PlatformNamespace = "GrainOriginatorPortal.Api.Platform";
+    private const string ModulesNamespace = "GrainOriginatorPortal.Api.Modules.";
+
+    /// <summary>
+    /// The module a controller's folder puts it in: <c>platform</c> under <c>Api.Platform</c>, or the
+    /// folder under <c>Api.Modules</c> in kebab case (<c>Modules.BidSheet</c> is <c>bid-sheet</c>), the
+    /// same ids <see cref="AppPermissions.ModuleOf"/> uses. Null anywhere else.
+    /// </summary>
+    private static string? ModuleOf(Type controller)
+    {
+        var ns = controller.Namespace ?? string.Empty;
+        if (ns == PlatformNamespace || ns.StartsWith(PlatformNamespace + ".", StringComparison.Ordinal))
+        {
+            return "platform";
+        }
+
+        if (!ns.StartsWith(ModulesNamespace, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var folder = ns[ModulesNamespace.Length..].Split('.')[0];
+        return Regex.Replace(folder, "(?<!^)([A-Z])", "-$1").ToLowerInvariant();
+    }
+
+    private static List<(Type Controller, string Module)> ModuleControllers() =>
+        AllControllerTypes()
+            .Select(row => (Type)row[0])
+            .Select(type => (Controller: type, Module: ModuleOf(type)))
+            .Where(c => c.Module is not null)
+            .Select(c => (c.Controller, c.Module!))
+            .ToList();
+
+    private static IEnumerable<(Type Controller, MethodInfo Action)> ActionsOf(IEnumerable<Type> controllers) =>
+        controllers.SelectMany(controller => controller
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(m => !m.IsSpecialName && !m.IsDefined(typeof(NonActionAttribute), inherit: true))
+            .Select(action => (controller, action)));
+
+    private static IEnumerable<string> PermissionsOn(MemberInfo member) =>
+        member.GetCustomAttributes<RequirePermissionAttribute>(inherit: true).Select(a => a.Permission);
+
+    /// <summary>Anything but GET or HEAD. An action without a verb attribute answers every verb, POST included.</summary>
+    private static bool ChangesData(MethodInfo action)
+    {
+        var verbs = action.GetCustomAttributes(inherit: true)
+            .OfType<IActionHttpMethodProvider>()
+            .SelectMany(provider => provider.HttpMethods)
+            .ToList();
+
+        return verbs.Count == 0 || verbs.Any(verb => verb is not ("GET" or "HEAD"));
+    }
+
+    /// <summary><c>write</c>, <c>manage</c>, or a scoped <c>delete</c> such as <c>bid-sheet-locations:delete:global</c>.</summary>
+    private static bool IsWrite(string permission) => permission.Split(':')[1] is "write" or "manage" or "delete";
+
+    [Fact]
+    public void EveryController_SitsInPlatformOrAModule()
+    {
+        // The checks below only see controllers ModuleOf places, so one anywhere else would need only a sign-in.
+        var elsewhere = AllControllerTypes()
+            .Select(row => (Type)row[0])
+            .Where(type => ModuleOf(type) is null)
+            .Select(type => type.FullName)
+            .ToList();
+
+        Assert.True(elsewhere.Count == 0,
+            "Move these controllers into Api.Platform or Api.Modules: " + string.Join(", ", elsewhere));
+    }
+
+    [Fact]
+    public void ModuleControllers_SitInAModuleTheCatalogKnows()
+    {
+        // A folder name that isn't a module (Modules/Producer, say) would leave its controllers with no
+        // permissions of their own to require.
+        var modules = AppPermissions.ModuleOf.Values.ToHashSet(StringComparer.Ordinal);
+        var unknown = ModuleControllers()
+            .Where(c => !modules.Contains(c.Module))
+            .Select(c => $"{c.Controller.Name} ({c.Module})")
+            .ToList();
+
+        Assert.True(unknown.Count == 0,
+            "These controllers sit in a folder that isn't a module in AppPermissions: " + string.Join(", ", unknown));
+    }
+
+    [Fact]
+    public void ModuleControllers_CarryAClassLevelPermission_FromTheirOwnModuleOnly()
+    {
+        // The class-level permission, normally the module's read, applies to every action, so a write needs
+        // it as well as its own write permission. The add-on roles rely on that: Editor grants writes
+        // everywhere, and only the persona roles' reads decide where those writes can be used. A class-level
+        // permission from another module would make the whole controller depend on that module.
+        var wrong = ModuleControllers()
+            .Where(c => !OpenToAnySignedInUser.Contains(c.Controller))
+            .Select(c => (c.Controller, c.Module, Required: PermissionsOn(c.Controller).ToList()))
+            .Where(c => c.Required.Count == 0
+                        || c.Required.Any(p => AppPermissions.ModuleOf.GetValueOrDefault(p) != c.Module))
+            .Select(c => $"{c.Controller.Name} requires [{string.Join(", ", c.Required)}] on the class; "
+                         + $"it needs at least one, all from the {c.Module} module")
+            .ToList();
+
+        Assert.True(wrong.Count == 0, string.Join("; ", wrong));
+    }
+
+    [Fact]
+    public void ModuleControllers_RequireAPermissionOnEveryAction()
+    {
+        var guarded = ModuleControllers().Select(c => c.Controller).Where(c => !OpenToAnySignedInUser.Contains(c));
+        var open = ActionsOf(guarded)
+            .Where(a => !PermissionsOn(a.Controller).Concat(PermissionsOn(a.Action)).Any())
+            .Select(a => $"{a.Controller.Name}.{a.Action.Name}")
+            .ToList();
+
+        Assert.True(open.Count == 0, "These actions need only a sign-in: " + string.Join(", ", open));
+    }
+
+    [Fact]
+    public void ModuleControllers_RequireAWritePermission_OnEveryActionThatChangesData()
+    {
+        // A read permission on a POST, PUT or DELETE would let a read-only user change data.
+        var guarded = ModuleControllers().Select(c => c.Controller).Where(c => !OpenToAnySignedInUser.Contains(c));
+        var readOnly = ActionsOf(guarded)
+            .Where(a => ChangesData(a.Action) && !NonMutatingPosts.Contains((a.Controller, a.Action.Name)))
+            .Where(a => !PermissionsOn(a.Controller).Concat(PermissionsOn(a.Action)).Any(IsWrite))
+            .Select(a => $"{a.Controller.Name}.{a.Action.Name}")
+            .ToList();
+
+        Assert.True(readOnly.Count == 0,
+            "These actions change data but need no write or manage permission: " + string.Join(", ", readOnly));
+    }
+
+    [Fact]
+    public void ControllersOpenToAnySignedInUser_OnlyRead()
+    {
+        // They need no permission, so an action that changes data would be open to every signed-in user.
+        var writes = ActionsOf(OpenToAnySignedInUser)
+            .Where(a => ChangesData(a.Action) && !OwnTelemetryPosts.Contains((a.Controller, a.Action.Name)))
+            .Select(a => $"{a.Controller.Name}.{a.Action.Name}")
+            .ToList();
+
+        Assert.True(writes.Count == 0,
+            "Move these to a controller that requires a permission: " + string.Join(", ", writes));
+    }
+
+    [Fact]
+    public void ModuleControllers_AllowNoAnonymousAccess()
+    {
+        // [AllowAnonymous] would skip the permission and the sign-in alike.
+        var controllers = ModuleControllers().Select(c => c.Controller).ToList();
+        var anonymous = controllers
+            .Where(c => c.IsDefined(typeof(AllowAnonymousAttribute), inherit: true))
+            .Select(c => c.Name)
+            .Concat(ActionsOf(controllers)
+                .Where(a => a.Action.IsDefined(typeof(AllowAnonymousAttribute), inherit: true))
+                .Select(a => $"{a.Controller.Name}.{a.Action.Name}"))
+            .ToList();
+
+        Assert.True(anonymous.Count == 0, "These allow anonymous access: " + string.Join(", ", anonymous));
     }
 }

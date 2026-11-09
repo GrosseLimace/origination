@@ -12,15 +12,15 @@ using Azure.Core;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Services.DocStore;
+using GrainOriginatorPortal.Api.Platform.DocStore;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Tests.Services.DocStore;
 
 /// <summary>
 /// The Doc Store HTTP client against a fake gateway: the request shape Doc Store's API-USAGE-GUIDE.md asks
-/// for (JSON with base64 content and the category code, a bearer token for the configured scope), and how
-/// its answers turn into Origination errors.
+/// for (JSON with base64 content and the upload's category code, a bearer token for the configured scope), and
+/// how its answers turn into Origination errors.
 /// </summary>
 public class HttpDocStoreClientTests
 {
@@ -67,10 +67,10 @@ public class HttpDocStoreClientTests
         new(status) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
 
     private static DocStoreUpload Upload() =>
-        new("report.pdf", "application/pdf", Encoding.ASCII.GetBytes("%PDF-1.7"), new Dictionary<string, string> { ["splitId"] = "TATOB43" });
+        new("Sustainability-45z", "report.pdf", "application/pdf", Encoding.ASCII.GetBytes("%PDF-1.7"), new Dictionary<string, string> { ["splitId"] = "TATOB43" });
 
     [Fact]
-    public async Task Upload_PostsJsonWithBase64ContentAndTheCategoryCode_AsTheConfiguredScope()
+    public async Task Upload_PostsJsonWithBase64ContentAndTheUploadsCategoryCode_AsTheConfiguredScope()
     {
         var id = Guid.NewGuid();
         var (client, gateway, token) = New((_, _) => Json(HttpStatusCode.Created,
@@ -110,14 +110,16 @@ public class HttpDocStoreClientTests
 
         var ex = await Assert.ThrowsAsync<ValidationException>(() => client.UploadAsync(Upload(), default));
 
-        Assert.Equal("Doc Store isn't set up to take PNG files for 45Z documents yet. Upload a PDF, or ask IT to allow PNG for the Sustainability-45z category.", ex.Errors["file"][0]);
+        Assert.Equal("Doc Store isn't set up to take PNG files in the Sustainability-45z category yet. Ask IT to allow PNG for it.", ex.Errors["file"][0]);
     }
 
     [Fact]
-    public void Refusal_OfTheLedgerCsv_DoesntOfferAPdfInstead()
+    public void Refusal_NamesTheFileKind_AndTheCategoryWhenItIsKnown()
     {
-        Assert.Equal("Doc Store isn't set up to take CSV files for 45Z documents yet. Ask IT to allow CSV for the Sustainability-45z category.",
+        Assert.Equal("Doc Store isn't set up to take CSV files in the Sustainability-45z category yet. Ask IT to allow CSV for it.",
             HttpDocStoreClient.Refusal("Content type 'text/csv' is not allowed for category 'Sustainability-45z'.", "Sustainability-45z"));
+        Assert.Equal("Doc Store isn't set up to take CSV files in this category yet. Ask IT to allow CSV for it.",
+            HttpDocStoreClient.Refusal("Content type 'text/csv' is not allowed for category 'x'.", category: null));
     }
 
     [Fact]

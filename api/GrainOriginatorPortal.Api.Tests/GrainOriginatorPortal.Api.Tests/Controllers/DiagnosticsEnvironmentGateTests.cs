@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Controllers;
+using GrainOriginatorPortal.Api.Platform.Diagnostics;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 

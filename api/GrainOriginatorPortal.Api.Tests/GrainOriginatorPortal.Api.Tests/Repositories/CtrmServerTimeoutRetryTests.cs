@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Infrastructure.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 

@@ -5,10 +5,15 @@ using Microsoft.Extensions.Caching.Memory;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Infrastructure.Abstractions;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Api.Modules.Contracts.Services;
+using GrainOriginatorPortal.Api.Modules.Customers.Services;
+using GrainOriginatorPortal.Api.Modules.Lists.Services;
+using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Models;
+using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Services;
+using GrainOriginatorPortal.Infrastructure.Modules.UsageAnalytics.Interfaces;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Api.Platform.Identity;
+using GrainOriginatorPortal.Infrastructure.Platform.Telemetry;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 
@@ -23,6 +28,9 @@ public class UsageDashboardServiceTests
     private readonly Mock<IAppAccessService> _appAccessMock = new();
     private readonly Mock<IManagerDirectoryService> _managerDirectoryMock = new();
     private readonly UsageUniverseCacheState _cacheState = new();
+    private readonly Mock<ICustomerLookup> _customersMock = new();
+    private readonly Mock<IContractLookup> _contractsMock = new();
+    private readonly Mock<IQueryLibraryService> _queriesMock = new();
     private readonly UsageDashboardService _sut;
 
     private static readonly DateOnly From = new(2026, 7, 1);
@@ -69,7 +77,8 @@ public class UsageDashboardServiceTests
         // cache is registered with a SizeLimit; setting one here proves entries declare their size.
         var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
         return new UsageDashboardService(
-            _repoMock.Object, _appAccessMock.Object, _managerDirectoryMock.Object, cache, _cacheState);
+            _repoMock.Object, _appAccessMock.Object, _managerDirectoryMock.Object, cache, _cacheState,
+            _customersMock.Object, _contractsMock.Object, _queriesMock.Object);
     }
 
     private void SetupSubtree(string managerId, params string[] subtreeUserIds)
@@ -288,7 +297,7 @@ public class UsageDashboardServiceTests
     [Fact]
     public async Task EveryCaller_ReceivesTheManagerRoster()
     {
-        var roster = new List<Api.Models.UsageManagerDto>
+        var roster = new List<Api.Modules.UsageAnalytics.Models.UsageManagerDto>
         {
             new() { UserId = "MgrX", DisplayName = "Manager X", DirectReports = 2, TotalReports = 5 },
         };
@@ -628,5 +637,16 @@ public class UsageDashboardServiceTests
         Assert.Single(rows);
         Assert.Equal("Caden Egr", rows[0].DisplayName);
         Assert.Equal("dev account", rows[0].Reason);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public void Labels_AppendTheCodeOrCommodity_OnlyWhenThereIsOne()
+    {
+        // How recent activity names the customers and contracts people opened; the names come from those modules.
+        Assert.Equal("Smith Farm (SMITH)", UsageDashboardService.CustomerLabel(new CustomerName("Smith Farm", "SMITH")));
+        Assert.Equal("Manual Farm", UsageDashboardService.CustomerLabel(new CustomerName("Manual Farm", null)));
+        Assert.Equal("P1 — YC", UsageDashboardService.ContractLabel(new ContractName("P1", "YC")));
+        Assert.Equal("P2", UsageDashboardService.ContractLabel(new ContractName("P2", "")));
     }
 }

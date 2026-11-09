@@ -2,8 +2,8 @@
 using Xunit;
 
 // Project namespaces
-using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
-using GrainOriginatorPortal.Infrastructure.Sync;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm.Dtos;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Sync;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

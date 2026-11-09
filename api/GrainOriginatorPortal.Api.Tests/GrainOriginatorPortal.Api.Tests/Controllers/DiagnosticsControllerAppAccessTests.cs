@@ -10,13 +10,17 @@ using Microsoft.Extensions.Logging;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Controllers;
-using GrainOriginatorPortal.Api.Models.Responses;
-using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Api.Services.Diagnostics;
-using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Interfaces;
+using GrainOriginatorPortal.Api.Modules.Contracts.Services;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts;
+using GrainOriginatorPortal.Api.Platform.Diagnostics;
+using GrainOriginatorPortal.Api.Platform.Diagnostics.Controllers;
+using GrainOriginatorPortal.Api.Platform.Diagnostics.Models.Responses;
+using GrainOriginatorPortal.Api.Platform.Identity;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Platform.Telemetry.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 
@@ -68,12 +72,12 @@ public class DiagnosticsControllerAppAccessTests
                 new CtrmContractReader(ctrmClient, config, new Mock<ILogger<CtrmContractReader>>().Object),
                 new CtrmTicketReader(ctrmClient, config, new Mock<ILogger<CtrmTicketReader>>().Object),
                 app),
-            new CommoditySeedService(ods, app),
+            new CommoditySeedService(new ContractCommodities(ods), app),
             new ElevatorCacheDiagnosticsService(
                 ods, app, httpFactory,
                 new Mock<IServiceScopeFactory>().Object,
                 new Mock<ILogger<ElevatorCacheDiagnosticsService>>().Object),
-            new UsageRollupBackfillService(new Mock<IUsageRepository>().Object, new Mock<ILogger<UsageRollupBackfillService>>().Object),
+            new UsageRollupBackfillService(new Mock<IUsageTelemetryRepository>().Object, new Mock<ILogger<UsageRollupBackfillService>>().Object),
             new AppAccessDiagnosticsService(_graphMock.Object, config, new Mock<ILogger<AppAccessDiagnosticsService>>().Object));
     }
 

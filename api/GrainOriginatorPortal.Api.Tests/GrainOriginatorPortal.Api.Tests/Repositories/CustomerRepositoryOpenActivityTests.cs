@@ -8,9 +8,11 @@ using Moq;
 
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
-using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Repositories;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 
@@ -22,7 +24,9 @@ namespace GrainOriginatorPortal.Api.Tests.Repositories;
 /// This used to query the ODS views directly. It now reads through the switch-backed contract and
 /// ticket repositories, so whichever source the producer screen is on, this agrees with it. These tests
 /// pin the rule itself - open contracts lock their trade unit, unapplied tickets lock their organization,
-/// closed contracts and blank codes do not - independent of which source answers.
+/// closed contracts and blank codes do not - independent of which source answers. The rule lives in the
+/// Contracts module's <c>CustomerActivitySource</c>; these tests reach it through the customer repository,
+/// as the edit dialog and the sync do.
 /// </remarks>
 public class CustomerRepositoryOpenActivityTests
 {
@@ -38,7 +42,7 @@ public class CustomerRepositoryOpenActivityTests
         var contracts = new Mock<IContractRepository>(MockBehavior.Strict);
         var tickets = new Mock<ITicketRepository>(MockBehavior.Strict);
 
-        var sut = new CustomerRepository(ods, app, tickets.Object, contracts.Object,
+        var sut = new CustomerRepository(ods, app, new CustomerActivitySource(contracts.Object, tickets.Object),
             new Mock<ILogger<CustomerRepository>>().Object, new ConfigurationBuilder().Build());
 
         return (sut, contracts, tickets);
@@ -140,7 +144,7 @@ public class CustomerRepositoryOpenActivityTests
 
         var contracts = new Mock<IContractRepository>(MockBehavior.Strict);
         var tickets = new Mock<ITicketRepository>(MockBehavior.Strict);
-        var sut = new CustomerRepository(ods, app, tickets.Object, contracts.Object,
+        var sut = new CustomerRepository(ods, app, new CustomerActivitySource(contracts.Object, tickets.Object),
             new Mock<ILogger<CustomerRepository>>().Object, new ConfigurationBuilder().Build());
         return (sut, contracts, tickets);
     }

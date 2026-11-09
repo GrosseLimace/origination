@@ -2,7 +2,7 @@
 using System.Text.Json;
 
 // Project namespaces
-using GrainOriginatorPortal.Infrastructure.Json;
+using GrainOriginatorPortal.Infrastructure.Platform.Json;
 
 namespace GrainOriginatorPortal.Api.Tests.Json;
 

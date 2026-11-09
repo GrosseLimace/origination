@@ -2,12 +2,14 @@
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Platform.Access;
-using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Api.Modules.Customers.Services;
+using GrainOriginatorPortal.Api.Modules.Engagement.Models.Requests;
+using GrainOriginatorPortal.Api.Modules.Engagement.Services;
+using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Interfaces;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Api.Platform.Identity;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 
@@ -27,7 +29,7 @@ public class ReminderServiceTests
     private static readonly DateTime FutureDue = DateTime.UtcNow.AddDays(7);
 
     private readonly Mock<IReminderRepository> _repository = new();
-    private readonly Mock<ICustomerRepository> _customers = new();
+    private readonly Mock<ICustomerLookup> _customers = new();
     private readonly Mock<IRequestContextService> _requestContext = new();
     private readonly Mock<IOutlookCalendarService> _calendar = new();
     private readonly ReminderService _sut;
@@ -35,8 +37,8 @@ public class ReminderServiceTests
     public ReminderServiceTests()
     {
         _requestContext.Setup(r => r.GetCurrentUser()).Returns(Caller);
-        _customers.Setup(c => c.GetByIdAsync(10, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Customer { Id = 10, Name = "Smith Farms", ScoularId = "C-10" });
+        _customers.Setup(c => c.GetNameAsync(10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CustomerName("Smith Farms", "C-10"));
         _repository
             .Setup(r => r.AddAsync(It.IsAny<long>(), It.IsAny<DateTime>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((long customerId, DateTime due, string subject, string? notes, string owner, CancellationToken _) =>
@@ -231,7 +233,7 @@ public class ReminderServiceTests
     public async Task CreateAsync_ThrowsNotFoundWhenTheProducerDoesNotExist()
     {
         // Arrange
-        _customers.Setup(c => c.GetByIdAsync(404, It.IsAny<CancellationToken>())).ReturnsAsync((Customer?)null);
+        _customers.Setup(c => c.GetNameAsync(404, It.IsAny<CancellationToken>())).ReturnsAsync((CustomerName?)null);
         var request = new CreateReminderRequest { CustomerId = 404, DueAt = FutureDue };
 
         // Act + Assert

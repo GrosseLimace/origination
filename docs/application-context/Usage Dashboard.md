@@ -48,7 +48,7 @@ sent, for every caller who passes the read policy.
 | Piece | Path |
 | --- | --- |
 | Access rules | `api/GrainOriginatorPortal.Api/Authorization/UsageDashboardAccess.cs` |
-| Manager roster + subtree | `api/GrainOriginatorPortal.Api/Services/ManagerDirectoryService.cs` |
+| Manager roster + subtree | `api/GrainOriginatorPortal.Api/Modules/UsageAnalytics/Services/ManagerDirectoryService.cs` |
 | Manager filter (presentational) | `client/src/app/features/usage-dashboard/components/manager-filter/` |
 | Default-to-self + roster load | `usage-dashboard.component.ts` (`loadManagers`, `applyDefaultManager`) |
 
@@ -129,7 +129,7 @@ total session count. `Avg Session Duration` is weighted by login count.
 flowchart LR
     Tracker[UsageTrackingService client]
     MW[UsageTrackingMiddleware]
-    CTL[UsageDashboardController]
+    CTL[ClickEventsController]
     CH{{bounded Channels}}
     ING[UsageTrackingBackgroundService]
     AGG[UsageAggregationBackgroundService]
@@ -137,12 +137,13 @@ flowchart LR
     ROLL[(UserActivityDaily, FeatureUsageDaily,<br/>UserFeatureUsageDaily, WeeklyLoginAggregate)]
     SVC[UsageDashboardService]
     REPO[IUsageRepository]
+    TEL[IUsageTelemetryRepository]
     UI[Usage Dashboard component]
 
     Tracker -- "POST click-event" --> CTL --> CH
     MW -- "every authenticated /api/* request" --> CH
-    CH --> ING --> RAW
-    AGG -- "hourly: aggregate yesterday" --> ROLL
+    CH --> ING --> TEL --> RAW
+    AGG -- "hourly: aggregate yesterday" --> TEL --> ROLL
     RAW --> AGG
     UI --> SVC --> REPO
     REPO -- "closed days" --> ROLL
@@ -174,20 +175,23 @@ reconstruct), `query-library-usage`, `query-search-gaps`, and `users/{id}/detail
 | Sort icon, manager filter, exclusions panel | `client/src/app/features/usage-dashboard/components/` |
 | Frontend tracking service | `client/src/app/core/services/usage-tracking.service.ts` |
 | Admin guard | `client/src/app/guards/admin.guard.ts` |
-| Controller | `api/GrainOriginatorPortal.Api/Controllers/UsageDashboardController.cs` |
-| Service | `api/GrainOriginatorPortal.Api/Services/UsageDashboardService.cs` |
-| Repository | `api/GrainOriginatorPortal.Infrastructure/Repositories/UsageRepository.cs` |
-| Request → feature mapping | `api/GrainOriginatorPortal.Api/Services/FeatureNameMapper.cs` |
-| Request logging middleware | `api/GrainOriginatorPortal.Api/Middleware/UsageTrackingMiddleware.cs` |
-| Ingest worker | `api/GrainOriginatorPortal.Api/Services/UsageTrackingBackgroundService.cs` |
-| Rollup / retention worker | `api/GrainOriginatorPortal.Api/Services/UsageAggregationBackgroundService.cs` |
-| Screen-time inference | `api/GrainOriginatorPortal.Infrastructure/Abstractions/ScreenTimeCalculator.cs` |
-| PII redaction | `api/GrainOriginatorPortal.Api/Services/TelemetrySanitizer.cs` |
-| Entra app-access set | `api/GrainOriginatorPortal.Api/Services/AppAccessService.cs` |
+| Controller | `api/GrainOriginatorPortal.Api/Modules/UsageAnalytics/Controllers/UsageDashboardController.cs` |
+| Click-event endpoint | `api/GrainOriginatorPortal.Api/Platform/Telemetry/Controllers/ClickEventsController.cs` |
+| Service | `api/GrainOriginatorPortal.Api/Modules/UsageAnalytics/Services/UsageDashboardService.cs` |
+| Repository (dashboard reads) | `api/GrainOriginatorPortal.Infrastructure/Modules/UsageAnalytics/Repositories/UsageRepository.cs` |
+| Repository (tracking writes, rollups, retention) | `api/GrainOriginatorPortal.Infrastructure/Platform/Telemetry/Repositories/UsageTelemetryRepository.cs` |
+| Names of customers, contracts and prompts | the Customers, Contracts and Lists modules: `ICustomerLookup`, `IContractLookup`, `IQueryLibraryService` |
+| Request → feature mapping | `api/GrainOriginatorPortal.Api/Platform/Telemetry/FeatureNameMapper.cs` |
+| Request logging middleware | `api/GrainOriginatorPortal.Api/Platform/Middleware/UsageTrackingMiddleware.cs` |
+| Ingest worker | `api/GrainOriginatorPortal.Api/Platform/Telemetry/UsageTrackingBackgroundService.cs` |
+| Rollup / retention worker | `api/GrainOriginatorPortal.Api/Platform/Telemetry/UsageAggregationBackgroundService.cs` |
+| Screen-time inference | `api/GrainOriginatorPortal.Infrastructure/Platform/Telemetry/ScreenTimeCalculator.cs` |
+| PII redaction | `api/GrainOriginatorPortal.Api/Platform/Telemetry/TelemetrySanitizer.cs` |
+| Entra app-access set | `api/GrainOriginatorPortal.Api/Platform/Identity/AppAccessService.cs` |
 
 ### Controller endpoints
 
-All read endpoints require `[RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]`. Every panel endpoint also accepts `?managerId=` to narrow the view to
+The controller requires `[RequirePermission(AppPermissions.UsageAnalytics.UsageReportsRead)]`, so every endpoint on it does. Every panel endpoint also accepts `?managerId=` to narrow the view to
 that manager's whole org subtree; omitted means the whole organisation. It is honoured for every
 caller — there is no per-caller scoping beyond the read permission. The exclusion endpoints
 (`access-users`, `excluded-users` CRUD) require `usage-exclusions:manage` instead; anyone without it gets
@@ -211,7 +215,7 @@ caller — there is no per-caller scoping beyond the read permission. The exclus
 | `GET /excluded-users` | current exclusion list with reason / who added it / when |
 | `POST /excluded-users` | add an exclusion (409 if already excluded) |
 | `DELETE /excluded-users/{id}` | remove an exclusion |
-| `POST /click-event` | telemetry — accepts events from any authenticated user (**not** admin-only) |
+| `POST /click-event` | telemetry — accepts events from any authenticated user (**not** admin-only). Served by `ClickEventsController`, not this one, on the same route. |
 
 ### App-DB tables
 
@@ -314,7 +318,7 @@ POST /api/diagnostics/usage-rollups/backfill?days=90
 ## Access
 
 - **Frontend**: the routes use `permissionGuard` with `usage-reports:read`. It waits for `/api/me/permissions` to load, and a user without the permission falls through to the home page. The header shows the menu item only to holders of `usage-reports:read`, and the exclusions gear appears when `can-manage` reports `usage-exclusions:manage`.
-- **Backend**: `usage-reports:read` on every read endpoint and `usage-exclusions:manage` on the exclusion endpoints, through `[RequirePermission]`.
+- **Backend**: `usage-reports:read` on the dashboard controller and `usage-exclusions:manage` also on the exclusion endpoints, through `[RequirePermission]`.
 - **`POST /click-event` needs no permission** — every authenticated user posts telemetry there.
 
 ## Feature flag

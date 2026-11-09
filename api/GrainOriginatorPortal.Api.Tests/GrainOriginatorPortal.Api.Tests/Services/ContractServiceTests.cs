@@ -6,10 +6,10 @@ using Microsoft.Extensions.Logging;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Api.Modules.Contracts.Services;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Interfaces;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 
@@ -129,19 +129,6 @@ public class ContractServiceTests
         Assert.Equal(1, Assert.Single(byCustomer).Id);
         Assert.Equal(2, Assert.Single(pacing).Id);
         Assert.Equal(3, Assert.Single(byCropYear).Id);
-    }
-
-    // Documents (does not endorse) that GetByFarmAsync is the one contract read outside the
-    // SafeContractsAsync wrapper: a SqlException propagates raw instead of becoming a 503 or [].
-    // If it is brought in line with its siblings, update this test in the same change.
-    [Fact]
-    public async Task GetByFarmAsync_IsNotWrapped_SoASqlExceptionPropagatesRaw()
-    {
-        _repositoryMock
-            .Setup(r => r.GetByFarmAsync("farm-1", It.IsAny<CancellationToken>()))
-            .ThrowsAsync(SqlExceptionDoubles.Transient());
-
-        await Assert.ThrowsAsync<SqlException>(() => _sut.GetByFarmAsync("farm-1", CancellationToken.None));
     }
 
     [Fact]

@@ -5,9 +5,9 @@ using Microsoft.AspNetCore.Mvc;
 using NSubstitute;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Controllers;
-using GrainOriginatorPortal.Api.Models.Responses;
-using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Platform.ReferenceData;
+using GrainOriginatorPortal.Api.Platform.ReferenceData.Controllers;
+using GrainOriginatorPortal.Api.Platform.ReferenceData.Models.Responses;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 

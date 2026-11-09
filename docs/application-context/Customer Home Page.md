@@ -109,7 +109,7 @@ flowchart LR
     UI[Home component]
     UI -- "selectedTradeUnits change" --> Get[apiService.getCustomers / getContracts / getTickets / getNotes / getStoredGrain / getPlantingIntentions / getSavedLists / getAllProducerDetails / getCommodities]
     Get --> CTL[Various controllers]
-    CTL --> SVC[SqlDataService]
+    CTL --> SVC[Module services<br/>Customers, Contracts, Engagement,<br/>Producers, Lists, Platform]
     SVC --> ODS[(ODS views<br/>vw_CurrentContracts, vw_CurrentTickets,<br/>vw_ContractPricing, vw_GNTA39D1)]
     SVC --> APP[(App DB tables<br/>Customer, CustomerTradeUnit, Notes, ProducerDetails,<br/>ProducerPlantingIntentions, SavedLists, Commodities)]
 
@@ -132,8 +132,8 @@ When the trade-unit selector changes, the home component fires a parallel batch 
 | Producer Insights panels | `client/src/app/features/customers/components/producer-insights/`, `contract-pacing-card/`, `growth-opportunity/` |
 | Production coverage math | `client/src/app/shared/utils/production-coverage.ts` (+ `.spec.ts`) |
 | Customer map (in profile) | `client/src/app/features/customers/components/map/customer-map.component.ts` |
-| Controllers | `CustomersController`, `ContractsController`, `TicketsController`, `NotesController`, `PlantingIntentionsController`, `StoredGrainController`, `ProducerDetailsController`, `SavedListsController`, `CommoditiesController` |
-| Service methods | See `IDataService` — Customer / Contract / Ticket / Note / PlantingIntention / StoredGrain / ProducerDetails groups |
+| Controllers | `CustomersController`, `ContractsController`, `TicketsController`, `NotesController`, `PlantingIntentionsController`, `StoredGrainController`, `ProducerDetailsController`, `LinkedProducersController` (`customers/linked-to`), `ContractPacingController` (`contracts/pacing`), `SavedListsController`, `CommoditiesController` |
+| Services | Each controller's module service: `CustomerService`, `ContractService`, `TicketService`, `NoteService`, `PlantingIntentionService`, `StoredGrainService`, `ProducerDetailsService`, `SavedListService`, `CommodityService` (module layout in [`Shared Infrastructure.md`](./Shared%20Infrastructure.md#services-and-repositories-by-module)) |
 | ODS views read | `base.vw_CurrentContracts`, `base.vw_CurrentTickets`, `base.vw_ContractPricing`, `ctrm.vw_GNTA39D1` |
 | App tables read/written | `dbo.Customer`, `dbo.CustomerTradeUnit`, `dbo.Notes`, `dbo.ProducerDetails`, `dbo.ProducerPlantingIntentions`, `dbo.SavedLists`, `dbo.Commodities` |
 
@@ -307,4 +307,4 @@ All mutations refresh the relevant `appState` signal on success so other screens
 
 - PR #239 (`fix_StorageLoadAndEntitlementsErrors`) — StoredGrain merge fix and removal of `ValidateCustomerAccessAsync` from mutation paths.
 - [`SECURITY-MODEL.md`](./SECURITY-MODEL.md) — why customer reads/writes don't enforce per-user customer scoping.
-- [`Shared Infrastructure.md`](./Shared%20Infrastructure.md) — `AppStateService`, `ApiService`, `IDataService`, route guards, MSAL config.
+- [`Shared Infrastructure.md`](./Shared%20Infrastructure.md) — `AppStateService`, `ApiService`, the backend module layout, route guards, MSAL config.

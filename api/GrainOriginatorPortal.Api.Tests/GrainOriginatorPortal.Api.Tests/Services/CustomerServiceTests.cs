@@ -5,11 +5,12 @@ using Microsoft.Extensions.Logging;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
+using GrainOriginatorPortal.Api.Modules.Customers.Services;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Api.Platform.Identity;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 
@@ -118,15 +119,12 @@ public class CustomerServiceTests
         var tradeUnits = new List<string> { "2090" };
         _repositoryMock.Setup(r => r.SearchAsync("smith", tradeUnits, It.IsAny<CancellationToken>())).ReturnsAsync([new Customer { Id = 1 }]);
         _repositoryMock.Setup(r => r.SearchOdsAsync("smith", It.IsAny<CancellationToken>())).ReturnsAsync([new Customer { Id = 2 }]);
-        _repositoryMock.Setup(r => r.GetLinkedToAsync("SC-9", It.IsAny<CancellationToken>())).ReturnsAsync([new Customer { Id = 3 }]);
 
         var search = await _sut.SearchAsync("smith", tradeUnits, CancellationToken.None);
         var ods = await _sut.SearchOdsAsync("smith", CancellationToken.None);
-        var linked = await _sut.GetLinkedToAsync("SC-9", CancellationToken.None);
 
         Assert.Equal(1, Assert.Single(search).Id);
         Assert.Equal(2, Assert.Single(ods).Id);
-        Assert.Equal(3, Assert.Single(linked).Id);
     }
 
     [Fact]

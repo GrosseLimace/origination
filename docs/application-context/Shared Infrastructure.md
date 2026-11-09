@@ -125,7 +125,7 @@ Posts click-event telemetry to `/api/usage-dashboard/click-event`. Methods like 
 
 ### `OriginationDbContext` (read-only ODS)
 
-`api/GrainOriginatorPortal.Api/Data/OriginationDbContext.cs`
+`api/GrainOriginatorPortal.Infrastructure/Data/OriginationDbContext.cs`
 
 | `DbSet` | Backing view | Schema |
 | --- | --- | --- |
@@ -139,13 +139,13 @@ Posts click-event telemetry to `/api/usage-dashboard/click-event`. Methods like 
 
 **Customer data is no longer in `OriginationDbContext`.** The previous `Customers` DbSet on `vw_CurrentCustomers` was removed when `dbo.CustomerSnapshot` was dropped (migration `20260513185441`). Customers and their TU mappings are now app-owned (`dbo.Customer` + `dbo.CustomerTradeUnit` on `ApplicationDbContext`), populated by `CustomerSyncBackgroundService` from ODS or from the CTRM GraphQL API, per `CustomerSync:Source` (see [CTRM GraphQL Data Source](./CTRM%20GraphQL%20Data%20Source.md)). The access check in `UserEntitlementService.ValidateCustomerAccessAsync` now reads `dbo.CustomerTradeUnit` (active rows, manual ones included), not the live ODS view.
 
-**Storage data** (`StoredGrain`) is **not** a DbSet — it's queried as raw SQL against `ctrm.vw_GNTA39D1` from `SqlDataService.GetStoredGrainAsync` (see Customer Home Page doc).
+**Storage data** (`StoredGrain`) is **not** a DbSet — it's queried as parameterized raw SQL against `ctrm.vw_GNTA39D1` by the Producers module's `StoredGrainRepository` (see Customer Home Page doc).
 
 CHAR-padded columns (`CustomerCode`, `ContractNumber`) are auto-trimmed via `.HasConversion(...)` in the model builder.
 
 ### `ApplicationDbContext` (read/write Origination DB)
 
-`api/GrainOriginatorPortal.Api/Data/ApplicationDbContext.cs`
+`api/GrainOriginatorPortal.Infrastructure/Data/ApplicationDbContext.cs`
 
 All app-owned tables, all in `dbo`:
 
@@ -171,31 +171,28 @@ All app-owned tables, all in `dbo`:
 | `UserActivity`, `UserClickEvent`, `UserSession`, `UserActivityDaily`, `FeatureUsageDaily`, `WeeklyLoginAggregate`, `UserTradeUnitSnapshot` | Usage analytics |
 | `QueryLibrary`, `QuerySearchLog` | Build a List prompt library and search-gap log |
 
-### `IDataService` / `SqlDataService`
+### Services and repositories, by module
 
-`api/GrainOriginatorPortal.Api/Interfaces/IDataService.cs` (interface)<br>
-`api/GrainOriginatorPortal.Api/Services/SqlDataService.cs` (implementation)
+The API is a modular monolith: each module (Customers, Contracts, Engagement, Producers, Lists, Bid Sheet,
+Usage Analytics) keeps its controllers, services, repositories, entities and EF configurations under
+`api/GrainOriginatorPortal.Api/Modules/<Module>` and `api/GrainOriginatorPortal.Infrastructure/Modules/<Module>`,
+and shared code sits under `Platform` in both projects. Controllers call their module's services; services
+call their module's repositories, or another module's public services (`ICustomerLookup`, `IContractLookup`)
+where the module map allows it. `ModuleBoundaryTests` enforces who may depend on whom, and Platform depends on
+no module. The full layout and rules are in the
+[modular architecture plan](../../agents-docs/plans/plan-modular-architecture.md) (§4).
 
-All controllers depend on `IDataService` (DI'd as `SqlDataService` today, with `ApimDataService` stub reserved for a future API Management migration). Methods are grouped by domain:
+Registration: `Program.cs` calls `AddPlatform()` (`Api/Platform/PlatformModule.cs`, which in turn calls
+`AddPlatformInfrastructure()` for the DbContexts and Platform's repositories), then each module's
+`Add<Module>Module()`, which registers its services and calls its own `Add<Module>Infrastructure()`.
 
-- **Customer / Trade Unit / Farm**: `GetCustomersAsync`, `SearchCustomersAsync`, `GetCustomerByIdAsync`, `GetCustomerByScoularIdAsync`, `GetCustomersLinkedToAsync`, `UpdateCustomerAsync`, `GetTradeUnitsAsync`, `GetTradeUnitGroupsAsync`, `GetFarmsAsync`.
-- **Contract**: `GetContractsAsync`, `GetContractsByCustomerAsync`, `GetHistoricalContractsForPacingAsync`, `GetContractsByCropYearAsync`, `GetPricingLinesAsync`, `GetPricingLinesByCustomerAsync`.
-- **Ticket**: `GetTicketsAsync`, `GetTodaysTicketsAsync`, `GetTicketsByCustomerAsync`, `GetTicketsByFarmAsync`. Tickets are "applied" (P-prefix contract) or "unapplied" (contract number starts with **U/L/C** — Unload / Loadout / Customer-storage). **Customer-storage gate:** a C-prefix ticket only counts as unapplied while the producer still holds that commodity in active storage (`GetActiveStorageCommoditiesAsync` over `ctrm.vw_GNTA39D1`, applied by `GateCustomerStorageTickets`) — priced-out storage drops off. The gate runs on every unapplied path that includes C-prefix, including `GetTodaysTicketsAsync` (Spot Loads) — which is why that call hits the storage view (see the perf note under DataPreloadService).
-- **Note**: `GetNotesAsync`, `GetNotesByCustomerAsync`, `GetNoteByIdAsync`, `AddNoteAsync`, `ToggleNotePinAsync`, `UpdateNoteAsync`, `DeleteNoteAsync`.
-- **Planting Intention**: `GetPlantingIntentionsAsync`, `GetPlantingIntentionsByCustomerAsync`, `AddPlantingIntentionAsync`, `UpdatePlantingIntentionAsync`, `DeletePlantingIntentionAsync`.
-- **Stored Grain**: `GetStoredGrainAsync`, `GetStoredGrainByCustomerAsync`.
-- **Producer Details**: `GetProducerDetailsAsync`, `GetAllProducerDetailsAsync`, `UpsertProducerDetailsAsync`, `DeleteProducerDetailsAsync`.
-- **Commodity**: `GetCommoditiesAsync` (full catalog), `GetPlantingCommoditiesAsync` (curated subset where `ShowInPlantingIntentions = 1`, for the planting crop dropdown), `GetCommodityConversionsAsync`, `GetHarvestWindowsAsync`.
-- **Saved List**: `GetSavedListsAsync`, `SaveListAsync`, `UpdateListAsync`, `DeleteListAsync`.
-- **Dashboard**: `GetDashboardSummaryAsync`, `GetDashboardPlantingEstimatesAsync`, `UpsertDashboardPlantingEstimatesAsync`, `GetDashboardMarketSharesAsync`, `UpsertDashboardMarketSharesAsync`, `GetDashboardActualHarvestAsync`, `UpsertDashboardActualHarvestAsync`, `DeleteDashboardActualHarvestAsync`.
-- **Bid Sheet**: `GetAllBidSheetLocationsAsync`, `CreateBidSheetLocationAsync`, `UpdateBidSheetLocationAsync`, `DeleteBidSheetLocationAsync`, `BulkUpsertBidSheetBidsAsync`, `GetBidSheetPreferenceAsync`, `SetBidSheetPreferenceAsync`, and the sheet family (`GetSheetsAsync`, `CreateSheetAsync`, `RenameSheetAsync`, `SetSheetLayoutAsync`, `SetSheetSharesAsync`, `AddSheetLocationAsync`, `DeleteSheetAsync`).
-- **Query Library**: `GetQueryLibraryAsync`, `LogQuerySearchAsync`.
+**Tickets: applied and unapplied.** Tickets are "applied" (P-prefix contract) or "unapplied" (contract number starts with **U/L/C** — Unload / Loadout / Customer-storage). **Customer-storage gate:** a C-prefix ticket only counts as unapplied while the producer still holds that commodity in active storage (over `ctrm.vw_GNTA39D1`) — priced-out storage drops off. The gate runs on every unapplied path that includes C-prefix, including today's tickets (Spot Loads) — which is why that call hits the storage view (see the perf note under DataPreloadService). It lives in the Contracts module's ticket repositories.
 
-**User identity inside the service:** `SqlDataService` extracts the caller's UPN from the `HttpContext.User` claims (priority: `preferred_username` > `upn` > `oid` > `Identity.Name` > `"system"`). Display names are resolved via `UserTradeUnitSnapshot` for user-facing text.
+**User identity:** `RequestContextService` (`Api/Platform/Identity`) gives services the caller's UPN from the `HttpContext.User` claims (priority: `preferred_username` > `upn` > `oid` > `Identity.Name` > `"System"`). Display names for user-facing text are resolved from `UserTradeUnitSnapshot` by `DisplayNameLookupRepository` and applied with `DisplayNames.Apply`.
 
 ### `UserEntitlementService`
 
-`api/GrainOriginatorPortal.Api/Services/UserEntitlementService.cs`
+`api/GrainOriginatorPortal.Api/Platform/Identity/UserEntitlementService.cs`
 
 | Method | Purpose |
 | --- | --- |
@@ -233,24 +230,26 @@ All controllers depend on `IDataService` (DI'd as `SqlDataService` today, with `
 
 ### Backend authentication
 
-`api/GrainOriginatorPortal.Api/Program.cs`
+`api/GrainOriginatorPortal.Api/Platform/Identity/IdentityServiceCollectionExtensions.cs` (`AddSignIn`, called by `AddPlatform`)
 
 - JWT bearer auth via `Microsoft.Identity.Web.AddMicrosoftIdentityWebApi()`.
 - **Permissions, not roles**: endpoints carry `[RequirePermission(AppPermissions.X)]` (`api/GrainOriginatorPortal.Api/Platform/Access/`). The caller's roles come from the token and their grants from `dbo.RolePermissions`; a missing permission is a 403 with code `AUTHZ_PERMISSION_DENIED`. Machine callers are roles too: the data pipeline's `Origination.Application` app role has a `Machine` role row granting `bid-feed:manage`.
-- **Trade-unit filter**: `[EnforceTradeUnitAccess]` (`api/GrainOriginatorPortal.Api/Filters/EnforceTradeUnitAccessAttribute.cs`) intersects the requested TUs with the user's entitled set. **Fails open on entitlement-DB outage for GET/HEAD**, again per the documented security model.
+- **Trade-unit filter**: `[EnforceTradeUnitAccess]` (`api/GrainOriginatorPortal.Api/Platform/Filters/EnforceTradeUnitAccessAttribute.cs`) intersects the requested TUs with the user's entitled set. **Fails open on entitlement-DB outage for GET/HEAD**, again per the documented security model.
 
 ## Database connections
 
-`api/GrainOriginatorPortal.Api/Program.cs`
+`api/GrainOriginatorPortal.Api/Program.cs` (Key Vault and SQL auth) and `api/GrainOriginatorPortal.Infrastructure/Platform/PlatformInfrastructure.cs` (the DbContexts)
 
 - **Key Vault URI** read from configuration; secrets pulled via `ManagedIdentityCredential` in App Service or `DefaultAzureCredential` (CLI / VS) locally.
 - **SQL auth** uses `SqlAuthenticationMethod.ActiveDirectoryDefault`; in dev a custom `AzureCliSqlAuthProvider` is registered to skip IMDS probing.
 - Connection strings come from app config (Key Vault references in deployed envs, `appsettings.Development.json` locally).
 
-Two contexts are registered:
+Four contexts are registered:
 
 - `OriginationDbContext` → ODS connection string (read-only views).
 - `ApplicationDbContext` → Origination app-DB connection string (read/write).
+- `DpOdsDbContext` → the DP-contract ODS reads; resolves to the ODS connection string in every environment (see [DP Contracts](DP%20Contracts.md)).
+- `TradeUnitPreferencesDbContext` → the entitlements database (read-only).
 
 ## Key conventions
 

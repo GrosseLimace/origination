@@ -3,8 +3,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Services.FdCic;
+using GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.FdCic;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Tests.Services.FdCic;
 

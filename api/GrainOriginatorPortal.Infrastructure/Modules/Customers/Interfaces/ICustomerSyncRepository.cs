@@ -1,0 +1,39 @@
+using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
+
+
+namespace GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
+
+/// <summary>
+/// Data access for the nightly customer sync. Loads the ODS source rows and the (tracked) app-DB
+/// state, stages inserts, reads the current-customer master for the manual-producer refresh, and
+/// commits — while the orchestration (diffing, graduation rules, soft-delete guards, bring-back)
+/// stays in CustomerSyncService. Load* and Add* and SaveChanges all run on one shared
+/// ApplicationDbContext so the service's mutations to the returned entities persist.
+/// </summary>
+public interface ICustomerSyncRepository
+{
+    /// <summary>ODS source rows from originations.vw_CustomerTradeUnits (read-only).</summary>
+    Task<List<CustomerTradeUnitView>> LoadOdsTradeUnitRowsAsync(CancellationToken cancellationToken);
+
+    /// <summary>All app-DB customers, tracked so the service's mutations persist on SaveChanges.</summary>
+    Task<List<Customer>> LoadAppCustomersAsync(CancellationToken cancellationToken);
+
+    /// <summary>All app-DB customer-trade-unit rows, tracked.</summary>
+    Task<List<CustomerTradeUnit>> LoadAppTradeUnitsAsync(CancellationToken cancellationToken);
+
+    /// <summary>Reads the base.vw_CurrentCustomers master rows for the given customer ids
+    /// (manual-producer refresh pass). Uses a long command timeout — the view is heavy.</summary>
+    Task<List<CurrentCustomerRow>> LoadCurrentCustomerMasterAsync(IReadOnlyCollection<long> customerIds, CancellationToken cancellationToken);
+
+    /// <summary>Reserves <paramref name="count"/> consecutive ids for customers minted from CTRM, from
+    /// <c>dbo.CustomerIdSequence</c> (band [5e15, 6e15), see <c>CustomerIdMinting</c>) via
+    /// <c>sys.sp_sequence_get_range</c> — one round trip however many are needed. A run that aborts after reserving
+    /// leaves a gap in the sequence; gaps are expected and harmless. <paramref name="count"/> &lt;= 0 returns an empty
+    /// list without touching the database.</summary>
+    Task<List<long>> ReserveCustomerIdsAsync(int count, CancellationToken cancellationToken);
+
+    void AddCustomer(Customer customer);
+    void AddTradeUnit(CustomerTradeUnit tradeUnit);
+
+    Task SaveChangesAsync(CancellationToken cancellationToken);
+}

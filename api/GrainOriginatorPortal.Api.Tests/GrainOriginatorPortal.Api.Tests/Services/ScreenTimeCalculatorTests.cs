@@ -1,5 +1,5 @@
 // Project namespaces
-using GrainOriginatorPortal.Infrastructure.Abstractions;
+using GrainOriginatorPortal.Infrastructure.Platform.Telemetry;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

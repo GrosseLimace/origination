@@ -5,7 +5,7 @@
 - **Route**: `/build-list`
 - **Component**: [`client/src/app/features/build-list/pages/build-list/build-list.component.ts`](../../client/src/app/features/build-list/pages/build-list/build-list.component.ts)
 - **Template**: [`build-list.component.html`](../../client/src/app/features/build-list/pages/build-list/build-list.component.html)
-- **Access**: any authenticated Scoular user (`authGuard`).
+- **Access**: any signed-in Scoular user reaches the page (`authGuard`). The API needs `query-library:read` for the library and `saved-lists:read:own` / `saved-lists:write:own` for your own lists, which every persona role holds.
 - **Primary user goal**: build a list of producers using **natural-language queries (NLQ)**, **library prompts**, and **refinement filters**, then save it for daily reuse.
 
 This is where originators construct ad-hoc producer cohorts ("producers I haven't contacted in 30 days who have unpriced corn contracts"), apply structured refinements, and save the resulting list for re-running.
@@ -63,9 +63,9 @@ The screen does **not** make per-customer API calls — it operates entirely on 
 | Refine-filters model | `client/src/app/models/refine-filters.model.ts` |
 | Saved-list model | `client/src/app/models/saved-list.model.ts` |
 | Highlight pipe | `client/src/app/shared/pipes/highlight.pipe.ts` |
-| Library controller | `api/GrainOriginatorPortal.Api/Controllers/QueryLibraryController.cs` |
-| Saved-list controller | `api/GrainOriginatorPortal.Api/Controllers/SavedListsController.cs` |
-| Service methods | `IDataService.GetQueryLibraryAsync`, `LogQuerySearchAsync`, `GetSavedListsAsync`, `SaveListAsync`, `UpdateListAsync`, `DeleteListAsync` |
+| Library controller | `api/GrainOriginatorPortal.Api/Modules/Lists/Controllers/QueryLibraryController.cs` |
+| Saved-list controller | `api/GrainOriginatorPortal.Api/Modules/Lists/Controllers/SavedListsController.cs` |
+| Services | `QueryLibraryService` and `SavedListService`, in `api/GrainOriginatorPortal.Api/Modules/Lists/Services/` |
 | App tables | `dbo.QueryLibrary`, `dbo.QuerySearchLog`, `dbo.SavedLists` |
 
 ### API service methods called
@@ -121,7 +121,7 @@ Defined in [`client/src/app/models/refine-filters.model.ts`](../../client/src/ap
 ## Library / Prompts
 
 - Stored in `dbo.QueryLibrary` (columns: `Id`, `Category`, `Name`, `Description`, `QueryText`, `SortOrder`, `IsActive`, `CreatedAt`).
-- Endpoint: `GET /api/query-library` ([`QueryLibraryController.cs`](../../api/GrainOriginatorPortal.Api/Controllers/QueryLibraryController.cs)).
+- Endpoint: `GET /api/query-library` ([`QueryLibraryController.cs`](../../api/GrainOriginatorPortal.Api/Modules/Lists/Controllers/QueryLibraryController.cs)).
 - Component fetches once on init into `queryLibrary` signal; renders cards grouped by `Category`.
 - Click → `selectLibraryQuery(item)` → sets `queryText.set(item.queryText)` and runs `processQuery()`.
 - Search miss → `apiService.logQuerySearch({ searchText, matchedQueryId: null })` writes to `dbo.QuerySearchLog`. The Usage Dashboard reads this to surface "Query search gaps" — searches users tried that didn't match a library entry. Use this to decide which prompts to add.

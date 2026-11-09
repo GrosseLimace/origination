@@ -463,6 +463,22 @@ and when, and every change is audit-logged (`AUDIT_SAVE_LEDGER`, `AUDIT_OVERWRIT
 A document id from another producer is a 404, as for downloads. So "nothing is updated" above now means: no file and
 no metadata; only the status columns change.
 
+_Update (2026-11-07) — permissions on these routes._ Phase 2 of the modular architecture plan replaced `[Authorize]`
+on the field-plan controllers with permissions:
+- Every field-plan read needs `field-plans:read`.
+- Every write route above, including the document routes, also needs `field-plans:write`.
+- Planting intentions and producer details follow the same read/write split.
+
+The scope decision is unchanged: whoever holds the permissions may act on any producer's records. Today everyone
+holds them through the default `Originator` + `Editor` roles. Once roles come from the entitlements app, an
+originator without `Editor` can read the field plan and its documents but not change them, the same read-only rule
+as every other edit.
+
+_Update (2026-11-08) — Engagement module._ `NotesController` moved to `Api/Modules/Engagement/Controllers/`. Its three
+mutation routes listed above, and creating a note, now need `notes:write` on top of the controller's `notes:read`, where
+before they needed only a sign-in. `Editor` holds `notes:write`, so the scope decision is unchanged: whoever holds it may
+edit, pin or delete any note.
+
 ---
 
 ## AR-02 — Customer-scoped reads not restricted by trade-unit entitlement
@@ -511,7 +527,7 @@ that producer's profile and related data outside their entitled trade units:
 - `GET /api/customers/{id}/trade-units` (membership list for the edit dialog)
 - `GET /api/contracts/customer/{customerId}`
 - `GET /api/contracts/pacing/{customerId}` (Contract Pacing year-over-year; reads `base.Contract` for prior-year closed contracts) (added 2026-09-09 — see the update below)
-- `GET /api/contracts/farm/{farmId}` (farm-scoped contracts) (added 2026-09-09 — see the update below)
+- ~~`GET /api/contracts/farm/{farmId}` (farm-scoped contracts) (added 2026-09-09 — see the update below)~~ deleted 2026-11-08, see the update below
 - `GET /api/contracts/pricing-lines` (by `sourceContractId`) (added 2026-09-09 — see the update below)
 - `GET /api/contracts/pricing-lines/by-customer` (by `scoularId`) (added 2026-09-09 — see the update below)
 - `GET /api/tickets/customer/{customerId}`
@@ -875,6 +891,31 @@ producer's trade units or a named group). Record that answer here with a date. M
 - Files are served with the type decided at upload, so the browser only renders PDF or an image.
 - Every download is audit-logged (`AUDIT_DOWNLOAD`), and Doc Store keeps its own access log.
 
+_Update (2026-11-07) — linked-to moved._ `GET /api/customers/linked-to/{sourceId}` moved from `CustomersController` to the
+Producers module's `LinkedProducersController`, with the same route and the same unscoped behaviour. It now needs
+`producer-details:read`, where before it needed only a sign-in. Scanner hits against `LinkedProducersController.GetLinkedTo`
+are the `GetLinkedTo` this entry already covers.
+
+_Update (2026-11-07) — Customers module._ `CustomersController` moved to `Api/Modules/Customers/Controllers/`, and its
+reads (`GET /api/customers/{id}`, `by-source/{sourceId}` and `{id}/trade-units` among them) now need `customers:read`,
+where before they needed only a sign-in. Every persona role holds it, and the reads are still not scoped by trade unit,
+as this entry accepts.
+
+_Update (2026-11-08) — the farm routes are gone._ `GET /api/contracts/farm/{farmId}` and `GET /api/tickets/farm/{farmId}`
+were deleted with their whole chain through the services and repositories. Read to the last layer, both always
+returned an empty list: neither the ODS contracts nor the ODS tickets carry a farm id, and the CTRM repositories
+only passed the call to the ODS ones. The client never called them. Scanner hits on `GetByFarm` in older baselines
+refer to code that no longer exists.
+
+_Update (2026-11-08) — Contracts module._ `ContractsController` and `TicketsController` moved to
+`Api/Modules/Contracts/Controllers/`. The contract routes listed above (by customer, both pricing-line routes) now need
+`contracts:read`, and `GET /api/tickets/customer/{customerId}` needs `tickets:read`, where before they needed only a
+sign-in. Every persona role holds both, and the reads are still not scoped by trade unit, as this entry accepts.
+
+_Update (2026-11-08) — Engagement module._ `NotesController` moved to `Api/Modules/Engagement/Controllers/`. The notes
+routes listed above (by customer, the bulk list, last contact) now need `notes:read`, where before they needed only a
+sign-in. Every persona role holds it, and the reads are still not scoped by trade unit, as this entry accepts.
+
 ---
 
 ## AR-03 — Rep-driven trade-unit assignment
@@ -975,6 +1016,13 @@ to an admin/onboarding role and validate requested trade units against the calle
 
 **Accepted by:** Origination engineering — recorded 2026-06-23.
 
+_Update (2026-11-07) — a permission on both routes._ Both routes moved to the Customers module
+(`Api/Modules/Customers/Controllers/CustomersController.cs`) and now need `customers:write`, on top of the controller's
+`customers:read`. Before, any signed-in user could call them. This is the kind of role gate the "Re-evaluate if" above
+anticipates, but it narrows nothing yet: `customers:write` comes with `Editor`, and everyone holds `Originator` + `Editor`
+through the default roles today. The requested trade units are still not checked against the caller's own, so the
+residual risk above stands until `Editor` is granted more narrowly.
+
 ---
 
 ## AR-04 — ODS onboarding search exposes producer-master PII
@@ -1049,6 +1097,10 @@ regulated. At that point, trim `search-ods` to non-sensitive identification fiel
 city/state) and fetch full contact detail only for a producer the rep actually onboards.
 
 **Accepted by:** Origination engineering — recorded 2026-06-23.
+
+_Update (2026-11-07) — a permission on this route._ `GET /api/customers/search-ods` moved to the Customers module
+(`Api/Modules/Customers/Controllers/CustomersController.cs`) and now needs `customers:read`, where before it needed only a
+sign-in. Every persona role holds it, so it is still open to every originator, as this entry accepts.
 
 ---
 
@@ -1263,6 +1315,13 @@ curation itself worth protecting and should restore owner-only resharing.
 Dev-only and gated behind `environment.barchartBidsEnabled`; it must not reach PROD without sign-off.
 
 **Rewritten by:** Origination engineering — 2026-09-02. Supersedes the 2026-06-23 acceptance.
+
+_Update (2026-11-08) — Bid Sheet module._ `BidSheetController` and `BarchartController` moved to
+`Api/Modules/BidSheet/Controllers/`. Reading sheets, locations and bids now needs `bid-sheets:read` and every change
+`bid-sheets:write`, where before they needed only a sign-in; the BarChart picker needs `bid-feed:read`. Every persona
+role holds the reads and `Editor` holds the write, so the company-wide scope this entry accepts is unchanged. Deleting a
+location is still limited to its creator, or a holder of `bid-sheet-locations:delete:global` (Phase 1's replacement
+for the admin check above).
 
 ---
 
@@ -1660,6 +1719,12 @@ decision recorded at the top of this file: IT Security countersignature for AR-0
 closed as declined, and AR-07's remains open. AR-10 is an authorization-scope widening rather than a
 classification choice, so whether it (and AR-07) should go to asksecurity@scoular.com is the project
 owner's call; as of 2026-10-13 that has not been done and this entry should not be read as saying it has.
+
+_Update (2026-11-08) — Usage Analytics module._ `UsageDashboardController` moved to
+`Api/Modules/UsageAnalytics/Controllers/`. `usage-reports:read` now sits on the controller instead of on each read action,
+and exclusion administration still also needs `usage-exclusions:manage`, so who can see what is unchanged: whoever holds
+the read permission sees the whole organisation, as this entry accepts. The click-event endpoint every user posts to
+moved to its own `ClickEventsController`, on the same route, and still needs only a sign-in.
 
 ---
 

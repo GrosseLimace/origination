@@ -14,10 +14,11 @@ using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Controllers;
-using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Api.Platform.Identity.Controllers;
+using GrainOriginatorPortal.Api.Platform.Middleware;
 
 namespace GrainOriginatorPortal.Api.Tests.Platform.Access;
 
