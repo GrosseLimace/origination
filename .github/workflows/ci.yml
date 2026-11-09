@@ -52,6 +52,12 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: Frontend lint (module boundaries)
+        # eslint.config.js: core never imports a feature, shared imports only shared, and a feature reaches
+        # another only through its index.ts. A boundary error fails the build; warnings don't.
+        run: npm run lint
+        working-directory: client
+
       - name: Frontend unit + component tests (Vitest)
         run: npm run test:coverage
         working-directory: client
