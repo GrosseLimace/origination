@@ -7,6 +7,8 @@ import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { Customer, MentionCatalog, Note, NoteMention } from '@models';
 import { TeamsDirectoryService } from '@core/services/teams-directory.service';
+import { SelectedProducerEngagementFake, provideSelectedProducerEngagement, selectedProducerEngagementFake } from '@testing/selected-producer-engagement.fake';
+import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 
 // Covers the note search filter (content + author + created/modified date, ALL typed words required)
 // and the combined view segmentation (@mention = green text, search match = green highlight).
@@ -28,6 +30,9 @@ function makeNote(over: Partial<Note> = {}): Note {
   } as Note;
 }
 
+/** The page's notes for the producer, which the card reads; set by each test. */
+let engagement: SelectedProducerEngagementFake;
+
 describe('CustomerNotesComponent — note search filter + highlight', () => {
   let component: CustomerNotesComponent;
   let ref: ComponentRef<CustomerNotesComponent>;
@@ -47,6 +52,8 @@ describe('CustomerNotesComponent — note search filter + highlight', () => {
         // tests have no reason to stand up.
         { provide: TeamsDirectoryService, useValue: { getChannels: () => of([]) } },
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
+        provideSelectedProducerEngagement(engagement = selectedProducerEngagementFake()),
+        SelectedCustomerContext,
       ],
     });
     // happy-dom + JIT can't fetch templateUrl; blank the template — the filter/segment logic is class-level.
@@ -57,7 +64,7 @@ describe('CustomerNotesComponent — note search filter + highlight', () => {
     component = fixture.componentInstance;
     ref = fixture.componentRef;
     ref.setInput('customer', makeCustomer(100));
-    ref.setInput('notes', notes);
+    engagement.notes.set(notes);
     fixture.detectChanges(); // run effects → populate sortedNotesCache from the notes input
   });
 
@@ -78,7 +85,7 @@ describe('CustomerNotesComponent — note search filter + highlight', () => {
   });
 
   it('matches on author (created by) and modified by', () => {
-    ref.setInput('notes', [
+    engagement.notes.set([
       makeNote({ id: 10, customerId: 100, content: 'x', createdBy: 'Jane Rancher' }),
       makeNote({ id: 11, customerId: 100, content: 'y', createdBy: 'A', modifiedBy: 'Carla Editor' }),
     ]);
@@ -91,7 +98,7 @@ describe('CustomerNotesComponent — note search filter + highlight', () => {
 
   it('narrows a full date query to that day (AND across the date words)', () => {
     // Noon UTC avoids a date rollover regardless of the test machine's timezone.
-    ref.setInput('notes', [
+    engagement.notes.set([
       makeNote({ id: 30, customerId: 100, content: 'a', createdAt: new Date('2026-06-17T12:00:00Z') }),
       makeNote({ id: 31, customerId: 100, content: 'b', createdAt: new Date('2026-06-05T12:00:00Z') }),
       makeNote({ id: 32, customerId: 100, content: 'c', createdAt: new Date('2026-07-17T12:00:00Z') }),
@@ -158,12 +165,14 @@ describe('CustomerNotesComponent — degraded mention catalog', () => {
         { provide: ApiService, useValue: { getMentionCatalog: () => of({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [], teamsChannels: [], ...catalog }) } },
         { provide: TeamsDirectoryService, useValue: { getChannels: () => of([]) } },
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
+        provideSelectedProducerEngagement(engagement = selectedProducerEngagementFake()),
+        SelectedCustomerContext,
       ],
     });
     TestBed.overrideComponent(CustomerNotesComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
     const fixture = TestBed.createComponent(CustomerNotesComponent);
     fixture.componentRef.setInput('customer', makeCustomer(100));
-    fixture.componentRef.setInput('notes', []);
+    engagement.notes.set([]);
     fixture.detectChanges();
     return fixture.componentInstance;
   }
@@ -188,11 +197,13 @@ describe('CustomerNotesComponent — degraded notice in the rendered picker', ()
         { provide: ApiService, useValue: { getMentionCatalog: () => of({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [], teamsChannels: [], ...catalog }) } },
         { provide: TeamsDirectoryService, useValue: { getChannels: () => of([]) } },
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
+        provideSelectedProducerEngagement(engagement = selectedProducerEngagementFake()),
+        SelectedCustomerContext,
       ],
     });
     const fixture = TestBed.createComponent(CustomerNotesComponent);
     fixture.componentRef.setInput('customer', makeCustomer(100));
-    fixture.componentRef.setInput('notes', []);
+    engagement.notes.set([]);
     fixture.detectChanges();
     return fixture;
   }

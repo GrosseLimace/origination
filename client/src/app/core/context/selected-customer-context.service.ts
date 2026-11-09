@@ -20,6 +20,8 @@ export interface CustomerScreenLink {
 /** What the page hosting the customer screen tells the screen's pieces: the customer it shows, and its deep link. */
 export interface CustomerScreenSource {
   readonly customer: Signal<Customer | null>;
+  /** The producers linked to the customer, forward and reverse, that the page has loaded. */
+  readonly linkedCustomers: Signal<Customer[]>;
   readonly link: Signal<CustomerScreenLink>;
 }
 
@@ -37,6 +39,9 @@ export class SelectedCustomerContext {
 
   /** The selected customer, or null before one is picked: the page's own selection when it provides one. */
   readonly customer: Signal<Customer | null> = this.source?.customer ?? inject(AppStateService).selectedCustomer;
+
+  /** The producers linked to the selected customer, forward and reverse; empty when the page doesn't say. */
+  readonly linkedCustomers: Signal<Customer[]> = this.source?.linkedCustomers ?? signal<Customer[]>([]).asReadonly();
 
   /** Where a deep link asked the screen to open; empty when it didn't. */
   readonly link: Signal<CustomerScreenLink> = this.source?.link ?? signal<CustomerScreenLink>({}).asReadonly();

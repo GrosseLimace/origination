@@ -234,8 +234,6 @@ export class CustomerProfileComponent {
   public canEditTeamLists = input(false);
   /** Save staged saved-list membership changes for the current producer; the host persists them. */
   public onSaveSavedListMembership = output<{ listId: number; add: boolean }[]>();
-  public onAddNote = output<string>();
-  public onTogglePin = output<Note>();
   public onSaveCustomer = output<{ customerId: number; acres: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { siteKey: string; name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { binSiteKey?: string; commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[] }>();
   public linkedCustomers = input<Customer[]>([]);
   public onSelectLinkedCustomer = output<number>();

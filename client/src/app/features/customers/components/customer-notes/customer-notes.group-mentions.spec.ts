@@ -7,6 +7,8 @@ import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { Customer, MentionCatalog, Note } from '@models';
 import { TeamsDirectoryService, GraphTeamsChannel } from '@core/services/teams-directory.service';
+import { SelectedProducerEngagementFake, provideSelectedProducerEngagement, selectedProducerEngagementFake } from '@testing/selected-producer-engagement.fake';
+import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 
 /** What Graph reports the signed-in user's own teams contain. "Grain Desk" is already registered
  *  (it is in the catalog below); "Logistics" is not, so picking it has to register it first. */
@@ -41,6 +43,8 @@ describe('CustomerNotesComponent — group mentions', () => {
   let component: CustomerNotesComponent;
   let ref: ComponentRef<CustomerNotesComponent>;
   let fixture: ComponentFixture<CustomerNotesComponent>;
+  /** The page's notes for the producer, which the card reads. */
+  let engagement: SelectedProducerEngagementFake;
 
   beforeEach(() => {
     TestBed.configureTestingModule({
@@ -58,6 +62,8 @@ describe('CustomerNotesComponent — group mentions', () => {
           useValue: { getChannels: () => of(graphChannels) },
         },
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
+        provideSelectedProducerEngagement(engagement = selectedProducerEngagementFake()),
+        SelectedCustomerContext,
       ],
     });
     TestBed.overrideComponent(CustomerNotesComponent, {
@@ -67,7 +73,7 @@ describe('CustomerNotesComponent — group mentions', () => {
     component = fixture.componentInstance;
     ref = fixture.componentRef;
     ref.setInput('customer', { id: 100 } as unknown as Customer);
-    ref.setInput('notes', []);
+    engagement.notes.set([]);
     fixture.detectChanges();
   });
 
@@ -93,7 +99,7 @@ describe('CustomerNotesComponent — group mentions', () => {
   });
 
   it('singularizes the member count', () => {
-    ref.setInput('notes', []);
+    engagement.notes.set([]);
     component.mentionCatalog.set({ ...catalog, appGroups: [{ groupId: 8, name: 'Solo', memberCount: 1, isOwner: true }] });
     expect(optionsFor('solo')[0].secondary).toBe('Group · 1 member');
   });

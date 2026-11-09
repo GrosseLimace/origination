@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { ComponentRef } from '@angular/core';
-import { CustomerRemindersComponent, ReminderDraft } from './customer-reminders.component';
+import { CustomerRemindersComponent } from './customer-reminders.component';
+import type { ReminderDraft } from '@models';
 import { Customer, Reminder } from '@models';
+import { SelectedProducerEngagementFake, provideSelectedProducerEngagement, selectedProducerEngagementFake } from '@testing/selected-producer-engagement.fake';
 
 // Covers the two things this card actually decides: how a due date is turned into the label and
 // colour a user reads, and how the local date + time they pick becomes the UTC instant that drives
@@ -37,9 +39,11 @@ describe('CustomerRemindersComponent', () => {
   let component: CustomerRemindersComponent;
   let ref: ComponentRef<CustomerRemindersComponent>;
   let fixture: ComponentFixture<CustomerRemindersComponent>;
+  /** The page's follow-ups for the producer, which the card reads and acts through. */
+  let engagement: SelectedProducerEngagementFake;
 
   beforeEach(() => {
-    TestBed.configureTestingModule({});
+    TestBed.configureTestingModule({ providers: [provideSelectedProducerEngagement(engagement = selectedProducerEngagementFake())] });
     // happy-dom + JIT can't fetch templateUrl; blank the template — this logic is class-level.
     TestBed.overrideComponent(CustomerRemindersComponent, {
       set: { template: '', templateUrl: undefined, imports: [] },
@@ -111,7 +115,7 @@ describe('CustomerRemindersComponent', () => {
     });
 
     it('counts only open follow-ups for the header badge', () => {
-      ref.setInput('reminders', [
+      engagement.reminders.set([
         makeReminder({ id: 1 }),
         makeReminder({ id: 2 }),
         makeReminder({ id: 3, isCompleted: true }),
@@ -162,7 +166,7 @@ describe('CustomerRemindersComponent', () => {
     // removes it and takes the Outlook event with it. So it goes through a confirm, like a note.
     it('does not delete straight from the row', () => {
       let removed = 0;
-      component.remove.subscribe(() => removed++);
+      engagement.deleteReminder.mockImplementation(() => removed++);
 
       component.confirmDelete(makeReminder({ id: 5 }));
 
@@ -173,7 +177,7 @@ describe('CustomerRemindersComponent', () => {
 
     it('emits the removal only once confirmed', () => {
       const emitted: number[] = [];
-      component.remove.subscribe(r => emitted.push(r.id));
+      engagement.deleteReminder.mockImplementation(r => emitted.push(r.id));
 
       component.confirmDelete(makeReminder({ id: 5 }));
       component.executeDelete();
@@ -185,7 +189,7 @@ describe('CustomerRemindersComponent', () => {
 
     it('keeps the follow-up when the user backs out', () => {
       let removed = 0;
-      component.remove.subscribe(() => removed++);
+      engagement.deleteReminder.mockImplementation(() => removed++);
 
       component.confirmDelete(makeReminder({ id: 5 }));
       component.cancelDelete();
@@ -297,7 +301,7 @@ describe('CustomerRemindersComponent', () => {
 
     it('does not open while a save is in flight', () => {
       component.openAdd();
-      ref.setInput('isSaving', true);
+      engagement.isSavingReminder.set(true);
       fixture.detectChanges();
 
       component.toggleTimePicker();
@@ -351,7 +355,7 @@ describe('CustomerRemindersComponent', () => {
 
     it('emits the local date and time as a UTC instant', () => {
       let draft: ReminderDraft | undefined;
-      component.save.subscribe(d => (draft = d));
+      engagement.saveReminder.mockImplementation(d => (draft = d));
 
       component.openAdd();
       component.formDate.set('2026-11-20');
@@ -370,7 +374,7 @@ describe('CustomerRemindersComponent', () => {
 
     it('carries the id when editing', () => {
       let draft: ReminderDraft | undefined;
-      component.save.subscribe(d => (draft = d));
+      engagement.saveReminder.mockImplementation(d => (draft = d));
 
       component.openEdit(makeReminder({ id: 7, dueAt: dueInDays(2) }));
       component.submit();
@@ -380,10 +384,10 @@ describe('CustomerRemindersComponent', () => {
 
     it('does not emit while a save is already in flight', () => {
       let emissions = 0;
-      component.save.subscribe(() => emissions++);
+      engagement.saveReminder.mockImplementation(() => emissions++);
 
       component.openAdd();
-      ref.setInput('isSaving', true);
+      engagement.isSavingReminder.set(true);
       fixture.detectChanges();
       component.submit();
 
@@ -404,7 +408,7 @@ describe('CustomerRemindersComponent', () => {
     it('stays open after a successful save, so the new follow-up is visible', () => {
       component.openAdd();
 
-      ref.setInput('saveSucceededCounter', 1);
+      engagement.reminderSaveSucceededCounter.set(1);
       fixture.detectChanges();
 
       expect(component.formOpen()).toBe(false);
@@ -418,7 +422,7 @@ describe('CustomerRemindersComponent', () => {
       // Still open while the request is in flight.
       expect(component.formOpen()).toBe(true);
 
-      ref.setInput('saveSucceededCounter', 1);
+      engagement.reminderSaveSucceededCounter.set(1);
       fixture.detectChanges();
 
       expect(component.formOpen()).toBe(false);

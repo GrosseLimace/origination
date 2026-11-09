@@ -66,8 +66,6 @@
             (onEditPlanting)="editPlantingIntention($event)"
             (onDeletePlanting)="deletePlantingIntention($event)"
             [linkedCustomers]="getLinkedGroup(customer)"
-            (onAddNote)="addNote({ content: $event, mentions: [] })"
-            (onTogglePin)="toggleNotePin($event)"
             (onSaveCustomer)="handleSaveCustomer($event)"
             [isSavingTradeUnits]="isSavingTradeUnits()"
             (onSelectLinkedCustomer)="handleSelectLinkedCustomer($event)"
@@ -105,17 +103,8 @@
                Notes: it is the short, actionable list, while Notes is the long history. -->
           @if (remindersEnabled) {
             <app-card>
-              <app-customer-reminders
-                [reminders]="customerReminders()"
-                [customer]="customer"
-                [isLoading]="isLoadingReminders()"
-                [isSaving]="isSavingReminder()"
-                [saveSucceededCounter]="reminderSaveSucceededCounter()"
-                (save)="saveReminder($event)"
-                (toggleComplete)="toggleReminderComplete($event)"
-                (remove)="deleteReminder($event)"
-                (addToOutlook)="addReminderToOutlook($event)">
-              </app-customer-reminders>
+              <!-- Reads the follow-ups and their actions from the page's SelectedProducerEngagement. -->
+              <app-customer-reminders [customer]="customer"></app-customer-reminders>
             </app-card>
           }
 
@@ -135,20 +124,9 @@
               </div>
             </app-card-header>
             <app-card-content>
-              <app-customer-notes
-                [notes]="customerNotes()"
-                [customer]="customer"
-                [customerCodeMap]="customerCodeMap()"
-                [linkedCustomers]="getLinkedGroup(customer)"
-                [isLoadingNotes]="isLoadingNotes()"
-                [isSavingNote]="isSavingNote()"
-                [noteSaveSucceededCounter]="noteSaveSucceededCounter()"
-                [addDisabledReason]="customer.isOnboardCandidate ? 'Assign a trade unit and save this producer (Edit → Trade Units) before adding notes.' : null"
-                (addNote)="addNote($event)"
-                (togglePin)="toggleNotePin($event)"
-                (editNote)="editNote($event)"
-                (deleteNote)="deleteNote($event)">
-              </app-customer-notes>
+              <!-- Reads the notes, their actions and the linked producers from the page (SelectedProducerEngagement,
+                   SelectedCustomerContext). -->
+              <app-customer-notes [customer]="customer"></app-customer-notes>
             </app-card-content>
           </app-card>
         </div>

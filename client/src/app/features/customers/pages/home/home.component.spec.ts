@@ -24,6 +24,7 @@ import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { CustomerStore } from '../../data-access/customer.store';
 import { CustomersApiService } from '../../data-access/customers-api.service';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
+import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
 
 /**
  * Safety net for the producer page ahead of the OnPush conversion and decomposition. HomeComponent
@@ -361,6 +362,11 @@ function setup(opts: SetupOptions = {}): Harness {
 /** The page's SelectedProducerActivity: what the contracts and tickets tables read, and their Retry. */
 function activityOf(h: Harness): SelectedProducerActivity {
   return h.fixture.debugElement.injector.get(SelectedProducerActivity);
+}
+
+/** The page's SelectedProducerEngagement: what the Notes and My follow-ups cards read and act through. */
+function engagementOf(h: Harness): SelectedProducerEngagement {
+  return h.fixture.debugElement.injector.get(SelectedProducerEngagement);
 }
 
 function callsFor(fn: ReturnType<typeof vi.fn>, id: number): number {
@@ -1017,7 +1023,7 @@ describe('HomeComponent', () => {
       const h = setup();
       h.c.handleSelectCustomer(A);
 
-      h.c.saveReminder({ dueAt: '2026-10-20T15:00:00Z', subject: 'Call back', notes: '' });
+      engagementOf(h).saveReminder({ dueAt: '2026-10-20T15:00:00Z', subject: 'Call back', notes: '' });
 
       expect(h.api.createReminder).toHaveBeenCalledWith(1, '2026-10-20T15:00:00Z', 'Call back', '');
       expect(h.c.customerReminders().map(r => r.id)).toEqual([900]);
@@ -1037,7 +1043,7 @@ describe('HomeComponent', () => {
       h.app.myReminders.set([{ id: 5, customerId: 1, dueAt: open.dueAt }]);
       h.flush();
 
-      h.c.toggleReminderComplete(open);
+      engagementOf(h).toggleReminderComplete(open);
 
       expect(h.api.setReminderCompleted).toHaveBeenCalledWith(5, true);
       expect(h.c.customerReminders()[0].isCompleted).toBe(true);
@@ -1345,12 +1351,29 @@ describe('HomeComponent', () => {
     const older = note(1, 1, new Date('2026-09-01T00:00:00Z'));
     const newer = note(2, 1, new Date('2026-10-01T12:00:00Z'));
 
+    it("gives the screen's pieces the producer's notes and the user's follow-ups through SelectedProducerEngagement", () => {
+      const h = setup({
+        arrange: api => {
+          api.getNotesByCustomer.mockReturnValue(of([older]));
+          api.getRemindersByCustomer.mockReturnValue(of([reminder(9, 1)]));
+        },
+      });
+      h.c.handleSelectCustomer(A);
+
+      const engagement = engagementOf(h);
+      expect(engagement.notes().map(n => n.id)).toEqual([1]);
+      expect(engagement.notes()).toBe(h.c.customerNotes());
+      expect(engagement.reminders().map(r => r.id)).toEqual([9]);
+      expect(engagement.isLoadingNotes()).toBe(false);
+      expect(engagement.remindersEnabled).toBe(h.c.remindersEnabled);
+    });
+
     it('adding a note puts it in the panel and the badge feed, and clears the form', () => {
       const h = setup({ arrange: api => api.getNotesByCustomer.mockReturnValue(of([older])) });
       const api = withNoteApi(h);
       h.c.handleSelectCustomer(A);
 
-      h.c.addNote({ content: 'called', mentions: [] });
+      engagementOf(h).addNote({ content: 'called', mentions: [] });
 
       expect(api.createNote).toHaveBeenCalledWith(1, 'called', 'TU1', []);
       expect(h.c.customerNotes().map(n => n.id)).toEqual([500, 1]);
@@ -1368,7 +1391,7 @@ describe('HomeComponent', () => {
       api.createNote.mockReturnValue(throwError(() => new Error('That group is no longer available.')));
       h.c.handleSelectCustomer(A);
 
-      h.c.addNote({ content: 'x', mentions: [] });
+      engagementOf(h).addNote({ content: 'x', mentions: [] });
 
       expect(h.toast.error).toHaveBeenCalledWith('That group is no longer available.');
       expect(h.c.noteSaveSucceededCounter()).toBe(0);
@@ -1382,8 +1405,8 @@ describe('HomeComponent', () => {
       api.createNote.mockReturnValue(pending);
       h.c.handleSelectCustomer(A);
 
-      h.c.addNote({ content: 'one', mentions: [] });
-      h.c.addNote({ content: 'two', mentions: [] });
+      engagementOf(h).addNote({ content: 'one', mentions: [] });
+      engagementOf(h).addNote({ content: 'two', mentions: [] });
       expect(api.createNote).toHaveBeenCalledTimes(1);
       expect(h.c.isSavingNote()).toBe(true);
 
@@ -1391,7 +1414,7 @@ describe('HomeComponent', () => {
       api.createNote.mockClear();
       pending.error(new Error('first save failed')); // ends the first save, which clears the flag
       expect(h.c.isSavingNote()).toBe(false);
-      h.c.addNote({ content: 'three', mentions: [] });
+      engagementOf(h).addNote({ content: 'three', mentions: [] });
       expect(api.createNote).not.toHaveBeenCalled();
       expect(h.toast.error).toHaveBeenCalledWith('Assign a trade unit and save this producer before adding notes.');
     });
@@ -1402,11 +1425,11 @@ describe('HomeComponent', () => {
       h.c.handleSelectCustomer(A);
       expect(h.c.customerNotes().map(n => n.id)).toEqual([2, 1]);
 
-      h.c.toggleNotePin(older);
+      engagementOf(h).toggleNotePin(older);
       expect(h.c.customerNotes().map(n => n.id)).toEqual([1, 2]);
       expect(h.toast.success).toHaveBeenCalledWith('Note pinned');
 
-      h.c.editNote({ noteId: 2, content: 'edited', mentions: [] });
+      engagementOf(h).editNote({ noteId: 2, content: 'edited', mentions: [] });
       expect(h.c.customerNotes().find(n => n.id === 2)?.content).toBe('edited');
       expect(h.toast.success).toHaveBeenCalledWith('Note updated');
     });
@@ -1418,7 +1441,7 @@ describe('HomeComponent', () => {
       h.c.handleSelectCustomer(A);
       expect(h.c.noteLastContacts().map(r => r.customerId)).toEqual([1]);
 
-      h.c.deleteNote(1);
+      engagementOf(h).deleteNote(1);
 
       expect(h.c.customerNotes()).toEqual([]);
       expect(h.c.lastContactedDate()).toBe('Never');

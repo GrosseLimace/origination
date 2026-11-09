@@ -1,7 +1,6 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, signal } from '@angular/core';
 import { Subject } from 'rxjs';
 import type { Contract, Customer, DpContract, PlantingIntention, ProducerDetails, StoredGrain, Ticket } from '@models';
-import type { CustomerScreenSource } from '@core/context/selected-customer-context.service';
 
 /**
  * The producer page's shared state: the signals more than one part of the page reads or writes.
@@ -45,19 +44,3 @@ export class HomePageState {
   readonly cancelSelection$ = new Subject<void>();
 }
 
-/**
- * The page's selected producer and deep link, as the customer screen's pieces read them through
- * SelectedCustomerContext. Provided by HomeComponent as CUSTOMER_SCREEN_SOURCE.
- */
-export function homeScreenSource(): CustomerScreenSource {
-  const page = inject(HomePageState);
-  return {
-    customer: page.selectedCustomer,
-    link: computed(() => ({
-      tab: page.pendingTab(),
-      contractId: page.pendingContractId(),
-      ticketCrop: page.pendingTicketCrop(),
-      plantingYear: page.pendingPlantingYear(),
-    })),
-  };
-}

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ChangeDetectionStrategy, Component, Type, computed, inject, input, output, signal } from '@angular/core';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
+import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, Params, Router } from '@angular/router';
@@ -102,8 +103,6 @@ class StubProfile {
   readonly onAddPlanting = output<unknown>();
   readonly onEditPlanting = output<unknown>();
   readonly onDeletePlanting = output<number>();
-  readonly onAddNote = output<string>();
-  readonly onTogglePin = output<Note>();
   readonly onSaveCustomer = output<unknown>();
   readonly onSelectLinkedCustomer = output<number>();
   readonly onContractsWideChange = output<boolean>();
@@ -116,18 +115,14 @@ class StubProfile {
 })
 class StubNotes {
   readonly ids = ids;
-  readonly notes = input<Note[]>([]);
   readonly customer = input<unknown>();
-  readonly customerCodeMap = input<unknown>();
-  readonly linkedCustomers = input<Customer[]>([]);
-  readonly isLoadingNotes = input(false);
-  readonly isSavingNote = input(false);
-  readonly noteSaveSucceededCounter = input(0);
-  readonly addDisabledReason = input<string | null>(null);
-  readonly addNote = output<{ content: string; mentions: [] }>();
-  readonly togglePin = output<Note>();
-  readonly editNote = output<unknown>();
-  readonly deleteNote = output<number>();
+  // Read from the page, as the real card does: its notes and their state, and the linked producers.
+  readonly engagement = inject(SelectedProducerEngagement);
+  readonly notes = this.engagement.notes;
+  readonly isLoadingNotes = this.engagement.isLoadingNotes;
+  readonly isSavingNote = this.engagement.isSavingNote;
+  readonly noteSaveSucceededCounter = this.engagement.noteSaveSucceededCounter;
+  readonly linkedCustomers = inject(SelectedCustomerContext).linkedCustomers;
 }
 
 @Component({
@@ -136,15 +131,11 @@ class StubNotes {
 })
 class StubReminders {
   readonly ids = ids;
-  readonly reminders = input<Reminder[]>([]);
   readonly customer = input<unknown>();
-  readonly isLoading = input(false);
-  readonly isSaving = input(false);
-  readonly saveSucceededCounter = input(0);
-  readonly save = output<unknown>();
-  readonly toggleComplete = output<Reminder>();
-  readonly remove = output<Reminder>();
-  readonly addToOutlook = output<Reminder>();
+  // Read from the page, as the real card does.
+  private readonly engagement = inject(SelectedProducerEngagement);
+  readonly reminders = this.engagement.reminders;
+  readonly isLoading = this.engagement.isLoadingReminders;
 }
 
 @Component({
@@ -440,7 +431,8 @@ describe('HomeComponent (rendered)', () => {
     await settle();
 
     const notesCard = fixture.debugElement.query(By.directive(StubNotes)).componentInstance as StubNotes;
-    notesCard.addNote.emit({ content: 'hi', mentions: [] });
+    // The real card's Add Note calls the page's engagement directly.
+    notesCard.engagement.addNote({ content: 'hi', mentions: [] });
     await settle();
     expect(text('notes')).toContain('notes:500');
     expect(text('notes')).toContain('saved:1');

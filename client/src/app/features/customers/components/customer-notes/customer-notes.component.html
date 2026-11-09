@@ -145,7 +145,7 @@
               <div class="absolute top-3 right-3 flex items-center gap-2">
                 <!-- Pin/Unpin button -->
                 <button
-                  (click)="togglePin.emit(note)"
+                  (click)="togglePin(note)"
                   class="inline-flex items-center gap-1.5 text-xs cursor-pointer px-2 py-1 rounded-md transition-colors"
                   [ngClass]="note.isPinned ? 'text-scoular-yellow dark:text-amber-500 hover:bg-amber-100 dark:hover:bg-amber-900/30' : 'text-gray-400 hover:text-amber-500 hover:bg-gray-100 dark:hover:bg-gray-700'"
                 >

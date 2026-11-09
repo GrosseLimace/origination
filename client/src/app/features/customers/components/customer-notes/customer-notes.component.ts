@@ -1,4 +1,4 @@
-import { Component, input, output, effect, DestroyRef, inject, ChangeDetectionStrategy, signal, computed, viewChild, ElementRef } from '@angular/core';
+import { Component, input, effect, DestroyRef, inject, ChangeDetectionStrategy, signal, computed, viewChild, ElementRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -11,6 +11,8 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { TeamsDirectoryService, GraphTeamsChannel } from '@core/services/teams-directory.service';
 import { Customer, Note, NoteMention, MentionCatalog } from '@models';
 import { environment } from '@env/environment';
+import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
+import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { binSiteNames, splitByBinSiteNames, BIN_SITE_NAME_CLASS } from '@shared/utils/bin-site-mentions';
 
 /** A single selectable row in the "@" mention dropdown. */
@@ -33,31 +35,43 @@ interface MentionOption {
   templateUrl: './customer-notes.component.html'
 })
 export class CustomerNotesComponent {
-  public notes = input<Note[]>([]);
+  /** The producer's notes and what can be done to them; the page loads them. */
+  private readonly engagement = inject(SelectedProducerEngagement);
+  /** The producers linked to this one, from the page that hosts the customer screen. */
+  private readonly screen = inject(SelectedCustomerContext);
+
+  readonly notes = this.engagement.notes;
   public customer = input.required<Customer>();
-  public customerCodeMap = input<Map<number, string>>(new Map());
-  public linkedCustomers = input<Customer[]>([]);
-  /** True while the parent is fetching this producer's notes (notes load per-producer on
+  readonly linkedCustomers = this.screen.linkedCustomers;
+  /** Producer id → CTRM code, for this producer and its linked ones: labels each note with its producer. */
+  readonly customerCodeMap = computed(() => {
+    const codes = new Map<number, string>();
+    for (const c of [this.customer(), ...this.linkedCustomers()]) if (c?.scoularId) codes.set(c.id, c.scoularId);
+    return codes;
+  });
+  /** True while the page is fetching this producer's notes (notes load per-producer on
    *  selection now). While loading and empty, show a spinner instead of "No notes yet" so
    *  a producer WITH notes doesn't flash a misleading empty state. */
-  public isLoadingNotes = input<boolean>(false);
-  /** True while the parent has an in-flight createNote request. Used to disable the
+  readonly isLoadingNotes = this.engagement.isLoadingNotes;
+  /** True while a createNote request is in flight. Used to disable the
    *  Add Note button + switch its label to "Saving..." so the user sees feedback that
    *  their click landed. Fixes the "had to click 2-3 times" bug — without this signal,
    *  the textarea cleared instantly, the user thought nothing happened, and they
    *  retyped + reclicked (creating 2-3 duplicate notes on the customer). */
-  public isSavingNote = input<boolean>(false);
-  /** Counter the parent increments each time a save SUCCEEDS. The component watches
+  readonly isSavingNote = this.engagement.isSavingNote;
+  /** Counter that goes up each time a save SUCCEEDS. The component watches
    *  for increments and only then clears the textarea — so if the save fails, the
    *  user's typed content is preserved and they can retry without retyping. */
-  public noteSaveSucceededCounter = input<number>(0);
+  readonly noteSaveSucceededCounter = this.engagement.noteSaveSucceededCounter;
   /** When set, the add-note form is disabled and this message is shown instead of the
-   *  input — used for a not-yet-onboarded producer who must be assigned a trade unit first. */
-  public addDisabledReason = input<string | null>(null);
-  public addNote = output<{ content: string; mentions: NoteMention[] }>();
-  public togglePin = output<Note>();
-  public editNote = output<{ noteId: number; content: string; mentions: NoteMention[] }>();
-  public deleteNote = output<number>();
+   *  input: a not-yet-onboarded producer must be assigned a trade unit first. */
+  readonly addDisabledReason = computed(() => this.customer().isOnboardCandidate
+    ? 'Assign a trade unit and save this producer (Edit → Trade Units) before adding notes.'
+    : null);
+
+  togglePin(note: Note): void {
+    this.engagement.toggleNotePin(note);
+  }
 
   private readonly destroyRef = inject(DestroyRef);
   private readonly toastService = inject(ToastService);
@@ -500,7 +514,7 @@ export class CustomerNotesComponent {
     // user deleted from the text isn't sent. The text is the source of truth; mentions are
     // tracked silently (no visible chips) for the future send endpoint.
     const mentions = this.mentions().filter(m => text.includes('@' + m.name));
-    this.addNote.emit({ content: text, mentions });
+    this.engagement.addNote({ content: text, mentions });
     // Don't clear the textarea here — wait for the parent to report success
     // (noteSaveSucceededCounter increments). If the save fails, the user's text
     // stays intact so they can retry without retyping.
@@ -658,7 +672,7 @@ export class CustomerNotesComponent {
       // are deliberately NOT echoed back: the group row alone is sent and the server re-expands it,
       // so membership changes are picked up and there is one owner of that derivation.
       const mentions = (note.mentions ?? []).filter(m => !m.via && text.includes('@' + m.name));
-      this.editNote.emit({ noteId: note.id, content: text, mentions });
+      this.engagement.editNote({ noteId: note.id, content: text, mentions });
     }
     this.editingNoteId.set(null);
     this.editContent.set('');
@@ -714,7 +728,7 @@ export class CustomerNotesComponent {
 
   executeDelete() {
     if (this.noteToDelete()) {
-      this.deleteNote.emit(this.noteToDelete()!.id);
+      this.engagement.deleteNote(this.noteToDelete()!.id);
       this.noteToDelete.set(null);
       this.showDeleteConfirm.set(false);
       // Restore body scroll when dialog closes

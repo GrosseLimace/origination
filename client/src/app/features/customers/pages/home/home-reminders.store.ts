@@ -6,8 +6,7 @@ import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { OutlookCalendarService } from '@core/services/outlook-calendar.service';
 import { environment } from '@env/environment';
-import type { Reminder, ReminderDue } from '@models';
-import type { ReminderDraft } from '../../components/customer-reminders/customer-reminders.component';
+import type { Reminder, ReminderDraft, ReminderDue } from '@models';
 import { HomePageState } from './home-page.state';
 import { sortReminders } from './home-derivations';
 

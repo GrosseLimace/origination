@@ -33,3 +33,12 @@ export interface ReminderDue {
   /** Due instant, UTC (ISO string over the wire). */
   dueAt: string;
 }
+
+/** A follow-up as the user saved it in the add/edit form. `id` is absent for a new one. */
+export interface ReminderDraft {
+  id?: number;
+  /** Due instant as a UTC ISO string, converted from the local date + time the user picked. */
+  dueAt: string;
+  subject: string;
+  notes?: string;
+}

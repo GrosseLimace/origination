@@ -1,19 +1,11 @@
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, effect, HostListener, inject, input, output, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, effect, HostListener, inject, input, signal, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { CardTitleComponent } from '@shared/components/card/card.component';
 import { Customer, Reminder } from '@models';
+import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
 import { daysUntilDue, REMINDER_DONE_CLASS, REMINDER_DUE_CLASS, reminderDueTier } from '@shared/utils/reminder-due';
-
-/** What the card emits when the user saves the add/edit form. `id` is absent for a new one. */
-export interface ReminderDraft {
-  id?: number;
-  /** Due instant as a UTC ISO string, converted from the local date + time the user picked. */
-  dueAt: string;
-  subject: string;
-  notes?: string;
-}
 
 /** Time of day used when the user picks a date but leaves the time alone. */
 const DEFAULT_TIME = '09:00';
@@ -68,22 +60,28 @@ function joinTime(hour12: number, minute: number, meridiem: Meridiem): string {
   templateUrl: './customer-reminders.component.html'
 })
 export class CustomerRemindersComponent {
-  public reminders = input<Reminder[]>([]);
-  public customer = input.required<Customer>();
-  /** True while the parent fetches this producer's reminders. Shows a spinner rather than the
-   *  empty state, so a producer WITH follow-ups never flashes "none scheduled". */
-  public isLoading = input<boolean>(false);
-  /** True while a create/update is in flight — disables the form and labels the button "Saving...". */
-  public isSaving = input<boolean>(false);
-  /** Incremented by the parent on each SUCCESSFUL save. Only then does the form close and reset,
-   *  so a failed save leaves the user's typing intact to retry. */
-  public saveSucceededCounter = input<number>(0);
+  /** The user's follow-ups for the producer and what can be done to them; the page loads them. */
+  private readonly engagement = inject(SelectedProducerEngagement);
 
-  public save = output<ReminderDraft>();
-  public toggleComplete = output<Reminder>();
-  public remove = output<Reminder>();
+  readonly reminders = this.engagement.reminders;
+  public customer = input.required<Customer>();
+  /** True while the page fetches this producer's reminders. Shows a spinner rather than the
+   *  empty state, so a producer WITH follow-ups never flashes "none scheduled". */
+  readonly isLoading = this.engagement.isLoadingReminders;
+  /** True while a create/update is in flight — disables the form and labels the button "Saving...". */
+  readonly isSaving = this.engagement.isSavingReminder;
+  /** Goes up on each SUCCESSFUL save. Only then does the form close and reset,
+   *  so a failed save leaves the user's typing intact to retry. */
+  readonly saveSucceededCounter = this.engagement.reminderSaveSucceededCounter;
+
+  toggleComplete(reminder: Reminder): void {
+    this.engagement.toggleReminderComplete(reminder);
+  }
+
   /** User asked to (re)create the Outlook event for a reminder that has no linked event. */
-  public addToOutlook = output<Reminder>();
+  addToOutlook(reminder: Reminder): void {
+    this.engagement.addReminderToOutlook(reminder);
+  }
 
   /** Collapsed by default — see the class comment. */
   collapsed = signal(true);
@@ -181,7 +179,7 @@ export class CustomerRemindersComponent {
     const reminder = this.reminderToDelete();
     if (!reminder) return;
 
-    this.remove.emit(reminder);
+    this.engagement.deleteReminder(reminder);
     this.cancelDelete();
   }
 
@@ -282,7 +280,7 @@ export class CustomerRemindersComponent {
     if (!this.canSave()) return;
 
     const id = this.editingId();
-    this.save.emit({
+    this.engagement.saveReminder({
       ...(id === null ? {} : { id }),
       dueAt: this.toUtcIso(this.formDate(), this.formTime()),
       subject: this.formSubject().trim(),

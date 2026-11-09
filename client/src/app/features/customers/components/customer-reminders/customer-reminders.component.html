@@ -213,7 +213,7 @@
             <input
               type="checkbox"
               [checked]="reminder.isCompleted"
-              (change)="toggleComplete.emit(reminder)"
+              (change)="toggleComplete(reminder)"
               [attr.aria-label]="reminder.isCompleted ? 'Reopen follow-up' : 'Mark follow-up complete'"
               class="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 dark:border-gray-600 text-scoular-green focus:ring-scoular-green"
             />
@@ -243,7 +243,7 @@
                 } @else if (!reminder.isCompleted) {
                   <button
                     type="button"
-                    (click)="addToOutlook.emit(reminder)"
+                    (click)="addToOutlook(reminder)"
                     class="text-scoular-green-accessible dark:text-scoular-green hover:underline cursor-pointer"
                   >Add to Outlook</button>
                 }

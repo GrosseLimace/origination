@@ -12,11 +12,11 @@ import { CustomersApiService } from '../../data-access/customers-api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, Note, Reminder, ProducerDetails, DashboardPlantingEstimate, Commodity, NoteMention } from '@models';
+import { Customer, ProducerDetails, DashboardPlantingEstimate, Commodity } from '@models';
 import { CustomerListComponent } from '../../components/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
 import { CustomerNotesComponent } from '../../components/customer-notes/customer-notes.component';
-import { CustomerRemindersComponent, ReminderDraft } from '../../components/customer-reminders/customer-reminders.component';
+import { CustomerRemindersComponent } from '../../components/customer-reminders/customer-reminders.component';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent } from '@shared/components/card/card.component';
 import { CalculatorLauncherComponent } from '@features/calculators';
 import { environment } from '@env/environment';
@@ -25,7 +25,9 @@ import {
   yieldEstimateYears
 } from './home-derivations';
 import { HomeBackgroundFailures } from './home-background-failures';
-import { HomePageState, homeScreenSource } from './home-page.state';
+import { HomePageState } from './home-page.state';
+import { homeScreenSource } from './home-screen-source';
+import { HomeEngagement } from './home-engagement';
 import { HomeRemindersStore } from './home-reminders.store';
 import { HomeNotesStore } from './home-notes.store';
 import { HomeSavedListsStore } from './home-saved-lists.store';
@@ -35,6 +37,7 @@ import { HomeProducerActivityStore } from './home-producer-activity.store';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { CUSTOMER_SCREEN_SOURCE, SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
+import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -57,6 +60,8 @@ import { SelectedProducerActivity } from '@core/context/selected-producer-activi
     HomePageState, HomeBackgroundFailures, HomeRemindersStore, HomeNotesStore, HomeSavedListsStore, HomeLinkedProducersStore,
     HomePlantingStore, HomeProducerActivityStore, SelectedCustomerContext,
     { provide: SelectedProducerActivity, useExisting: HomeProducerActivityStore },
+    HomeEngagement,
+    { provide: SelectedProducerEngagement, useExisting: HomeEngagement },
     { provide: CUSTOMER_SCREEN_SOURCE, useFactory: homeScreenSource },
   ],
   // The template reads only signals, computeds, getLinkedGroup() (which reads signals) and two
@@ -612,28 +617,6 @@ export class HomeComponent {
     });
   }
 
-  // ==========================================================================
-  // Personal follow-up reminders — delegated to HomeRemindersStore
-  // ==========================================================================
-
-  /** Create or edit, depending on whether the draft carries an id. */
-  saveReminder(draft: ReminderDraft): void {
-    this.reminders.saveReminder(draft);
-  }
-
-  toggleReminderComplete(reminder: Reminder): void {
-    this.reminders.toggleReminderComplete(reminder);
-  }
-
-  deleteReminder(reminder: Reminder): void {
-    this.reminders.deleteReminder(reminder);
-  }
-
-  /** Retry path for a reminder saved while Outlook was unavailable or consent was declined. */
-  addReminderToOutlook(reminder: Reminder): void {
-    this.reminders.addReminderToOutlook(reminder);
-  }
-
   handleSelectCustomer(customer: Customer, fromDeepLink = false): void {
     // Cancel everything still in flight from the prior customer selection so the
     // browser's connection pool isn't blocked by stale linked-producer / notes /
@@ -1099,25 +1082,5 @@ export class HomeComponent {
 
   deletePlantingIntention(intentionId: number): void {
     this.planting.deletePlantingIntention(intentionId);
-  }
-
-  // ==========================================================================
-  // Notes — delegated to HomeNotesStore
-  // ==========================================================================
-
-  addNote(payload: { content: string; mentions: NoteMention[] }): void {
-    this.notes.addNote(payload);
-  }
-
-  toggleNotePin(note: Note): void {
-    this.notes.toggleNotePin(note);
-  }
-
-  editNote(data: { noteId: number; content: string; mentions: NoteMention[] }): void {
-    this.notes.editNote(data);
-  }
-
-  deleteNote(noteId: number): void {
-    this.notes.deleteNote(noteId);
   }
 }
