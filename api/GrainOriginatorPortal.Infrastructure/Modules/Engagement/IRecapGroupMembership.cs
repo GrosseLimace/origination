@@ -1,12 +1,12 @@
-namespace GrainOriginatorPortal.Infrastructure.Platform.Extensions;
+namespace GrainOriginatorPortal.Infrastructure.Modules.Engagement;
 
 /// <summary>
 /// Which Daily Recap groups a caller is in. Bid Sheet needs it, because a sheet can be shared with a recap
-/// group, but recap groups belong to the Engagement module, which implements it. Declared here, outside both
-/// modules, so that neither depends on the other.
+/// group. It sits at the Engagement module's root, outside Repositories and Interfaces, because Bid Sheet builds
+/// on Engagement and may use what is there.
 /// </summary>
 /// <remarks>
-/// There is no fallback. If no module provides this, resolving the bid-sheet service fails loudly rather than
+/// There is no fallback. If Engagement isn't registered, resolving the bid-sheet service fails loudly rather than
 /// quietly hiding every sheet shared with a group.
 /// </remarks>
 public interface IRecapGroupMembership

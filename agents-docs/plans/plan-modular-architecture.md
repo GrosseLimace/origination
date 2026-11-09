@@ -117,7 +117,7 @@ What that buys:
 | **Engagement** | everyone *(confirm, Q6)* | Notes, reminders with the Outlook mirror, Teams mentions, daily digest | Customers, Platform |
 | **Producers** | Originator | Planting intentions, producer details, contacts and grain on farm, stored grain, DP contracts, pacing, producer insights, growth opportunity, linked producers (`dbo.CustomerLink`) and the commodities a producer grows (`dbo.CustomerCommodity`), Planting Dashboard, the field plan (fields and CTRM splits, crop seasons, 45Z sustainability programs, the FD-CIC calculator) | Contracts, Customers, Platform |
 | **Lists & Insights** | Originator *(for now)* | Build-a-List with its customer map, NLQ engine, saved lists, query library, Actionable Insights | Producers, Contracts, Customers |
-| **Bid Sheet** | Originator | Bid sheet, the BarChart bid feed (picker reads and pipeline ingestion) | Platform |
+| **Bid Sheet** | Originator | Bid sheet, the BarChart bid feed (picker reads and pipeline ingestion) | Engagement (a sheet can be shared with a Daily Recap group; decided 2026-11-08), Platform |
 | **Usage Analytics** | Manager, Support | Usage dashboard and its excluded users. It reads what Platform's usage tracking records, and names the customers, contracts and query-library prompts people used. | Lists, Contracts, Customers, Platform |
 | **Calculators** | everyone | Frontend-only tools | Platform |
 
@@ -130,7 +130,7 @@ flowchart BT
     Producers --> Contracts
     Producers --> Customers
     Lists[Lists & Insights] --> Producers
-    BidSheet[Bid Sheet] --> Platform
+    BidSheet[Bid Sheet] --> Engagement
     Usage[Usage Analytics] --> Lists
     Usage --> Contracts
     Usage --> Customers
@@ -457,9 +457,8 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
   - Customers declares `ICustomerActivitySource`, and Contracts implements it from its contract and ticket repositories (`CustomerActivitySource`).
   - Extension interfaces sit in the declaring module's `Extensions` folder, not `Interfaces`. Rule 2 below bars other modules from `Interfaces`, which would stop them implementing it.
   - Customers has no fallback. A missing implementation fails when the customer repository is resolved, rather than treating every trade unit as dormant. `CustomersModuleTests` checks that the app registers one.
-- **When neither module may depend on the other, Platform declares the extension.** Built in step 9 (2026-11-08) for Bid Sheet → Engagement:
-  - A bid sheet can be shared with a Daily Recap group, so Bid Sheet must know which groups the caller is in. Recap groups are Engagement's, and Bid Sheet depends on no module.
-  - Platform declares `IRecapGroupMembership` in `Infrastructure/Platform/Extensions`, Engagement implements it (`RecapGroupMembership`, the same query Bid Sheet used to run itself), and `BidSheetService` asks it.
+- **When neither module may depend on the other, Platform declares the extension.** No module pair needs it today. The first one built, in step 9 (2026-11-08), was for Bid Sheet asking which Daily Recap groups the caller is in, when Bid Sheet depended on no module.
+  - **Changed in Phase 3 (2026-11-08):** Bid Sheet now builds on Engagement, on the backend and in the SPA, whose share dialog lists recap groups. `IRecapGroupMembership` moved from `Infrastructure/Platform/Extensions` to Engagement's root, beside `RecapGroupMembership`, outside `Repositories` and `Interfaces`, so Bid Sheet may use it. `BidSheetModuleTests` checks that Engagement registers it.
   - No fallback, as above. `PlatformExtensionsTests` checks that the app registers an implementation of every Platform extension.
 - **Platform itself uses the same shape when it needs a module's answer** (step 11a, 2026-11-08):
   - `ICustomerTradeUnits` (Customers implements): a customer's trade units for the per-customer access check, and every customer's for the trade-unit catalog's fallback. It replaced `TradeUnitService's` use of `ICustomerRepository` and the entitlements repository's read of `dbo.CustomerTradeUnit`.

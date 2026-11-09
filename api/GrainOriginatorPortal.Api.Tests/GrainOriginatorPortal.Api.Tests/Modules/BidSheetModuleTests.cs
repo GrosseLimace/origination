@@ -7,6 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Modules.BidSheet;
+using GrainOriginatorPortal.Api.Modules.Engagement;
+using GrainOriginatorPortal.Infrastructure.Modules.Engagement;
 
 namespace GrainOriginatorPortal.Api.Tests.Modules;
 
@@ -52,5 +54,15 @@ public class BidSheetModuleTests
 
         Assert.NotEmpty(controllers);
         Assert.True(missing.Count == 0, "Not registered by AddBidSheetModule: " + string.Join("; ", missing));
+    }
+
+    [Fact]
+    public void WhoIsInARecapGroup_IsAnsweredByEngagement()
+    {
+        // A sheet shared with a Daily Recap group asks Engagement, which Bid Sheet builds on, who is in it.
+        var services = new ServiceCollection();
+        services.AddEngagementModule();
+
+        Assert.Single(services, d => d.ServiceType == typeof(IRecapGroupMembership));
     }
 }
