@@ -1,3 +1,4 @@
+
 namespace GrainOriginatorPortal.Api.Platform.Access;
 
 /// <summary>Every role's grants and segments, cached per instance (plan §4.3).</summary>

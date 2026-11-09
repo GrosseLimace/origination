@@ -5,15 +5,15 @@ using Microsoft.Extensions.Caching.Memory;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Modules.Contracts.Services;
 using GrainOriginatorPortal.Api.Modules.Customers.Services;
 using GrainOriginatorPortal.Api.Modules.Lists.Services;
-using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Models;
 using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Services;
 using GrainOriginatorPortal.Infrastructure.Modules.UsageAnalytics.Interfaces;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Api.Platform.Identity;
+using GrainOriginatorPortal.Infrastructure.Platform.Telemetry;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

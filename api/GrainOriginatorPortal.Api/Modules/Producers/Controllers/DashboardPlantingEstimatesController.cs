@@ -1,6 +1,6 @@
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Filters;
+using GrainOriginatorPortal.Api.Platform.Filters;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
 using GrainOriginatorPortal.Api.Modules.Producers.Models.Requests;
 using GrainOriginatorPortal.Api.Modules.Producers.Models.Responses;
 using GrainOriginatorPortal.Api.Modules.Producers.Services;
@@ -180,7 +180,7 @@ public class DashboardPlantingEstimatesController : ControllerBase
 
         if (errors.Count > 0)
         {
-            throw new Exceptions.ValidationException(errors);
+            throw new Platform.Exceptions.ValidationException(errors);
         }
     }
 }

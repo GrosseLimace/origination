@@ -10,12 +10,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.FdCic;
 using GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.Models.Requests;
 using GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.Models.Responses;
@@ -27,6 +23,10 @@ using GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Repositories;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Entities;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Api.Platform.Identity;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Platform.ReferenceData.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Services.FieldPlan;
 

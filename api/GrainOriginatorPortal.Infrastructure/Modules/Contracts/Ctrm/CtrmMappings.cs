@@ -2,7 +2,7 @@ using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm.Dtos;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Entities;
-using GrainOriginatorPortal.Infrastructure.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
 
 namespace GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm;
 

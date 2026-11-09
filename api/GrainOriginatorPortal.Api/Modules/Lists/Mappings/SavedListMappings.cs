@@ -1,6 +1,6 @@
 using GrainOriginatorPortal.Api.Modules.Lists.Models.Responses;
 using GrainOriginatorPortal.Infrastructure.Modules.Lists.Entities;
-using GrainOriginatorPortal.Api.Services.Mappings;
+using GrainOriginatorPortal.Api.Platform.Identity;
 
 
 namespace GrainOriginatorPortal.Api.Modules.Lists.Mappings;

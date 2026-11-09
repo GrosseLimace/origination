@@ -1,4 +1,5 @@
-using GrainOriginatorPortal.Api.Exceptions;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+
 
 namespace GrainOriginatorPortal.Api.Platform.DocStore;
 

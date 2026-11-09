@@ -1,5 +1,5 @@
 using System.Text.Json;
-using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm.Dtos;
 
 namespace GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm.Dtos;
 

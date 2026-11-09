@@ -1,7 +1,7 @@
-using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Modules.UsageAnalytics.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.UsageAnalytics.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
 namespace GrainOriginatorPortal.Infrastructure.Modules.UsageAnalytics.Repositories;

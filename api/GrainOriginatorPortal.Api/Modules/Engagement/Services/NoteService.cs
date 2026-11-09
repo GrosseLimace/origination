@@ -1,15 +1,16 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Services.Mappings;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Api.Platform.ReferenceData.Mappings;
 using GrainOriginatorPortal.Api.Modules.Customers.Services;
 using GrainOriginatorPortal.Api.Modules.Engagement.Models;
 using GrainOriginatorPortal.Api.Modules.Engagement.Models.Responses;
 using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Interfaces;
-using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Modules.Engagement.Mappings;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Api.Platform.Identity;
+using GrainOriginatorPortal.Infrastructure.Platform.Identity.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Preferences.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Modules.Engagement.Services;
 

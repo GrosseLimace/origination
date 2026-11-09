@@ -7,9 +7,9 @@ using ArchUnitNET.Loader;
 using static ArchUnitNET.Fluent.ArchRuleDefinition;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Controllers;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
+using GrainOriginatorPortal.Api.Platform.Identity.Controllers;
 
 namespace GrainOriginatorPortal.Api.Tests.Architecture;
 

@@ -5,10 +5,10 @@ using Microsoft.Extensions.Logging;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Platform.Extensions;
+using GrainOriginatorPortal.Api.Platform.Preferences;
+using GrainOriginatorPortal.Infrastructure.Platform.Preferences.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

@@ -1,10 +1,10 @@
 using System.Text.RegularExpressions;
 using System.Diagnostics;
 using System.Text.Json;
-using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm.Dtos;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Sync;
-using GrainOriginatorPortal.Infrastructure.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm.Dtos;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 

@@ -2,7 +2,7 @@
 using Microsoft.Extensions.Options;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Middleware;
+using GrainOriginatorPortal.Api.Platform.Middleware;
 
 namespace GrainOriginatorPortal.Api.Platform.DocStore;
 

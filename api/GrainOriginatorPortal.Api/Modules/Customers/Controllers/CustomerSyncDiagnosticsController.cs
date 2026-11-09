@@ -4,13 +4,13 @@ using Microsoft.AspNetCore.Mvc;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Platform.Access;
-using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Sync;
 using GrainOriginatorPortal.Api.Modules.Customers.Services;
-using GrainOriginatorPortal.Api.Controllers;
+using GrainOriginatorPortal.Api.Platform.Diagnostics;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
 
 namespace GrainOriginatorPortal.Api.Modules.Customers.Controllers;
 

@@ -58,7 +58,7 @@ public class CustomerSyncService
     }
 
     // Reference assignments only, so a reader never sees a torn value: this class is a singleton
-    // (Program.cs) and a manual run can overlap the background loop, in which case the later finish wins.
+    // (CustomersModule) and a manual run can overlap the background loop, in which case the later finish wins.
     private volatile CustomerSyncLastRun? _lastRun;
     private volatile CustomerSyncLastRun? _lastSuccessfulRun;
 

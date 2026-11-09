@@ -55,7 +55,7 @@ locally resolves to `CustomerId` 0 and is filtered out — the safe direction to
 position rather than attributing it to the wrong producer.
 
 To retire the mechanism entirely: point `DpContractRepository` back at `OriginationDbContext`, remove
-the `AddDbContext<DpOdsDbContext>` registration in `Infrastructure/DependencyInjection.cs`, delete
+the `AddDbContext<DpOdsDbContext>` registration in `Infrastructure/Platform/PlatformInfrastructure.cs`, delete
 `DpOdsDbContext.cs`, and drop the `protected OriginationDbContext(DbContextOptions)` constructor added
 for it.
 

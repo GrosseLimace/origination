@@ -7,9 +7,9 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Api.Modules.Contracts.Filters;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
 
 namespace GrainOriginatorPortal.Api.Tests.Filters;
 

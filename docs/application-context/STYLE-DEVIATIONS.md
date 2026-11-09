@@ -78,9 +78,14 @@ The guide's real constraints still hold: two projects, `Api → Infrastructure`,
 entities in Infrastructure. Two kinds of test keep the module boundaries:
 - `ModuleBoundaryTests` (ArchUnitNET) checks which module may depend on which. A module uses only the modules it
   builds on, and never their repositories. It may join their entities, since every module shares one DbContext.
-- `ControllerAuthorizationTests` requires every controller in a module folder to name its permissions.
+  Platform uses no module at all.
+- `ControllerAuthorizationTests` requires every controller to sit in Platform or a module, and to name its
+  permissions.
 
-Modules move one at a time, so until Phase 2 ends some code is still in the old layer folders.
+Since 2026-11-08 nothing is left in the old layer folders. Platform is organised by area the same way
+(`Api/Platform/Identity`, `Preferences`, `ReferenceData`, `Telemetry`, `Ctrm` and so on), with one exception:
+the DbContexts and their migrations stay in `Infrastructure/Data`, because moving them would rewrite every
+generated migration for no change at run time.
 
 **Revisit if:** a module gets its own team or its own deployment. Then lift its folders into a project
 of its own (`GrainOriginatorPortal.Modules.Producers`), which the boundary tests make a mechanical move.

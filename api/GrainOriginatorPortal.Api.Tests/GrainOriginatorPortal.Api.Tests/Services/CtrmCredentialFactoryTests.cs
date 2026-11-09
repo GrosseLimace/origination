@@ -5,7 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Azure.Identity;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Services.Ctrm;
+using GrainOriginatorPortal.Api.Platform.Ctrm;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

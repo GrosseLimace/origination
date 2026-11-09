@@ -2,7 +2,7 @@ using System.Text.Json;
 using GrainOriginatorPortal.Api.Modules.Engagement.Models;
 using GrainOriginatorPortal.Api.Modules.Engagement.Models.Responses;
 using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Entities;
-using GrainOriginatorPortal.Api.Services.Mappings;
+using GrainOriginatorPortal.Api.Platform.Identity;
 
 namespace GrainOriginatorPortal.Api.Modules.Engagement.Mappings;
 

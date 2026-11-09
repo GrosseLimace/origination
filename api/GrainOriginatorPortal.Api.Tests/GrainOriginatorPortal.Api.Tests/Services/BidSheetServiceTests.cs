@@ -4,16 +4,16 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Platform.Access;
-using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
 using GrainOriginatorPortal.Infrastructure.Platform.Extensions;
 using GrainOriginatorPortal.Api.Modules.BidSheet.Models.Requests;
 using GrainOriginatorPortal.Api.Modules.BidSheet.Services;
 using GrainOriginatorPortal.Infrastructure.Modules.BidSheet.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.BidSheet.Interfaces;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Api.Platform.Identity;
+using GrainOriginatorPortal.Infrastructure.Platform.Preferences.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

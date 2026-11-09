@@ -6,9 +6,10 @@ using Microsoft.Extensions.Hosting;
 using NSubstitute;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Controllers;
-using GrainOriginatorPortal.Api.Models.Responses;
-using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Platform.Version;
+using GrainOriginatorPortal.Api.Platform.Version.Controllers;
+using GrainOriginatorPortal.Api.Platform.Version.Models.Responses;
+using GrainOriginatorPortal.Api.Platform.WhatsNew.Controllers;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 

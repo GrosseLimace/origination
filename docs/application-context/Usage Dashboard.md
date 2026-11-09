@@ -176,18 +176,18 @@ reconstruct), `query-library-usage`, `query-search-gaps`, and `users/{id}/detail
 | Frontend tracking service | `client/src/app/core/services/usage-tracking.service.ts` |
 | Admin guard | `client/src/app/guards/admin.guard.ts` |
 | Controller | `api/GrainOriginatorPortal.Api/Modules/UsageAnalytics/Controllers/UsageDashboardController.cs` |
-| Click-event endpoint | `api/GrainOriginatorPortal.Api/Controllers/ClickEventsController.cs` |
+| Click-event endpoint | `api/GrainOriginatorPortal.Api/Platform/Telemetry/Controllers/ClickEventsController.cs` |
 | Service | `api/GrainOriginatorPortal.Api/Modules/UsageAnalytics/Services/UsageDashboardService.cs` |
 | Repository (dashboard reads) | `api/GrainOriginatorPortal.Infrastructure/Modules/UsageAnalytics/Repositories/UsageRepository.cs` |
-| Repository (tracking writes, rollups, retention) | `api/GrainOriginatorPortal.Infrastructure/Repositories/UsageTelemetryRepository.cs` |
+| Repository (tracking writes, rollups, retention) | `api/GrainOriginatorPortal.Infrastructure/Platform/Telemetry/Repositories/UsageTelemetryRepository.cs` |
 | Names of customers, contracts and prompts | the Customers, Contracts and Lists modules: `ICustomerLookup`, `IContractLookup`, `IQueryLibraryService` |
-| Request → feature mapping | `api/GrainOriginatorPortal.Api/Services/FeatureNameMapper.cs` |
-| Request logging middleware | `api/GrainOriginatorPortal.Api/Middleware/UsageTrackingMiddleware.cs` |
-| Ingest worker | `api/GrainOriginatorPortal.Api/Services/UsageTrackingBackgroundService.cs` |
-| Rollup / retention worker | `api/GrainOriginatorPortal.Api/Services/UsageAggregationBackgroundService.cs` |
-| Screen-time inference | `api/GrainOriginatorPortal.Infrastructure/Abstractions/ScreenTimeCalculator.cs` |
-| PII redaction | `api/GrainOriginatorPortal.Api/Services/TelemetrySanitizer.cs` |
-| Entra app-access set | `api/GrainOriginatorPortal.Api/Services/AppAccessService.cs` |
+| Request → feature mapping | `api/GrainOriginatorPortal.Api/Platform/Telemetry/FeatureNameMapper.cs` |
+| Request logging middleware | `api/GrainOriginatorPortal.Api/Platform/Middleware/UsageTrackingMiddleware.cs` |
+| Ingest worker | `api/GrainOriginatorPortal.Api/Platform/Telemetry/UsageTrackingBackgroundService.cs` |
+| Rollup / retention worker | `api/GrainOriginatorPortal.Api/Platform/Telemetry/UsageAggregationBackgroundService.cs` |
+| Screen-time inference | `api/GrainOriginatorPortal.Infrastructure/Platform/Telemetry/ScreenTimeCalculator.cs` |
+| PII redaction | `api/GrainOriginatorPortal.Api/Platform/Telemetry/TelemetrySanitizer.cs` |
+| Entra app-access set | `api/GrainOriginatorPortal.Api/Platform/Identity/AppAccessService.cs` |
 
 ### Controller endpoints
 

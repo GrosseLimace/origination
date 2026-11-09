@@ -11,10 +11,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Services;
 using GrainOriginatorPortal.Infrastructure.Modules.UsageAnalytics.Interfaces;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Infrastructure.Platform.Telemetry;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

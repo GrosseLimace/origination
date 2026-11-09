@@ -1,5 +1,6 @@
-using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Infrastructure.Platform.Telemetry;
+using GrainOriginatorPortal.Infrastructure.Platform.Telemetry.Interfaces;
 
 namespace GrainOriginatorPortal.Infrastructure.Modules.UsageAnalytics.Interfaces;
 

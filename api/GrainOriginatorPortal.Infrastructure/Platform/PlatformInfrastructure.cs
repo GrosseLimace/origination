@@ -1,0 +1,147 @@
+using GrainOriginatorPortal.Infrastructure.Data;
+using GrainOriginatorPortal.Infrastructure.Platform.Access.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Access.Repositories;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Platform.Identity.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Identity.Repositories;
+using GrainOriginatorPortal.Infrastructure.Platform.Preferences.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Preferences.Repositories;
+using GrainOriginatorPortal.Infrastructure.Platform.ReferenceData.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.ReferenceData.Repositories;
+using GrainOriginatorPortal.Infrastructure.Platform.Telemetry.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Telemetry.Repositories;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace GrainOriginatorPortal.Infrastructure.Platform;
+
+/// <summary>
+/// Platform's side of the Infrastructure layer: the EF Core DbContexts every module reads through, the CTRM
+/// provenance record, and Platform's own repositories. <c>AddPlatform</c> in the Api calls this; each module's
+/// repositories are registered by its own <c>Add&lt;Module&gt;Infrastructure</c>.
+/// </summary>
+public static class PlatformInfrastructure
+{
+    /// <summary>
+    /// Registers the EF Core DbContexts (ODS read-only, application read/write, and entitlements read-only)
+    /// and Platform's repositories. <paramref name="isDevelopment"/> enables EF sensitive-data logging /
+    /// detailed errors in Debug builds only.
+    /// </summary>
+    public static IServiceCollection AddPlatformInfrastructure(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        bool isDevelopment = false)
+    {
+        // ODS — read-only views. 2-minute command timeout for large queries.
+        services.AddDbContext<OriginationDbContext>(options =>
+        {
+            var connectionString = configuration.GetConnectionString("ODSConnection");
+            options.UseSqlServer(connectionString, sqlOptions =>
+            {
+                sqlOptions.EnableRetryOnFailure(
+                    maxRetryCount: 5,
+                    maxRetryDelay: TimeSpan.FromSeconds(30),
+                    errorNumbersToAdd: null);
+                sqlOptions.CommandTimeout(120);
+            });
+#if DEBUG
+            if (isDevelopment)
+            {
+                options.EnableSensitiveDataLogging();
+                options.EnableDetailedErrors();
+            }
+#endif
+        });
+
+        // Application-owned tables in the Origination database.
+        services.AddDbContext<ApplicationDbContext>(options =>
+        {
+            var connectionString = configuration.GetConnectionString("OriginationConnection");
+            options.UseSqlServer(connectionString, sqlOptions =>
+            {
+                sqlOptions.EnableRetryOnFailure(
+                    maxRetryCount: 5,
+                    maxRetryDelay: TimeSpan.FromSeconds(30),
+                    errorNumbersToAdd: null);
+                sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "dbo");
+                // Match the ODS contexts: the app DB serves the same wide dashboard/usage reads,
+                // and the team already knows SQL's 30s default is sometimes too tight here.
+                sqlOptions.CommandTimeout(120);
+            });
+#if DEBUG
+            if (isDevelopment)
+            {
+                options.EnableSensitiveDataLogging();
+                options.EnableDetailedErrors();
+            }
+#endif
+        });
+
+        // DP-contract ODS reads. "ODSDpConnection" is not set in any environment, so this resolves to
+        // ODSConnection and every environment reads its own ODS — identical to OriginationDbContext.
+        // The key exists only as an opt-in local escape hatch for validating DP values against an ODS
+        // that has data (see DpOdsDbContext for the rationale, the read-only safety argument, and why
+        // it must never be set in a deployed environment).
+        services.AddDbContext<DpOdsDbContext>(options =>
+        {
+            var connectionString = configuration.GetConnectionString("ODSDpConnection")
+                ?? configuration.GetConnectionString("ODSConnection");
+            options.UseSqlServer(connectionString, sqlOptions =>
+            {
+                sqlOptions.EnableRetryOnFailure(
+                    maxRetryCount: 5,
+                    maxRetryDelay: TimeSpan.FromSeconds(30),
+                    errorNumbersToAdd: null);
+                sqlOptions.CommandTimeout(120);
+            });
+#if DEBUG
+            if (isDevelopment)
+            {
+                options.EnableSensitiveDataLogging();
+                options.EnableDetailedErrors();
+            }
+#endif
+        });
+
+        // TradeUnitPreferences — read-only access for user trade-unit assignments. Managers assign
+        // these in the separate trade-unit preferences app; this app never writes here.
+        services.AddDbContext<TradeUnitPreferencesDbContext>(options =>
+        {
+            var connectionString = configuration.GetConnectionString("TradeUnitPreferencesConnection");
+            options.UseSqlServer(connectionString, sqlOptions =>
+            {
+                sqlOptions.EnableRetryOnFailure(
+                    maxRetryCount: 5,
+                    maxRetryDelay: TimeSpan.FromSeconds(30),
+                    errorNumbersToAdd: null);
+                // Explicit rather than inheriting SQL's 30s default — entitlement lookups gate
+                // every scoped read, and a timeout here fails the request closed.
+                sqlOptions.CommandTimeout(120);
+            });
+#if DEBUG
+            if (isDevelopment)
+            {
+                options.EnableSensitiveDataLogging();
+                options.EnableDetailedErrors();
+            }
+#endif
+        });
+
+        // Scoped: one per HTTP request, so the provenance middleware reports what THIS request's
+        // repositories actually did rather than what was configured when it arrived.
+        services.AddScoped<CtrmProvenance>();
+
+        // ── Platform's repositories ──
+        services.AddScoped<IAccessGrantRepository, AccessGrantRepository>();
+        services.AddScoped<ICommodityRepository, CommodityRepository>();
+        services.AddScoped<IDisplayNameLookupRepository, DisplayNameLookupRepository>();
+        services.AddScoped<IUserPreferenceRepository, UserPreferenceRepository>();
+        services.AddScoped<IEntitlementsRepository, EntitlementsRepository>();
+        // The usage tracking and rollup jobs write through this; the Usage Analytics module reads these tables.
+        services.AddScoped<IUsageTelemetryRepository, UsageTelemetryRepository>();
+        services.AddScoped<IMbpLocationSynonymRepository, MbpLocationSynonymRepository>();
+
+        return services;
+    }
+}

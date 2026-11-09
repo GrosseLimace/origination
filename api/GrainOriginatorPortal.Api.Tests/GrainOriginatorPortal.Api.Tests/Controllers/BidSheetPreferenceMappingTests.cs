@@ -2,11 +2,11 @@
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Modules.BidSheet.Controllers;
 using GrainOriginatorPortal.Api.Modules.BidSheet.Models.Requests;
 using GrainOriginatorPortal.Api.Modules.BidSheet.Services;
 using GrainOriginatorPortal.Infrastructure.Modules.BidSheet.Abstractions;
+using GrainOriginatorPortal.Api.Platform.Identity;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 

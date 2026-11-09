@@ -10,7 +10,7 @@ using GrainOriginatorPortal.Api.Modules.Engagement;
 using GrainOriginatorPortal.Api.Modules.Lists;
 using GrainOriginatorPortal.Api.Modules.Producers;
 using GrainOriginatorPortal.Api.Modules.UsageAnalytics;
-using GrainOriginatorPortal.Infrastructure;
+using GrainOriginatorPortal.Infrastructure.Platform;
 using GrainOriginatorPortal.Infrastructure.Platform.Extensions;
 
 namespace GrainOriginatorPortal.Api.Tests.Modules;
@@ -27,10 +27,11 @@ public class PlatformExtensionsTests
     [Fact]
     public void EveryPlatformExtension_IsProvidedByAModule()
     {
-        // Registered the way Program.cs does it, so whichever module provides an extension is found.
+        // Platform's infrastructure, then every module, the way the app registers them, so whichever module provides an
+        // extension is found.
         var configuration = new ConfigurationBuilder().Build();
         var services = new ServiceCollection();
-        services.AddInfrastructure(configuration);
+        services.AddPlatformInfrastructure(configuration);
         services.AddCustomersModule();
         services.AddContractsModule();
         services.AddEngagementModule();

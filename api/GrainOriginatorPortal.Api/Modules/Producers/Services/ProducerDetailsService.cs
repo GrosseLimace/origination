@@ -1,11 +1,10 @@
-using GrainOriginatorPortal.Api.Services.Mappings;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
-using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Modules.Producers.Models.Requests;
 using GrainOriginatorPortal.Api.Modules.Producers.Models.Responses;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Api.Platform.Identity;
+using GrainOriginatorPortal.Infrastructure.Platform.Identity.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Interfaces;
-using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Modules.Producers.Mappings;
 using GrainOriginatorPortal.Api.Modules.Customers.Models.Responses;
 using GrainOriginatorPortal.Api.Modules.Customers.Services;
@@ -71,7 +70,7 @@ public class ProducerDetailsService : IProducerDetailsService
         // Fail closed: if entitlements are unavailable and uncached, refuse rather than returning
         // data we can't authorize (CWE-285). Mirrors EnforceTradeUnitAccessAttribute.
         if (!_entitlementService.EntitlementsAvailable)
-            throw new GrainOriginatorPortal.Api.Exceptions.InfrastructureException(
+            throw new GrainOriginatorPortal.Api.Platform.Exceptions.InfrastructureException(
                 "Authorization data is temporarily unavailable. Please retry shortly.",
                 "ENTITLEMENTS_DB_UNAVAILABLE", StatusCodes.Status503ServiceUnavailable);
         var allowedCustomerIds = await _customers.GetActiveCustomerIdsInTradeUnitsAsync(allowed, cancellationToken);

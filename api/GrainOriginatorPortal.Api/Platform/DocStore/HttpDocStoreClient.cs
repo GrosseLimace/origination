@@ -5,8 +5,8 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Azure.Core;
 using Azure.Identity;
-using GrainOriginatorPortal.Api.Exceptions;
 using Microsoft.Extensions.Options;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Platform.DocStore;
 

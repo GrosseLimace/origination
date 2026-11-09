@@ -5,11 +5,11 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 
 // Project namespaces
-using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Interfaces;
-using GrainOriginatorPortal.Api.Services.Diagnostics;
+using GrainOriginatorPortal.Api.Platform.Diagnostics;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
 
 namespace GrainOriginatorPortal.Api.Modules.Contracts.Services;
 

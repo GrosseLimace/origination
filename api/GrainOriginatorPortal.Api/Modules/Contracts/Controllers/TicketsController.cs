@@ -1,5 +1,5 @@
 // Project namespaces
-using GrainOriginatorPortal.Api.Filters;
+using GrainOriginatorPortal.Api.Platform.Filters;
 using GrainOriginatorPortal.Api.Modules.Contracts.Filters;
 using GrainOriginatorPortal.Api.Modules.Contracts.Models.Responses;
 using GrainOriginatorPortal.Api.Modules.Contracts.Services;

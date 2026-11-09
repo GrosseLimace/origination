@@ -6,18 +6,18 @@ using Microsoft.Extensions.DependencyInjection;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Infrastructure;
-using GrainOriginatorPortal.Infrastructure.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Platform;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Sync;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 
 /// <summary>
-/// The real registrations (<see cref="DependencyInjection.AddInfrastructure"/> for the DbContexts, then
+/// The real registrations (<see cref="PlatformInfrastructure.AddPlatformInfrastructure"/> for the DbContexts, then
 /// <see cref="CustomersInfrastructure.AddCustomersInfrastructure"/>) resolve both sync feeders through the factory,
 /// from a scope, with scope validation on. The service resolves the factory from each run's scope, so the feeders
 /// must be scoped (they hold the scoped sync repository) and must never be resolvable from the root.
@@ -30,7 +30,7 @@ public class CustomerSyncSourceFactoryTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IConfiguration>(configuration);
-        services.AddInfrastructure(configuration);
+        services.AddPlatformInfrastructure(configuration);
         services.AddCustomersInfrastructure();
         // The customer repository asks Contracts which trade units have open activity.
         services.AddContractsInfrastructure();

@@ -1,5 +1,5 @@
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm;
-using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm.Dtos;
 
 namespace GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm.Dtos;
 

@@ -3,8 +3,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Controllers;
-using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Platform.Help.Controllers;
+using GrainOriginatorPortal.Api.Platform.Help.Models.Responses;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 

@@ -3,9 +3,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Controllers;
-using GrainOriginatorPortal.Api.Middleware;
-using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Platform.Middleware;
+using GrainOriginatorPortal.Api.Platform.Telemetry;
+using GrainOriginatorPortal.Api.Platform.Telemetry.Controllers;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

@@ -3,13 +3,14 @@ using Moq;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Platform.Access;
-using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
 using GrainOriginatorPortal.Api.Modules.Lists.Services;
 using GrainOriginatorPortal.Infrastructure.Modules.Lists.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Lists.Interfaces;
+using GrainOriginatorPortal.Api.Platform.Identity;
+using GrainOriginatorPortal.Infrastructure.Platform.Identity.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Preferences.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

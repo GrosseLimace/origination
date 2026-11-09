@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Routing;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Controllers;
 using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Platform.Access.Controllers;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
@@ -21,6 +20,15 @@ using GrainOriginatorPortal.Api.Modules.Lists.Controllers;
 using GrainOriginatorPortal.Api.Modules.BidSheet.Controllers;
 using GrainOriginatorPortal.Infrastructure.Modules.BidSheet.Entities;
 using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Controllers;
+using GrainOriginatorPortal.Api.Platform.Diagnostics.Controllers;
+using GrainOriginatorPortal.Api.Platform.Geocode.Controllers;
+using GrainOriginatorPortal.Api.Platform.Help.Controllers;
+using GrainOriginatorPortal.Api.Platform.Identity.Controllers;
+using GrainOriginatorPortal.Api.Platform.Preferences.Controllers;
+using GrainOriginatorPortal.Api.Platform.ReferenceData.Controllers;
+using GrainOriginatorPortal.Api.Platform.Telemetry.Controllers;
+using GrainOriginatorPortal.Api.Platform.Version.Controllers;
+using GrainOriginatorPortal.Api.Platform.WhatsNew.Controllers;
 
 namespace GrainOriginatorPortal.Api.Tests;
 
@@ -211,14 +219,13 @@ public class ControllerAuthorizationTests
     // -------------------------------------------------------------------------------------------------
     // A permission on every endpoint, checked module by module.
     //
-    // These checks cover the controllers in Api.Platform and Api.Modules.<Module>. A controller still in
-    // the old Controllers folder is skipped until its module moves, so moving a module is what turns the
-    // checks on for it.
+    // These checks cover the controllers in Api.Platform and Api.Modules.<Module>, which is every
+    // controller: EveryController_SitsInPlatformOrAModule fails on one anywhere else.
     // -------------------------------------------------------------------------------------------------
 
     /// <summary>
     /// Controllers any signed-in user may call, so they need no permission: who you are and what you may
-    /// do, the version, help, What's New and the browser's telemetry settings.
+    /// do, the version, help, What's New, the browser's telemetry settings and its click events.
     /// </summary>
     private static readonly HashSet<Type> OpenToAnySignedInUser =
     [
@@ -228,6 +235,16 @@ public class ControllerAuthorizationTests
         typeof(HelpController),
         typeof(WhatsNewController),
         typeof(ClientTelemetryController),
+        typeof(ClickEventsController),
+    ];
+
+    /// <summary>
+    /// The only writes open to any signed-in user: every screen records the caller's own clicks for the
+    /// usage dashboard. It stores usage telemetry about the caller, never business data.
+    /// </summary>
+    private static readonly HashSet<(Type Controller, string Action)> OwnTelemetryPosts =
+    [
+        (typeof(ClickEventsController), nameof(ClickEventsController.TrackClickEvent)),
     ];
 
     /// <summary>POSTs that store no business data, so the controller's read permission is enough.</summary>
@@ -245,8 +262,7 @@ public class ControllerAuthorizationTests
     /// <summary>
     /// The module a controller's folder puts it in: <c>platform</c> under <c>Api.Platform</c>, or the
     /// folder under <c>Api.Modules</c> in kebab case (<c>Modules.BidSheet</c> is <c>bid-sheet</c>), the
-    /// same ids <see cref="AppPermissions.ModuleOf"/> uses. Null while the controller is still in the old
-    /// Controllers folder.
+    /// same ids <see cref="AppPermissions.ModuleOf"/> uses. Null anywhere else.
     /// </summary>
     private static string? ModuleOf(Type controller)
     {
@@ -297,13 +313,17 @@ public class ControllerAuthorizationTests
     private static bool IsWrite(string permission) => permission.Split(':')[1] is "write" or "manage" or "delete";
 
     [Fact]
-    public void TheModuleChecks_FindTheControllersAlreadyInPlatform()
+    public void EveryController_SitsInPlatformOrAModule()
     {
-        // If the namespace test above ever stops matching, every check below would pass on nothing.
-        var found = ModuleControllers().Select(c => c.Controller).ToList();
+        // The checks below only see controllers ModuleOf places, so one anywhere else would need only a sign-in.
+        var elsewhere = AllControllerTypes()
+            .Select(row => (Type)row[0])
+            .Where(type => ModuleOf(type) is null)
+            .Select(type => type.FullName)
+            .ToList();
 
-        Assert.Contains(typeof(AccessMapController), found);
-        Assert.Contains(typeof(MyPermissionsController), found);
+        Assert.True(elsewhere.Count == 0,
+            "Move these controllers into Api.Platform or Api.Modules: " + string.Join(", ", elsewhere));
     }
 
     [Fact]
@@ -372,7 +392,7 @@ public class ControllerAuthorizationTests
     {
         // They need no permission, so an action that changes data would be open to every signed-in user.
         var writes = ActionsOf(OpenToAnySignedInUser)
-            .Where(a => ChangesData(a.Action))
+            .Where(a => ChangesData(a.Action) && !OwnTelemetryPosts.Contains((a.Controller, a.Action.Name)))
             .Select(a => $"{a.Controller.Name}.{a.Action.Name}")
             .ToList();
 

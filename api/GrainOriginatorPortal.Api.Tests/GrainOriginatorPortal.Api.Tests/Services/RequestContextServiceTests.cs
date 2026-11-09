@@ -1,7 +1,8 @@
 using System.Security.Claims;
-using GrainOriginatorPortal.Api.Services;
 using Microsoft.AspNetCore.Http;
 using Xunit;
+using GrainOriginatorPortal.Api.Platform.Identity;
+using GrainOriginatorPortal.Api.Platform.Middleware;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

@@ -1,10 +1,10 @@
 using GrainOriginatorPortal.Api.Modules.Contracts.Services;
 using GrainOriginatorPortal.Api.Modules.Customers.Services;
 using GrainOriginatorPortal.Api.Modules.Lists.Services;
-using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Models;
 using GrainOriginatorPortal.Infrastructure.Modules.UsageAnalytics.Interfaces;
-using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Platform.Identity;
+using GrainOriginatorPortal.Infrastructure.Platform.Telemetry;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace GrainOriginatorPortal.Api.Modules.UsageAnalytics.Services;

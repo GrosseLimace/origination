@@ -90,8 +90,8 @@ roles lag behind would silently get producer access and edit rights.
 
 `[RequirePermission(AppPermissions.X)]` on a controller or action checks a permission. Each
 permission's policy also carries the default policy's requirements, so a permission check is never
-weaker than "signed in". **Today it guards what used to need `Admin`, and every endpoint of the modules
-Phase 2 has moved so far.** What used to need `Admin`:
+weaker than "signed in". **Today it guards every endpoint outside the exempt list below**, including
+everything that used to need `Admin`:
 
 | What | Permission |
 |---|---|
@@ -103,10 +103,13 @@ Phase 2 has moved so far.** What used to need `Admin`:
 | Customer sync diagnostics | `customer-sync:manage` |
 | BarChart ingest, by the pipeline or by a person re-running it | `bid-feed:manage` |
 
-The modules moved so far, each controller with its read on the class and a write on each write action:
+Every module and Platform, each controller with its read on the class and a write on each write action:
 
 | Module | What | Read / write |
 |---|---|---|
+| Platform | Your own trade-unit and group preferences, and your own trade units: viewing / saving your preferences. They needed only a sign-in before. | `preferences:read:own` / `preferences:write:own` |
+| Platform | Reference data: commodities (the list, planting crops, conversions and harvest windows), the trade-unit list, the entitlements catalog the recap-group picker reads, and geocoding, its two lookup POSTs included (they store nothing). They needed only a sign-in before. | `reference-data:read` |
+| Platform | Diagnostics (listed above) | `diagnostics:read` / `diagnostics:manage` |
 | Customers | Customers (the list, search, the onboarding search, by id and by code, a customer's trade units): viewing / assigning trade units, which also onboards a producer, and removing a dormant trade unit. Both needed only a sign-in before. | `customers:read` / `customers:write` |
 | Customers | Customer sync diagnostics (listed above) | `customer-sync:manage` |
 | Contracts | Contracts (the list, a customer's, by crop year) and pricing lines (by contract and by customer). They needed only a sign-in before. | `contracts:read` |
@@ -135,11 +138,9 @@ The modules moved so far, each controller with its read on the class and a write
 `Originator` + `Editor`, which everyone holds through the default roles, grants all of these, so no
 one has lost access. Only the SPA calls these endpoints, so no app-only caller needs a grant for them.
 
-**Every endpoint that hasn't moved into a module yet still needs only a signed-in user**, as before.
-Phase 2 moves one module at a time and puts a permission on every endpoint it moves.
-`ControllerAuthorizationTests` fails on a controller in `Api/Modules/` or `Api/Platform/` that lacks a
-read on the class or a write on any write action. Once every module has moved, that covers every
-endpoint outside this exempt list:
+Every controller sits in `Api/Modules/` or `Api/Platform/`. `ControllerAuthorizationTests` fails on one
+anywhere else, and on one that lacks a read on the class or a write on any write action. That covers
+every endpoint outside this exempt list:
 
 - **Any signed-in user, by design:** `/api/me`, `/api/me/permissions`, `/api/version`, `/api/help`,
   `/api/whats-new`, `/api/clienttelemetry` (the browser's App Insights settings), and
@@ -207,10 +208,10 @@ and the role behind it were retired when every dashboard user got the full manag
 
 ## Relevant code
 
-- [api/GrainOriginatorPortal.Api/Filters/EnforceTradeUnitAccessAttribute.cs](../../api/GrainOriginatorPortal.Api/Filters/EnforceTradeUnitAccessAttribute.cs) — the trade-unit filter (UX scoping; fail-CLOSED on an uncached outage).
-- [api/GrainOriginatorPortal.Api/Services/UserEntitlementService.cs](../../api/GrainOriginatorPortal.Api/Services/UserEntitlementService.cs) — `ValidateCustomerAccessAsync` lives here.
+- [api/GrainOriginatorPortal.Api/Platform/Filters/EnforceTradeUnitAccessAttribute.cs](../../api/GrainOriginatorPortal.Api/Platform/Filters/EnforceTradeUnitAccessAttribute.cs) — the trade-unit filter (UX scoping; fail-CLOSED on an uncached outage).
+- [api/GrainOriginatorPortal.Api/Platform/Identity/UserEntitlementService.cs](../../api/GrainOriginatorPortal.Api/Platform/Identity/UserEntitlementService.cs) — `ValidateCustomerAccessAsync` lives here.
 - [api/GrainOriginatorPortal.Api/Modules/Customers/Controllers/CustomersController.cs](../../api/GrainOriginatorPortal.Api/Modules/Customers/Controllers/CustomersController.cs) — example of a controller where the GETs intentionally skip the check.
 - [api/GrainOriginatorPortal.Infrastructure/Platform/Access/AppPermissions.cs](../../api/GrainOriginatorPortal.Infrastructure/Platform/Access/AppPermissions.cs) — the permission catalog.
 - [api/GrainOriginatorPortal.Api/Platform/Access/](../../api/GrainOriginatorPortal.Api/Platform/Access/) — `ClaimsUserRoleSource`, `PermissionService`, the grant cache, `[RequirePermission]` and its handler, `/api/me/permissions` and the access map.
-- [api/GrainOriginatorPortal.Api/Middleware/AuthorizationAuditResultHandler.cs](../../api/GrainOriginatorPortal.Api/Middleware/AuthorizationAuditResultHandler.cs) — the `AUTHZ_PERMISSION_DENIED` response and log.
+- [api/GrainOriginatorPortal.Api/Platform/Middleware/AuthorizationAuditResultHandler.cs](../../api/GrainOriginatorPortal.Api/Platform/Middleware/AuthorizationAuditResultHandler.cs) — the `AUTHZ_PERMISSION_DENIED` response and log.
 - [client/src/app/core/access/](../../client/src/app/core/access/) — the SPA's `PermissionService`, `permissionGuard`, `*appHasPermission` and the generated permission ids.

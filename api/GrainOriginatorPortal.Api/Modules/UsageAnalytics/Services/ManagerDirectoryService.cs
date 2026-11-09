@@ -1,7 +1,7 @@
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Models;
 using GrainOriginatorPortal.Infrastructure.Modules.UsageAnalytics.Interfaces;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Infrastructure.Platform.Telemetry;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Caching.Memory;
 

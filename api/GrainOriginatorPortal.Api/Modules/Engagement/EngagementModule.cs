@@ -5,9 +5,9 @@ using Microsoft.Extensions.Http.Resilience;
 using Polly;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Modules.Engagement.Services;
 using GrainOriginatorPortal.Infrastructure.Modules.Engagement;
+using GrainOriginatorPortal.Api.Platform.Middleware;
 
 namespace GrainOriginatorPortal.Api.Modules.Engagement;
 
@@ -15,7 +15,7 @@ namespace GrainOriginatorPortal.Api.Modules.Engagement;
 /// The Engagement module: notes with their mentions, reminders and their Outlook events, daily recap groups and
 /// Teams channels. Its controllers are found by MVC; this registers what they depend on. It reads customers
 /// through the Customers module's <c>ICustomerLookup</c>, and Microsoft Graph through the shared "graph" client
-/// that Program.cs registers.
+/// that Platform registers (AddDirectory).
 /// </summary>
 public static class EngagementModule
 {
@@ -38,7 +38,7 @@ public static class EngagementModule
     // event. POST /me/events is non-idempotent and has no idempotency key, so when Graph accepts the
     // event but the response is lost — a client timeout, a reset, a gateway 504 raised after the event
     // was already written — a retry produces a SECOND event on the user's calendar. The shared "graph"
-    // client in Program.cs retries on exactly those failures (HttpRequestException / TaskCanceledException,
+    // client Platform registers retries on exactly those failures (HttpRequestException / TaskCanceledException,
     // which is what its 10s timeout surfaces as), so a single create could land three events.
     //
     // This is the same hazard the Instant Share Note workflow hit with Graph sendMail, where the default

@@ -1,12 +1,12 @@
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Filters;
+using GrainOriginatorPortal.Api.Platform.Filters;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
 using GrainOriginatorPortal.Api.Modules.Customers.Models.Requests;
 using GrainOriginatorPortal.Api.Modules.Customers.Models.Responses;
 using GrainOriginatorPortal.Api.Modules.Customers.Services;
 using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Modules.Customers.Controllers;
 

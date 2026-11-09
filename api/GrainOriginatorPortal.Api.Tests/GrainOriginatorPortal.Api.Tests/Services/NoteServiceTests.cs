@@ -5,12 +5,13 @@ using Microsoft.Extensions.Logging;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Api.Modules.Customers.Services;
 using GrainOriginatorPortal.Api.Modules.Engagement.Services;
 using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Interfaces;
+using GrainOriginatorPortal.Api.Platform.Identity;
+using GrainOriginatorPortal.Infrastructure.Platform.Identity.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Preferences.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

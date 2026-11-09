@@ -1,13 +1,14 @@
 using System.Threading;
 using System.Threading.Tasks;
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Api.Modules.Customers.Services;
 using GrainOriginatorPortal.Api.Modules.Engagement.Models;
 using GrainOriginatorPortal.Api.Modules.Engagement.Services;
 using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Interfaces;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Api.Platform.Identity;
+using GrainOriginatorPortal.Infrastructure.Platform.Identity.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Preferences.Interfaces;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;

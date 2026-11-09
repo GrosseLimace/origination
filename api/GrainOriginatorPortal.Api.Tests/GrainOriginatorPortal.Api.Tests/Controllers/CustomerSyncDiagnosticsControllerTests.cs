@@ -14,8 +14,6 @@ using Moq;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Platform.Access;
-using GrainOriginatorPortal.Infrastructure.Ctrm;
-using GrainOriginatorPortal.Infrastructure.Ctrm.Dtos;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm.Dtos;
@@ -24,6 +22,8 @@ using GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Sync;
 using GrainOriginatorPortal.Api.Modules.Customers.Controllers;
 using GrainOriginatorPortal.Api.Modules.Customers.Services;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm.Dtos;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 

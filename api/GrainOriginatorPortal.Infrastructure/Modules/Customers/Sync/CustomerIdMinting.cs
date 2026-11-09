@@ -1,3 +1,4 @@
+
 namespace GrainOriginatorPortal.Infrastructure.Modules.Customers.Sync;
 
 /// <summary>
@@ -10,7 +11,7 @@ namespace GrainOriginatorPortal.Infrastructure.Modules.Customers.Sync;
 /// with an ODS-assigned id, whatever the ODS does next.</para>
 ///
 /// <para><b>Why it sits below 7e15.</b> The band ends at <c>6e15</c>, underneath
-/// <see cref="Ctrm.CtrmSyntheticId.ReservedBase"/> (<c>7e15</c>), so a minted customer id can never be mistaken for
+/// <see cref="Platform.Ctrm.CtrmSyntheticId.ReservedBase"/> (<c>7e15</c>), so a minted customer id can never be mistaken for
 /// a synthetic contract or ticket id. Every id also stays under 2^53 − 1 (9,007,199,254,740,991), so it
 /// round-trips through a JavaScript number exactly — customer ids reach the browser as TypeScript numbers.</para>
 ///

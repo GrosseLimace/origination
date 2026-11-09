@@ -1,6 +1,6 @@
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Infrastructure.Ctrm;
 using Microsoft.AspNetCore.Mvc.Filters;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
 
 namespace GrainOriginatorPortal.Api.Modules.Contracts.Filters;
 

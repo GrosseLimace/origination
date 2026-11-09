@@ -1,7 +1,7 @@
 // Project namespaces
 using GrainOriginatorPortal.Api.Modules.Contracts.Services;
-using GrainOriginatorPortal.Api.Services.Diagnostics;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts;
+using GrainOriginatorPortal.Api.Platform.Diagnostics;
 
 namespace GrainOriginatorPortal.Api.Modules.Contracts;
 

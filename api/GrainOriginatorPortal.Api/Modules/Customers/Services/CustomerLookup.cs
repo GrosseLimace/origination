@@ -2,10 +2,10 @@
 using Microsoft.Data.SqlClient;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Modules.Customers.Mappings;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
 using GrainOriginatorPortal.Api.Modules.Customers.Models.Responses;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Modules.Customers.Services;
 

@@ -3,9 +3,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 // Project namespaces
-using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
 
 namespace GrainOriginatorPortal.Infrastructure.Modules.Customers.Sync;
 

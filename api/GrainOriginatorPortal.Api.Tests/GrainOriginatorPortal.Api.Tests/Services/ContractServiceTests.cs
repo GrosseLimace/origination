@@ -6,10 +6,10 @@ using Microsoft.Extensions.Logging;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Modules.Contracts.Services;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Interfaces;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

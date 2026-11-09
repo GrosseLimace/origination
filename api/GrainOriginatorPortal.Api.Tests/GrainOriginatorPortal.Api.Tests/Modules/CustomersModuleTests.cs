@@ -11,7 +11,7 @@ using GrainOriginatorPortal.Api.Modules.Contracts;
 using GrainOriginatorPortal.Api.Modules.Customers;
 using GrainOriginatorPortal.Api.Modules.Customers.Services;
 using GrainOriginatorPortal.Api.Modules.Producers;
-using GrainOriginatorPortal.Infrastructure;
+using GrainOriginatorPortal.Infrastructure.Platform;
 using GrainOriginatorPortal.Infrastructure.Modules.Customers.Extensions;
 
 namespace GrainOriginatorPortal.Api.Tests.Modules;
@@ -81,7 +81,7 @@ public class CustomersModuleTests
         // Program.cs does it, so whichever module provides an extension is found.
         var configuration = new ConfigurationBuilder().Build();
         var services = new ServiceCollection();
-        services.AddInfrastructure(configuration);
+        services.AddPlatformInfrastructure(configuration);
         services.AddCustomersModule();
         services.AddContractsModule();
         services.AddProducersModule(configuration);

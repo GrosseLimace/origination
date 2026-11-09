@@ -3,7 +3,7 @@ using GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.Models.Requests;
 using GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.Models.Responses;
 using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
-
+using GrainOriginatorPortal.Api.Platform.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.Controllers;
 
@@ -59,7 +59,7 @@ public class FdCicController : ControllerBase
     public ActionResult<IReadOnlyList<string>> GetCounties([FromQuery] string state)
     {
         if (string.IsNullOrWhiteSpace(state) || state.Length != 2)
-            throw new Exceptions.ValidationException("state", "Use the two-letter state code.");
+            throw new Platform.Exceptions.ValidationException("state", "Use the two-letter state code.");
         return Ok(_service.Counties(state));
     }
 

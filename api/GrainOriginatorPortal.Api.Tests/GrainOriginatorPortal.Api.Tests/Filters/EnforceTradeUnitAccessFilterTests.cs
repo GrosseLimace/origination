@@ -10,10 +10,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Filters;
-using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Modules.Producers.Models.Requests;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
+using GrainOriginatorPortal.Api.Platform.Filters;
+using GrainOriginatorPortal.Api.Platform.Identity;
 
 namespace GrainOriginatorPortal.Api.Tests.Filters;
 

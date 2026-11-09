@@ -3,13 +3,13 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Api.Modules.BidSheet.Models.Requests;
 using GrainOriginatorPortal.Api.Modules.BidSheet.Services;
 using GrainOriginatorPortal.Infrastructure.Modules.BidSheet.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Modules.BidSheet.Entities;
 using GrainOriginatorPortal.Infrastructure.Modules.BidSheet.Interfaces;
+using GrainOriginatorPortal.Api.Platform.Identity;
 
 namespace GrainOriginatorPortal.Api.Tests.Services;
 

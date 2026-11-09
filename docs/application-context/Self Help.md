@@ -148,8 +148,8 @@ flowchart LR
 | File | Role |
 | --- | --- |
 | `api/GrainOriginatorPortal.Api/Content/help-faq.json` | All help content |
-| `api/GrainOriginatorPortal.Api/Controllers/HelpController.cs` | `GET /api/help` |
-| `api/GrainOriginatorPortal.Api/Models/Responses/HelpContentResponse.cs` | Content schema, with the authoring rules |
+| `api/GrainOriginatorPortal.Api/Platform/Help/Controllers/HelpController.cs` | `GET /api/help` |
+| `api/GrainOriginatorPortal.Api/Platform/Help/Models/Responses/HelpContentResponse.cs` | Content schema, with the authoring rules |
 | `client/src/app/core/services/help.service.ts` | Loads the content once |
 | `client/src/app/core/services/help-panel.service.ts` | Panel state, conversation, button behaviour |
 | `client/src/app/shared/utils/help-match.ts` | Question matching |

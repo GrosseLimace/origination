@@ -195,7 +195,7 @@ All controllers depend on `IDataService` (DI'd as `SqlDataService` today, with `
 
 ### `UserEntitlementService`
 
-`api/GrainOriginatorPortal.Api/Services/UserEntitlementService.cs`
+`api/GrainOriginatorPortal.Api/Platform/Identity/UserEntitlementService.cs`
 
 | Method | Purpose |
 | --- | --- |
@@ -233,24 +233,26 @@ All controllers depend on `IDataService` (DI'd as `SqlDataService` today, with `
 
 ### Backend authentication
 
-`api/GrainOriginatorPortal.Api/Program.cs`
+`api/GrainOriginatorPortal.Api/Platform/Identity/IdentityServiceCollectionExtensions.cs` (`AddSignIn`, called by `AddPlatform`)
 
 - JWT bearer auth via `Microsoft.Identity.Web.AddMicrosoftIdentityWebApi()`.
 - **Permissions, not roles**: endpoints carry `[RequirePermission(AppPermissions.X)]` (`api/GrainOriginatorPortal.Api/Platform/Access/`). The caller's roles come from the token and their grants from `dbo.RolePermissions`; a missing permission is a 403 with code `AUTHZ_PERMISSION_DENIED`. Machine callers are roles too: the data pipeline's `Origination.Application` app role has a `Machine` role row granting `bid-feed:manage`.
-- **Trade-unit filter**: `[EnforceTradeUnitAccess]` (`api/GrainOriginatorPortal.Api/Filters/EnforceTradeUnitAccessAttribute.cs`) intersects the requested TUs with the user's entitled set. **Fails open on entitlement-DB outage for GET/HEAD**, again per the documented security model.
+- **Trade-unit filter**: `[EnforceTradeUnitAccess]` (`api/GrainOriginatorPortal.Api/Platform/Filters/EnforceTradeUnitAccessAttribute.cs`) intersects the requested TUs with the user's entitled set. **Fails open on entitlement-DB outage for GET/HEAD**, again per the documented security model.
 
 ## Database connections
 
-`api/GrainOriginatorPortal.Api/Program.cs`
+`api/GrainOriginatorPortal.Api/Program.cs` (Key Vault and SQL auth) and `api/GrainOriginatorPortal.Infrastructure/Platform/PlatformInfrastructure.cs` (the DbContexts)
 
 - **Key Vault URI** read from configuration; secrets pulled via `ManagedIdentityCredential` in App Service or `DefaultAzureCredential` (CLI / VS) locally.
 - **SQL auth** uses `SqlAuthenticationMethod.ActiveDirectoryDefault`; in dev a custom `AzureCliSqlAuthProvider` is registered to skip IMDS probing.
 - Connection strings come from app config (Key Vault references in deployed envs, `appsettings.Development.json` locally).
 
-Two contexts are registered:
+Four contexts are registered:
 
 - `OriginationDbContext` → ODS connection string (read-only views).
 - `ApplicationDbContext` → Origination app-DB connection string (read/write).
+- `DpOdsDbContext` → the DP-contract ODS reads; resolves to the ODS connection string in every environment (see [DP Contracts](DP%20Contracts.md)).
+- `TradeUnitPreferencesDbContext` → the entitlements database (read-only).
 
 ## Key conventions
 

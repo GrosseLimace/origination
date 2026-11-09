@@ -19,7 +19,7 @@ public interface IFdCicService
     /// <summary>The counties in a state, sorted (the newest usable version's county table).</summary>
     IReadOnlyList<string> Counties(string state);
 
-    /// <summary>Scores one field. Throws <see cref="Exceptions.ValidationException"/> for invalid input;
+    /// <summary>Scores one field. Throws <see cref="Platform.Exceptions.ValidationException"/> for invalid input;
     /// a crop and place USDA has no data for comes back with <c>Scorable = false</c> and a reason.</summary>
     FdCicScoreResponse Score(int year, FdCicInput input);
 }

@@ -2,7 +2,7 @@
 using Microsoft.Extensions.Configuration;
 
 // Project namespaces
-using GrainOriginatorPortal.Infrastructure.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
 
 namespace GrainOriginatorPortal.Infrastructure.Modules.Customers.Sync;
 

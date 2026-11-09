@@ -1,5 +1,6 @@
 using GrainOriginatorPortal.Api.Modules.Engagement.Models.Requests;
 using GrainOriginatorPortal.Api.Modules.Engagement.Models.Responses;
+using GrainOriginatorPortal.Api.Platform.Identity;
 
 namespace GrainOriginatorPortal.Api.Modules.Engagement.Services;
 

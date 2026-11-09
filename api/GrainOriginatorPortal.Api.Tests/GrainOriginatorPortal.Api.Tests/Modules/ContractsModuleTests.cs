@@ -12,7 +12,7 @@ using GrainOriginatorPortal.Api.Modules.Contracts;
 using GrainOriginatorPortal.Api.Modules.Contracts.Services;
 using GrainOriginatorPortal.Api.Modules.Customers;
 using GrainOriginatorPortal.Api.Modules.Producers;
-using GrainOriginatorPortal.Api.Services.Diagnostics;
+using GrainOriginatorPortal.Api.Platform.Diagnostics;
 
 namespace GrainOriginatorPortal.Api.Tests.Modules;
 
@@ -55,7 +55,7 @@ public class ContractsModuleTests
 
         // The module's controllers, and every module class registered here, constructed by DI. Platform
         // services they need (the CTRM client, the provenance record, the DbContexts) are registered by
-        // AddInfrastructure and Program.cs.
+        // AddPlatform.
         var controllers = typeof(ContractsModule).Assembly.GetTypes()
             .Where(t => t is { IsClass: true, IsAbstract: false } && typeof(ControllerBase).IsAssignableFrom(t) && InModule(t))
             .ToList();

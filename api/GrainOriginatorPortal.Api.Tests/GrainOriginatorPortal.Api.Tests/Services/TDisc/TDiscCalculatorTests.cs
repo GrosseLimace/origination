@@ -1,6 +1,6 @@
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Modules.Producers.FieldPlan.TDisc;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace GrainOriginatorPortal.Api.Tests.Services.TDisc;

@@ -150,18 +150,18 @@ Keep the style guide's two projects and its `Api → Infrastructure` reference r
 
 ```
 api/GrainOriginatorPortal.Api/
-├── Program.cs                        # ~150 lines: AddPlatform() + AddXModule() calls + pipeline
-├── Platform/
+├── Program.cs                        # ~260 lines (built in step 11): Key Vault bootstrap, AddPlatform() + AddXModule() calls, pipeline
+├── Platform/                         # each area registers itself (AddSignIn, AddPreferences, AddCtrmClient, …); PlatformModule calls them
 │   ├── Access/                       # PermissionService, RequirePermission, grant cache, grant editor API
-│   ├── Identity/                     # MeController, RequestContextService, UserEntitlementService
+│   ├── Identity/                     # MeController, RequestContextService, UserEntitlementService, DisplayNames; the Graph directory client and app access
 │   ├── Preferences/                  # UserPreferences, UserTradeUnits, TradeUnits, Entitlements
-│   ├── ReferenceData/                # Commodities (list, conversions), locations
-│   ├── Telemetry/                    # usage tracking + aggregation background services and UsageTelemetryRepository, ClientTelemetry, ClickEvents
+│   ├── ReferenceData/                # Commodities (list, planting, conversions, harvest windows)
+│   ├── Telemetry/                    # usage tracking + aggregation background services, ClientTelemetry, ClickEvents, TelemetrySanitizer
 │   ├── Ctrm/                         # CtrmGraphQlClient: one client, used by Customers, Contracts and Producers
 │   ├── DocStore/                     # IDocStoreClient and AddDocStore: Doc Store through APIM; each upload names its category
-│   ├── Diagnostics/  WhatsNew/  Help/  Geocode/
-│   ├── Middleware/  Filters/  Exceptions/  Json/
-│   └── PlatformModule.cs             # AddPlatform(IConfiguration)
+│   ├── Diagnostics/  WhatsNew/  Help/  Geocode/  Version/
+│   ├── Middleware/  Filters/  Exceptions/   # Exceptions/ includes ApiErrorResponse, the error envelope
+│   └── PlatformModule.cs             # AddPlatform(IConfiguration, IHostEnvironment); also the web-host plumbing: errors, JSON, CORS, rate limiting, compression, health checks
 └── Modules/
     ├── Customers/
     │   ├── Controllers/  Services/  Mappings/
@@ -178,9 +178,12 @@ api/GrainOriginatorPortal.Infrastructure/
 ├── Platform/
 │   ├── Access/                       # AppPermissions (the catalog; here so EF HasData can seed dbo.Permissions), Entities/, Configurations/.
 │   │                                 #   Built in Phase 1: the first code in this layout, and the pattern Phase 2 follows
-│   ├── Data/                         # all DbContexts, Migrations/, ApplicationDbContextFactory. Decided in step 11: this stays at Infrastructure/Data, which counts as Platform; moving it would rewrite 215 generated migrations for no runtime change
-│   ├── Ctrm/                         # ICtrmGraphQlClient, CtrmConfig, throttle, retry, synthetic ids, provenance
-│   └── DependencyInjection.cs        # AddPlatformInfrastructure(): DbContexts and the CTRM plumbing
+│   ├── Data/                         # all DbContexts, Migrations/, ApplicationDbContextFactory. Decided in step 11: this stays at Infrastructure/Data, which counts as Platform; moving it would rewrite 215 generated migrations for no runtime change. Platform's own entities stay in Data/Entities with it, configured in ApplicationDbContext
+│   ├── Ctrm/                         # ICtrmGraphQlClient, CtrmConfig, throttle, retry, synthetic ids, provenance, CtrmPage
+│   ├── Telemetry/  Preferences/  ReferenceData/  Identity/   # Platform's repositories (Interfaces/, Repositories/); Telemetry also has the usage projections and ScreenTimeCalculator
+│   ├── Json/                         # the DateOnly, calendar-date and UTC DateTime converters
+│   ├── Extensions/                   # what Platform or a module asks another module for (§4.4)
+│   └── PlatformInfrastructure.cs     # AddPlatformInfrastructure(): DbContexts, CTRM provenance, Platform's repositories
 └── Modules/
     ├── Customers/   Entities/  Configurations/  Interfaces/  Repositories/  Sync/  Ctrm/   # customer master + link discovery readers
     ├── Contracts/   Entities/  Configurations/  Interfaces/  Repositories/  Ctrm/          # contract/ticket readers, switches, CtrmMappings
@@ -204,11 +207,11 @@ api/GrainOriginatorPortal.Infrastructure/
 ```csharp
 // Program.cs
 builder.Services
-    .AddPlatform(builder.Configuration)
+    .AddPlatform(builder.Configuration, builder.Environment)
     .AddCustomersModule()
     .AddContractsModule()   // CTRM/ODS repository switches live here; they read Ctrm:Source on every call
     .AddEngagementModule()
-    .AddProducersModule()
+    .AddProducersModule(builder.Configuration)
     .AddListsModule()
     .AddBidSheetModule()
     .AddUsageAnalyticsModule();
@@ -410,7 +413,8 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
   - Every controller carries a class-level permission from its own module, normally its read, so a write action always needs it too. The add-on roles rely on this (§7.3). The exempt list below is excluded.
   - Every non-GET action carries a write permission, unless it is on the non-mutating list.
   - Every permission is in `AppPermissions`, and every resource belongs to exactly one module.
-  - **Exempt list:** `me` (including `/api/me/permissions`), `version`, `help`, `whats-new`, the client-telemetry config and the usage click event. Any signed-in user may call them.
+  - **Exempt list:** `me` (including `/api/me/permissions`), `version`, `help`, `whats-new`, the client-telemetry config and the usage click event. Any signed-in user may call them. The click event is the one write among them: it records the caller's own clicks, so the test lists it separately (`OwnTelemetryPosts`) rather than letting the exempt list hold writes.
+  - Every controller sits in `Api.Platform` or `Api.Modules`, so none escapes these checks (added in step 11, when the last controllers moved).
   - **Machine callers are roles too.** The pipeline's `Origination.Application` app role has a `dbo.Roles` row of kind `Machine` (migration `AddPipelineRole`) that grants `bid-feed:manage` and no segments. `BarchartIngest` is an ordinary `[RequirePermission(bid-feed:manage)]`, which a person re-running the feed by hand also passes, so no role name appears in code. The grant editor refuses to change `Machine` roles (Phase 1b).
 - **Grants stay honest without a code map:**
   - `dbo.Permissions` is generated from `AppPermissions` through EF `HasData`. Adding a permission constant without a migration is a pending model change, and a test calling `HasPendingModelChanges()` fails on it. `RolePermission` has a foreign key to it.
@@ -471,14 +475,14 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 
 | Module | Controllers | Notes |
 |---|---|---|
-| Platform | Me, UserPreferences, UserTradeUnits, TradeUnits, Entitlements, Version, WhatsNew, Help, ClientTelemetry, Geocode, Diagnostics (with `DiagnosticsEnvironmentGate`); Commodities (`GET /`, `conversions`) | `CtrmGraphQlClient` moves here from `Api/Services/Ctrm`. |
+| Platform | Me, UserPreferences, UserTradeUnits, TradeUnits, Entitlements, Version, WhatsNew, Help, ClientTelemetry, ClickEvents, Geocode, Diagnostics (with `DiagnosticsEnvironmentGate`); Commodities (`GET /`, `planting`, `conversions`, `harvest-windows`) | Done in step 11 (2026-11-08): 11a untangled Platform from the modules (§4.4); 11b moved every remaining file into `Api/Platform/<Area>` and `Infrastructure/Platform/<Area>` (the layout in §4.1) and put the catalog's permissions on UserPreferences and UserTradeUnits (`preferences:read:own`, the PUT `preferences:write:own`) and on TradeUnits, Entitlements, Commodities and Geocode (`reference-data:read`); 11c moved the registrations out of Program.cs into `AddPlatform`. `CtrmGraphQlClient` is in `Api/Platform/Ctrm`. |
 | Customers | Customers, `search-ods` included; CustomerSyncDiagnostics (`customer-sync:manage`) | `CustomerSyncService`, its background service and the whole of `Infrastructure/Sync/` move here, with the customer readers from `Infrastructure/Ctrm/` (`CtrmCustomerReader`, `CtrmCustomerQueries`, `CtrmCustomerActivityReader`, `CtrmCustomerCandidateId` and their DTOs). `CtrmCustomerCodes` stays with the shared CTRM plumbing: it holds the gateway's `customerIds` filter limits, and only the contract and ticket readers use it. |
-| Contracts | Contracts (minus `pacing`, `farm`), Tickets (minus `farm`) | The contract and ticket parts of `Infrastructure/Ctrm/` move here: readers, repositories, the two switches, `CtrmMappings`, `CtrmWarmRegistry`. The shared plumbing goes to Platform. Done in step 6b, with `SurfaceCtrmFailures` and the keep-warm service. `ContractStatusCalculator`, `TicketLocations` and `CustomerActivitySource` sit at the module root, outside `Repositories` and `Interfaces`, so Producers and Customers may use them. The shared plumbing stays in `Infrastructure/Ctrm/` until step 11. |
+| Contracts | Contracts (minus `pacing`, `farm`), Tickets (minus `farm`) | The contract and ticket parts of `Infrastructure/Ctrm/` move here: readers, repositories, the two switches, `CtrmMappings`, `CtrmWarmRegistry`. The shared plumbing goes to Platform. Done in step 6b, with `SurfaceCtrmFailures` and the keep-warm service. `ContractStatusCalculator`, `TicketLocations` and `CustomerActivitySource` sit at the module root, outside `Repositories` and `Interfaces`, so Producers and Customers may use them. The shared plumbing moved to `Infrastructure/Platform/Ctrm/` in step 11. |
 | Engagement | Notes, Reminders, TeamsChannels, DailyRecapGroups | Done in step 7, with the Outlook calendar and Teams directory services and the no-retry Graph client the calendar uses to create events. The shared `graph` client and `GraphDirectoryClient` stay with Platform: app access uses them, Engagement doesn't. |
 | Producers | PlantingIntentions, ProducerDetails, StoredGrain, DpContracts, DashboardPlantingEstimates, FieldPlan, CtrmSplits, TDisc, FdCic; **gains** `contracts/pacing` (`ContractPacingController`) | Keep the **route templates unchanged**, so the SPA doesn't change. The split readers and `FieldTicketReader` come from `Infrastructure/Ctrm/`. Delete the `farm/{farmId}` endpoints on Contracts and Tickets and their `GetByFarmAsync` chain through services and repositories; the Farms controller itself is already gone. Done in step 6a: both always returned an empty list. |
 | Lists | SavedLists, QueryLibrary | Done in step 8. Build-a-List, its customer map and Actionable Insights are browser-only, so the module's server side is saved lists and the query library. `ManagerDirectoryService` stays for Usage Analytics: only the usage dashboard uses it. |
 | BidSheet | BidSheet, Barchart, BarchartIngest (`bid-feed:manage`, which the pipeline holds through its `Machine` role, §4.3) | Done in step 9, with the BarChart catalog and ingest and their result types (`Abstractions`). The entity `BidSheet` shares its name with the module's namespace, so module code names it as `Entities.BidSheet` (or fully qualified in the Api), as `BidSheetService` already did. Saving your bid-sheet preference needs `preferences:write:own` rather than `bid-sheets:write`. |
-| UsageAnalytics | UsageDashboard (`usage-reports:read`; exclusions `usage-exclusions:manage`) | Done in step 10. The tracking writes (the request and click logging, sessions, rollups, the entitlements snapshot and retention) split off into Platform's `UsageTelemetryRepository`, used by the tracking and aggregation jobs and the rollup backfill; the dashboard keeps `UsageRepository` for its reads. The click-event POST moved to `ClickEventsController` (same route, any signed-in user), which goes to Platform/Telemetry in step 11 with `ClientTelemetryController`. The usage projections and `ScreenTimeCalculator` stay with Platform: the rollup job uses them too. |
+| UsageAnalytics | UsageDashboard (`usage-reports:read`; exclusions `usage-exclusions:manage`) | Done in step 10. The tracking writes (the request and click logging, sessions, rollups, the entitlements snapshot and retention) split off into Platform's `UsageTelemetryRepository`, used by the tracking and aggregation jobs and the rollup backfill; the dashboard keeps `UsageRepository` for its reads. The click-event POST moved to `ClickEventsController` (same route, any signed-in user), which went to Platform/Telemetry in step 11 with `ClientTelemetryController`. The usage projections and `ScreenTimeCalculator` stay with Platform: the rollup job uses them too. |
 
 **Changed in Phase 2 (2026-11-07):** the first draft also moved `customers/search-ods`, `customers/linked-to`, `commodities/planting` and `commodities/harvest-windows` into Producers. The Phase 1 catalog had settled them otherwise, and Phase 2 follows it:
 - **`commodities/planting` and `commodities/harvest-windows`** are reference data (`reference-data:read`, Platform). The curated crops feed Bid Sheet, Build-a-List and the calculators as well as planting intentions, and the harvest windows are preloaded for every user.
@@ -499,6 +503,11 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 
 **Found while moving Lists (2026-11-08), for step 10:**
 - **Usage Analytics (done in step 10, 2026-11-08):** the usage dashboard read the Lists module's `dbo.QueryLibrary`, and also the customer master and the ODS contracts, to name what people used. Decided: Usage Analytics depends on Lists, Contracts and Customers, as the module map now shows, and reads the names through `IQueryLibraryService`, `IContractLookup` (new, ODS-only: the ids are ODS ids) and `ICustomerLookup`.
+
+**Found while moving Platform (2026-11-08, step 11b):**
+- **Two Api responses belonged to one module each:** `CoordinatesResponse` (only `CustomerResponse` uses it) moved to Customers, and `ElevatorCacheResponse` (only the bid-sheet mappings) to Bid Sheet, rather than to Platform.
+- **Program.cs comments that no longer matched the code,** fixed as the registrations moved: the rate limiter said 300 requests a minute where it allows 1000, and `IHttpContextAccessor` was said to be for `SqlDataService`, which is long gone. The nominatim client's per-attempt timeout carries a comment about CTRM contract pages, which it was evidently copied from; it moved unchanged.
+- **A doc reference that pointed nowhere:** `CustomerIdMinting` linked to `Ctrm.CtrmSyntheticId`, which from inside Customers resolves to the module's own `Ctrm` folder, not the shared one. It now names `Platform.Ctrm.CtrmSyntheticId`.
 
 **`CustomerResponse` sheds `TotalAcres`, `FarmIds`, `LinkedProducerIds` and `Farm`.** The Producers module serves them in a `ProducerProfileResponse` instead. This one *is* a wire change, so sequence it with the frontend in Phase 4.
 

@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Identity.Web;
 using GrainOriginatorPortal.Api.Modules.Engagement.Models;
-using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Platform.Identity;
 
 
 namespace GrainOriginatorPortal.Api.Modules.Engagement.Services;

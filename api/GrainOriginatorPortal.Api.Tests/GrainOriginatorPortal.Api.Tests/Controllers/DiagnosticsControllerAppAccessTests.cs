@@ -10,17 +10,17 @@ using Microsoft.Extensions.Logging;
 using Moq;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Controllers;
-using GrainOriginatorPortal.Api.Models.Responses;
-using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Api.Services.Diagnostics;
-using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Interfaces;
 using GrainOriginatorPortal.Api.Modules.Contracts.Services;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts;
+using GrainOriginatorPortal.Api.Platform.Diagnostics;
+using GrainOriginatorPortal.Api.Platform.Diagnostics.Controllers;
+using GrainOriginatorPortal.Api.Platform.Diagnostics.Models.Responses;
+using GrainOriginatorPortal.Api.Platform.Identity;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Platform.Telemetry.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 

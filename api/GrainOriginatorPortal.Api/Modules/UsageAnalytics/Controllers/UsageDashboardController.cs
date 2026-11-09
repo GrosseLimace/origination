@@ -1,10 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
 using GrainOriginatorPortal.Api.Platform.Access;
-using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
 using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Models;
 using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Models.Requests;
 using GrainOriginatorPortal.Api.Modules.UsageAnalytics.Services;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Modules.UsageAnalytics.Controllers;
 

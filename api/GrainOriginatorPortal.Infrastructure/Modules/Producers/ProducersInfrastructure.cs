@@ -3,7 +3,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 // Project namespaces
-using GrainOriginatorPortal.Infrastructure.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Ctrm;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Modules.Producers.Repositories;

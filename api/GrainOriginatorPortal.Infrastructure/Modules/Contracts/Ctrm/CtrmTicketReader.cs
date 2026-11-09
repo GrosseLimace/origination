@@ -3,7 +3,7 @@ using System.Globalization;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm.Dtos;
-using GrainOriginatorPortal.Infrastructure.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
 
 namespace GrainOriginatorPortal.Infrastructure.Modules.Contracts.Ctrm;
 

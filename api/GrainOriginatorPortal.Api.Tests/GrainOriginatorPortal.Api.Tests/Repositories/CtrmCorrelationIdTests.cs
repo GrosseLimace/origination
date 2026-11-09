@@ -10,8 +10,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Azure.Core;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Services.Ctrm;
-using GrainOriginatorPortal.Infrastructure.Ctrm;
+using GrainOriginatorPortal.Api.Platform.Ctrm;
+using GrainOriginatorPortal.Infrastructure.Platform.Ctrm;
 
 namespace GrainOriginatorPortal.Api.Tests.Repositories;
 

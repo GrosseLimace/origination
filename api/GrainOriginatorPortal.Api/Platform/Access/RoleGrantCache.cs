@@ -2,8 +2,8 @@
 using Microsoft.Extensions.Options;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Infrastructure.Platform.Access.Interfaces;
+using GrainOriginatorPortal.Api.Platform.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Platform.Access;
 
