@@ -711,6 +711,7 @@ export const APP_MODULES: ModuleManifest[] = [
 - **Preload:**
   - `DataPreloadService` becomes an orchestrator. On trade-unit change it runs `preload` only for the modules in `/api/me/permissions` `modules[]`, so traders never fetch planting, storage, DP or producer details.
   - Inside a module, `preload` skips stores whose read permission the user doesn't hold.
+  - *Decided in Phase 3 (2026-11-09): the `modules[]` gate comes in Phase 4.* Phase 3 runs every module's `preload`, each checking its own permissions. The only one so far, Producers' dashboard-summary prefetch, already skips users without `planting-estimates:read`, so the gate would change nothing yet. Phase 4 adds the gate when Producers' store preloads arrive. That means `PermissionService` keeping `modules[]`, and a rule for Calculators, Help and What's New, which own no permissions and so never appear in it.
 
 **Result:**
 - A Trader-only user gets the same home page: customer list, profile shell, the Open Contracts tab (plus a sales-side tickets tab once Q3 defines one), and the notes/reminders sidebar.

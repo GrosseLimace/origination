@@ -6,7 +6,8 @@ import { MsalService } from '@azure/msal-angular';
 import { Observable, Subject, of, throwError } from 'rxjs';
 
 import { ApiService } from '@core/services/api.service';
-import { AppStateService, DashboardCacheEntry } from '@core/services/app-state.service';
+import { AppStateService } from '@core/services/app-state.service';
+import { DashboardCacheEntry, DashboardStore } from '../../data-access/dashboard.store';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { TradeUnitSelectorComponent } from '@core/layout/trade-unit-selector/trade-unit-selector.component';
@@ -232,6 +233,7 @@ describe('DashboardComponent', () => {
       imports: [DashboardComponent],
       providers: [
         { provide: AppStateService, useValue: appState },
+        { provide: DashboardStore, useValue: appState },
         { provide: TradeUnitContext, useValue: appState },
         { provide: ApiService, useValue: api },
         { provide: ToastService, useValue: toast },

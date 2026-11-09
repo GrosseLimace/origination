@@ -1,25 +1,7 @@
 import { Injectable, inject, signal } from '@angular/core';
-import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, ReminderDue, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, ContractPricingLine, QueryLibraryItem } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, ReminderDue, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow, ContractPricingLine, QueryLibraryItem } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
-
-export interface DashboardCacheEntry {
-  tradeUnitsKey: string;
-  /** Planting year the year-specific entries below were loaded for. Part of the cache key: the
-   *  dashboard resets selectedPlantingYear to the current year on every construction while this
-   *  cache survives navigation, so matching on tradeUnitsKey alone re-applied another year's
-   *  estimates/market shares/harvest figures. */
-  year: number;
-  customers: Customer[];
-  contracts: Contract[];
-  plantingIntentions: PlantingIntention[];
-  storedGrain: StoredGrain[];
-  commodities: Commodity[];
-  savedYieldEstimates: DashboardPlantingEstimate[];
-  savedMarketShares: DashboardMarketShare[];
-  savedActualHarvest: DashboardActualHarvest[];
-  loadedAt: Date;
-}
 
 @Injectable({
   providedIn: 'root'
@@ -68,8 +50,6 @@ export class AppStateService {
   private readonly _harvestWindowsLoadFailed = signal(false);
   private readonly _commodityConversionsLoadFailed = signal(false);
   private readonly _sourceLoadPending = signal(false);
-  private readonly _dashboardCache = signal<DashboardCacheEntry | null>(null);
-  private readonly _preloadedDashboardSummary = signal<(DashboardSummary & { tradeUnitsKey: string; year: number }) | null>(null);
 
   // The trade-unit selection lives in TradeUnitContext; setTickets records which one the tickets were loaded for.
   private readonly tradeUnitContext = inject(TradeUnitContext);
@@ -381,29 +361,6 @@ export class AppStateService {
     this._harvestWindowsLoadFailed.set(false);
   }
 
-  // Dashboard cache — keyed by trade unit so navigating back shows data instantly
-  readonly dashboardCache = this._dashboardCache.asReadonly();
-
-  setDashboardCache(entry: DashboardCacheEntry): void {
-    this._dashboardCache.set(entry);
-  }
-
-  clearDashboardCache(): void {
-    this._dashboardCache.set(null);
-  }
-
-  // Pre-fetched dashboard summary — DataPreloadService populates this for the current year
-  // so the dashboard component can render without waiting for its own API calls.
-  readonly preloadedDashboardSummary = this._preloadedDashboardSummary.asReadonly();
-
-  setPreloadedDashboardSummary(tradeUnitsKey: string, year: number, summary: DashboardSummary): void {
-    this._preloadedDashboardSummary.set({ tradeUnitsKey, year, ...summary });
-  }
-
-  clearPreloadedDashboardSummary(): void {
-    this._preloadedDashboardSummary.set(null);
-  }
-
   clearSelection(): void {
     this._selectedCustomer.set(null);
   }
@@ -427,8 +384,6 @@ export class AppStateService {
     this._savedLists.set([]);
     this._commodities.set([]);
     this._producerDetails.set([]);
-    this._dashboardCache.set(null);
-    this._preloadedDashboardSummary.set(null);
     this._dataLoading.set(false);
     this._customersLoading.set(false);
     this._contractsLoading.set(false);

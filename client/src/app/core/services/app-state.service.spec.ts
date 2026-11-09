@@ -75,7 +75,7 @@ describe('AppStateService', () => {
 
     it('exposes its state as signals', () => {
       // Guards the check below against passing vacuously if the surface stopped being found.
-      expect(publicSignals().length).toBeGreaterThanOrEqual(42);
+      expect(publicSignals().length).toBeGreaterThanOrEqual(40);
     });
 
     it('offers no .set or .update on any public signal — writes go through the service\'s methods', () => {

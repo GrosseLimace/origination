@@ -7,7 +7,7 @@ import { forkJoin, of } from 'rxjs';
 import { catchError, tap } from 'rxjs/operators';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
-import { AppStateService, DashboardCacheEntry } from '@core/services/app-state.service';
+import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, Commodity } from '@models';
@@ -32,6 +32,7 @@ import {
   plantingYearsDescending, projectedProduction, weightedAverageYield,
 } from '../../utils/dashboard-planting';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { DashboardCacheEntry, DashboardStore } from '../../data-access/dashboard.store';
 
 @Component({
   selector: 'app-dashboard',
@@ -43,6 +44,7 @@ import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 export class DashboardComponent {
   private readonly apiService = inject(ApiService);
   private readonly appStateService = inject(AppStateService);
+  private readonly dashboardStore = inject(DashboardStore);
   private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly toastService = inject(ToastService);
   private readonly usageTracking = inject(UsageTrackingService);
@@ -438,7 +440,7 @@ export class DashboardComponent {
     // The year has to match as well as the trade unit — the cached estimates/market shares/harvest
     // are year-specific, and selectedPlantingYear resets to the current year here while the cache
     // survives navigation, so a TU-only match re-applied whichever year was cached last.
-    const cached = this.appStateService.dashboardCache();
+    const cached = this.dashboardStore.dashboardCache();
     const tradeUnitsKey = this.tradeUnitKey();
     if (cached && cached.tradeUnitsKey === tradeUnitsKey && cached.year === this.selectedPlantingYear()) {
       this._restoreFromCache(cached);
@@ -591,7 +593,7 @@ export class DashboardComponent {
   }
 
   private _saveDashboardCache(): void {
-    this.appStateService.setDashboardCache({
+    this.dashboardStore.setDashboardCache({
       tradeUnitsKey: this.tradeUnitKey(),
       year: this.selectedPlantingYear(),
       customers: this.customers(),
@@ -634,7 +636,7 @@ export class DashboardComponent {
 
     // If DataPreloadService already fetched the summary for this TU+year, use it
     // and only wait for commodities (which are also likely already in AppState).
-    const preloadedSummary = this.appStateService.preloadedDashboardSummary();
+    const preloadedSummary = this.dashboardStore.preloadedDashboardSummary();
     const summaryReady = preloadedSummary && preloadedSummary.tradeUnitsKey === key && preloadedSummary.year === year;
 
     if (summaryReady && preloaded.length > 0) {
@@ -693,7 +695,7 @@ export class DashboardComponent {
     }
 
     // Use pre-fetched data from DataPreloadService if available and fresh (same TU + year)
-    const preloaded = this.appStateService.preloadedDashboardSummary();
+    const preloaded = this.dashboardStore.preloadedDashboardSummary();
     if (preloaded && preloaded.tradeUnitsKey === key && preloaded.year === year) {
       this.savedYieldEstimates.set(preloaded.estimates);
       this.savedMarketShares.set(preloaded.marketShares);

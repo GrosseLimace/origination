@@ -67,7 +67,6 @@ The shared data caches, built on Angular signals: the trade-unit-wide data the c
 | `allProducersMode` | `boolean` | Session-only "All Producers" selector mode — clears TU scope so the customer list searches every producer (incl. ODS producers with no contract/ticket) for onboarding. Never persisted. |
 | `selectedCustomer` | `Customer \| null` | Driven by Home page navigation |
 | `dataLoading` | `boolean` | Global flag — true while the core preload (customers + contracts + today's tickets) is in flight. Both Insights and the Dashboard gate their spinners on this. |
-| `dashboardCache`, `preloadedDashboardSummary` | dashboard-specific cache | See Planting Intentions Dashboard doc |
 
 **Setters** mirror the signals (`setCustomers`, `setContracts`, ...). There is also `clearSelection`, and `clearAll` for sign-out, which also clears `TradeUnitContext`.
 
@@ -107,7 +106,14 @@ Coordinates the bulk fetch of customer/contract/ticket/note data when trade unit
 **Loading model (important for "why is this screen slow").** On a TU change the service fires several requests and streams each into AppState as it lands:
 
 - **Core group** = `getCustomers` + `getContracts` + `getTodaysTickets`. `dataLoading` flips false only when **all three** arrive. Both **Actionable Insights** and the **Planting Intentions Dashboard** gate their spinner on `dataLoading`, so they render together — and a slow ODS query (contracts, or today's tickets) holds both screens.
-- **Background group** (non-blocking, streamed via `merge`): bulk `getTickets`, notes, planting intentions, stored grain, saved lists, commodities, harvest windows, producer details, and a pre-fetched dashboard summary.
+- **Background group** (non-blocking, streamed via `merge`): bulk `getTickets`, notes, planting intentions, stored grain, saved lists, commodities, harvest windows, producer details.
+- **Module preloads**, merged into the same load so the next trade-unit change cancels them too: each module's manifest may declare a `preload` (see Module manifests below). Today that is Producers', which pre-fetches the Planting Dashboard's summary for users who may read it. A preload that fails ends quietly without stopping the rest.
+
+### Module manifests and `ModuleRegistry`
+
+`client/src/app/core/modules/` and `client/src/app/app.modules.ts`
+
+Each module (a folder under `features/`) declares a `ModuleManifest` in its `<module>.module.ts` (`producersModule` in `producers.module.ts`, …). `app.modules.ts` is the only file that lists them all, and imports each manifest from that file rather than the module's `index.ts`, so a module's components stay out of the initial bundle; `main.ts` provides that list as `APP_MODULES`, and core reads it through `ModuleRegistry`, so core never imports a module. A manifest carries the module's id and, optionally, its `preload(tradeUnits)`, which returns its work as an Observable and loads only what the user may read.
 
 > **Known perf cost:** `getTodaysTickets` runs the customer-storage gate (a scan of `ctrm.vw_GNTA39D1`, see the Ticket note below), so it isn't as fast as the "core group" comment assumes — and since it's in the blocking group, it can delay both screens. There's an in-flight change to drop the storage scan from that path and let each screen/category load on its own data; if you're reading this after that merges, the model above will have per-dataset loading flags.
 
