@@ -1,11 +1,8 @@
 export const environment = {
   production: false,
   envName: 'Dev',
-  bidSheetEnabled: true,
   // "Add from BarChart" picker + fed-bid display. Off until the vendor feed is live in this environment.
   barchartBidsEnabled: true,
-  usageDashboardEnabled: true,
-  dailyDigestEnabled: true,
   // @-mention a Teams channel in a note. Needs delegated Channel.ReadBasic.All with admin consent
   // on THIS environment's SPA app registration; without it the channel lookup returns nothing, so
   // the flag stays off rather than showing an empty, apparently-broken picker section.

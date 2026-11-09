@@ -2,17 +2,17 @@
 
 ## At a Glance
 
-- **Route**: `/bid-sheet` (env-gated by `environment.bidSheetEnabled`)
+- **Route**: `/bid-sheet` (needs `bid-sheets:read`)
 - **Component**: [`client/src/app/features/bid-sheet/pages/bid-sheet/bid-sheet.component.ts`](../../client/src/app/features/bid-sheet/pages/bid-sheet/bid-sheet.component.ts)
 - **Template**: [`bid-sheet.component.html`](../../client/src/app/features/bid-sheet/pages/bid-sheet/bid-sheet.component.html)
-- **Access**: any signed-in Scoular user who holds `bid-sheets:read` (every persona role does), **and** the env flag is enabled. Changing sheets, locations and bids needs `bid-sheets:write`.
+- **Access**: any signed-in Scoular user who holds `bid-sheets:read` (every persona role does). Changing sheets, locations and bids needs `bid-sheets:write`.
 - **Primary user goal**: track competitor bids on a map, compare them against Scoular's reference location, and edit bids per location/commodity/month.
 
 This is the merchandiser's competitive-pricing view. It overlays bid locations on a Leaflet map, color-coded by whether each location is matching, beating, or under reference.
 
 ## How users reach it
 
-- "Bid Sheet" link in the sidebar (only present when `environment.bidSheetEnabled === true`).
+- "Bid Sheet" link in the header nav, shown only to users holding `bid-sheets:read`.
 
 ## What it shows
 
@@ -572,7 +572,7 @@ ticked is NOT persisted — it is a per-print choice, like the crop/month sets i
 ## Auth and feature flags
 
 - `authGuard` — required.
-- **`environment.bidSheetEnabled`** — checked in [`client/src/app/app.routes.ts`](../../client/src/app/app.routes.ts) (around line 30). When false, the route isn't registered (deep links 404 / redirect home) and the sidebar doesn't show the link.
+- **`bid-sheets:read`** gates the page and its header link, both declared in [`bid-sheet.module.ts`](../../client/src/app/features/bid-sheet/bid-sheet.module.ts). A user without it never sees the link, and a typed `/bid-sheet` goes home. There is no environment flag any more (removed 2026-11-09): to switch the Bid Sheet off in one environment, take its permissions away from that environment's roles, which also closes the API.
 - `BidSheetController` needs `bid-sheets:read`, and every write on it `bid-sheets:write`, except saving your bid-sheet preference, which needs `preferences:write:own`. Creating or updating a location still validates the trade unit it is attributed to via `IUserEntitlementService.ValidateTradeUnitsOrThrowAsync`; reads are unscoped by design, and the two destructive operations (deleting a location, deleting a commodity's bids) are restricted to the row's creator or a holder of `bid-sheet-locations:delete:global`. See AR-05 in `SECURITY-REVIEWS/ACCEPTED-RISKS.md`.
 - **`environment.barchartBidsEnabled`** — gates the "Add from BarChart" entry point and the fed-bid badges. Read directly by the component (not the router), so the screen still works normally when it's off. Currently **on for local and dev, off for QA and prod**, since the vendor feed is only loaded in dev.
 - `BarchartController` needs `bid-feed:read`, and `refresh-bids` also `bid-sheets:write`. Catalog reads are deliberately **not** TU-scoped: the catalog is global vendor data with no Scoular customer information in it. TU entitlement is enforced on the write that creates a placement, and on `refresh-bids`, against the row's persisted trade unit.
@@ -604,7 +604,7 @@ ticked is NOT persisted — it is a per-print choice, like the crop/month sets i
 | Markers all in the wrong location | Geocode result mis-cached. Each location's lat/lon is stored on the row; re-geocode by editing the address. | `BidSheetLocations.Latitude/Longitude` |
 | Bid edits don't appear after save | `bulkUpsertBidSheetBids` succeeded but UI cache didn't refresh | Verify the post-save `getAllBidSheetLocations` re-fetch fires |
 | Drag-drop order doesn't stick across sessions | The sheet order save failed silently | Network tab for `PUT /bidsheet/sheets/{id}/location-order`; check `BidSheetLocationLinks.SortOrder` for that sheet |
-| Sidebar link missing | `environment.bidSheetEnabled === false` for this build | `client/src/environments/environment.ts` |
+| Header link missing | The user lacks `bid-sheets:read` | `/api/me/permissions` in the Network tab, then the user's roles |
 | 403 on a `/api/bidsheet/...` call | User isn't entitled to the requested TU | `UserEntitlementService.ValidateTradeUnitsOrThrowAsync` — check the user's entitlement set |
 | Printed sheet has no logo | Relative asset path inside the `about:blank` popup | `printLogoUrl` must be `window.location.origin` + path |
 | Print columns squeezed / headers ellipsised, or preview ≠ print | Widths and band split no longer come from the same builder | `utils/print-layout.ts` — `buildLocationsDown` / `buildLocationsAcross` are the only source; run `print-layout.spec.ts` |

@@ -2,7 +2,7 @@
 
 ## At a Glance
 
-- **Route**: `/usage-dashboard` (needs `usage-reports:read`, env-gated by `environment.usageDashboardEnabled`)
+- **Route**: `/usage-dashboard` (needs `usage-reports:read`)
 - **Component**: [`client/src/app/features/usage-analytics/pages/usage-dashboard/usage-dashboard.component.ts`](../../client/src/app/features/usage-analytics/pages/usage-dashboard/usage-dashboard.component.ts)
 - **Template**: [`usage-dashboard.component.html`](../../client/src/app/features/usage-analytics/pages/usage-dashboard/usage-dashboard.component.html)
 - **Access**: `authGuard` + `permissionGuard` with `usage-reports:read`.
@@ -54,7 +54,7 @@ sent, for every caller who passes the read policy.
 
 ## How users reach it
 
-- "Usage Dashboard" item in the profile menu — only rendered when (a) the user has the `Admin` role and (b) `environment.usageDashboardEnabled === true`.
+- "Usage Dashboard" item in the profile menu, shown only to users holding `usage-reports:read`, the permission the routes and the API check. The item and both routes are declared in [`usage-analytics.module.ts`](../../client/src/app/features/usage-analytics/usage-analytics.module.ts).
 
 ## Vocabulary
 
@@ -324,7 +324,7 @@ POST /api/diagnostics/usage-rollups/backfill?days=90
 
 ## Feature flag
 
-`environment.usageDashboardEnabled`. Route registered conditionally; menu item conditionally rendered.
+None. `environment.usageDashboardEnabled` was removed on 2026-11-09: `usage-reports:read` gates the routes and the menu item.
 
 ## Troubleshooting
 

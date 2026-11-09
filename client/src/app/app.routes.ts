@@ -1,78 +1,10 @@
 import { Routes } from '@angular/router';
+import { moduleRoutes } from '@core/modules/module-routes';
+import { appModules } from './app.modules';
 
-import { authGuard } from './core/auth/auth.guard';
-import { permissionGuard, requires } from '@core/access/permission.guard';
-import { environment } from '../environments/environment';
-
+/** Every module's pages, then the catch-all: a path that doesn't exist, or that the user may not open, goes home. */
 export const routes: Routes = [
-  {
-    path: '',
-    canActivate: [authGuard],
-    loadComponent: () => import('./features/customers/pages/home/home.component').then(m => m.HomeComponent)
-  },
-  {
-    path: 'build-list',
-    canActivate: [authGuard],
-    loadComponent: () => import('./features/lists/pages/build-list/build-list.component').then(m => m.BuildListComponent)
-  },
-  {
-    path: 'insights',
-    canActivate: [authGuard],
-    loadComponent: () => import('./features/lists/pages/insights/insights.component').then(m => m.InsightsComponent)
-  },
-  {
-    path: 'dashboard',
-    canActivate: [authGuard],
-    loadComponent: () => import('./features/producers/pages/dashboard/dashboard.component').then(m => m.DashboardComponent)
-  },
-  environment.bidSheetEnabled
-    ? {
-        path: 'bid-sheet',
-        canActivate: [authGuard],
-        loadComponent: () => import('./features/bid-sheet/pages/bid-sheet/bid-sheet.component').then(m => m.BidSheetComponent)
-      }
-    : { path: 'bid-sheet', redirectTo: '' },
-  // Daily Digest is gated by environment.dailyDigestEnabled (OFF in prod until launch).
-  // When disabled, /daily-digest redirects home so the page can't be reached by URL.
-  environment.dailyDigestEnabled
-    ? {
-        path: 'daily-digest',
-        canActivate: [authGuard],
-        loadComponent: () => import('./features/engagement/pages/daily-digest/daily-digest.component').then(m => m.DailyDigestComponent)
-      }
-    : { path: 'daily-digest', redirectTo: '' },
-  environment.usageDashboardEnabled
-    ? {
-        path: 'usage-dashboard',
-        canMatch: [permissionGuard],
-        canActivate: [authGuard],
-        data: requires('usage-reports:read'),
-        loadComponent: () => import('./features/usage-analytics/pages/usage-dashboard/usage-dashboard.component').then(m => m.UsageDashboardComponent)
-      }
-    : { path: 'usage-dashboard', redirectTo: '' },
-  environment.usageDashboardEnabled
-    ? {
-        path: 'usage-dashboard/users/:userId',
-        canMatch: [permissionGuard],
-        canActivate: [authGuard],
-        data: requires('usage-reports:read'),
-        loadComponent: () => import('./features/usage-analytics/pages/user-usage-detail/user-usage-detail.component').then(m => m.UserUsageDetailComponent)
-      }
-    : { path: 'usage-dashboard/users/:userId', redirectTo: '' },
-  // Release notes. Not flag-gated: the notes file itself is the switch — a deploy that adds no
-  // entry announces nothing, and the page simply says nothing has been published yet.
-  {
-    path: 'whats-new',
-    canActivate: [authGuard],
-    loadComponent: () => import('./features/whats-new/pages/whats-new/whats-new.component').then(m => m.WhatsNewComponent)
-  },
-  // Self-help: every question, by category or search. The Help panel itself isn't a route — it opens
-  // over whatever page the user is on.
-  {
-    path: 'help',
-    canActivate: [authGuard],
-    loadComponent: () => import('./features/help/pages/help/help.component').then(m => m.HelpComponent)
-  },
+  ...moduleRoutes(appModules),
   {
     path: '**',
     redirectTo: ''

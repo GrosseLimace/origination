@@ -9,6 +9,7 @@ import { ApiService } from './api.service';
 import { AppStateService } from './app-state.service';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { APP_MODULES } from '@core/modules/module-registry';
+import { providePermissions } from '@testing/permission.stub';
 
 /**
  * The trade-unit-wide preload that feeds every screen. Driven against the REAL AppStateService so the
@@ -105,6 +106,7 @@ describe('DataPreloadService', () => {
         { provide: MsalBroadcastService, useValue: { inProgress$ } },
         { provide: MsalService, useValue: { instance: { getAllAccounts: () => accounts } } },
         { provide: APP_MODULES, useValue: [{ id: 'producers', preload: modulePreload }] },
+        providePermissions(),
       ],
     });
   });

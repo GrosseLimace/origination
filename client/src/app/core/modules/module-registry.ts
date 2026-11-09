@@ -1,7 +1,8 @@
-import { EnvironmentInjector, Injectable, InjectionToken, inject, isDevMode, runInInjectionContext } from '@angular/core';
+import { EnvironmentInjector, Injectable, InjectionToken, computed, inject, isDevMode, runInInjectionContext } from '@angular/core';
 import { EMPTY, Observable, defer } from 'rxjs';
 import { catchError } from 'rxjs/operators';
-import { ModuleManifest } from './module-manifest';
+import { PermissionService } from '@core/access/permission.service';
+import { ModuleManifest, NavItem } from './module-manifest';
 
 /** Every module of the app, provided by the composition root (app.modules.ts through main.ts). */
 export const APP_MODULES = new InjectionToken<readonly ModuleManifest[]>('APP_MODULES');
@@ -10,8 +11,14 @@ export const APP_MODULES = new InjectionToken<readonly ModuleManifest[]>('APP_MO
 @Injectable({ providedIn: 'root' })
 export class ModuleRegistry {
   private readonly injector = inject(EnvironmentInjector);
+  private readonly access = inject(PermissionService);
   /** Empty when nothing provides the list, as in a test that doesn't need modules. */
   readonly modules: readonly ModuleManifest[] = inject(APP_MODULES, { optional: true }) ?? [];
+
+  /** The header's nav links the user may follow, in order. */
+  readonly mainNav = computed(() => this.navItems('main'));
+  /** The profile menu's links the user may follow, in order. */
+  readonly userNav = computed(() => this.navItems('user'));
 
   /**
    * Each module's preload for this trade-unit selection, run in an injection context when subscribed. A preload that
@@ -27,5 +34,12 @@ export class ModuleRegistry {
           return EMPTY;
         }),
       ));
+  }
+
+  private navItems(menu: NavItem['menu']): NavItem[] {
+    return this.modules
+      .flatMap(module => module.nav ?? [])
+      .filter(item => item.menu === menu && this.access.hasAll(item.requires))
+      .sort((a, b) => a.order - b.order);
   }
 }

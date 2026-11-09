@@ -22,11 +22,11 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 // Project services
 import { ThemeService } from '@core/services/theme.service';
 import { AppStateService } from '@core/services/app-state.service';
-import { PermissionService } from '@core/access/permission.service';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { HelpPanelService } from '@core/help/help-panel.service';
+import { ModuleRegistry } from '@core/modules/module-registry';
 
 // Shared components
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -50,24 +50,16 @@ export class HeaderComponent {
   private readonly msalBroadcast = inject(MsalBroadcastService);
   private readonly http = inject(HttpClient);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly access = inject(PermissionService);
   private readonly userTradeUnits = inject(UserTradeUnitsService);
   /** Public: the template reads hasUnseen() and version() straight off it. */
   readonly whatsNew = inject(WhatsNewService);
   private readonly usageTracking = inject(UsageTrackingService);
   /** Public: the template reads open() for the Help button's pressed state. */
   readonly helpPanel = inject(HelpPanelService);
+  /** Public: the template renders mainNav() and userNav(), the modules' links the user may follow. */
+  readonly modules = inject(ModuleRegistry);
 
   readonly envName = environment.envName;
-  readonly bidSheetEnabled = environment.bidSheetEnabled;
-  // Groups (daily recap + @-mentionable in notes). On in every environment — see
-  // environment.dailyDigestEnabled, which still carries the original Daily Digest name.
-  readonly dailyDigestEnabled = environment.dailyDigestEnabled;
-  // Shown only to users who can open the dashboard: the route's permissionGuard and every dashboard
-  // endpoint check the same usage-reports:read.
-  get usageDashboardEnabled(): boolean {
-    return environment.usageDashboardEnabled && this.access.has('usage-reports:read');
-  }
 
   mobileMenuOpen = signal(false);
   profileMenuOpen = signal(false);

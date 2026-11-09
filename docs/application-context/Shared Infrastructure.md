@@ -113,7 +113,13 @@ Coordinates the bulk fetch of customer/contract/ticket/note data when trade unit
 
 `client/src/app/core/modules/` and `client/src/app/app.modules.ts`
 
-Each module (a folder under `features/`) declares a `ModuleManifest` in its `<module>.module.ts` (`producersModule` in `producers.module.ts`, …). `app.modules.ts` is the only file that lists them all, and imports each manifest from that file rather than the module's `index.ts`, so a module's components stay out of the initial bundle; `main.ts` provides that list as `APP_MODULES`, and core reads it through `ModuleRegistry`, so core never imports a module. A manifest carries the module's id and, optionally, its `preload(tradeUnits)`, which returns its work as an Observable and loads only what the user may read.
+Each module (a folder under `features/`) declares a `ModuleManifest` in its `<module>.module.ts` (`producersModule` in `producers.module.ts`, …). `app.modules.ts` is the only file that lists them all, and imports each manifest from that file rather than the module's `index.ts`, so a module's components stay out of the initial bundle; `main.ts` provides that list as `APP_MODULES`, and core reads it through `ModuleRegistry`, so core never imports a module. A manifest carries the module's id and, optionally:
+
+- **`routes`**, its pages, each naming the permissions it needs (`requires`; empty for a page every signed-in user may open). `app.routes.ts` builds the router's routes from every manifest with `moduleRoutes` (`core/modules/module-routes.ts`), then adds the catch-all that sends any other path home. Every page gets `authGuard`; a page that names permissions also gets `permissionGuard`, with them as its route data.
+- **`nav`**, its header links, each naming the same permissions as its page, a label (and a shorter one for the desktop bar below `2xl`), its icon as SVG path data, an `order`, and its menu: `main` for the desktop bar and the mobile menu, `user` for the profile menu. The header draws `ModuleRegistry.mainNav()` and `userNav()`, which keep only the links the user's permissions allow, sorted by `order`. The header's own items stay in its template: the logo and the mobile menu's home link, Help, What's New and Trade Unit Preferences.
+- **`preload(tradeUnits)`**, which returns its work as an Observable and loads only what the user may read.
+
+No page is switched on or off per environment: a module is turned off in one environment by taking its permissions away from that environment's roles, which closes the API as well.
 
 > **Known perf cost:** `getTodaysTickets` runs the customer-storage gate (a scan of `ctrm.vw_GNTA39D1`, see the Ticket note below), so it isn't as fast as the "core group" comment assumes — and since it's in the blocking group, it can delay both screens. There's an in-flight change to drop the storage scan from that path and let each screen/category load on its own data; if you're reading this after that merges, the model above will have per-dataset loading flags.
 
@@ -231,7 +237,7 @@ Registration: `Program.cs` calls `AddPlatform()` (`Api/Platform/PlatformModule.c
 
 `client/src/app/core/auth/auth.guard.ts` — wraps `MsalGuard.canActivate()` and adds the deep-link save behavior.
 
-`client/src/app/core/access/permission.guard.ts` — `permissionGuard`, a `canMatch` guard: the route matches only when the user holds every permission in its `data.requires`, written `data: requires('usage-reports:read')`. It waits for the first permissions load and denies if that failed, so a typed URL never gets through on the empty set held while loading. A refused route falls through to the catch-all, and its code is never downloaded. Used on the usage dashboard routes.
+`client/src/app/core/access/permission.guard.ts` — `permissionGuard`, a `canMatch` guard: the route matches only when the user holds every permission in its `data.requires`, written `data: requires('usage-reports:read')`. It waits for the first permissions load and denies if that failed, so a typed URL never gets through on the empty set held while loading. A refused route falls through to the catch-all, and its code is never downloaded. `moduleRoutes` adds it to every page whose manifest names permissions: the Planting Intentions Dashboard, Build a List, Actionable Insights, Bid Sheet, Manage Groups and the usage dashboard pages.
 
 ### Permissions (frontend)
 

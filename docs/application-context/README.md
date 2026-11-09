@@ -40,7 +40,7 @@ This folder is the canonical reference for **what each screen of the Origination
 - **File paths** are repo-relative (e.g., `client/src/app/...`). Line numbers shown like `home.component.ts:158` are accurate at the time of writing; if the file has shifted, grep for the literal symbol or string instead.
 - **Mermaid diagrams** show data flow: `UI → ApiService → Controller → DataService → DB`. GitHub renders these natively.
 - **DB tables** are written schema-qualified (`originations.vw_CurrentCustomers`, `dbo.Notes`) so it's unambiguous which database they live in (ODS vs. Origination app DB).
-- **Environment toggles** (`environment.bidSheetEnabled`, etc.) live in `client/src/environments/environment.ts` and its variants.
+- **Environment toggles** (`environment.barchartBidsEnabled`, etc.) live in `client/src/environments/environment.ts` and its variants.
 - **PRs and commits** referenced in the docs link back to `scoular.ghe.com/IT/origination` and exist for context — they're not authoritative; the code is.
 
 ## Keeping these docs accurate

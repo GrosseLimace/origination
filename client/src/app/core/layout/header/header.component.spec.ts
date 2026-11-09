@@ -1,8 +1,10 @@
 import { signal } from '@angular/core';
-import { render, screen } from '@testing-library/angular';
+import { render, screen, within } from '@testing-library/angular';
 import userEvent from '@testing-library/user-event';
 import { MsalService } from '@azure/msal-angular';
 import { HeaderComponent } from './header.component';
+import { ModuleManifest } from '@core/modules/module-manifest';
+import { APP_MODULES } from '@core/modules/module-registry';
 import { ThemeService } from '@core/services/theme.service';
 import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
@@ -23,11 +25,27 @@ describe('HeaderComponent', () => {
   // service fetches both over HTTP on construction.
   const whatsNewStub = { hasUnseen: signal(false), version: signal<any>(null) };
   const usageTrackingStub = { trackWhatsNewOpened: vi.fn() };
+  // The header knows no module: it draws whatever links the modules declare. Listed out of order on purpose.
+  const modules: ModuleManifest[] = [
+    {
+      id: 'lists',
+      nav: [{ requires: ['query-library:read'], label: 'Build a List', path: '/build-list', icon: ['M3 6h18'], order: 20, menu: 'main' }],
+    },
+    {
+      id: 'producers',
+      nav: [{ requires: ['planting-estimates:read'], label: 'Planting Intentions Dashboard', shortLabel: 'Dashboard', path: '/dashboard', icon: ['M18 20V10'], order: 10, menu: 'main' }],
+    },
+    {
+      id: 'usage-analytics',
+      nav: [{ requires: ['usage-reports:read'], label: 'Usage Dashboard', path: '/usage-dashboard', icon: ['M16 21v-2'], order: 10, menu: 'user' }],
+    },
+  ];
 
   function baseProviders(extra: any[] = [], access: PermissionStub = permissionStub()) {
     return provideTestEnvironment({
       extraProviders: [
         { provide: ThemeService, useValue: themeStub },
+        { provide: APP_MODULES, useValue: modules },
         providePermissions(access),
         { provide: UserTradeUnitsService, useValue: tradeUnitsStub },
         { provide: WhatsNewService, useValue: whatsNewStub },
@@ -61,14 +79,53 @@ describe('HeaderComponent', () => {
     expect(logoutSpy).toHaveBeenCalled();
   });
 
-  describe('Usage Dashboard menu item', () => {
+  describe("a module's main links", () => {
+    /** The desktop bar's links, in order, as "short label / full label": CSS shows one or the other by width. */
+    function desktopLinks(container: Element): string[] {
+      return [...container.querySelectorAll('app-button')]
+        .map(button => [...button.querySelectorAll('span')].map(label => label.textContent!.trim()).join(' / '));
+    }
+
+    it('are shown in order on the desktop bar and in the mobile menu, to a user holding their permissions', async () => {
+      const { container, fixture } = await render(HeaderComponent, {
+        providers: baseProviders([], permissionStub(['query-library:read', 'planting-estimates:read'])),
+      });
+
+      expect(desktopLinks(container)).toEqual(['Dashboard / Planting Intentions Dashboard', 'Build a List / Build a List']);
+
+      fixture.componentInstance.toggleMobileMenu();
+      fixture.detectChanges();
+      const menu = within(screen.getByRole('navigation')).getAllByRole('button').map(button => button.textContent!.trim());
+      // The header's own items, home and Help, frame the modules' links.
+      expect(menu).toEqual(['Producers', 'Planting Intentions Dashboard', 'Build a List', 'Help']);
+    });
+
+    it('leave out a link whose permissions the user lacks', async () => {
+      const { container } = await render(HeaderComponent, { providers: baseProviders([], permissionStub(['query-library:read'])) });
+
+      expect(desktopLinks(container)).toEqual(['Build a List / Build a List']);
+    });
+
+    it('appear once the permissions load', async () => {
+      const access = permissionStub();
+      const { container, fixture } = await render(HeaderComponent, { providers: baseProviders([], access) });
+      expect(desktopLinks(container)).toEqual([]);
+
+      access.grant('planting-estimates:read');
+      fixture.detectChanges();
+
+      expect(desktopLinks(container)).toEqual(['Dashboard / Planting Intentions Dashboard']);
+    });
+  });
+
+  describe("a module's profile-menu link", () => {
     async function openProfileMenu(access = permissionStub()) {
       const msal = makeMsalServiceMock({ name: 'Jane Doe', username: 'jdoe@scoular.com' });
       await render(HeaderComponent, { providers: baseProviders([{ provide: MsalService, useValue: msal }], access) });
       await userEvent.click(screen.getAllByTitle('Jane Doe')[0]);
     }
 
-    it('is shown to a holder of usage-reports:read, the permission the route and the API check', async () => {
+    it('is shown to a user holding its permissions', async () => {
       await openProfileMenu(permissionStub(['usage-reports:read']));
 
       expect(screen.getAllByRole('button', { name: /usage dashboard/i }).length).toBeGreaterThan(0);

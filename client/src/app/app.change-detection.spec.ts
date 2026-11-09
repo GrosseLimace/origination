@@ -45,6 +45,14 @@ function body(url: string): unknown {
       ctrmContractNumber: n === 1 ? 'PYC' + id + '1' : null, organizationCode: '1084', appliedNetQuantity: 1000 }));
   }
   if (url.includes('conversions')) return [{ commodityCode: 'YC', lbsPerUnit: 56 }];
+  // Every read the pages below need, so each one renders instead of being sent home.
+  if (url.includes('/me/permissions')) {
+    return {
+      userId: 'CEgr', roles: [], modules: [], segments: [],
+      permissions: ['planting-estimates:read', 'query-library:read', 'saved-lists:read:own', 'customers:read', 'contracts:read',
+        'tickets:read', 'bid-sheets:read', 'recap-groups:read', 'usage-reports:read'],
+    };
+  }
   if (url.includes('/me')) return { userId: 'CEgr', displayName: 'Caden', roles: [] };
   return [];
 }
@@ -110,6 +118,8 @@ describe('NG0103 probe', () => {
       if (other.length) console.log(`[${url}] other errors:`, [...new Set(other)].slice(0, 5));
       if (ng0103.length) console.log(`[${url}] NG0103 x${ng0103.length}:`, String((ng0103[0] as Error).stack).slice(0, 1500));
       expect(ng0103.length).toBe(0);
+      // The page itself rendered: a guard that refused it would have sent the probe home instead.
+      expect(TestBed.inject(Router).url).toBe(url);
     }, 30000);
   }
 });

@@ -36,5 +36,23 @@ export function preloadDashboardSummary(tradeUnits: readonly string[]): Observab
 
 export const producersModule: ModuleManifest = {
   id: 'producers',
+  routes: [
+    {
+      path: 'dashboard',
+      requires: ['planting-estimates:read'],
+      loadComponent: () => import('./pages/dashboard/dashboard.component').then(m => m.DashboardComponent),
+    },
+  ],
+  nav: [
+    {
+      requires: ['planting-estimates:read'],
+      label: 'Planting Intentions Dashboard',
+      shortLabel: 'Dashboard',
+      path: '/dashboard',
+      icon: ['M18 20V10', 'M12 20V4', 'M6 20v-6'],
+      order: 10,
+      menu: 'main',
+    },
+  ],
   preload: preloadDashboardSummary,
 };
