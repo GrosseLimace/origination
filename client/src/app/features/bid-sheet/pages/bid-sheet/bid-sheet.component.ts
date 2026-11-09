@@ -34,6 +34,8 @@ import {
   buildPrintLayout, cellStyleMap, DEFAULT_PRINT_LAYOUT_STYLE, parsePrintLayoutStyle, PRINT_GEOMETRY, renderPrintDocument, tableColWidthPcts,
   PrintCropGroup, PrintColumn, PrintLayoutModel, PrintLayoutStyle, PrintLocation
 } from '../../utils/print-layout';
+import { BidSheetApiService } from '../../data-access/bid-sheet-api.service';
+import { RecapGroupsApiService } from '@features/engagement';
 
 /**
  * One Edit Bids column, as the user chose it: a single crop in a single delivery month of a single
@@ -125,6 +127,8 @@ const FILTER_BAR_WRAP_WIDTH = 1050;
 export class BidSheetComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly apiService = inject(ApiService);
+  private readonly bidSheetApi = inject(BidSheetApiService);
+  private readonly recapGroupsApi = inject(RecapGroupsApiService);
   private readonly appState = inject(AppStateService);
   private readonly toastService = inject(ToastService);
   private readonly handledErrors = inject(HandledErrorReporter);
@@ -615,7 +619,7 @@ export class BidSheetComponent {
       this.removingLocations.set(true);
       const sheetCount = bySheet.size;
       forkJoin([...bySheet].map(([sheetId, locationIds]) =>
-        this.apiService.removeBidSheetLocations(sheetId, locationIds)))
+        this.bidSheetApi.removeBidSheetLocations(sheetId, locationIds)))
         .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
           next: (sheets) => {
             this.removingLocations.set(false);
@@ -1435,7 +1439,7 @@ export class BidSheetComponent {
     const inFlight = this._catalogDetailInFlight.get(locationKey);
     if (inFlight) return inFlight;
 
-    const request = this.apiService.getBarchartLocationDetail(locationKey).pipe(
+    const request = this.bidSheetApi.getBarchartLocationDetail(locationKey).pipe(
       takeUntilDestroyed(this.destroyRef),
       tap(detail => this._catalogDetailCache.set(locationKey, detail)),
       // Cleared on success AND on failure, so a location that failed once can be retried by clicking
@@ -1617,7 +1621,7 @@ export class BidSheetComponent {
    * the crop and year lists are derived from the payload that just arrived.
    */
   private _loadAllMapLocations(onLoaded?: () => void): void {
-    this.apiService.getAllBidSheetLocations().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.bidSheetApi.getAllBidSheetLocations().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (locs) => {
         this.allMapLocations.set(locs);
         this._applyBidFilterSources();
@@ -1679,7 +1683,7 @@ export class BidSheetComponent {
    * create or pick one.
    */
   private _loadSheets(preferredSheetIds: number[]): void {
-    this.apiService.getBidSheets().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.bidSheetApi.getBidSheets().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (list) => {
         this.sheets.set(list);
         this.sheetsLoaded.set(true);
@@ -1848,7 +1852,7 @@ export class BidSheetComponent {
     const cropCode = this.selectedCrop() || null;
     const month = this.selectedMonth();
     const cropYear = this.selectedYear() || null;
-    this.apiService.setBidSheetPreference({
+    this.bidSheetApi.setBidSheetPreference({
       tradeUnitKey: BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear,
       selectedBidSheetIds: JSON.stringify(ids)
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -1883,7 +1887,7 @@ export class BidSheetComponent {
     }
 
     this.creatingSheet.set(true);
-    this.apiService.createBidSheet(name).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.bidSheetApi.createBidSheet(name).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (sheet) => {
         this.creatingSheet.set(false);
         this._applySheet(sheet);
@@ -1920,7 +1924,7 @@ export class BidSheetComponent {
     const name = this.renameSheetName().trim();
     if (!sheet || !name || this.renamingSheet()) return;
     this.renamingSheet.set(true);
-    this.apiService.renameBidSheet(sheet.id, name).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.bidSheetApi.renameBidSheet(sheet.id, name).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (updated) => {
         this.renamingSheet.set(false);
         this._applySheet(updated);
@@ -1962,7 +1966,7 @@ export class BidSheetComponent {
     const sheet = this.sheets().find(x => x.id === id);
     if (!sheet || this.deletingSheet()) return;
     this.deletingSheet.set(true);
-    this.apiService.deleteBidSheet(sheet.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.bidSheetApi.deleteBidSheet(sheet.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.deletingSheet.set(false);
         this.showDeleteSheetConfirm.set(false);
@@ -2003,7 +2007,7 @@ export class BidSheetComponent {
       // created or belongs to, so "groups I am in" needs no filtering on this side.
       forkJoin({
         catalog: this.apiService.getEntitlementsCatalog(),
-        recapGroups: this.apiService.getRecapGroups().pipe(catchError(() => of([] as RecapGroup[]))),
+        recapGroups: this.recapGroupsApi.getRecapGroups().pipe(catchError(() => of([] as RecapGroup[]))),
       }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: ({ catalog, recapGroups }) => {
           this.shareCatalog.set(catalog.people ?? []);
@@ -2048,7 +2052,7 @@ export class BidSheetComponent {
     if (!sheet || this.savingShares()) return;
     this.savingShares.set(true);
     const members = this.pendingShares().map(s => ({ memberType: s.memberType, memberId: s.memberId, name: s.name }));
-    this.apiService.setBidSheetShares(sheet.id, members).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.bidSheetApi.setBidSheetShares(sheet.id, members).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (updated) => {
         this.savingShares.set(false);
         this.showShareSheet.set(false);
@@ -2090,7 +2094,7 @@ export class BidSheetComponent {
    * shared with everyone on it, keyed by location id rather than a name a rename could orphan.
    */
   private _loadPreference(): void {
-    this.apiService.getBidSheetPreference(BidSheetComponent.GLOBAL_PREF_KEY)
+    this.bidSheetApi.getBidSheetPreference(BidSheetComponent.GLOBAL_PREF_KEY)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (pref) => {
@@ -2226,7 +2230,7 @@ export class BidSheetComponent {
     // Cash/basis rides along with crop, month and year: it's the same kind of choice, and having it
     // reset on every visit would be its own small annoyance.
     const priceMode = this.priceMode();
-    this.apiService.setBidSheetPreference({ tradeUnitKey: BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear, priceMode })
+    this.bidSheetApi.setBidSheetPreference({ tradeUnitKey: BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear, priceMode })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ error: (err) => { this.handledErrors.report('Failed to save bid sheet preference', err); } });
   }
@@ -2843,7 +2847,7 @@ export class BidSheetComponent {
 
     this.addLocationSaving.set(true);
     // Create the location with NO bids — bids are entered next in the Edit Bids grid.
-    this.apiService.createBidSheetLocation({
+    this.bidSheetApi.createBidSheetLocation({
       name,
       latitude: lat ?? undefined,
       longitude: lng ?? undefined,
@@ -2872,7 +2876,7 @@ export class BidSheetComponent {
 
         // Persist the sheet link in the background. Idempotent server-side, so a race against the
         // optimistic update above just resolves to the same row.
-        this.apiService.addBidSheetLocation(sheetId, saved.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        this.bidSheetApi.addBidSheetLocation(sheetId, saved.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
           next: (sheet) => this._applySheet(sheet),
           error: (err) => { this.handledErrors.report('Failed to link the new location to the sheet', err); }
         });
@@ -3022,7 +3026,7 @@ export class BidSheetComponent {
     // With no crop there is no instrument to price a listing against, so catalog pins fall back to a
     // plain dot.
     if (!crop) {
-      this.apiService.searchBarchartLocations(baseParams).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      this.bidSheetApi.searchBarchartLocations(baseParams).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (rows) => {
           if (gen !== this._catalogLoadGen) return; // a newer pan/zoom/filter already superseded this
           this.catalogLocations.set(rows);
@@ -3039,7 +3043,7 @@ export class BidSheetComponent {
     // endpoint prices one instrument at a time. Cash carries the location metadata (name, coordinates,
     // placements); the basis pass only contributes its price, matched back in by locationKey.
     if (this.priceMode() === 'basis') {
-      this.apiService.searchBarchartLocations({ ...baseParams, ...period, instrumentType: 'bidBasis' })
+      this.bidSheetApi.searchBarchartLocations({ ...baseParams, ...period, instrumentType: 'bidBasis' })
         .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
           next: (rows) => {
             if (gen !== this._catalogLoadGen) return;
@@ -3051,7 +3055,7 @@ export class BidSheetComponent {
       return;
     }
 
-    const cash$ = this.apiService.searchBarchartLocations({ ...baseParams, ...period, instrumentType: 'bidCash' });
+    const cash$ = this.bidSheetApi.searchBarchartLocations({ ...baseParams, ...period, instrumentType: 'bidCash' });
     if (this.priceMode() !== 'both') {
       cash$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (rows) => {
@@ -3064,7 +3068,7 @@ export class BidSheetComponent {
       return;
     }
 
-    const basis$ = this.apiService.searchBarchartLocations({ ...baseParams, ...period, instrumentType: 'bidBasis' });
+    const basis$ = this.bidSheetApi.searchBarchartLocations({ ...baseParams, ...period, instrumentType: 'bidBasis' });
     forkJoin({ cash: cash$, basis: basis$ }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: ({ cash, basis }) => {
         if (gen !== this._catalogLoadGen) return;
@@ -3239,7 +3243,7 @@ export class BidSheetComponent {
   /** Creates the sheet a "build a sheet" batch is destined for, then adds the batch to it. */
   private _createSheetThenBulkAdd(name: string, request: BarchartBulkAddRequest): void {
     this.barchartAdding.set(true);
-    this.apiService.createBidSheet(name).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.bidSheetApi.createBidSheet(name).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (sheet) => {
         this.barchartAdding.set(false);
         this._applySheet(sheet);
@@ -3271,7 +3275,7 @@ export class BidSheetComponent {
     // no-op. 400 is the server's validation status for the duplicate-name create rule, so it is the
     // one status treated as benign.
     const linkToSheet = (locationId: number) =>
-      this.apiService.addBidSheetLocation(sheetId, locationId).pipe(
+      this.bidSheetApi.addBidSheetLocation(sheetId, locationId).pipe(
         map(sheet => ({
           sheet,
           location: sheet.locations.find(l => l.id === locationId) ?? null,
@@ -3288,7 +3292,7 @@ export class BidSheetComponent {
     const creates = request.locations.map(loc =>
       loc.existingLocationId != null
         ? linkToSheet(loc.existingLocationId)
-        : this.apiService.createBidSheetLocation({
+        : this.bidSheetApi.createBidSheetLocation({
             name: loc.name,
             barchartLocationKey: loc.locationKey,
             isScoularFacility: loc.isScoularFacility,
@@ -3346,7 +3350,7 @@ export class BidSheetComponent {
       this.openEditBids(request.locations[0]?.name);
 
       this._loadAllMapLocations();
-      this.apiService.getBidSheet(sheetId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      this.bidSheetApi.getBidSheet(sheetId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (sheet) => this._applySheet(sheet),
         error: (err) => { this.handledErrors.report('Failed to refresh the sheet after a batch add', err); }
       });
@@ -3505,7 +3509,7 @@ export class BidSheetComponent {
         .filter((l): l is BidSheetLocation => !!l)
     }));
 
-    this.apiService.setBidSheetRowOrder(sheetId, locationIds)
+    this.bidSheetApi.setBidSheetRowOrder(sheetId, locationIds)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (sheet) => this._applySheet(sheet),
@@ -3629,7 +3633,7 @@ export class BidSheetComponent {
     const key = this.preferenceKey();
     if (!key) return;
     const payload = BidSheetComponent.serialiseSelectedColumns(this.selectedColumns());
-    this.apiService.setBidSheetPreference({ ...this._panelPrefFields(key), selectedColumns: payload })
+    this.bidSheetApi.setBidSheetPreference({ ...this._panelPrefFields(key), selectedColumns: payload })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ error: (err) => { this.handledErrors.report('Failed to save selected columns', err); } });
   }
@@ -3797,7 +3801,7 @@ export class BidSheetComponent {
     }
 
     this._autoSaving = true;
-    this.apiService.bulkUpsertBidSheetBids(dirty)
+    this.bidSheetApi.bulkUpsertBidSheetBids(dirty)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
@@ -3978,7 +3982,7 @@ export class BidSheetComponent {
     }
 
     this.editBidsSaving.set(true);
-    this.apiService.bulkUpsertBidSheetBids(dirty)
+    this.bidSheetApi.bulkUpsertBidSheetBids(dirty)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
@@ -4348,7 +4352,7 @@ export class BidSheetComponent {
     const cropCode = this.selectedCrop() || null;
     const month = this.selectedMonth();
     const cropYear = this.selectedYear() || null;
-    this.apiService.setBidSheetPreference({ tradeUnitKey: this.preferenceKey(), cropCode, month, cropYear, printLayout: layout })
+    this.bidSheetApi.setBidSheetPreference({ tradeUnitKey: this.preferenceKey(), cropCode, month, cropYear, printLayout: layout })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ error: (err) => { this.handledErrors.report('Failed to save print layout', err); } });
   }
@@ -4480,7 +4484,7 @@ export class BidSheetComponent {
     this.deleteLocationSheetCount.set(null);
     const loc = this.panelSelectedRow();
     if (!loc) return;
-    this.apiService.getBidSheetLocationSheetCount(loc.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.bidSheetApi.getBidSheetLocationSheetCount(loc.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (count) => this.deleteLocationSheetCount.set(count),
       error: () => this.deleteLocationSheetCount.set(null)
     });
@@ -4493,7 +4497,7 @@ export class BidSheetComponent {
     // No trade unit sent. The one on the row is provenance -- whichever desk first added the
     // location -- and sending it 403'd anyone deleting a location a different desk introduced.
     // The server authorizes on the persisted CreatedBy instead: creator or Admin.
-    this.apiService.deleteBidSheetLocation(loc.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.bidSheetApi.deleteBidSheetLocation(loc.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.allMapLocations.update(locs => locs.filter(l => l.id !== loc.id));
         // Company-wide delete: it comes off every sheet, not just the active one.
@@ -4532,7 +4536,7 @@ export class BidSheetComponent {
     const loc = this.panelSelectedRow();
     if (!crop || !loc) return;
     // No trade unit sent -- see confirmDeleteLocation above.
-    this.apiService.deleteBidSheetBids(loc.id, crop).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.bidSheetApi.deleteBidSheetBids(loc.id, crop).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.allMapLocations.update(locs => locs.map(l =>
           l.id === loc.id ? { ...l, bids: (l.bids ?? []).filter(b => b.commodityCode !== crop) } : l
@@ -4717,7 +4721,7 @@ export class BidSheetComponent {
    */
   private _saveLocationFields(
     loc: BidSheetLocation, changes: Partial<BidSheetLocation>, successMessage: string, failureMessage: string): void {
-    this.apiService.updateBidSheetLocation(loc.id, {
+    this.bidSheetApi.updateBidSheetLocation(loc.id, {
       // The CANONICAL name, never the sheet's display name -- see _canonicalNameFor. loc may have come
       // from the sheet's list, where name is already DisplayName ?? canonical, and sending that would
       // publish one sheet's private label as the elevator's real name for everybody.
@@ -4802,7 +4806,7 @@ export class BidSheetComponent {
     // the sheets that did succeed come back in the error-free responses we never see, so the next
     // load reconciles. Half-renamed is visible (the row falls back to the canonical name) rather than
     // silent, which is the right failure for something this cheap to redo.
-    forkJoin(sheetIds.map(id => this.apiService.setBidSheetLocationName(id, locationId, newName)))
+    forkJoin(sheetIds.map(id => this.bidSheetApi.setBidSheetLocationName(id, locationId, newName)))
       .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (updated) => {
           this.toastService.success(sheetIds.length === 1
@@ -4826,7 +4830,7 @@ export class BidSheetComponent {
     if (!loc) return;
     const newValue = !(loc.isScoularFacility ?? false);
 
-    this.apiService.updateBidSheetLocation(loc.id, {
+    this.bidSheetApi.updateBidSheetLocation(loc.id, {
       // The CANONICAL name, never the sheet's display name -- see _canonicalNameFor. loc may have come
       // from the sheet's list, where name is already DisplayName ?? canonical, and sending that would
       // publish one sheet's private label as the elevator's real name for everybody.
@@ -5735,7 +5739,7 @@ export class BidSheetComponent {
   private _addCatalogDetailTo(sheetId: number, detail: BarchartCatalogLocationDetail): void {
     this.catalogDetailAdding.set(true);
     const loc = detail.location;
-    this.apiService.createBidSheetLocation({
+    this.bidSheetApi.createBidSheetLocation({
       name: barchartSaveName(loc),
       barchartLocationKey: loc.locationKey,
       isScoularFacility: (loc.elevator ?? '').toLowerCase().includes('scoular'),
@@ -5751,7 +5755,7 @@ export class BidSheetComponent {
         this.filterBids();
         this._refreshMapMarkers();
 
-        this.apiService.addBidSheetLocation(sheetId, saved.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        this.bidSheetApi.addBidSheetLocation(sheetId, saved.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
           next: (sheet) => this._applySheet(sheet),
           error: (err) => { this.handledErrors.report('Failed to link the new location to the sheet', err); }
         });

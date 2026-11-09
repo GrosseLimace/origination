@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { of, throwError } from 'rxjs';
 
 import { BarchartPickerComponent } from './barchart-picker.component';
-import { ApiService } from '@core/services/api.service';
+import { BidSheetApiService } from '../../data-access/bid-sheet-api.service';
 import { ToastService } from '@core/services/toast.service';
 import { BarchartCatalogLocation, BarchartCoverage } from '@models';
 
@@ -50,7 +50,7 @@ describe('BarchartPickerComponent', () => {
     await TestBed.configureTestingModule({
       imports: [BarchartPickerComponent],
       providers: [
-        { provide: ApiService, useValue: apiMock },
+        { provide: BidSheetApiService, useValue: apiMock },
         { provide: ToastService, useValue: toastMock },
       ],
     }).compileComponents();

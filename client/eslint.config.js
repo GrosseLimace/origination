@@ -85,11 +85,4 @@ module.exports = defineConfig(
       'boundaries/dependencies': ['error', dependencies],
     },
   },
-  // Known violation, a warning until it is fixed: ApiService types recap groups with Engagement's model.
-  {
-    files: ['src/app/core/services/api.service.ts'],
-    rules: {
-      'boundaries/dependencies': ['warn', dependencies],
-    },
-  },
 );

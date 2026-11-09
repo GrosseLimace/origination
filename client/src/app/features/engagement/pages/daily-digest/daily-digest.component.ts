@@ -15,6 +15,7 @@ import {
 } from '@shared/components/dialog/dialog.component';
 import { DeliveryMethod, MemberType, RecapGroup, RecapGroupSaveRequest, RecapMember } from '../../models/recap-group.model';
 import { EntitlementsCatalog } from '@models';
+import { RecapGroupsApiService } from '../../data-access/recap-groups-api.service';
 
 type MemberTab = 'people' | 'trade-units' | 'groups';
 
@@ -48,6 +49,7 @@ type MemberTab = 'people' | 'trade-units' | 'groups';
 })
 export class DailyDigestComponent implements OnInit {
   private readonly apiService = inject(ApiService);
+  private readonly recapGroupsApi = inject(RecapGroupsApiService);
   private readonly toast = inject(ToastService);
   private readonly msalService = inject(MsalService);
   private readonly destroyRef = inject(DestroyRef);
@@ -121,7 +123,7 @@ export class DailyDigestComponent implements OnInit {
   private _loadGroups(): void {
     this.groupsLoading.set(true);
     this.groupsError.set(null);
-    this.apiService.getRecapGroups()
+    this.recapGroupsApi.getRecapGroups()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: groups => {
@@ -361,7 +363,7 @@ export class DailyDigestComponent implements OnInit {
       this.cancelDeleteGroup();
       return;
     }
-    this.apiService.deleteRecapGroup(id)
+    this.recapGroupsApi.deleteRecapGroup(id)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
@@ -385,7 +387,7 @@ export class DailyDigestComponent implements OnInit {
     const next = !group.enabled;
     // Optimistic flip; revert on failure.
     this.groups.update(list => list.map(g => g.id === group.id ? { ...g, enabled: next } : g));
-    this.apiService.setRecapGroupEnabled(group.id, next)
+    this.recapGroupsApi.setRecapGroupEnabled(group.id, next)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: updated => this.groups.update(list => list.map(g => g.id === updated.id ? updated : g)),
@@ -480,8 +482,8 @@ export class DailyDigestComponent implements OnInit {
     };
     this.saving.set(true);
     const request$ = editingId
-      ? this.apiService.updateRecapGroup(editingId, request)
-      : this.apiService.createRecapGroup(request);
+      ? this.recapGroupsApi.updateRecapGroup(editingId, request)
+      : this.recapGroupsApi.createRecapGroup(request);
     request$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({

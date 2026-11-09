@@ -6,7 +6,6 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Observable, finalize } from 'rxjs';
 
 import { alreadyShown } from '@core/http/shown-errors';
-import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { PermissionService } from '@core/access/permission.service';
 import {
@@ -27,6 +26,7 @@ import {
   formatDayLabel, formatLastActive, formatSessionDuration, formatTimeSpent,
   getInitials, getStatusClasses, localIsoDateDaysAgo, toLocalIsoDate, windowDays
 } from '../../utils/usage-format';
+import { UsageDashboardApiService } from '../../data-access/usage-dashboard-api.service';
 
 type DashboardTabId = 'whos-using-it' | 'whats-doing' | 'whos-not';
 
@@ -44,7 +44,7 @@ type DashboardTabId = 'whos-using-it' | 'whats-doing' | 'whos-not';
 })
 export class UsageDashboardComponent {
   readonly Math = Math;
-  private readonly apiService = inject(ApiService);
+  private readonly usageApi = inject(UsageDashboardApiService);
   private readonly toastService = inject(ToastService);
   private readonly access = inject(PermissionService);
   private readonly destroyRef = inject(DestroyRef);
@@ -340,7 +340,7 @@ export class UsageDashboardComponent {
 
   constructor() {
     // One-time capability check — not filter-dependent, so it lives outside the effects below.
-    this.apiService.getUsageExclusionsCanManage()
+    this.usageApi.getUsageExclusionsCanManage()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: p => this.canManageExclusions.set(p.canManage),
@@ -426,7 +426,7 @@ export class UsageDashboardComponent {
   loadManagers(): void {
     this.managersLoading.set(true);
     this.managersLoadFailed.set(false);
-    this.apiService.getUsageManagers()
+    this.usageApi.getUsageManagers()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: rows => {
@@ -465,21 +465,21 @@ export class UsageDashboardComponent {
   }
 
   private loadCoreData(from: string, to: string, managerId?: string): void {
-    this.track(this.apiService.getUsageDashboardSummary(from, to, managerId))
+    this.track(this.usageApi.getUsageDashboardSummary(from, to, managerId))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: data => this.summary.set(data),
         error: err => { if (!alreadyShown(err)) this.toastService.show('Failed to load summary', 'error'); }
       });
 
-    this.track(this.apiService.getUsageDashboardUsers(from, to, managerId))
+    this.track(this.usageApi.getUsageDashboardUsers(from, to, managerId))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: data => this.users.set(data),
         error: err => { if (!alreadyShown(err)) this.toastService.show('Failed to load users', 'error'); }
       });
 
-    this.track(this.apiService.getUsageDailyActive(from, to, managerId))
+    this.track(this.usageApi.getUsageDailyActive(from, to, managerId))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ next: data => this.dailyActive.set(data), error: err => this.reportPanelFailure(err) });
   }
@@ -493,21 +493,21 @@ export class UsageDashboardComponent {
     this.loadedTabKeys.set(tab, key);
 
     if (tab === 'whats-doing') {
-      this.track(this.apiService.getUsageActivityBreakdown(from, to, managerId))
+      this.track(this.usageApi.getUsageActivityBreakdown(from, to, managerId))
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ next: data => this.activityBreakdown.set(data), error: err => this.reportPanelFailure(err) });
 
-      this.track(this.apiService.getUsageQueryLibraryUsage(from, to, managerId))
+      this.track(this.usageApi.getUsageQueryLibraryUsage(from, to, managerId))
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ next: data => this.queryLibraryUsage.set(data), error: err => this.reportPanelFailure(err) });
 
-      this.track(this.apiService.getUsageQuerySearchGaps(from, to, managerId))
+      this.track(this.usageApi.getUsageQuerySearchGaps(from, to, managerId))
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ next: data => this.querySearchGaps.set(data), error: err => this.reportPanelFailure(err) });
     }
 
     if (tab === 'whos-not') {
-      this.track(this.apiService.getUsageUnderusedFeatures(from, to, managerId))
+      this.track(this.usageApi.getUsageUnderusedFeatures(from, to, managerId))
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ next: data => this.underusedFeatures.set(data), error: err => this.reportPanelFailure(err) });
     }
@@ -515,7 +515,7 @@ export class UsageDashboardComponent {
 
   loadFeatureSessions(from: string, to: string, managerId?: string, screen?: string): void {
     this.featureSessionsLoading.set(true);
-    this.track(this.apiService.getUsageFeatureSessions(from, to, managerId, screen))
+    this.track(this.usageApi.getUsageFeatureSessions(from, to, managerId, screen))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: data => { this.featureSessions.set(data); this.featureSessionsLoading.set(false); },
@@ -524,7 +524,7 @@ export class UsageDashboardComponent {
   }
 
   loadWeeklyTrend(managerId?: string): void {
-    this.track(this.apiService.getUsageWeeklyTrend(managerId))
+    this.track(this.usageApi.getUsageWeeklyTrend(managerId))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ next: data => this.weeklyTrend.set(data), error: err => this.reportPanelFailure(err) });
   }

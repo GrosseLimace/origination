@@ -4,7 +4,7 @@ import { Router } from '@angular/router';
 import { Observable, Subject, of, throwError } from 'rxjs';
 import { signal } from '@angular/core';
 
-import { ApiService } from '@core/services/api.service';
+import { UsageDashboardApiService } from '../../data-access/usage-dashboard-api.service';
 import { ToastService } from '@core/services/toast.service';
 import { PermissionService } from '@core/access/permission.service';
 import { UsageDashboardUser, UsageManager } from '@models';
@@ -21,7 +21,7 @@ function manager(over: Partial<UsageManager> = {}): UsageManager {
   return { userId: 'KCanning', displayName: 'Kyle Canning', directReports: 13, totalReports: 45, ...over };
 }
 
-/** Records how many times each ApiService method was called, and the managerId each data call sent. */
+/** Records how many times each usage API method was called, and the managerId each data call sent. */
 function makeApiStub(roster: UsageManager[] = []) {
   const calls: Record<string, number> = {};
   const managerIds: Record<string, (string | undefined)[]> = {};
@@ -66,7 +66,7 @@ function rolesStub(userShortName = 'CEgr') {
 function configure(api: ReturnType<typeof makeApiStub>, roles = rolesStub(), toasts?: string[]) {
   TestBed.configureTestingModule({
     providers: [
-      { provide: ApiService, useValue: api },
+      { provide: UsageDashboardApiService, useValue: api },
       { provide: ToastService, useValue: { show: (m: string) => toasts?.push(m), error: () => {}, success: () => {} } },
       { provide: Router, useValue: { navigate: () => {} } },
       { provide: PermissionService, useValue: roles },

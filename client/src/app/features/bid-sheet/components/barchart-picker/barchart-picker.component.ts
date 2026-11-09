@@ -3,13 +3,13 @@ import { FormsModule } from '@angular/forms';
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { alreadyShown } from '@core/http/shown-errors';
-import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import {
   BarchartCatalogLocation,
   BarchartCoverage
 } from '@models';
 import { barchartDisplayName, barchartSaveName, barchartSiteLabel, isScoularListing } from '../../utils/barchart-location-name';
+import { BidSheetApiService } from '../../data-access/bid-sheet-api.service';
 
 /** Map centre + radius the picker searches around, supplied by the bid sheet map. */
 export interface BarchartSearchArea {
@@ -91,7 +91,7 @@ export class BarchartPickerComponent {
 
   readonly close = output<void>();
 
-  private readonly api = inject(ApiService);
+  private readonly bidSheetApi = inject(BidSheetApiService);
   private readonly toast = inject(ToastService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -225,7 +225,7 @@ export class BarchartPickerComponent {
   });
 
   constructor() {
-    this.api.getBarchartCoverage().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.bidSheetApi.getBarchartCoverage().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: c => this.coverage.set(c),
       // A missing coverage line is cosmetic; the picker still works, so don't interrupt the user.
       error: () => this.coverage.set(null),
@@ -280,7 +280,7 @@ export class BarchartPickerComponent {
     const state = this.stateFilter();
 
     this.loading.set(true);
-    this.api.searchBarchartLocations({
+    this.bidSheetApi.searchBarchartLocations({
       search: text || undefined,
       state: state || undefined,
       // Geography applies only when the user hasn't narrowed by name or state; mixing both would

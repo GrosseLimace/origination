@@ -5,6 +5,7 @@ import { MsalService } from '@azure/msal-angular';
 import { of } from 'rxjs';
 
 import { ApiService } from '@core/services/api.service';
+import { RecapGroupsApiService } from '../../data-access/recap-groups-api.service';
 import { ToastService } from '@core/services/toast.service';
 import { RecapGroup, RecapGroupSaveRequest, RecapMember } from '../../models/recap-group.model';
 
@@ -111,6 +112,7 @@ describe('DailyDigestComponent — shared editing', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {} } },
         {
           provide: MsalService,
@@ -367,6 +369,7 @@ describe('DailyDigestComponent — degraded entitlements catalog', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {} } },
         { provide: MsalService, useValue: { instance: { getActiveAccount: () => ({ username: CALLER }), getAllAccounts: () => [] } } },
       ],

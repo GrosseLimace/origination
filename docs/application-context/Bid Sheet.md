@@ -55,6 +55,7 @@ flowchart LR
 | Template | `client/src/app/features/bid-sheet/pages/bid-sheet/bid-sheet.component.html` |
 | Print layout util (+ spec) | `client/src/app/features/bid-sheet/utils/print-layout.ts` — builds the `PrintLayoutModel` both the preview and the printed sheet render |
 | BarChart picker | `client/src/app/features/bid-sheet/components/barchart-picker/barchart-picker.component.ts` (+ `.html`, `.spec.ts`) |
+| API client | `client/src/app/features/bid-sheet/data-access/bid-sheet-api.service.ts` — locations, bids, sheets, the preference and the BarChart catalog; recap groups for the share dialog come from Engagement's `RecapGroupsApiService` |
 | Sheet multi-select | `client/src/app/features/bid-sheet/components/sheet-multi-select/sheet-multi-select.component.ts` (+ `.html`) — the checkbox list shared by the map toolbar and the Edit Bids header |
 | Controller | `api/GrainOriginatorPortal.Api/Modules/BidSheet/Controllers/BidSheetController.cs` |
 | BarChart catalog controller | `api/GrainOriginatorPortal.Api/Modules/BidSheet/Controllers/BarchartController.cs` |
@@ -514,9 +515,9 @@ arrangement; with the sheet no longer scoped by trade unit there is one arrangem
 read any more.
 
 > **Do not put column preferences on the sheet.** `BidSheets` carries `CropOrder`, `HiddenCrops`,
-> `SelectedMonths` and `SelectedYears`, with a `PUT /bidsheet/sheets/{id}/layout` endpoint and an
-> `ApiService.setBidSheetLayout` to write them. That whole path is **dead**: nothing on the client
-> calls it and `_applySheet` ignores those four fields. It looks like the natural home for
+> `SelectedMonths` and `SelectedYears`, with a `PUT /bidsheet/sheets/{id}/layout` endpoint. That whole
+> path is **dead**: the client's `setBidSheetLayout` was never called and was deleted in 2026-11, and
+> `_applySheet` ignores those four fields. It looks like the natural home for
 > `SelectedColumns` and is not — a sheet is shared with its members, and which columns you are
 > looking at is yours, the same reasoning that puts `SelectedBidSheetIds` on the per-user row.
 

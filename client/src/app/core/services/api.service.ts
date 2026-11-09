@@ -1,7 +1,7 @@
-import { inject, Injectable, isDevMode } from '@angular/core';
-import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { Observable, of, throwError, shareReplay } from 'rxjs';
-import { catchError, finalize, map } from 'rxjs/operators';
+import { inject, Injectable } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Observable, of } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
 import {
   Customer,
   Contract,
@@ -22,49 +22,21 @@ import {
   DashboardSummary,
   ContractPricingLine,
   RefinementFilters,
-  BidSheet,
-  BidSheetEntry,
-  BidSheetLayoutUpdate,
-  BidSheetLocation,
-  BidSheetLocationBid,
-  BidSheetPreferenceRead,
-  BidSheetPreferenceUpdate,
-  BarchartCatalogLocation,
-  BarchartCatalogLocationDetail,
-  BarchartCoverage,
-  BarchartLocationSearchParams,
   CommodityConversion,
   HarvestWindow,
-  UsageDashboardSummary,
-  UsageDashboardUser,
-  DailyActive,
-  FeatureSessions,
-  QueryLibraryUsage,
-  QuerySearchGap,
-  WeeklyTrend,
-  ActivityBreakdown,
-  UnderusedFeature,
-  UserUsageDetail,
-  ExcludedUser,
-  AccessUsers,
-  ExclusionPermissions,
-  UsageManager,
   QueryLibraryItem,
   NoteMention,
   MentionCatalog,
   DpContract
 } from '@models';
 import { environment } from '@env/environment';
-import { ToastService } from '@core/services/toast.service';
-import { ApiError } from '@core/errors/api-error';
+import { injectApiErrorHandler } from '@core/http/api-error-handler';
+import { dedupeRequests } from '@core/http/dedupe-requests';
 
 /**
  * ApiService provides HTTP methods for communicating with the .NET Web API backend.
  * All methods return RxJS Observables for async data handling.
  */
-/** A recap group as the server sends it: an int id, and the CC list under ccList. */
-type RecapGroupDto = import('@features/engagement').RecapGroup & { id: number | string; ccList?: string[] };
-
 /** A saved list as the server sends it: the three JSON columns arrive as strings. */
 type SavedListDto = Omit<SavedList, 'filters' | 'includedCustomerIds' | 'excludedCustomerIds'> & {
   filters?: string | null;
@@ -77,60 +49,17 @@ type SavedListDto = Omit<SavedList, 'filters' | 'includedCustomerIds' | 'exclude
 })
 export class ApiService {
   private readonly http = inject(HttpClient);
-  private readonly toastService = inject(ToastService);
   private readonly baseUrl = environment.apiBaseUrl;
 
-  // ---------------------------------------------------------
-  // In-flight request deduplication — prevents duplicate concurrent calls to the same
-  // slow ODS endpoint (e.g. from HomeComponent._loadAllData() and DataPreloadService).
-  // When a second caller requests the same key while the first is still in-flight,
-  // they share one HTTP request and both receive the same response.
-  private readonly _inFlight = new Map<string, Observable<unknown>>();
-
-  private _dedupe<T>(key: string, request: Observable<T>): Observable<T> {
-    const cached = this._inFlight.get(key);
-    if (cached) return cached as Observable<T>;
-    // finalize sits UPSTREAM of shareReplay so eviction happens when the underlying HTTP call
-    // settles, not when an individual subscriber walks away. The other way round, an unsubscribing
-    // caller (DataPreloadService's switchMap on a trade-unit change) deleted the entry while
-    // refCount: false kept the real request alive — so switching back before it landed fired a
-    // duplicate of the exact call this cache exists to prevent.
-    const shared = request.pipe(
-      finalize(() => this._inFlight.delete(key)),
-      shareReplay({ bufferSize: 1, refCount: false })
-    );
-    this._inFlight.set(key, shared);
-    return shared;
-  }
+  // In-flight request deduplication: concurrent callers of the same slow endpoint share one request.
+  private readonly _dedupe = dedupeRequests();
+  private readonly handleError = injectApiErrorHandler();
 
   /** Where the browser sends its error telemetry, or null when it is off. Swallows its own failure
    *  without a toast: telemetry being unavailable is not something the user can act on. */
   getClientTelemetryConfig(): Observable<{ connectionString: string | null }> {
     return this.http.get<{ connectionString: string | null }>(`${this.baseUrl}/clienttelemetry`)
       .pipe(catchError(() => of({ connectionString: null })));
-  }
-
-  private handleError(error: unknown): Observable<never> {
-    if (isDevMode()) {
-      console.error('API Error:', error);
-    }
-
-    if (error instanceof HttpErrorResponse) {
-      // A 403 has already been shown by forbiddenInterceptor, for every API client, not just this one.
-      if (error.status === 401) {
-        // Previously fell through to the generic path, where most call sites swallow the error —
-        // so a revoked or expired session showed the user nothing at all. MSAL still drives the
-        // re-auth; this only makes sure they're told why the screen stopped working.
-        this.toastService.error('Your session has expired — please refresh the page to sign in again.');
-      }
-      // One typed error for every HTTP failure: the server's real message (fallback order in
-      // ApiError.fromHttpErrorResponse), status, code, field details and correlation id. The API
-      // builds a "(Ref: …)" message around that id so a user can quote it to support, so it has to
-      // survive the trip to the call site.
-      return throwError(() => ApiError.fromHttpErrorResponse(error));
-    }
-
-    return throwError(() => ApiError.fromUnknown(error));
   }
 
   // ==========================================================================
@@ -166,92 +95,6 @@ export class ApiService {
    *  Daily Digest Recap Group picker. One call returns all three lists. */
   getEntitlementsCatalog(): Observable<import('@models').EntitlementsCatalog> {
     return this.http.get<import('@models').EntitlementsCatalog>(`${this.baseUrl}/entitlements/catalog`)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  // ---------------------------------------------------------------------------
-  // Daily Recap Groups (Daily Digest). Any member may edit a group, not just its creator; only
-  // DELETE is creator-only. The server uses an int PK; the frontend model carries id as a string,
-  // so map across the boundary.
-  // ---------------------------------------------------------------------------
-
-  /** Shapes a server RecapGroupDto into the frontend RecapGroup (int id -> string). */
-  private mapRecapGroup(
-    dto: RecapGroupDto,
-  ): import('@features/engagement').RecapGroup {
-    return {
-      id: String(dto.id),
-      name: dto.name,
-      deliveryMethod: dto.deliveryMethod,
-      members: dto.members ?? [],
-      ccList: dto.ccList ?? [],
-      teamsChannelEmail: dto.teamsChannelEmail,
-
-      enabled: dto.enabled,
-      // Both flags are server-computed on every response now, including create/update. The `?? true`
-      // fallbacks only cover a response shape older than this client.
-      isOwner: dto.isOwner ?? true,
-      canEdit: dto.canEdit ?? true,
-      createdBy: dto.createdBy ?? '',
-    };
-  }
-
-  /** Builds the API request body from a save request (members -> {type,id,name,email}, ccList -> ccEmails).
-   *  `enabled` is sent on CREATE only — after that the card's toggle endpoint owns it. The update
-   *  endpoint ignores the field today; omitting it means a future change that starts honouring it
-   *  can't silently switch off an existing group's recap. */
-  private toRecapGroupBody(
-    req: import('@features/engagement').RecapGroupSaveRequest,
-    isCreate: boolean,
-  ) {
-    return {
-      name: req.name,
-      deliveryMethod: req.deliveryMethod,
-      teamsChannelEmail: req.deliveryMethod === 'teams' ? req.teamsChannelEmail : undefined,
-      members: req.members.map(m => ({ type: m.type, id: m.id, name: m.name, email: m.email })),
-      ccEmails: req.ccList,
-      enabled: isCreate ? (req.enabled ?? false) : undefined,
-    };
-  }
-
-  /** Fetches the current user's recap groups. */
-  getRecapGroups(): Observable<import('@features/engagement').RecapGroup[]> {
-    return this.http.get<RecapGroupDto[]>(`${this.baseUrl}/dailyrecapgroups`)
-      .pipe(
-        map(list => list.map(g => this.mapRecapGroup(g))),
-        catchError(e => this.handleError(e)),
-      );
-  }
-
-  /** Creates a new recap group. */
-  createRecapGroup(
-    req: import('@features/engagement').RecapGroupSaveRequest,
-  ): Observable<import('@features/engagement').RecapGroup> {
-    return this.http.post<RecapGroupDto>(`${this.baseUrl}/dailyrecapgroups`, this.toRecapGroupBody(req, true))
-      .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
-  }
-
-  /** Updates an existing recap group. */
-  updateRecapGroup(
-    id: string,
-    req: import('@features/engagement').RecapGroupSaveRequest,
-  ): Observable<import('@features/engagement').RecapGroup> {
-    return this.http.put<RecapGroupDto>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}`, this.toRecapGroupBody(req, false))
-      .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
-  }
-
-  /** Toggles a recap group's enabled flag. */
-  setRecapGroupEnabled(
-    id: string,
-    enabled: boolean,
-  ): Observable<import('@features/engagement').RecapGroup> {
-    return this.http.put<RecapGroupDto>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}/enabled`, { enabled })
-      .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
-  }
-
-  /** Deletes a recap group (cascade removes members + CC emails). */
-  deleteRecapGroup(id: string): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}`)
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -916,233 +759,6 @@ export class ApiService {
   }
 
   // =========================================================================
-  // Bid Sheet Operations
-  // =========================================================================
-
-  /** Gets all bid sheet locations across all trade units (for map display) */
-  getAllBidSheetLocations(): Observable<BidSheetLocation[]> {
-    return this._dedupe('bidsheet-all-locations',
-      this.http.get<BidSheetLocation[]>(`${this.baseUrl}/bidsheet/locations`)
-        .pipe(catchError(e => this.handleError(e)))
-    );
-  }
-
-  /** Creates a new bid sheet location with initial bids */
-  createBidSheetLocation(location: {
-    name?: string; address?: string; city?: string; state?: string;
-    latitude?: number; longitude?: number; elevatorCode?: string;
-    /** Links this placement to a BarChart listing; the server prefills details and pulls its bids in. */
-    barchartLocationKey?: string;
-    tradeUnitCode?: string; groupName?: string; isScoularFacility?: boolean;
-    bids: Array<{ commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string }>;
-  }): Observable<BidSheetLocation> {
-    return this.http.post<BidSheetLocation>(`${this.baseUrl}/bidsheet/locations`, location)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Updates a bid sheet location's metadata */
-  updateBidSheetLocation(id: number, location: Partial<BidSheetLocation>): Observable<BidSheetLocation> {
-    return this.http.put<BidSheetLocation>(`${this.baseUrl}/bidsheet/locations/${id}`, location)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Deletes a bid sheet location and all its bids */
-  deleteBidSheetLocation(id: number): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/bidsheet/locations/${id}`)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Deletes all bids for a specific commodity on a location */
-  deleteBidSheetBids(locationId: number, commodityCode: string): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/bidsheet/locations/${locationId}/bids/${encodeURIComponent(commodityCode)}`)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Bulk upserts bids (used by the edit-bids grid) */
-  bulkUpsertBidSheetBids(bids: Array<{
-    locationId?: number; name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string;
-    latitude?: number; longitude?: number;
-    commodityCode: string; commodityName?: string; commodityCategory?: string;
-    cropYear: number; bid: string; basisBid?: string; month?: number;
-  }>): Observable<void> {
-    return this.http.post<void>(`${this.baseUrl}/bidsheet/bids/bulk`, bids)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Gets saved bid sheet preferences (crop, month, year) for the current user and a trade unit key. */
-  getBidSheetPreference(tradeUnitKey: string): Observable<BidSheetPreferenceRead | null> {
-    return this._dedupe(`bidsheet-preference-${tradeUnitKey}`,
-      this.http.get<BidSheetPreferenceRead>(`${this.baseUrl}/bidsheet/preference`, { params: { tradeUnitKey } })
-        .pipe(catchError(() => of(null)))
-    );
-  }
-
-  /** Saves bid sheet preferences for the current user and a trade unit key. */
-  /**
-   * Saves a bid sheet preference.
-   *
-   * Named fields rather than positional ones. The server assigns cropCode/month/cropYear
-   * unconditionally but only writes the JSON columns it is given, so every caller has to pass the
-   * first three even when saving something unrelated -- as nine positional arguments that was a
-   * mis-ordered call waiting to happen, and it grew every time a preference was added.
-   */
-  setBidSheetPreference(pref: BidSheetPreferenceUpdate): Observable<void> {
-    return this.http.put<void>(`${this.baseUrl}/bidsheet/preference`, pref)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  // =========================================================================
-  // Sheets — the named, shareable working sets of locations
-  //
-  // Every write returns the whole sheet back, already ordered, so the caller never has to reload to
-  // stay in step with a colleague who changed it a moment ago.
-  // =========================================================================
-
-  /** Sheets the signed-in user owns or has been shared on. */
-  getBidSheets(): Observable<BidSheet[]> {
-    return this.http.get<BidSheet[]>(`${this.baseUrl}/bidsheet/sheets`)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** One sheet with its shares and locations. 403 if it exists but is not shared with you. */
-  getBidSheet(sheetId: number): Observable<BidSheet> {
-    return this.http.get<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}`)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Creates an empty sheet owned by the signed-in user. 409 if they already have one by that name. */
-  createBidSheet(name: string): Observable<BidSheet> {
-    return this.http.post<BidSheet>(`${this.baseUrl}/bidsheet/sheets`, { name })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Renames a sheet. Owner only. */
-  renameBidSheet(sheetId: number, name: string): Observable<BidSheet> {
-    return this.http.put<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}`, { name })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Deletes a sheet. Owner only. The locations on it are company-wide and survive. */
-  deleteBidSheet(sheetId: number): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/bidsheet/sheets/${sheetId}`)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /**
-   * Replaces who a sheet is shared with. Any member. An empty list unshares it. Null (a 204) when the
-   * caller took themselves off the sheet: the change is saved and there is no sheet left for them.
-   */
-  setBidSheetShares(sheetId: number, members: Array<{ memberType: string; memberId: string; name?: string }>): Observable<BidSheet | null> {
-    return this.http.put<BidSheet | null>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/shares`, { members })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Saves part of the shared column layout. Omitted fields keep their stored value. */
-  setBidSheetLayout(sheetId: number, layout: BidSheetLayoutUpdate): Observable<BidSheet> {
-    return this.http.put<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/layout`, layout)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Puts an existing location on the sheet. Idempotent. Any member. */
-  addBidSheetLocation(sheetId: number, locationId: number): Observable<BidSheet> {
-    return this.http.post<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/locations`, { locationId })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Takes a location off the sheet. The location itself is untouched — that is deleteBidSheetLocation. */
-  removeBidSheetLocation(sheetId: number, locationId: number): Observable<BidSheet> {
-    return this.http.delete<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/locations/${locationId}`)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /**
-   * Saves the shared row order for a sheet. Any member; the order is shared, not per-user.
-   *
-   * Named apart from setBidSheetLocationOrder above, which is the per-user, per-trade-unit JSON
-   * order this replaces. Both exist only until the screen is fully moved onto sheets.
-   */
-  setBidSheetRowOrder(sheetId: number, locationIds: number[]): Observable<BidSheet> {
-    return this.http.put<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/location-order`, { locationIds })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /**
-   * Takes several locations off a sheet in one transaction — unlinking, not deleting. The locations
-   * and their bids survive; other sheets holding them are untouched. One call rather than N so a
-   * multi-select cannot half-apply. (Deleting an elevator outright is deleteBidSheetLocation, which
-   * is restricted to its creator and warns how many sheets hold it.)
-   */
-  removeBidSheetLocations(sheetId: number, locationIds: number[]): Observable<BidSheet> {
-    return this.http.put<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/locations/remove`, { locationIds })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /**
-   * Renames a location ON ONE SHEET. Locations are company-wide, so updateBidSheetLocation's rename
-   * lands on every sheet holding that elevator; this stores the sheet's own display name and leaves
-   * the canonical row alone. A null or blank name clears the override, back to the canonical name.
-   */
-  setBidSheetLocationName(sheetId: number, locationId: number, name: string | null): Observable<BidSheet> {
-    return this.http.put<BidSheet>(`${this.baseUrl}/bidsheet/sheets/${sheetId}/locations/${locationId}/name`, { name })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /**
-   * How many sheets hold this location. Deleting a location is company-wide now, so the confirmation
-   * says the number out loud before it takes the elevator off everybody else's sheet.
-   */
-  getBidSheetLocationSheetCount(locationId: number): Observable<number> {
-    return this.http.get<number>(`${this.baseUrl}/bidsheet/locations/${locationId}/sheet-count`)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  // =========================================================================
-  // BarChart Catalog (read-only vendor data behind the "Add from BarChart" picker)
-  // =========================================================================
-
-  /**
-   * Searches the vendor catalog. Pass latitude+longitude (and optionally radiusMiles) for the
-   * map-driven path; results then come back nearest-first with a distance on each one.
-   *
-   * Not de-duplicated on purpose: the caller varies these params as the user pans and types, so a
-   * cached first response would be the wrong answer for every later call.
-   */
-  searchBarchartLocations(params: BarchartLocationSearchParams): Observable<BarchartCatalogLocation[]> {
-    let httpParams = new HttpParams();
-    if (params.search) httpParams = httpParams.set('search', params.search);
-    if (params.state) httpParams = httpParams.set('state', params.state);
-    if (params.commodityCode) httpParams = httpParams.set('commodityCode', params.commodityCode);
-    if (params.cropYear != null) httpParams = httpParams.set('cropYear', String(params.cropYear));
-    if (params.month != null) httpParams = httpParams.set('month', String(params.month));
-    if (params.instrumentType) httpParams = httpParams.set('instrumentType', params.instrumentType);
-    if (params.latitude != null && params.longitude != null) {
-      httpParams = httpParams.set('latitude', String(params.latitude))
-                             .set('longitude', String(params.longitude));
-      if (params.radiusMiles != null) httpParams = httpParams.set('radiusMiles', String(params.radiusMiles));
-    }
-    if (params.take != null) httpParams = httpParams.set('take', String(params.take));
-    return this.http.get<BarchartCatalogLocation[]>(`${this.baseUrl}/barchart/locations`, { params: httpParams })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /**
-   * One catalog listing plus the bids it currently publishes -- what clicking an un-added pin on the
-   * bid sheet map fetches, so the user sees real prices before deciding to add it.
-   */
-  getBarchartLocationDetail(locationKey: string): Observable<BarchartCatalogLocationDetail> {
-    return this.http.get<BarchartCatalogLocationDetail>(`${this.baseUrl}/barchart/locations/${encodeURIComponent(locationKey)}`)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Catalog totals and per-state counts. De-duplicated: it changes only when the feed reloads. */
-  getBarchartCoverage(): Observable<BarchartCoverage> {
-    return this._dedupe('barchart-coverage',
-      this.http.get<BarchartCoverage>(`${this.baseUrl}/barchart/coverage`)
-        .pipe(catchError(e => this.handleError(e)))
-    );
-  }
-
-  // =========================================================================
   // Geocoding
   // =========================================================================
 
@@ -1152,119 +768,4 @@ export class ApiService {
       .pipe(catchError(() => of([])));
   }
 
-  // =========================================================================
-  // Usage Dashboard
-  // =========================================================================
-
-  // The manager filter is the dashboard's only narrowing — it is organised by reporting line, so the
-  // app-wide trade-unit selection is deliberately not sent.
-  private usageParams(from: string, to: string, managerId?: string, extra?: Record<string, string>): Record<string, string> {
-    const p: Record<string, string> = { from, to };
-    if (managerId) p['managerId'] = managerId;
-    if (extra) Object.assign(p, extra);
-    return p;
-  }
-
-  getUsageDashboardSummary(from: string, to: string, managerId?: string): Observable<UsageDashboardSummary> {
-    return this.http.get<UsageDashboardSummary>(`${this.baseUrl}/usage-dashboard/summary`, { params: this.usageParams(from, to, managerId) })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Returns the full user universe. Status filtering stays client-side: the same list also feeds
-   *  the status donut, the activity-breakdown table and the low-usage panel, so a server-filtered
-   *  response could not replace it. */
-  getUsageDashboardUsers(from: string, to: string, managerId?: string): Observable<UsageDashboardUser[]> {
-    return this.http.get<UsageDashboardUser[]>(`${this.baseUrl}/usage-dashboard/users`, { params: this.usageParams(from, to, managerId) })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  getUsageDailyActive(from: string, to: string, managerId?: string): Observable<DailyActive[]> {
-    return this.http.get<DailyActive[]>(`${this.baseUrl}/usage-dashboard/daily-active`, { params: this.usageParams(from, to, managerId) })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  getUsageFeatureSessions(from: string, to: string, managerId?: string, screen?: string): Observable<FeatureSessions[]> {
-    const extra: Record<string, string> = {};
-    if (screen && screen !== 'all') extra['screen'] = screen;
-    return this.http.get<FeatureSessions[]>(`${this.baseUrl}/usage-dashboard/feature-sessions`, { params: this.usageParams(from, to, managerId, extra) })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Trend over whole calendar weeks. Deliberately takes no date range — it is a trend view, so it
-   *  does not re-fetch when the dashboard's window changes. */
-  getUsageWeeklyTrend(managerId?: string, weeks = 8): Observable<WeeklyTrend[]> {
-    const params: Record<string, string> = { weeks: weeks.toString() };
-    if (managerId) params['managerId'] = managerId;
-    return this.http.get<WeeklyTrend[]>(`${this.baseUrl}/usage-dashboard/weekly-trend`, { params })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  getUsageActivityBreakdown(from: string, to: string, managerId?: string): Observable<ActivityBreakdown[]> {
-    return this.http.get<ActivityBreakdown[]>(`${this.baseUrl}/usage-dashboard/activity-breakdown`, { params: this.usageParams(from, to, managerId) })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  getUsageQueryLibraryUsage(from: string, to: string, managerId?: string): Observable<QueryLibraryUsage[]> {
-    return this.http.get<QueryLibraryUsage[]>(`${this.baseUrl}/usage-dashboard/query-library-usage`, { params: this.usageParams(from, to, managerId) })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  getUsageQuerySearchGaps(from: string, to: string, managerId?: string): Observable<QuerySearchGap[]> {
-    return this.http.get<QuerySearchGap[]>(`${this.baseUrl}/usage-dashboard/query-search-gaps`, { params: this.usageParams(from, to, managerId) })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  getUsageUnderusedFeatures(from: string, to: string, managerId?: string): Observable<UnderusedFeature[]> {
-    return this.http.get<UnderusedFeature[]>(`${this.baseUrl}/usage-dashboard/underused-features`, { params: this.usageParams(from, to, managerId) })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Active managers for the dashboard's manager filter — every dashboard user gets the full roster,
-   *  which the page needs up front to default the filter to the signed-in user. The server fails
-   *  closed with a 503 when the TradeUnitPreferences DB is unreachable, so the picker shows an
-   *  unavailable state. */
-  getUsageManagers(): Observable<UsageManager[]> {
-    return this.http.get<UsageManager[]>(`${this.baseUrl}/usage-dashboard/managers`)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  getUserUsageDetail(userId: string, from: string, to: string): Observable<UserUsageDetail> {
-    return this.http.get<UserUsageDetail>(
-      `${this.baseUrl}/usage-dashboard/users/${encodeURIComponent(userId)}/detail`,
-      { params: this.usageParams(from, to) }
-    ).pipe(catchError(e => this.handleError(e)));
-  }
-
-  // Accounts hidden from every usage-dashboard view. Excluding someone changes nothing about their
-  // access to the app.
-
-  /** Whether the signed-in user is on the exclusion-manager allowlist — gates the gear icon.
-   *  The server enforces the same allowlist on every exclusion endpoint regardless. */
-  getUsageExclusionsCanManage(): Observable<ExclusionPermissions> {
-    return this.http.get<ExclusionPermissions>(`${this.baseUrl}/usage-dashboard/excluded-users/can-manage`)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  getUsageExcludedUsers(): Observable<ExcludedUser[]> {
-    return this.http.get<ExcludedUser[]>(`${this.baseUrl}/usage-dashboard/excluded-users`)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** People with app access (Entra access-group members), for the exclusion picker. */
-  getUsageAccessUsers(): Observable<AccessUsers> {
-    return this.http.get<AccessUsers>(`${this.baseUrl}/usage-dashboard/access-users`)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  addUsageExcludedUser(userId: string, reason?: string): Observable<ExcludedUser> {
-    return this.http.post<ExcludedUser>(`${this.baseUrl}/usage-dashboard/excluded-users`, {
-      userId,
-      reason: reason?.trim() || null
-    }).pipe(catchError(e => this.handleError(e)));
-  }
-
-  removeUsageExcludedUser(id: number): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/usage-dashboard/excluded-users/${id}`)
-      .pipe(catchError(e => this.handleError(e)));
-  }
 }

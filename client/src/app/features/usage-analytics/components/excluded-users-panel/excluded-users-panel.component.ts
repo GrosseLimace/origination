@@ -4,11 +4,11 @@ import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { alreadyShown } from '@core/http/shown-errors';
-import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { AccessUser, ExcludedUser } from '@models';
 
 import { formatLastActive } from '../../utils/usage-format';
+import { UsageDashboardApiService } from '../../data-access/usage-dashboard-api.service';
 
 /**
  * Manages the accounts hidden from every usage-dashboard view — IT, dev and admin accounts whose
@@ -31,7 +31,7 @@ import { formatLastActive } from '../../utils/usage-format';
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ExcludedUsersPanelComponent {
-  private readonly api = inject(ApiService);
+  private readonly usageApi = inject(UsageDashboardApiService);
   private readonly toast = inject(ToastService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -81,7 +81,7 @@ export class ExcludedUsersPanelComponent {
 
   load(): void {
     this.loading.set(true);
-    this.api.getUsageExcludedUsers()
+    this.usageApi.getUsageExcludedUsers()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: rows => { this.excluded.set(rows); this.loading.set(false); },
@@ -93,7 +93,7 @@ export class ExcludedUsersPanelComponent {
 
     // Roster for the picker. If it's unavailable (Graph not configured/blocked) or errors, fall back
     // to free-text entry so exclusions can still be managed.
-    this.api.getUsageAccessUsers()
+    this.usageApi.getUsageAccessUsers()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: res => { this.accessAvailable.set(res.available); this.accessUsers.set(res.users ?? []); },
@@ -117,7 +117,7 @@ export class ExcludedUsersPanelComponent {
     if (!userId) return;
 
     this.saving.set(true);
-    this.api.addUsageExcludedUser(userId, this.newReason())
+    this.usageApi.addUsageExcludedUser(userId, this.newReason())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: row => {
@@ -138,7 +138,7 @@ export class ExcludedUsersPanelComponent {
   }
 
   remove(row: ExcludedUser): void {
-    this.api.removeUsageExcludedUser(row.id)
+    this.usageApi.removeUsageExcludedUser(row.id)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {

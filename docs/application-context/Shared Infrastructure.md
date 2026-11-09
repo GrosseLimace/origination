@@ -30,14 +30,14 @@ flowchart LR
 
 ## Frontend services
 
-### `ApiService`
+### `ApiService` and the module API clients
 
-`client/src/app/core/services/api.service.ts`
+`client/src/app/core/services/api.service.ts`, and each module's `data-access/*-api.service.ts`
 
-- ~68 public methods. Every API call in the app goes through here.
+- **Module clients:** a module whose screens are the only callers has its own client: `BidSheetApiService` (locations, bids, sheets, the preference and the BarChart catalog), `UsageDashboardApiService`, and Engagement's `RecapGroupsApiService` (exported from `@features/engagement` for the bid sheet's share dialog). The calls the customer screen uses stay in `ApiService` until those components move into their modules, along with Platform's own (commodities, trade units, preferences, the entitlements catalog, telemetry config).
 - **Base URL** comes from `environment.apiBaseUrl` (`client/src/environments/environment.ts`).
-- **Request deduplication** for expensive ODS endpoints — see `_dedupe<T>(key, request)`. Used by `getCustomers`, `getContracts`, `getTickets`, `getNotes`, `getStoredGrain`, `getCommodities`, `getElevators`, `getBidSheetLocations`, `getAllProducerDetails`, `getSavedLists`, etc. If two callers ask for the same key in flight, they share one HTTP request.
-- **Error handling** is centralized: a 401 toasts a session-expired message; every failure is logged in dev mode and re-thrown as an `ApiError`. A 403 is shown by `forbiddenInterceptor` instead (see below).
+- **Request deduplication** for expensive endpoints — `dedupeRequests()` in `core/http/dedupe-requests.ts`, one in-flight map per client. Used by `getCustomers`, `getContracts`, `getTickets`, `getNotes`, `getStoredGrain`, `getAllProducerDetails`, `getSavedLists`, the bid sheet's locations and preference, and BarChart coverage, among others. If two callers ask for the same key in flight, they share one HTTP request.
+- **Error handling** is shared by every client: `injectApiErrorHandler()` in `core/http/api-error-handler.ts`. A 401 toasts a session-expired message; every failure is logged in dev mode and re-thrown as an `ApiError`. A 403 is shown by `forbiddenInterceptor` instead (see below).
 
 ### `forbiddenInterceptor` and `alreadyShown`
 

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { Observable, of, throwError } from 'rxjs';
 
-import { ApiService } from '@core/services/api.service';
+import { UsageDashboardApiService } from '../../data-access/usage-dashboard-api.service';
 import { ToastService } from '@core/services/toast.service';
 import { AccessUsers, ExcludedUser } from '@models';
 
@@ -60,7 +60,7 @@ describe('ExcludedUsersPanelComponent', () => {
 
     TestBed.configureTestingModule({
       providers: [
-        { provide: ApiService, useValue: api },
+        { provide: UsageDashboardApiService, useValue: api },
         { provide: ToastService, useValue: { show: (m: string) => toasts.push(m) } },
       ],
     });

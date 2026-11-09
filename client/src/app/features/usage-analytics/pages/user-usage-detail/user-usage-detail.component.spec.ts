@@ -3,7 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { Observable, of, throwError } from 'rxjs';
 
-import { ApiService } from '@core/services/api.service';
+import { UsageDashboardApiService } from '../../data-access/usage-dashboard-api.service';
 import { ToastService } from '@core/services/toast.service';
 import { RecentActivity, UserDailyActivity, UserUsageDetail } from '@models';
 
@@ -106,7 +106,7 @@ function configure(detail$: Observable<UserUsageDetail>, route: RouteStub = { us
 
   TestBed.configureTestingModule({
     providers: [
-      { provide: ApiService, useValue: { getUserUsageDetail } },
+      { provide: UsageDashboardApiService, useValue: { getUserUsageDetail } },
       { provide: ToastService, useValue: { show: (message: string, type = 'info') => toasts.push({ message, type }) } },
       { provide: Router, useValue: { navigate } },
       {

@@ -5,7 +5,6 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { alreadyShown } from '@core/http/shown-errors';
-import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import {
   TableComponent, TableHeaderComponent, TableBodyComponent,
@@ -18,6 +17,7 @@ import {
   formatTimeSpent, formatUsageTimestamp, getInitials, getStatusClasses,
   localIsoDateDaysAgo, toLocalIsoDate, titleCaseCode
 } from '../../utils/usage-format';
+import { UsageDashboardApiService } from '../../data-access/usage-dashboard-api.service';
 
 type TabId = 'producer-page' | 'build-a-list' | 'insights' | 'bidsheet' | 'dashboard' | 'daily-recap';
 
@@ -34,7 +34,7 @@ type TabId = 'producer-page' | 'build-a-list' | 'insights' | 'bidsheet' | 'dashb
 })
 export class UserUsageDetailComponent {
   readonly Math = Math;
-  private readonly api = inject(ApiService);
+  private readonly usageApi = inject(UsageDashboardApiService);
   private readonly toast = inject(ToastService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -158,7 +158,7 @@ export class UserUsageDetailComponent {
 
   load(userId: string, from: string, to: string): void {
     this.loading.set(true);
-    this.api.getUserUsageDetail(userId, from, to)
+    this.usageApi.getUserUsageDetail(userId, from, to)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: data => { this.detail.set(data); this.loading.set(false); },

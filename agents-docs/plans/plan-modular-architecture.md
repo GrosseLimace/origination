@@ -767,6 +767,11 @@ Add ESLint, since none exists today. Use `@angular-eslint` plus `eslint-plugin-b
 | `features/build-list`, `customers/pages/insights`, `customers/components/map` (the customer map, used only by Build a List) | `features/lists` |
 | **Delete (dead code):** `year-over-year-chart` (no remaining users), `AppState.currentView`/`ticketsLoading` (no readers outside the service) | — |
 
+**Changed in Phase 3 (2026-11-08): a service, API call or piece of state moves with the components that use it.** Most of what the table above moves out of core (the NLQ engine, the Outlook and Teams services, the CTRM-split and FD-CIC clients, and most of `ApiService` and `AppStateService`) is used by customer-screen components that stay in `features/customers` until Phase 4 turns them into slot contributions. Moving the services first would make Customers import Lists, Engagement and Producers, which the module map forbids. So:
+- **Phase 3** splits only what the owning module alone calls: the Bid Sheet and Usage Analytics clients, and Engagement's recap-group client (which the bid sheet may use, since Bid Sheet builds on Engagement). The shared error handler and request deduplication moved to `core/http`.
+- **Phase 4** moves each customer-screen component together with its service, API calls and state.
+- Platform's own calls (commodities, trade units, preferences, the entitlements catalog) stay in core for good.
+
 ---
 
 ## 6. Trader data scope (the critical path)
