@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
+import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { Customer, Contract, Ticket, ContractPricingLine } from '@models';
 import { expandSearchWithAliases } from '@shared/utils/commodity-aliases';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
@@ -47,6 +48,8 @@ export class ContractsTableComponent {
   private readonly appState = inject(AppStateService);
   private readonly usageTracking = inject(UsageTrackingService);
   private readonly cdr = inject(ChangeDetectorRef);
+  /** The selected producer's contracts, tickets and pricing, with their loading and failure state. */
+  private readonly activity = inject(SelectedProducerActivity);
 
   /** Commodity code → lbs per bushel. Derived from the signal, so any replacement of the conversion
    *  list rebuilds it (it used to be cached until the list's length changed, and reset by hand in
@@ -59,34 +62,36 @@ export class ContractsTableComponent {
   readonly conversionsUnavailable = computed(() =>
     this.appState.commodityConversionsLoadFailed() && this.appState.commodityConversions().length === 0);
 
-  public isLoading = input(false);
-  public contracts = input<Contract[]>([]);
-  public tickets = input<Ticket[]>([]);
-  public pricingLines = input<ContractPricingLine[]>([]);
+  readonly isLoading = this.activity.isLoadingContracts;
+  readonly contracts = this.activity.contracts;
+  readonly tickets = this.activity.tickets;
+  readonly pricingLines = this.activity.pricingLines;
   public customer = input.required<Customer>();
   public openContractId = input<number | null>(null);
 
   /** Set when the contract read FAILED, as opposed to returning nothing. The two are
    *  indistinguishable in the data, and showing "no contracts found" for a CTRM outage is how a
    *  grower's book appears empty. Null means no error. */
-  public loadError = input<string | null>(null);
+  readonly loadError = this.activity.contractsLoadError;
 
   /** Set when the PRICING-LINE read failed while the contract rows themselves are fine. Rendered in the
    *  pricing section rather than over the whole table: the quantities and dates on screen are correct, so
    *  replacing them with an error would withhold good data. */
-  public pricingLoadError = input<string | null>(null);
+  readonly pricingLoadError = this.activity.pricingLinesLoadError;
 
-  /** Asks the parent to retry the failed read. */
-  public retryLoad = output<void>();
+  /** Reads the producer's contracts again after a failure. */
+  retryLoad(): void {
+    this.activity.retryContracts();
+  }
   /** True while /api/contracts/pricing-lines/customer/{id} is in flight. Pricing Lines
    *  section shows "Loading…" instead of disappearing when this is the case. */
-  public isLoadingPricingLines = input(false);
+  readonly isLoadingPricingLines = this.activity.isLoadingPricingLines;
   /** True while /api/tickets/customer/{id} is in flight. Without this the Applied Tickets
    *  header renders "(0)" while the fetch is still running, because getAppliedTickets()
-   *  filters a tickets input that legitimately starts empty — and "(0)" is indistinguishable
+   *  filters a ticket list that legitimately starts empty — and "(0)" is indistinguishable
    *  from a contract that genuinely has no applied tickets. Contracts arrive in ~2s and
    *  tickets take three date windows, so that window is always visible. */
-  public isLoadingTickets = input(false);
+  readonly isLoadingTickets = this.activity.isLoadingTickets;
   /** Emitted when the optional fulfillment columns are shown/hidden, so the page can give the
    *  contracts table full width (drop the Notes sidebar below) while expanded. */
   public expandedColumnsChange = output<boolean>();

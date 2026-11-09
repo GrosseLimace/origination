@@ -2,6 +2,7 @@ import { DestroyRef, Injectable, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { forkJoin, of, timer } from 'rxjs';
 import { catchError, takeUntil } from 'rxjs/operators';
+import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import type { Contract, ContractPricingLine, Customer, DpContract, StoredGrain, Ticket } from '@models';
@@ -17,11 +18,11 @@ import { HomePageState } from './home-page.state';
  * The selected producer's activity on the producer page: their contracts, tickets and pricing lines, and their
  * stored grain and DP contracts, with the freshness rules, hover prefetch, background refresh, retries and the
  * commodity auto-save that keep them current. Provided by HomeComponent, which exposes these signals under the
- * same names and delegates its handlers here. The trade unit's pools it merges into (contracts, tickets, stored
- * grain, DP) are page state.
+ * same names and delegates its handlers here, and provides this store as the page's SelectedProducerActivity. The
+ * trade unit's pools it merges into (contracts, tickets, stored grain, DP) are page state.
  */
 @Injectable()
-export class HomeProducerActivityStore {
+export class HomeProducerActivityStore implements SelectedProducerActivity {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
   private readonly customerStore = inject(CustomerStore);
@@ -113,6 +114,12 @@ export class HomeProducerActivityStore {
   readonly isLoadingPricingLines = signal(false);
   readonly isLoadingStoredGrain = signal(false);
   readonly isLoadingDpContracts = signal(false);
+
+  // SelectedProducerActivity's names for the same signals.
+  readonly contracts = this.customerContracts.asReadonly();
+  readonly tickets = this.customerTickets.asReadonly();
+  readonly pricingLines = this.customerPricingLines.asReadonly();
+  readonly isLoadingTickets = this.isLoadingUnappliedTickets.asReadonly();
 
   /** Trade units changed: drop every producer's cached reads, so a producer the new scope still covers is re-read. */
   forgetAll(): void {

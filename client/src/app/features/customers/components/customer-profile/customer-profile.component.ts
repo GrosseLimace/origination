@@ -25,6 +25,7 @@ import { formatPhoneDisplay } from '@shared/utils/phone';
 import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl, googleMapsCoordinatesUrl } from '@shared/utils/address';
 import { binSiteHasCoordinates } from '@shared/utils/coordinates';
 import { buildProductionCoverage } from '@shared/utils/production-coverage';
+import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 
 /** One tab in the producer profile's tab strip, with its count badge. */
 interface ProfileTab {
@@ -193,23 +194,14 @@ export class CustomerProfileComponent {
   public yieldEstimates = input<DashboardPlantingEstimate[]>([]);
   public commodities = input<Commodity[]>([]);
   public isLoadingEstimates = input(false);
-  public isLoadingContracts = input(false);
-  public isLoadingUnappliedTickets = input(false);
 
-  /** Non-null when the read FAILED rather than returning nothing - forwarded to the tables so they can
-   *  say so instead of showing their empty state. */
   /** True when this producer's prior-year pacing history could not be read. Forwarded to the pacing
    *  card so it can say the comparison is incomplete instead of showing it as flat. */
   readonly historicalContractsFailed = signal(false);
 
-  public contractsLoadError = input<string | null>(null);
-  public ticketsLoadError = input<string | null>(null);
-  public pricingLinesLoadError = input<string | null>(null);
-
-  /** Bubbled up from the tables' Retry buttons. */
-  public retryContracts = output<void>();
-  public retryTickets = output<void>();
-  public isLoadingPricingLines = input(false);
+  /** Non-null when the producer's contract read FAILED rather than returning nothing. The contracts and tickets
+   *  tables read their data and failures from the page's SelectedProducerActivity themselves. */
+  readonly contractsLoadError = inject(SelectedProducerActivity).contractsLoadError;
   public isLoadingPlanting = input(false);
   public isLoadingStoredGrain = input(false);
   public isLoadingDpContracts = input(false);

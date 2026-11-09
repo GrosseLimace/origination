@@ -5,6 +5,7 @@ import { ContractsTableComponent } from './contracts-table.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { CommodityConversion, Contract, ContractPricingLine, Customer, Ticket } from '@models';
+import { SelectedProducerActivityFake, provideSelectedProducerActivity, selectedProducerActivityFake } from '@testing/selected-producer-activity.fake';
 
 // Behaviour safety net for the per-row derivations (applied tickets, pricing status, delivery
 // stats, calculated status), the row sort, the search filter, the commodity grouping, the
@@ -92,6 +93,8 @@ describe('ContractsTableComponent', () => {
   let component: ContractsTableComponent;
   let ref: ComponentRef<ContractsTableComponent>;
   let trackContractExpand: ReturnType<typeof vi.fn>;
+  /** The selected producer's contracts, tickets and pricing, which the table reads from the page. */
+  let activity: SelectedProducerActivityFake;
   const commodityConversions = signal<CommodityConversion[]>([]);
 
   function setInputs(inputs: {
@@ -99,7 +102,16 @@ describe('ContractsTableComponent', () => {
     isLoading?: boolean; loadError?: string | null; pricingLoadError?: string | null;
     isLoadingPricingLines?: boolean; isLoadingTickets?: boolean; openContractId?: number | null;
   }): void {
-    for (const [name, value] of Object.entries(inputs)) ref.setInput(name, value);
+    const fromActivity: Record<string, { set(value: never): void }> = {
+      contracts: activity.contracts, tickets: activity.tickets, pricingLines: activity.pricingLines,
+      isLoading: activity.isLoadingContracts, loadError: activity.contractsLoadError,
+      pricingLoadError: activity.pricingLinesLoadError, isLoadingPricingLines: activity.isLoadingPricingLines,
+      isLoadingTickets: activity.isLoadingTickets,
+    };
+    for (const [name, value] of Object.entries(inputs)) {
+      if (fromActivity[name]) fromActivity[name].set(value as never);
+      else ref.setInput(name, value);
+    }
     fixture.detectChanges();
   }
 
@@ -122,11 +134,13 @@ describe('ContractsTableComponent', () => {
     vi.setSystemTime(NOW);
     trackContractExpand = vi.fn();
     commodityConversions.set([]);
+    activity = selectedProducerActivityFake();
     await TestBed.configureTestingModule({
       imports: [ContractsTableComponent],
       providers: [
         { provide: AppStateService, useValue: { commodityConversions, commodityConversionsLoadFailed: signal(false) } },
         { provide: UsageTrackingService, useValue: { trackContractExpand } },
+        provideSelectedProducerActivity(activity),
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(ContractsTableComponent);
@@ -524,10 +538,7 @@ describe('ContractsTableComponent', () => {
       expect(host().querySelector('table')).toBeNull();
     });
 
-    it('shows the loading spinner text and, on a failed read, the error with a Retry that asks the parent to reload', () => {
-      const retries = vi.fn();
-      component.retryLoad.subscribe(retries);
-
+    it('shows the loading spinner text and, on a failed read, the error with a Retry that reads the contracts again', () => {
       setInputs({ contracts: [makeContract()], isLoading: true });
       expect(text()).toContain('Loading contracts...');
       expect(bodyRows()).toHaveLength(0);
@@ -537,7 +548,7 @@ describe('ContractsTableComponent', () => {
       expect(text()).toContain('CTRM timed out');
       expect(text()).not.toContain('No contracts found');
       (host().querySelector('button') as HTMLButtonElement).click();
-      expect(retries).toHaveBeenCalledTimes(1);
+      expect(activity.retryContracts).toHaveBeenCalledTimes(1);
     });
 
     it('clicking a row expands it and the pricing section lists that contract\'s lines', () => {
@@ -804,6 +815,7 @@ describe('ContractsTableComponent — bushel conversions failed to load', () => 
   let fixture: ComponentFixture<ContractsTableComponent>;
   let component: ContractsTableComponent;
   let state: AppStateService;
+  let activity: SelectedProducerActivityFake;
 
   const note = "Net bushels can't be shown — the bushel conversions couldn't be loaded. Refresh the page to try again.";
   const text = (): string => ((fixture.nativeElement as HTMLElement).textContent ?? '').replace(/\s+/g, ' ').trim();
@@ -813,8 +825,8 @@ describe('ContractsTableComponent — bushel conversions failed to load', () => 
     fixture = TestBed.createComponent(ContractsTableComponent);
     component = fixture.componentInstance;
     fixture.componentRef.setInput('customer', makeCustomer());
-    fixture.componentRef.setInput('contracts', [makeContract({ id: 1, sourceContractId: 'PCW1' })]);
-    fixture.componentRef.setInput('tickets', tickets);
+    activity.contracts.set([makeContract({ id: 1, sourceContractId: 'PCW1' })]);
+    activity.tickets.set(tickets);
     fixture.detectChanges();
     component.toggleRow(1);
     component.toggleTicketSection(1);
@@ -827,7 +839,10 @@ describe('ContractsTableComponent — bushel conversions failed to load', () => 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [ContractsTableComponent],
-      providers: [{ provide: UsageTrackingService, useValue: { trackContractExpand: vi.fn() } }],
+      providers: [
+        { provide: UsageTrackingService, useValue: { trackContractExpand: vi.fn() } },
+        provideSelectedProducerActivity(activity = selectedProducerActivityFake()),
+      ],
     }).compileComponents();
     state = TestBed.inject(AppStateService);
   });

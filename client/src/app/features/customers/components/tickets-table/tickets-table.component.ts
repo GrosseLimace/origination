@@ -1,9 +1,10 @@
-import { ChangeDetectionStrategy, Component, input, output, effect, inject, signal, computed } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, effect, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
+import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { Customer, Ticket, Contract } from '@models';
 import { expandSearchWithAliases } from '@shared/utils/commodity-aliases';
 import { compareTicketNumbers, compareTicketsByDateThenNumber } from '@shared/utils/ticket-sort';
@@ -50,23 +51,27 @@ interface TicketGroup {
 export class TicketsTableComponent {
   private readonly appState = inject(AppStateService);
   private readonly usageTracking = inject(UsageTrackingService);
+  /** The selected producer's tickets and contracts, with the ticket read's loading and failure state. */
+  private readonly activity = inject(SelectedProducerActivity);
 
   /** Exposed for the template — shows the full shipment ticket number (prefix + number + suffix). */
   readonly ticketDisplayNumber = ticketDisplayNumber;
 
-  public isLoading = input(false);
-  public tickets = input<Ticket[]>([]);
-  public contracts = input<Contract[]>([]);
+  readonly isLoading = this.activity.isLoadingTickets;
+  readonly tickets = this.activity.tickets;
+  readonly contracts = this.activity.contracts;
   public customer = input.required<Customer>();
   public openCrop = input<string | null>(null);
 
-  /** Set when the ticket read FAILED, as opposed to the producer having no tickets. See the same input
+  /** Set when the ticket read FAILED, as opposed to the producer having no tickets. See the same signal
    *  on contracts-table: an empty list and a failed read look identical, and at harvest that means a
    *  grower's deliveries can read as zero. Null means no error. */
-  public loadError = input<string | null>(null);
+  readonly loadError = this.activity.ticketsLoadError;
 
-  /** Asks the parent to retry the failed read. */
-  public retryLoad = output<void>();
+  /** Reads the producer's tickets again after a failure. */
+  retryLoad(): void {
+    this.activity.retryTickets();
+  }
 
   /** Commodity code → lbs per bushel. Derived from the signal, so any replacement of the conversion
    *  list rebuilds it (it used to be cached until the list's length changed). */

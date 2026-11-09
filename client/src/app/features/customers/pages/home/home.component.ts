@@ -34,6 +34,7 @@ import { HomePlantingStore } from './home-planting.store';
 import { HomeProducerActivityStore } from './home-producer-activity.store';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
+import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -50,8 +51,13 @@ import { SelectedCustomerContext } from '@core/context/selected-customer-context
   ],
   templateUrl: './home.component.html',
   // Page-scoped state and behaviour, one instance per visit to the page. SelectedCustomerContext is the customer
-  // the page shows, for the panels and tabs the modules add to it.
-  providers: [HomePageState, HomeBackgroundFailures, HomeRemindersStore, HomeNotesStore, HomeSavedListsStore, HomeLinkedProducersStore, HomePlantingStore, HomeProducerActivityStore, SelectedCustomerContext],
+  // the page shows, and SelectedProducerActivity their contracts, tickets and pricing, for the panels and tabs the
+  // modules add to it.
+  providers: [
+    HomePageState, HomeBackgroundFailures, HomeRemindersStore, HomeNotesStore, HomeSavedListsStore, HomeLinkedProducersStore,
+    HomePlantingStore, HomeProducerActivityStore, SelectedCustomerContext,
+    { provide: SelectedProducerActivity, useExisting: HomeProducerActivityStore },
+  ],
   // The template reads only signals, computeds, getLinkedGroup() (which reads signals) and two
   // constant flags, and every async writer (API callbacks, effects, the resize listener, the
   // deep-link poll) writes signals - home.component.render.spec.ts renders each of those paths.
@@ -779,16 +785,6 @@ export class HomeComponent {
   /** Warms one producer's data on hover so the click renders from memory (see HomeProducerActivityStore.prefetch). */
   handlePrefetchCustomer(customer: Customer): void {
     this.activity.prefetch(customer);
-  }
-
-  /** Retries the producer's contract read after a failure, from the table's Retry button. */
-  retryCustomerContracts(): void {
-    this.activity.retryContracts();
-  }
-
-  /** Retries the producer's ticket read after a failure, from the table's Retry button. */
-  retryCustomerTickets(): void {
-    this.activity.retryTickets();
   }
 
   /** Save handler for the edit dialog. Trade-unit assignment (if any) runs FIRST — for an

@@ -9,6 +9,7 @@ import { ThemeService } from '@core/services/theme.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { Contract, Customer, HarvestWindow, PlantingIntention, SavedList } from '@models';
+import { provideSelectedProducerActivity } from '@testing/selected-producer-activity.fake';
 
 // Covers the Add-to-List "Team Lists" manager extension: the dropdown stages membership across
 // BOTH the user's own saved lists and (for managers) team lists, and the toggle is manager-gated.
@@ -33,6 +34,7 @@ describe('CustomerProfileComponent — Add to List (Team Lists)', () => {
       providers: [
         { provide: ApiService, useValue: {} },
         { provide: ThemeService, useValue: {} },
+        provideSelectedProducerActivity(),
         { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {} } },
       ],
     });
@@ -117,6 +119,7 @@ describe('CustomerProfileComponent — crop year scoping', () => {
       providers: [
         { provide: ApiService, useValue: {} },
         { provide: ThemeService, useValue: {} },
+        provideSelectedProducerActivity(),
         { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {} } },
       ],
     });
@@ -181,6 +184,7 @@ describe('CustomerProfileComponent — address map link', () => {
       providers: [
         { provide: ApiService, useValue: {} },
         { provide: ThemeService, useValue: {} },
+        provideSelectedProducerActivity(),
         { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {}, ...tracking } },
       ],
     });
@@ -233,6 +237,7 @@ describe('CustomerProfileComponent — bin site table', () => {
       providers: [
         { provide: ApiService, useValue: {} },
         { provide: ThemeService, useValue: {} },
+        provideSelectedProducerActivity(),
         { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {}, ...tracking } },
       ],
     });
@@ -406,6 +411,7 @@ describe('CustomerProfileComponent — organic producer badge', () => {
       providers: [
         { provide: ApiService, useValue: {} },
         { provide: ThemeService, useValue: {} },
+        provideSelectedProducerActivity(),
         { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {} } },
       ],
     });
@@ -514,6 +520,7 @@ describe('CustomerProfileComponent — contacts and ScoularView recipients (rend
       providers: [
         { provide: ApiService, useValue: { getHistoricalContractsForPacing: () => of([]) } },
         { provide: ThemeService, useValue: {} },
+        provideSelectedProducerActivity(),
         { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {} } },
       ],
     });
@@ -634,6 +641,7 @@ describe('CustomerProfileComponent — failed background loads (rendered)', () =
       providers: [
         { provide: ApiService, useValue: { getHistoricalContractsForPacing: () => of([]) } },
         { provide: ThemeService, useValue: {} },
+        provideSelectedProducerActivity(),
         { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {} } },
       ],
     });

@@ -5,6 +5,7 @@ import { TicketsTableComponent } from './tickets-table.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { CommodityConversion, Contract, Customer, Ticket } from '@models';
+import { SelectedProducerActivityFake, provideSelectedProducerActivity, selectedProducerActivityFake } from '@testing/selected-producer-activity.fake';
 
 // Behaviour safety net for the Unapplied Tickets tab: the loading / load-error / empty states,
 // the applied-vs-unapplied split, grouping by crop & elevator / crop / elevator, the per-group
@@ -94,13 +95,22 @@ describe('TicketsTableComponent', () => {
   let component: TicketsTableComponent;
   let ref: ComponentRef<TicketsTableComponent>;
   let trackTicketDropdownOpen: ReturnType<typeof vi.fn>;
+  /** The selected producer's tickets and contracts, which the table reads from the page. */
+  let activity: SelectedProducerActivityFake;
   const commodityConversions = signal<CommodityConversion[]>([]);
 
   function setInputs(inputs: {
     tickets?: Ticket[]; contracts?: Contract[]; customer?: Customer; isLoading?: boolean;
     loadError?: string | null; openCrop?: string | null;
   }): void {
-    for (const [name, value] of Object.entries(inputs)) ref.setInput(name, value);
+    const fromActivity: Record<string, { set(value: never): void }> = {
+      tickets: activity.tickets, contracts: activity.contracts,
+      isLoading: activity.isLoadingTickets, loadError: activity.ticketsLoadError,
+    };
+    for (const [name, value] of Object.entries(inputs)) {
+      if (fromActivity[name]) fromActivity[name].set(value as never);
+      else ref.setInput(name, value);
+    }
     fixture.detectChanges();
   }
 
@@ -155,11 +165,13 @@ describe('TicketsTableComponent', () => {
     vi.setSystemTime(NOW);
     trackTicketDropdownOpen = vi.fn();
     commodityConversions.set(CONVERSIONS);
+    activity = selectedProducerActivityFake();
     await TestBed.configureTestingModule({
       imports: [TicketsTableComponent],
       providers: [
         { provide: AppStateService, useValue: { commodityConversions, commodityConversionsLoadFailed: signal(false) } },
         { provide: UsageTrackingService, useValue: { trackTicketDropdownOpen } },
+        provideSelectedProducerActivity(activity),
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(TicketsTableComponent);
@@ -186,9 +198,7 @@ describe('TicketsTableComponent', () => {
       expect(groups()).toHaveLength(0);
     });
 
-    it('shows a load failure (never the empty state) and Retry asks the parent to reload', () => {
-      const retry = vi.fn();
-      component.retryLoad.subscribe(retry);
+    it('shows a load failure (never the empty state) and Retry reads the tickets again', () => {
       setInputs({ loadError: 'Gateway timed out', tickets: [] });
 
       expect(text()).toContain('Tickets could not be loaded');
@@ -196,7 +206,7 @@ describe('TicketsTableComponent', () => {
       expect(text()).not.toContain('No unapplied delivery tickets found');
 
       buttonByText('Retry').click();
-      expect(retry).toHaveBeenCalledTimes(1);
+      expect(activity.retryTickets).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -524,6 +534,7 @@ describe('TicketsTableComponent', () => {
 describe('TicketsTableComponent — bushel conversions failed to load', () => {
   let fixture: ComponentFixture<TicketsTableComponent>;
   let state: AppStateService;
+  let activity: SelectedProducerActivityFake;
 
   const note = "Net bushels can't be shown — the bushel conversions couldn't be loaded. Refresh the page to try again.";
   const text = (): string => ((fixture.nativeElement as HTMLElement).textContent ?? '').replace(/\s+/g, ' ').trim();
@@ -531,14 +542,17 @@ describe('TicketsTableComponent — bushel conversions failed to load', () => {
   function render(tickets: Ticket[]): void {
     fixture = TestBed.createComponent(TicketsTableComponent);
     fixture.componentRef.setInput('customer', makeCustomer());
-    fixture.componentRef.setInput('tickets', tickets);
+    activity.tickets.set(tickets);
     fixture.detectChanges();
   }
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [TicketsTableComponent],
-      providers: [{ provide: UsageTrackingService, useValue: { trackTicketDropdownOpen: vi.fn() } }],
+      providers: [
+        { provide: UsageTrackingService, useValue: { trackTicketDropdownOpen: vi.fn() } },
+        provideSelectedProducerActivity(activity = selectedProducerActivityFake()),
+      ],
     }).compileComponents();
     state = TestBed.inject(AppStateService);
   });

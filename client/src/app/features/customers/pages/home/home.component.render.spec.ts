@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ChangeDetectionStrategy, Component, Type, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Type, inject, input, output, signal } from '@angular/core';
+import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, Params, Router } from '@angular/router';
@@ -75,12 +76,10 @@ class StubProfile {
   readonly yieldEstimates = input<unknown[]>([]);
   readonly commodities = input<unknown>();
   readonly isLoadingEstimates = input<unknown>();
-  readonly isLoadingContracts = input(false);
-  readonly isLoadingUnappliedTickets = input<unknown>();
-  readonly contractsLoadError = input<string | null>(null);
-  readonly ticketsLoadError = input<unknown>();
-  readonly pricingLinesLoadError = input<unknown>();
-  readonly isLoadingPricingLines = input<unknown>();
+  // Read from the page's SelectedProducerActivity, as the real profile and its tables do.
+  readonly activity = inject(SelectedProducerActivity);
+  readonly isLoadingContracts = this.activity.isLoadingContracts;
+  readonly contractsLoadError = this.activity.contractsLoadError;
   readonly isLoadingPlanting = input<unknown>();
   readonly isLoadingStoredGrain = input<unknown>();
   readonly isLoadingDpContracts = input<unknown>();
@@ -97,8 +96,6 @@ class StubProfile {
   readonly savedListsForCustomer = input<SavedList[]>([]);
   readonly teamListsForCustomer = input<unknown>();
   readonly canEditTeamLists = input<unknown>();
-  readonly retryContracts = output<void>();
-  readonly retryTickets = output<void>();
   readonly onAddPlanting = output<unknown>();
   readonly onEditPlanting = output<unknown>();
   readonly onDeletePlanting = output<number>();
@@ -362,7 +359,8 @@ describe('HomeComponent (rendered)', () => {
 
     const retry = new Subject<Contract[]>();
     api.getContractsByCustomer.mockReturnValue(retry);
-    profile().retryContracts.emit();
+    // The contracts table's Retry button calls the page's activity directly.
+    profile().activity.retryContracts();
     await settle();
     expect(text('profile')).toContain('loadingContracts:true');
     retry.next([contract(11, 'S-1')]);

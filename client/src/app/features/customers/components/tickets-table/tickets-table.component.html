@@ -13,7 +13,7 @@
           </svg>
           <p class="mt-2 text-gray-700 dark:text-gray-300 font-medium">Tickets could not be loaded</p>
           <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ loadError() }}</p>
-          <button type="button" (click)="retryLoad.emit()"
+          <button type="button" (click)="retryLoad()"
                   class="mt-4 px-3 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800">
             Retry
           </button>

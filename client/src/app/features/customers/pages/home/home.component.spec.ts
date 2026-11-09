@@ -23,6 +23,7 @@ import { HomeComponent } from './home.component';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { CustomerStore } from '../../data-access/customer.store';
 import { CustomersApiService } from '../../data-access/customers-api.service';
+import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 
 /**
  * Safety net for the producer page ahead of the OnPush conversion and decomposition. HomeComponent
@@ -355,6 +356,11 @@ function setup(opts: SetupOptions = {}): Harness {
     fixture, c: fixture.componentInstance, api, app, toast, nlq, outlook, router, access,
     flush: () => fixture.detectChanges(),
   };
+}
+
+/** The page's SelectedProducerActivity: what the contracts and tickets tables read, and their Retry. */
+function activityOf(h: Harness): SelectedProducerActivity {
+  return h.fixture.debugElement.injector.get(SelectedProducerActivity);
 }
 
 function callsFor(fn: ReturnType<typeof vi.fn>, id: number): number {
@@ -939,7 +945,7 @@ describe('HomeComponent', () => {
       expect(h.c.isLoadingContracts()).toBe(false);
 
       h.api.getContractsByCustomer.mockReturnValue(of([contract(10, 'S-1')]));
-      h.c.retryCustomerContracts();
+      activityOf(h).retryContracts();
 
       expect(h.c.contractsLoadError()).toBeNull();
       expect(h.c.isLoadingContracts()).toBe(false);
@@ -960,10 +966,28 @@ describe('HomeComponent', () => {
       expect(h.c.customerContracts().map(x => x.id)).toEqual([10]);
 
       h.api.getTicketsByCustomer.mockReturnValue(of([ticket(20, 'S-1')]));
-      h.c.retryCustomerTickets();
+      activityOf(h).retryTickets();
 
       expect(h.c.ticketsLoadError()).toBeNull();
       expect(h.c.customerTickets().map(x => x.id)).toEqual([20]);
+    });
+
+    it("gives the screen's pieces the selected producer's contracts, tickets and pricing through SelectedProducerActivity", () => {
+      const h = setup({
+        arrange: api => {
+          api.getContractsByCustomer.mockReturnValue(of([contract(10, 'S-1')]));
+          api.getTicketsByCustomer.mockReturnValue(of([ticket(20, 'S-1')]));
+        },
+      });
+
+      h.c.handleSelectCustomer(A);
+
+      const activity = activityOf(h);
+      expect(activity.contracts().map(x => x.id)).toEqual([10]);
+      expect(activity.tickets().map(x => x.id)).toEqual([20]);
+      expect(activity.contracts()).toBe(h.c.customerContracts());
+      expect(activity.isLoadingContracts()).toBe(false);
+      expect(activity.contractsLoadError()).toBeNull();
     });
 
     it('a failed pricing-line read is reported as an error, not as "no priced lines"', () => {

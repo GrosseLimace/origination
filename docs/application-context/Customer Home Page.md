@@ -203,7 +203,7 @@ The pending values are stored in component signals (`pendingContractId`, `pendin
 
 ### The selected producer's contracts, tickets and pricing
 
-`pages/home/home-producer-activity.store.ts` (`HomeProducerActivityStore`). The home component calls it on every selection and exposes its signals to the template under the same names (`customerContracts`, `isLoadingContracts`, `contractsLoadError`, ...).
+`pages/home/home-producer-activity.store.ts` (`HomeProducerActivityStore`). The home component calls it on every selection and exposes its signals to the template under the same names (`customerContracts`, `isLoadingContracts`, `contractsLoadError`, ...). The page also provides it as `SelectedProducerActivity` (`core/context`), which the contracts and tickets tables read their data, loading and failure state and Retry from, instead of through the profile's inputs.
 
 - **Freshness:** a producer read once is shown from memory on the next click, and re-read silently behind the visible rows once it is older than 60 seconds (the server's own per-producer cache). Pricing lines follow the same rule, keyed by `scoularId`. A trade-unit change forgets every producer's reads.
 - **First click on the CTRM path** (`ctrmReadAheadEnabled`): a one-off silent re-read 4 seconds later picks up anything the server's warm trade-unit cache missed, and hovering over a producer prefetches their contracts, tickets and pricing (two producers at most at once), so the click renders from memory.
