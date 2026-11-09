@@ -46,9 +46,13 @@ npm run e2e           # runs tests/e2e (reuses a running `ng serve`, else starts
 
 ## Where tests live
 - **Backend** (`api/GrainOriginatorPortal.Api.Tests/GrainOriginatorPortal.Api.Tests/`, the project in the `.sln`):
-  `Controllers/` (Customers, Commodities, Notes, PlantingIntentions), `Middleware/GlobalExceptionHandlerTests`,
-  `SanitizeCsvTests`. Controller unit tests substitute `IDataService` and instantiate the controller directly
-  (no HTTP pipeline).
+  organised by layer (`Controllers/`, `Services/`, `Repositories/`, `Middleware/`, `Migrations/`, …) rather than
+  by module. Controller unit tests substitute the controller's service interfaces and instantiate the controller
+  directly (no HTTP pipeline).
+  - **Structure checks:** `Architecture/ModuleBoundaryTests` (which module may use which, and that Platform uses
+    none), `ControllerAuthorizationTests` (every controller sits in Platform or a module and requires its
+    permissions), and `Modules/*ModuleTests` and `Modules/PlatformModuleTests` (each `Add<Module>Module()` and
+    `AddPlatform()` registers what its controllers and services need; no test starts the app).
 - **Frontend unit/component**: co-located `*.spec.ts` next to the code under `client/src/app/**`.
 - **Help content guards**: `client/src/app/features/help/help-faq.drift.spec.ts` (help vs. the app's routes,
   labels and anchors) and `Controllers/HelpControllerTests.cs` (the content file's own consistency). Both

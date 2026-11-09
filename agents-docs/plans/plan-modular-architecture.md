@@ -1,6 +1,6 @@
 # Plan: Modular architecture and a Trader persona
 
-*Created 2026-10-08. Refreshed against `main` on 2026-11-03, and the access design switched to the company permissions model the same day. On 2026-11-04 roles became persona roles plus add-on roles, with read-only the default. [Changes since the first draft](#changes-since-the-first-draft-2026-11-03) lists all three. Status: proposal, awaiting review.*
+*Created 2026-10-08. Refreshed against `main` on 2026-11-03, and the access design switched to the company permissions model the same day. On 2026-11-04 roles became persona roles plus add-on roles, with read-only the default. [Changes since the first draft](#changes-since-the-first-draft-2026-11-03) lists all three. Status: Phase 1 (access plumbing) is built on the integration branch, and Phase 2 (backend modules) is built on its phase branch, finished 2026-11-08 ([§8](#8-phased-rollout)). Phase 1b and Phases 3–6 haven't started, and nothing has reached `main`.*
 
 ---
 
@@ -955,6 +955,12 @@ Phases 1–4 deliver modularity and stand on their own even if traders slip. Pha
 | **4. Profile extension slots** | L | Break up `home.component` (1,621 lines) and `customer-profile` into a shell plus slots; move producer components to `features/producers`; **`*appHasPermission` on every add, edit and delete control as its component moves**; per-module preload; `Customer` → `ProducerProfile` split (paired with the backend DTO change); segment filter in the hosts, treating every customer as `Producer` until Phase 5 adds the column | none for originators. **A Trader-role test user now gets a working contracts + tickets view, still over producer data, and a test user without `Editor` sees no control they can't use.** |
 | **5. Trader data scope** | L | Customer `Segment`; widen the CTRM sync, search and onboarding from `PR` to the agreed industry codes; backfill commercial trade-unit links (§6.1); `CommercialScope` through the contracts and tickets repositories and the CTRM readers and caches; outbound ticket semantics; tests; wording | traders see their own customers |
 | **6. Trader launch** | S | In the entitlements app: assign `Trader`, plus `Editor` to traders who edit; confirm every originator holds `Originator` and `Editor` there; move today's Super Users onto `Manager` (with their persona role) or `Support`, and give production `Admin` only to the break-glass account; **remove the temporary default role**; QA with real traders; app-context doc for the trader view; `SECURITY-MODEL.md` update | traders onboarded |
+
+**Phase 2 was done on 2026-11-08,** on `feature_ModularArchitecture-Phase2`, in twelve reviewed steps (fifteen commits) rather than a PR per module: the convention tests first, Producers in three steps, then Customers, Contracts (untangled first), Engagement, Lists, Bid Sheet, Usage Analytics, Platform, and a docs close-out. Where it differs from the row above:
+- **Program.cs is ~260 lines, not ~150.** The Key Vault bootstrap, the dev warm-up and the commented pipeline stayed; every registration moved into `AddPlatform` and the modules.
+- **`Infrastructure/Data` stayed where it was** (decided in step 11): the DbContexts, all 215 migrations, and Platform's own entities, whose configurations are still inline in `ApplicationDbContext`. Module entities have their own `IEntityTypeConfiguration` classes, and `Model_HasNoChangesWithoutAMigration` shows the moves changed nothing in the database.
+- **Platform needs no module, and that is enforced too.** Where Platform needs a module's answer, it declares an extension the module implements (§4.4).
+- **Not yet checked by running the app.** The tests are reflection- and unit-level; no test starts the app. Click through each module once the app is up on the integration branch.
 
 **This plan builds on `main` only.** It doesn't wait for or plan around other branches, the mobile app's included. That work gets redone on the new structure once this lands.
 

@@ -48,7 +48,7 @@ flowchart LR
     Cached[(AppStateService<br/>customers, contracts,<br/>plantingIntentions)]
     Fresh[apiService.getDashboardSummary / Estimates / MarketShares / ActualHarvest /<br/>getContractsByCropYear / getCommodities]
     CTL[DashboardPlantingEstimatesController]
-    SVC[SqlDataService]
+    SVC[DashboardService, Producers module<br/>ContractService for crop-year contracts]
     APP[(dbo.DashboardPlantingEstimates,<br/>dbo.DashboardMarketShares,<br/>dbo.DashboardActualHarvests,<br/>dbo.Commodities,<br/>dbo.ProducerPlantingIntentions)]
     ODS[(base.vw_CurrentContracts<br/>via getContractsByCropYear)]
 
@@ -163,5 +163,5 @@ The "system" username has historically been used for `Created/ModifiedBy` on das
 
 - Project memory note: dashboard normalization pass in `dbo.Commodities`, `dbo.ProducerPlantingIntentions`, `dbo.DashboardActualHarvests`, `dbo.DashboardMarketShares`, `dbo.DashboardPlantingEstimates`. Dev and QA migrated; Prod pending.
 - PR with the title-case helper change in `dashboard.component.ts`.
-- [`Shared Infrastructure.md`](./Shared%20Infrastructure.md) — `AppStateService`, `IDataService` Dashboard methods, `EnforceTradeUnitAccess` filter.
+- [`Shared Infrastructure.md`](./Shared%20Infrastructure.md) — `AppStateService`, the backend module layout, `EnforceTradeUnitAccess` filter.
 - [`Customer Home Page.md`](./Customer%20Home%20Page.md) — destination of producer-row clicks; documents the `tab=planting&year=...` deep-link contract.

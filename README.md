@@ -7,14 +7,17 @@ A web application for grain originators to manage customers, contracts, deliveri
 ```
 GrainOriginatorPortal/
 ├── api/
-│   ├── GrainOriginatorPortal.Api/          # ASP.NET Core Web API
-│   │   ├── Controllers/                    # REST API endpoints
-│   │   ├── Data/                           # EF Core DbContexts
-│   │   ├── Interfaces/                     # IDataService contract
-│   │   ├── Middleware/                     # Security, logging, correlation ID
-│   │   ├── Models/                         # Domain models + request records
-│   │   └── Services/                       # SqlDataService, ApimDataService
-│   └── GrainOriginatorPortal.Api.Tests/    # xUnit + Moq unit tests
+│   ├── GrainOriginatorPortal.Api/          # ASP.NET Core Web API, organised by module first
+│   │   ├── Modules/<Module>/               # Controllers, Services, Mappings, Models per module:
+│   │   │                                   #   Customers, Contracts, Engagement, Producers, Lists, BidSheet, UsageAnalytics
+│   │   ├── Platform/                       # shared: Access (permissions), Identity, Preferences, ReferenceData,
+│   │   │                                   #   Telemetry, Ctrm, DocStore, Diagnostics, Middleware, Exceptions, …
+│   │   └── Program.cs                      # AddPlatform() + each Add<Module>Module() + the middleware pipeline
+│   ├── GrainOriginatorPortal.Infrastructure/
+│   │   ├── Modules/<Module>/               # Entities, Configurations, Interfaces, Repositories (+ CTRM readers)
+│   │   ├── Platform/                       # shared repositories, CTRM plumbing, AppPermissions
+│   │   └── Data/                           # EF Core DbContexts and migrations
+│   └── GrainOriginatorPortal.Api.Tests/    # xUnit unit tests, plus the module-boundary and permission checks
 │
 └── client/                                 # Angular 21 SPA
     └── src/app/

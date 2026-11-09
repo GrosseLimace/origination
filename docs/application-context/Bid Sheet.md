@@ -37,7 +37,7 @@ flowchart LR
     Geo[apiService.geocodeSearch]
     Sheets[apiService.getBidSheets / createBidSheet / shares / links]
     CTL[BidSheetController]
-    SVC[SqlDataService]
+    SVC[BidSheetService<br/>Bid Sheet module]
     APP[(dbo.BidSheetLocations<br/>dbo.BidSheetLocationBids<br/>dbo.BidSheets<br/>dbo.BidSheetShares<br/>dbo.BidSheetLocationLinks<br/>dbo.BidSheetPreferences)]
 
     UI -- "init" --> Locs & Sheets & Pref

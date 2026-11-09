@@ -35,10 +35,10 @@ Reference: `style-guides/security-guide.md` for full policy details.
 | Control | Implementation |
 |---------|---------------|
 | Authentication | Azure AD via `Microsoft.Identity.Web` |
-| Authorization | `[Authorize]` on all controllers |
+| Authorization | A signed-in user on every endpoint, and a catalog permission (`[RequirePermission]`) on every endpoint outside a short exempt list; see [SECURITY-MODEL.md](../application-context/SECURITY-MODEL.md) |
 | HTTPS | Enforced via HSTS + HTTPS redirection middleware |
 | Error responses | `GlobalExceptionHandler` — no stack traces in production |
-| CORS | Configured in `Program.cs` — origin-restricted |
+| CORS | Configured in `AddPlatform` (`Api/Platform/PlatformModule.cs`) — origin-restricted |
 | Input binding | Model validation attributes + FluentValidation where applicable |
 
 ---
