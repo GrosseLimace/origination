@@ -1,6 +1,7 @@
-import { Type } from '@angular/core';
+import { Signal, Type } from '@angular/core';
 import { Observable } from 'rxjs';
 import { PermissionId } from '@core/access/permission-ids.generated';
+import { CustomerSegment } from '@models';
 
 /** A module of the SPA: a folder under src/app/features, matching the backend module of the same name. */
 export type ModuleId =
@@ -27,6 +28,18 @@ export interface ModuleManifest {
 
   /** The module's links in the header. */
   nav?: readonly NavItem[];
+
+  /** The module's tabs on the customer profile. */
+  customerTabs?: readonly CustomerTab[];
+
+  /** The module's panels on the customer screen, each in one slot. */
+  customerPanels?: readonly CustomerPanel[];
+
+  /** The module's sections of the Edit Customer dialog. */
+  customerEditSections?: readonly CustomerSection[];
+
+  /** The module's sections of the customer print report. */
+  customerPrintSections?: readonly CustomerSection[];
 
   /**
    * Loads what the module wants ready before its screens open, for a new trade-unit selection. Called in an
@@ -65,4 +78,48 @@ export interface NavItem {
   order: number;
   /** 'main' is the header's nav, on the desktop bar and in the mobile menu; 'user' is the profile menu. */
   menu: 'main' | 'user';
+}
+
+/**
+ * Something a module adds to the customer screen. It shows only to a user holding every permission in `requires`, and
+ * only for a customer whose segment is in `segments`. It reads the customer from SelectedCustomerContext and its data
+ * from its own module, so the host that renders it passes it nothing.
+ */
+export interface CustomerContribution {
+  /** Names it within its module: 'planting', 'organic'. */
+  id: string;
+  /** Every permission it needs: each read it makes. Empty for something every signed-in user may see. */
+  requires: readonly PermissionId[];
+  /** The customers it applies to. Omitted or empty: every customer. */
+  segments?: readonly CustomerSegment[];
+  /** Position among the other contributions to the same place, lowest first. A host's own items use fixed values. */
+  order: number;
+  /** Loads its component, the first time it is shown; a user who never sees it never downloads it. */
+  component: () => Promise<Type<unknown>>;
+}
+
+/**
+ * The places on the customer screen a panel can go. On the profile: `badges` beside the name, `actions` in the button
+ * row, `details` in the details row, `summary` between the header and the tabs. On the home page: `sidebar`, the right
+ * column, and `floating`, the launcher over the page.
+ */
+export type CustomerSlot = 'badges' | 'actions' | 'details' | 'summary' | 'sidebar' | 'floating';
+
+/** A panel on the customer screen. */
+export interface CustomerPanel extends CustomerContribution {
+  slot: CustomerSlot;
+}
+
+/** A tab on the customer profile. */
+export interface CustomerTab extends CustomerContribution {
+  label: string;
+  /** The label on narrow layouts: 'Cont', 'Plan'. */
+  shortLabel: string;
+  /** The count beside the label, or null for none. Called once, in an injection context, when the tab first shows. */
+  badge?: () => Signal<number | null>;
+}
+
+/** A section of the Edit Customer dialog or the customer print report. */
+export interface CustomerSection extends CustomerContribution {
+  label: string;
 }

@@ -2,7 +2,7 @@ import { EnvironmentInjector, Injectable, InjectionToken, computed, inject, isDe
 import { EMPTY, Observable, defer } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { PermissionService } from '@core/access/permission.service';
-import { ModuleManifest, NavItem } from './module-manifest';
+import { CustomerContribution, CustomerPanel, CustomerSlot, ModuleManifest, NavItem } from './module-manifest';
 
 /** Every module of the app, provided by the composition root (app.modules.ts through main.ts). */
 export const APP_MODULES = new InjectionToken<readonly ModuleManifest[]>('APP_MODULES');
@@ -19,6 +19,23 @@ export class ModuleRegistry {
   readonly mainNav = computed(() => this.navItems('main'));
   /** The profile menu's links the user may follow, in order. */
   readonly userNav = computed(() => this.navItems('user'));
+
+  // The customer screen's contributions the user holds the permissions for, in order. Each host still keeps only
+  // those that apply to the selected customer (SelectedCustomerContext.appliesTo), which changes as the user moves
+  // between customers.
+
+  /** The customer profile's tabs. */
+  readonly customerTabs = computed(() => this.permitted(module => module.customerTabs));
+  /** The Edit Customer dialog's sections. */
+  readonly customerEditSections = computed(() => this.permitted(module => module.customerEditSections));
+  /** The customer print report's sections. */
+  readonly customerPrintSections = computed(() => this.permitted(module => module.customerPrintSections));
+  private readonly panels = computed(() => this.permitted(module => module.customerPanels));
+
+  /** The panels in one slot of the customer screen. */
+  customerPanels(slot: CustomerSlot): CustomerPanel[] {
+    return this.panels().filter(panel => panel.slot === slot);
+  }
 
   /**
    * Each module's preload for this trade-unit selection, run in an injection context when subscribed. A preload that
@@ -40,6 +57,13 @@ export class ModuleRegistry {
     return this.modules
       .flatMap(module => module.nav ?? [])
       .filter(item => item.menu === menu && this.access.hasAll(item.requires))
+      .sort((a, b) => a.order - b.order);
+  }
+
+  private permitted<T extends CustomerContribution>(pick: (module: ModuleManifest) => readonly T[] | undefined): T[] {
+    return this.modules
+      .flatMap(module => pick(module) ?? [])
+      .filter(contribution => this.access.hasAll(contribution.requires))
       .sort((a, b) => a.order - b.order);
   }
 }

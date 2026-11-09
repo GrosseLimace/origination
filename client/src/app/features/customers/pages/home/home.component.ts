@@ -31,6 +31,7 @@ import { HomeSavedListsStore } from './home-saved-lists.store';
 import { HomeLinkedProducersStore } from './home-linked-producers.store';
 import { HomePlantingStore } from './home-planting.store';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -46,8 +47,9 @@ import { TradeUnitContext } from '@core/context/trade-unit-context.service';
     CalculatorLauncherComponent
   ],
   templateUrl: './home.component.html',
-  // Page-scoped state and behaviour, one instance per visit to the page.
-  providers: [HomePageState, HomeBackgroundFailures, HomeRemindersStore, HomeNotesStore, HomeSavedListsStore, HomeLinkedProducersStore, HomePlantingStore],
+  // Page-scoped state and behaviour, one instance per visit to the page. SelectedCustomerContext is the customer
+  // the page shows, for the panels and tabs the modules add to it.
+  providers: [HomePageState, HomeBackgroundFailures, HomeRemindersStore, HomeNotesStore, HomeSavedListsStore, HomeLinkedProducersStore, HomePlantingStore, SelectedCustomerContext],
   // The template reads only signals, computeds, getLinkedGroup() (which reads signals) and two
   // constant flags, and every async writer (API callbacks, effects, the resize listener, the
   // deep-link poll) writes signals - home.component.render.spec.ts renders each of those paths.

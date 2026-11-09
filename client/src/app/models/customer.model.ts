@@ -1,6 +1,9 @@
 import { Coordinates } from './coordinates.model';
 import { GrainOnFarmItem, ProducerBinSiteItem, ProducerContactItem } from './producer-details.model';
 
+/** The kind of customer, which decides what the customer screen shows for it. Named as the API names them. */
+export type CustomerSegment = 'Producer' | 'Commercial';
+
 export interface Customer {
   id: number;             // Maps to bigint in C# API
   scoularId?: string; // Used to match with contract ctrmCustomerId
