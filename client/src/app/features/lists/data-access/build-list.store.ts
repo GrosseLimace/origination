@@ -1,5 +1,6 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { QueryLibraryItem, RefinementFilters, SavedList } from '@models';
+import { SessionReset } from '@core/auth/session-reset.service';
 
 export interface BuildListState {
   queryText: string;
@@ -27,6 +28,11 @@ export class BuildListStore {
   private readonly _buildListState = signal<BuildListState | null>(null);
 
   readonly buildListState = this._buildListState.asReadonly();
+
+  constructor() {
+    // Signing out or timing out drops it with the rest of the user's data.
+    inject(SessionReset).onReset(() => this.clearBuildListState());
+  }
 
   setBuildListState(state: BuildListState): void {
     this._buildListState.set(state);

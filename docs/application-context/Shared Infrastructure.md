@@ -68,7 +68,13 @@ The shared data caches, built on Angular signals: the trade-unit-wide data the c
 | `selectedCustomer` | `Customer \| null` | Driven by Home page navigation |
 | `dataLoading` | `boolean` | Global flag — true while the core preload (customers + contracts + today's tickets) is in flight. Both Insights and the Dashboard gate their spinners on this. |
 
-**Setters** mirror the signals (`setCustomers`, `setContracts`, ...). There is also `clearSelection`, and `clearAll` for sign-out, which also clears `TradeUnitContext`.
+**Setters** mirror the signals (`setCustomers`, `setContracts`, ...). There is also `clearSelection`, and `clearAll` for sign-out and the idle timeout. `clearAll` also clears `TradeUnitContext` and every module store registered with `SessionReset`.
+
+### `SessionReset`
+
+`client/src/app/core/auth/session-reset.service.ts`
+
+Clears the module stores when the session ends. Core can't reach a module's stores, so each root store registers its own clearing in its constructor (`inject(SessionReset).onReset(...)`), and `AppStateService.clearAll()` runs them all. A store that was never created holds nothing, so it needs no clearing. Registered so far: Build a List's state (`BuildListStore`), the customer list's scroll position (`CustomerListScrollStore`) and the Planting Dashboard's caches (`DashboardStore`). Before 2026-11-09 those three weren't cleared at sign-out: they had left `AppStateService` and nothing cleared them. A new module store that holds the user's data must register too.
 
 ### `TradeUnitContext`
 

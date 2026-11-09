@@ -2,6 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, ReminderDue, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow, ContractPricingLine, QueryLibraryItem } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { SessionReset } from '@core/auth/session-reset.service';
 
 @Injectable({
   providedIn: 'root'
@@ -53,6 +54,7 @@ export class AppStateService {
 
   // The trade-unit selection lives in TradeUnitContext; setTickets records which one the tickets were loaded for.
   private readonly tradeUnitContext = inject(TradeUnitContext);
+  private readonly sessionReset = inject(SessionReset);
 
   // Selection state
   readonly selectedCustomer = this._selectedCustomer.asReadonly();
@@ -365,7 +367,8 @@ export class AppStateService {
     this._selectedCustomer.set(null);
   }
 
-  // Clear all state (for logout or reset)
+  /** Clears everything held for the signed-in user (sign-out, idle timeout): this service's state, the trade-unit
+   *  selection, and every module store registered with SessionReset. */
   clearAll(): void {
     this.tradeUnitContext.clear();
     this._selectedCustomer.set(null);
@@ -389,5 +392,6 @@ export class AppStateService {
     this._contractsLoading.set(false);
     this._todaysTicketsLoading.set(false);
     this._todaysTickets.set([]);
+    this.sessionReset.reset();
   }
 }

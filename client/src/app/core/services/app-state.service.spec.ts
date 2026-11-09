@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { computed, effect, isSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { AppStateService } from './app-state.service';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { SessionReset } from '@core/auth/session-reset.service';
 import { Customer } from '@models';
 
 const mockCustomer: Customer = {
@@ -65,6 +66,15 @@ describe('AppStateService', () => {
     expect(context.selectedTradeUnits()).toEqual([]);
     expect(service.searchQuery()).toBe('');
     expect(service.customers()).toEqual([]);
+  });
+
+  it('clearAll() also clears every module store registered with SessionReset', () => {
+    const clearStore = vi.fn();
+    TestBed.inject(SessionReset).onReset(clearStore);
+
+    service.clearAll();
+
+    expect(clearStore).toHaveBeenCalledTimes(1);
   });
 
   describe('read-only public surface', () => {
