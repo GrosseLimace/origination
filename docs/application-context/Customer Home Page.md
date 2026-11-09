@@ -125,6 +125,7 @@ When the trade-unit selector changes, the home component fires a parallel batch 
 | --- | --- |
 | Component | `client/src/app/features/customers/pages/home/home.component.ts` |
 | Template | `client/src/app/features/customers/pages/home/home.component.html` |
+| Page stores (provided by the home component, one per visit) | `pages/home/home-*.store.ts` and `home-page.state.ts`: the selected producer's notes, follow-ups, planting intentions, saved lists and linked producers, and `HomeProducerActivityStore` for their contracts, tickets, pricing lines, stored grain and DP contracts |
 | Customer profile sub-component | `client/src/app/features/customers/components/customer-profile/customer-profile.component.ts` |
 | Customer list sub-component | `client/src/app/features/customers/components/customer-list/customer-list.component.ts` |
 | Notes sidebar sub-component | `client/src/app/features/customers/components/notes/customer-notes.component.ts` |
@@ -200,9 +201,19 @@ The pending values are stored in component signals (`pendingContractId`, `pendin
 - `DataPreloadService` may have already populated some of this on app load.
 - **Request deduplication** within the component: a `_customerRequestId` counter is incremented on every TU change. Stale responses with an outdated id are dropped to prevent the list from flipping back to the old TU's data when responses arrive out-of-order.
 
+### The selected producer's contracts, tickets and pricing
+
+`pages/home/home-producer-activity.store.ts` (`HomeProducerActivityStore`). The home component calls it on every selection and exposes its signals to the template under the same names (`customerContracts`, `isLoadingContracts`, `contractsLoadError`, ...).
+
+- **Freshness:** a producer read once is shown from memory on the next click, and re-read silently behind the visible rows once it is older than 60 seconds (the server's own per-producer cache). Pricing lines follow the same rule, keyed by `scoularId`. A trade-unit change forgets every producer's reads.
+- **First click on the CTRM path** (`ctrmReadAheadEnabled`): a one-off silent re-read 4 seconds later picks up anything the server's warm trade-unit cache missed, and hovering over a producer prefetches their contracts, tickets and pricing (two producers at most at once), so the click renders from memory.
+- **Merging:** each producer's live contract rows are merged into the trade unit's contract pool, which is also the shared cache Build a List and the Dashboard read; tickets stay in the page's own pool. A refresh first takes back exactly the rows the previous read contributed (`merge-producer-rows.ts`), so a closed contract or a newly applied ticket doesn't linger.
+- **Failures:** a failed first read shows the server's message with Retry; a failed background refresh leaves the visible rows alone.
+- **Commodities:** when a producer's tickets or contracts arrive with commodities their profile doesn't list yet, the store saves them to the producer's details, one save per producer at a time.
+
 ### StoredGrain merge race (important)
 
-`home.component.ts:335-352`
+The trade-unit merge is in `HomeComponent._loadAllData`; the per-producer one in `HomeProducerActivityStore.loadCustomerContractsAndTickets`.
 
 The TU-level `getStoredGrain` fetch and the per-customer `getStoredGrainByCustomer` fetch both write to the same `storedGrain` signal. If they ran in the wrong order, the TU fetch would overwrite the per-customer merge and the customer's storage tab would go blank.
 
@@ -223,7 +234,7 @@ Per-customer fetch keeps existing records that aren't this customer's, then appe
 const merged = [...existing.filter(s => s.customerId !== customerId), ...grain];
 ```
 
-If you're touching this code, preserve the merge semantics. The same shape is used for tickets at `home.component.ts:778-784`. Background: PR #239 (`fix_StorageLoadAndEntitlementsErrors`).
+If you're touching this code, preserve the merge semantics. Contracts and tickets use the stricter retract-then-replace merge in `merge-producer-rows.ts` (see above). Background: PR #239 (`fix_StorageLoadAndEntitlementsErrors`).
 
 ## Contracts table — delivery math and loading states
 
@@ -293,7 +304,7 @@ All mutations refresh the relevant `appState` signal on success so other screens
 | Symptom | Likely cause | First place to look |
 | --- | --- | --- |
 | Customer list is empty | TU selector empty or user has no entitled TUs | TU selector → `TradeUnitContext.selectedTradeUnits()`; check Network tab for `getCustomers` 200/empty vs 403 |
-| Selected producer's storage tab is empty even though storage exists in DB | StoredGrain merge race; or TU-fetch stale response wiping per-customer fetch | `home.component.ts:335-352` — confirm merge logic still in place |
+| Selected producer's storage tab is empty even though storage exists in DB | StoredGrain merge race; or TU-fetch stale response wiping per-customer fetch | `HomeComponent._loadAllData` and `HomeProducerActivityStore.loadCustomerContractsAndTickets` — confirm the merge logic is still in place |
 | Profile won't open from a deep link | `customerId` query param malformed, or producer not in any of the user's entitled TUs | Devtools console + `_selectCustomerById` flow; `getCustomerById` may return 404 |
 | Notes don't show "Last contacted" | The `lastContactedDate` computed reads `note.createdAt`, not `modifiedAt` (modify reflects pin/edits, not actual contact). See comments around `home.component.ts:91-95` |
 | Customer list flipped to wrong TU after fast TU change | `_customerRequestId` deduplication didn't match — verify the response handler is still gated on `requestId === this._customerRequestId` |
