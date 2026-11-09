@@ -34,7 +34,7 @@ flowchart LR
 
 `client/src/app/core/services/api.service.ts`, and each module's `data-access/*-api.service.ts`
 
-- **Module clients:** a module whose screens are the only callers has its own client: `BidSheetApiService` (locations, bids, sheets, the preference and the BarChart catalog), `UsageDashboardApiService`, and Engagement's `RecapGroupsApiService` (exported from `@features/engagement` for the bid sheet's share dialog). The calls the customer screen uses stay in `ApiService` until those components move into their modules, along with Platform's own (commodities, trade units, preferences, the entitlements catalog, telemetry config).
+- **Module clients:** a module whose screens are the only callers has its own client: `BidSheetApiService` (locations, bids, sheets, the preference and the BarChart catalog), `UsageDashboardApiService`, Engagement's `RecapGroupsApiService` (exported from `@features/engagement` for the bid sheet's share dialog), and `CustomersApiService` (the trade units' customers, one customer by id or source id, linked producers, and a producer's trade-unit memberships; exported from `@features/customers` for Build a List). The two customer searches stay in `ApiService` because Help's troubleshooter, in core, runs them too. The other calls the customer screen uses stay in `ApiService` until those components move into their modules, along with Platform's own (commodities, trade units, preferences, the entitlements catalog, telemetry config).
 - **Base URL** comes from `environment.apiBaseUrl` (`client/src/environments/environment.ts`).
 - **Request deduplication** for expensive endpoints — `dedupeRequests()` in `core/http/dedupe-requests.ts`, one in-flight map per client. Used by `getCustomers`, `getContracts`, `getTickets`, `getNotes`, `getStoredGrain`, `getAllProducerDetails`, `getSavedLists`, the bid sheet's locations and preference, and BarChart coverage, among others. If two callers ask for the same key in flight, they share one HTTP request.
 - **Error handling** is shared by every client: `injectApiErrorHandler()` in `core/http/api-error-handler.ts`. A 401 toasts a session-expired message; every failure is logged in dev mode and re-thrown as an `ApiError`. A 403 is shown by `forbiddenInterceptor` instead (see below).
@@ -53,7 +53,6 @@ The shared data caches, built on Angular signals: the trade-unit-wide data the c
 
 | Signal | Type | Notes |
 | --- | --- | --- |
-| `customers` | `Customer[]` | Filtered to selected trade units |
 | `contracts` | `Contract[]` | Open-or-recent purchase contracts for the selected trade units. From CTRM via GraphQL when `Ctrm:Source` is `ctrm` (a cached date-window snapshot), else `vw_CurrentContracts`. See [CTRM GraphQL Data Source](./CTRM%20GraphQL%20Data%20Source.md). |
 | `tickets` | `Ticket[]` | Settled tickets (last N days, depends on screen) |
 | `todaysTickets` | `Ticket[]` | Last 30 days specifically — used by Insights |
@@ -65,16 +64,16 @@ The shared data caches, built on Angular signals: the trade-unit-wide data the c
 | `producerDetails` | `ProducerDetails[]` | App-DB enrichment (acres, bin sites, grain on farm, etc.) |
 | `pricingLines` | `ContractPricingLine[]` | Pricing lines for the selected producer — CTRM (live, inline on the contract) or ODS `vw_ContractPricing` per `Ctrm:Source` |
 | `allProducersMode` | `boolean` | Session-only "All Producers" selector mode — clears TU scope so the customer list searches every producer (incl. ODS producers with no contract/ticket) for onboarding. Never persisted. |
-| `selectedCustomer` | `Customer \| null` | Driven by Home page navigation |
-| `dataLoading` | `boolean` | Global flag — true while the core preload (customers + contracts + today's tickets) is in flight. Both Insights and the Dashboard gate their spinners on this. |
+| `selectedCustomer` | `Customer \| null` | Driven by Home page navigation. App-wide rather than the home page's: Help, Build a List, Insights and the Bid Sheet read or set it too. |
+| `contractsLoading`, `todaysTicketsLoading` | `boolean` | True while that core read is in flight. There is no combined flag: a screen that needs the whole core group also reads `CustomerStore.customersLoading`. |
 
-**Setters** mirror the signals (`setCustomers`, `setContracts`, ...). There is also `clearSelection`, and `clearAll` for sign-out and the idle timeout. `clearAll` also clears `TradeUnitContext` and every module store registered with `SessionReset`.
+**Setters** mirror the signals (`setContracts`, `setTickets`, ...). There is also `clearSelection`, and `clearAll` for sign-out and the idle timeout. `clearAll` also clears `TradeUnitContext` and every module store registered with `SessionReset`.
 
 ### `SessionReset`
 
 `client/src/app/core/auth/session-reset.service.ts`
 
-Clears the module stores when the session ends. Core can't reach a module's stores, so each root store registers its own clearing in its constructor (`inject(SessionReset).onReset(...)`), and `AppStateService.clearAll()` runs them all. A store that was never created holds nothing, so it needs no clearing. Registered so far: Build a List's state (`BuildListStore`), the customer list's scroll position (`CustomerListScrollStore`) and the Planting Dashboard's caches (`DashboardStore`). Before 2026-11-09 those three weren't cleared at sign-out: they had left `AppStateService` and nothing cleared them. A new module store that holds the user's data must register too.
+Clears the module stores when the session ends. Core can't reach a module's stores, so each root store registers its own clearing in its constructor (`inject(SessionReset).onReset(...)`), and `AppStateService.clearAll()` runs them all. A store that was never created holds nothing, so it needs no clearing. Registered so far: the trade units' customers (`CustomerStore`), Build a List's state (`BuildListStore`), the customer list's scroll position (`CustomerListScrollStore`) and the Planting Dashboard's caches (`DashboardStore`). Before 2026-11-09 those three weren't cleared at sign-out: they had left `AppStateService` and nothing cleared them. A new module store that holds the user's data must register too.
 
 ### `TradeUnitContext`
 
@@ -85,6 +84,8 @@ The trade units the app is working in, which every module scopes its reads to: `
 **localStorage persistence:** key `origination_user_prefs` stores `{ groups?, units? }` — the trade-unit selection. Restored on construction.
 
 ### Module stores
+
+**`CustomerStore`** (`features/customers/data-access`, exported from `@features/customers`) holds the selected trade units' customers for every screen: `customers`, `customersLoading` (a screen waits rather than showing "no producers") and `customersLoadFailed` (the read failed, so the empty list isn't "no producers in these trade units"). Customers' `preload` fills it on each trade-unit change, for a user holding `customers:read`; the home page and Build a List write back customers they onboard, edit or reload.
 
 Screen state a module keeps for the session lives in that module: Build a List's query and results (`BuildListStore`) and the customer map's geocode cache (`MapGeocodeCacheStore`, capped at 500 entries) in `features/lists/data-access`, and the customer list's scroll position (`CustomerListScrollStore`) in `features/customers/data-access`.
 
@@ -111,9 +112,9 @@ Coordinates the bulk fetch of customer/contract/ticket/note data when trade unit
 
 **Loading model (important for "why is this screen slow").** On a TU change the service fires several requests and streams each into AppState as it lands:
 
-- **Core group** = `getCustomers` + `getContracts` + `getTodaysTickets`. `dataLoading` flips false only when **all three** arrive. Both **Actionable Insights** and the **Planting Intentions Dashboard** gate their spinner on `dataLoading`, so they render together — and a slow ODS query (contracts, or today's tickets) holds both screens.
+- **Core group** = the customers (Customers' preload) + `getContracts` + `getTodaysTickets`. Each has its own loading flag, which drops as its data lands (`CustomerStore.customersLoading`, `contractsLoading`, `todaysTicketsLoading`). **Actionable Insights** clears its Refresh spinner, and the **Planting Intentions Dashboard** its data-ready guard, only once all three have dropped, so a slow ODS query (contracts, or today's tickets) holds both. Until 2026-11-09 that was one combined `dataLoading` flag.
 - **Background group** (non-blocking, streamed via `merge`): bulk `getTickets`, notes, planting intentions, stored grain, saved lists, commodities, harvest windows, producer details.
-- **Module preloads**, merged into the same load so the next trade-unit change cancels them too: each module's manifest may declare a `preload` (see Module manifests below). Today that is Producers', which pre-fetches the Planting Dashboard's summary for users who may read it. A preload that fails ends quietly without stopping the rest.
+- **Module preloads**, merged into the same load so the next trade-unit change cancels them too: each module's manifest may declare a `preload` (see Module manifests below). Today those are Customers', which loads the trade units' customers into `CustomerStore`, and Producers', which pre-fetches the Planting Dashboard's summary. Each runs only for users who may read what it loads. A preload that fails ends quietly without stopping the rest.
 
 ### Module manifests and `ModuleRegistry`
 
@@ -301,7 +302,7 @@ Four contexts are registered:
 | Dashboards stale after TU change | Producers' `preload` (`features/producers/producers.module.ts`) clears `DashboardStore`'s caches on every new selection — check `DataPreloadService` still runs the modules' preloads. |
 | Login loop / "deep link lost" | `auth.guard.ts` and `main.ts` deep-link sessionStorage handshake — make sure both halves are still in place. |
 | "Cross-database query not supported" SQL error | You introduced a join across `OriginationDbContext` and `ApplicationDbContext`. Move the join to C# (pull rows from each context, match in memory via `dbo.Customer`). |
-| Actionable Insights / Dashboard slow, and they load at the same time | Both gate on the single `dataLoading` flag, which waits on the whole core group (customers + contracts + today's tickets). The long pole is usually the ODS ticket/contract scan — and `getTodaysTickets` additionally scans the storage view via the customer-storage gate. See the loading model + perf note under DataPreloadService. |
+| Actionable Insights / Dashboard slow, and they load at the same time | Both wait on the whole core group (customers + contracts + today's tickets), through its three loading flags. The long pole is usually the ODS ticket/contract scan — and `getTodaysTickets` additionally scans the storage view via the customer-storage gate. See the loading model + perf note under DataPreloadService. |
 | Notes appear, then disappear | The StoredGrain merge race fix lives in `home.component.ts:335-352`. The same pattern is used for tickets and other per-customer fetches. See Customer Home Page doc → Troubleshooting. |
 
 ## See also

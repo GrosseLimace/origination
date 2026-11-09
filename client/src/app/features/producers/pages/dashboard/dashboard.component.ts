@@ -7,6 +7,7 @@ import { forkJoin, of } from 'rxjs';
 import { catchError, tap } from 'rxjs/operators';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
+import { CustomerStore } from '@features/customers';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
@@ -44,6 +45,7 @@ import { DashboardCacheEntry, DashboardStore } from '../../data-access/dashboard
 export class DashboardComponent {
   private readonly apiService = inject(ApiService);
   private readonly appStateService = inject(AppStateService);
+  private readonly customerStore = inject(CustomerStore);
   private readonly dashboardStore = inject(DashboardStore);
   private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly toastService = inject(ToastService);
@@ -52,7 +54,7 @@ export class DashboardComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   // Read directly from appState — DataPreloadService populates these on TU change
-  readonly customers = this.appStateService.customers;
+  readonly customers = this.customerStore.customers;
   readonly contracts = this.appStateService.contracts;
   readonly plantingIntentions = this.appStateService.plantingIntentions;
 
@@ -78,7 +80,7 @@ export class DashboardComponent {
     this.appStateService.commodityConversionsLoadFailed() && this.appStateService.commodityConversions().length === 0);
   /** The producer list failed to load: an empty Producers tab is an outage, not an empty trade unit. */
   readonly customersUnavailable = computed(() =>
-    this.appStateService.customersLoadFailed() && this.customers().length === 0);
+    this.customerStore.customersLoadFailed() && this.customers().length === 0);
 
   private readonly _customerIdSet = computed(() => new Set(this.customers().map(c => c.id)));
   // Planting rows are tagged with the trade unit they were recorded for, and every acre figure on
@@ -91,7 +93,7 @@ export class DashboardComponent {
       : new Set(this.tradeUnitContext.inScopeTradeUnitCodes())
   );
   readonly storedGrain = computed(() => {
-    const customerIds = new Set(this.appStateService.customers().map(c => c.id));
+    const customerIds = new Set(this.customerStore.customers().map(c => c.id));
     return this.appStateService.storedGrain().filter(s => customerIds.has(s.customerId));
   });
   allCommodities = signal<Commodity[]>([]);
@@ -105,7 +107,7 @@ export class DashboardComponent {
   // actually renders (customers + contracts) plus its own summary fetch — NOT the global
   // dataLoading, which also waits on today's tickets (a slow ODS scan).
   readonly loading = computed(() =>
-    this.appStateService.customersLoading()
+    this.customerStore.customersLoading()
     || this.appStateService.contractsLoading()
     || this._localLoading());
   totalAcres = signal(0);
@@ -231,9 +233,11 @@ export class DashboardComponent {
       this._commodityByCode(),
       buildLbsPerBushelMap(this.appStateService.commodityConversions())));
 
-  // Data-ready guard — skip expensive computations until commodities are loaded
+  // Data-ready guard — skip expensive computations until commodities are loaded, or the core data
+  // (customers, contracts and today's tickets) has all arrived
   private readonly _dataReady = computed(() =>
-    this.allCommodities().length > 0 || !this.appStateService.dataLoading()
+    this.allCommodities().length > 0
+      || !(this.customerStore.customersLoading() || this.appStateService.contractsLoading() || this.appStateService.todaysTicketsLoading())
   );
 
   // Request-ID pattern for concurrent load handling
@@ -493,7 +497,7 @@ export class DashboardComponent {
     // Note: storedGrain is intentionally NOT tracked here — it's not used in either calculation
     // and would cause an extra recalc when 100k+ stored grain records finish downloading.
     effect(() => {
-      this.appStateService.customers();
+      this.customerStore.customers();
       this.appStateService.contracts();
       this.appStateService.plantingIntentions();
       this.allCommodities();

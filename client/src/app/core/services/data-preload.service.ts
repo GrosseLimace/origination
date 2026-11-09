@@ -6,7 +6,7 @@ import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { ApiService } from './api.service';
 import { AppStateService } from './app-state.service';
-import { Customer, Contract, Ticket, NoteLastContact, ReminderDue, PlantingIntention, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow } from '@models';
+import { Contract, Ticket, NoteLastContact, ReminderDue, PlantingIntention, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
 import { environment } from '@env/environment';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
@@ -60,17 +60,14 @@ export class DataPreloadService {
       switchMap(() => tuChanges$),
       switchMap(tradeUnits => {
         if (tradeUnits.length === 0) {
-          this.appState.setDataLoading(false);
-          this.appState.setCustomersLoading(false);
           this.appState.setContractsLoading(false);
           this.appState.setTodaysTicketsLoading(false);
           return of(null);
         }
 
-        this.appState.setDataLoading(true);
         // Per-dataset flags — each flips false in its own tap below, so screens/categories
         // render as soon as their data lands rather than waiting on the slowest core query.
-        this.appState.setCustomersLoading(true);
+        // Customers' preload (below, with the other modules') keeps its own.
         this.appState.setContractsLoading(true);
         this.appState.clearLoadFailures();
         this.appState.setTodaysTicketsLoading(true);
@@ -85,24 +82,9 @@ export class DataPreloadService {
         // between the TU change and the preload landing would run against the prior TU's rows.
         this.appState.clearDpContractsCache();
 
-        // Core group — dataLoading clears when all three are ready so that
-        // Unconfirmed Contracts, Spot Loads, and Unshipped Bushels all appear
-        // simultaneously. todaysTickets$ is a fast query (today's date filter)
+        // Core group: the trade unit's customers (Customers' preload), contracts and today's tickets. A screen that
+        // needs all three waits on all three loading flags. todaysTickets$ is a fast query (today's date filter)
         // and resolves in roughly the same time as customers + contracts.
-        let coreArrived = { customers: false, contracts: false, todaysTickets: false };
-
-        const customers$ = this.apiService.getCustomers(tradeUnits).pipe(
-          // Same arrangement as contracts below: an empty producer list otherwise reads as "no
-          // producers in these trade units" on the producer list and Build-a-List.
-          tap(() => this.appState.setCustomersLoadFailed(false)),
-          catchError(() => { this.appState.setCustomersLoadFailed(true); return of([] as Customer[]); }),
-          tap(data => {
-            this.appState.setCustomers(data);
-            this.appState.setCustomersLoading(false);
-            coreArrived.customers = true;
-            if (coreArrived.contracts && coreArrived.todaysTickets) this.appState.setDataLoading(false);
-          })
-        );
         const contracts$ = this.apiService.getContracts(tradeUnits).pipe(
           // Cleared HERE, ahead of the catchError, so only a real emission clears it. Doing it inside
           // setContracts meant the [] fallback below cleared the flag the catchError had just set.
@@ -113,8 +95,6 @@ export class DataPreloadService {
           tap(data => {
             this.appState.setContracts(data);
             this.appState.setContractsLoading(false);
-            coreArrived.contracts = true;
-            if (coreArrived.customers && coreArrived.todaysTickets) this.appState.setDataLoading(false);
           })
         );
         const todaysTickets$ = this.apiService.getTodaysTickets(tradeUnits).pipe(
@@ -137,8 +117,6 @@ export class DataPreloadService {
           tap(data => {
             this.appState.setTodaysTickets(data);
             this.appState.setTodaysTicketsLoading(false);
-            coreArrived.todaysTickets = true;
-            if (coreArrived.customers && coreArrived.contracts) this.appState.setDataLoading(false);
           })
         );
         // Last-contact aggregate instead of the full note download: tiny rows (one per
@@ -219,11 +197,11 @@ export class DataPreloadService {
           })
         );
 
-        // Each module's own preload (the Planting Dashboard's summary, for one), cancelled with the rest by the
-        // next trade-unit change.
+        // Each module's own preload (the trade unit's customers, the Planting Dashboard's summary), cancelled with
+        // the rest by the next trade-unit change.
         const modulePreloads = this.moduleRegistry.preloads(tradeUnits);
 
-        return merge(customers$, contracts$, todaysTickets$, notes$, reminders$, plantingIntentions$, storedGrain$, dpContracts$, savedLists$, commodities$, harvestWindows$, producerDetails$, ...modulePreloads);
+        return merge(contracts$, todaysTickets$, notes$, reminders$, plantingIntentions$, storedGrain$, dpContracts$, savedLists$, commodities$, harvestWindows$, producerDetails$, ...modulePreloads);
       }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe();

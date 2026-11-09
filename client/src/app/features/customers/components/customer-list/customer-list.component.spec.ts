@@ -11,6 +11,7 @@ import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 import { Customer, NoteLastContact, ProducerDetails, ReminderDue, SavedList } from '@models';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { CustomerListScrollStore } from '../../data-access/customer-list-scroll.store';
+import { CustomerStore } from '../../data-access/customer.store';
 
 // Behaviour safety net for the producer list ahead of its OnPush conversion. Pins, through the
 // signal inputs and the rendered DOM:
@@ -227,7 +228,7 @@ describe('CustomerListComponent', () => {
 
     it('says the producer list failed to load instead of "No producers found"', () => {
       TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
-      appState.setCustomersLoadFailed(true);
+      TestBed.inject(CustomerStore).setCustomersLoadFailed(true);
       create({ customers: [] });
 
       expect(text()).toContain("Couldn't load producers");
@@ -236,7 +237,7 @@ describe('CustomerListComponent', () => {
 
     it('drops the failure message once producers arrive (e.g. the page\'s own retry succeeded)', () => {
       TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
-      appState.setCustomersLoadFailed(true);
+      TestBed.inject(CustomerStore).setCustomersLoadFailed(true);
       create({ customers: [] });
 
       ref.setInput('customers', [makeCustomer({ id: 1, scoularId: 'C1' })]);

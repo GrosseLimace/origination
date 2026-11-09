@@ -153,7 +153,7 @@ The "system" username has historically been used for `Created/ModifiedBy` on das
 
 | Symptom | Likely cause | First place to look |
 | --- | --- | --- |
-| Stat cards say 0 acres / 0 producers | `selectedTradeUnits()` empty or `plantingIntentions` not yet loaded | TU selector + `dataLoading()` |
+| Stat cards say 0 acres / 0 producers | `selectedTradeUnits()` empty or `plantingIntentions` not yet loaded | TU selector + the loading flags (`CustomerStore.customersLoading`, `contractsLoading`, `todaysTicketsLoading`) |
 | Filter by Crop dropdown shows duplicate `WHEAT` and `Wheat` | A contract row in ODS still uses ALL CAPS that the title-case helper isn't catching, or a stale entry in the App DB. Remember Prod hasn't run the cleanup yet. | `availableCrops` computed; the SQL audit query under "Crop title-casing" |
 | Saved estimate disappears after refresh | Upsert hit a unique constraint and one row was overwritten. | Check `Created/ModifiedAt` columns; verify only one `(TradeUnitKey, Crop, PlantingYear)` row per crop |
 | "By Crop" tab shows different totals than "Producers" tab | Categorization mismatch (planting intentions use `category`, contracts use `commodityGroup` / `commodityDescription`). The `_toTitleCase` helper merges them, but only if both side's strings normalize to the same thing. | `availableCrops` computed; check both signal sources |

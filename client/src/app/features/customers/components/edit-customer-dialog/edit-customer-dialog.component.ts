@@ -7,6 +7,7 @@ import { Customer, Contract, Ticket, Commodity } from '@models';
 import { applyProducerDetails } from '@shared/utils/apply-producer-details';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
+import { CustomersApiService } from '../../data-access/customers-api.service';
 import { ToastService } from '@core/services/toast.service';
 import { formatPhoneProgressive } from '@shared/utils/phone';
 import { BIN_SITE_NAME_MAX_LENGTH, COORDINATE_EXAMPLE, MAX_BIN_SITES, MAX_BIN_SITE_CAPACITY, formatBinSiteCapacityInput, formatCoordinatePairFull, parseBinSiteCapacity, parseCoordinatePair } from '@shared/utils/coordinates';
@@ -72,6 +73,7 @@ export class EditCustomerDialogComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly toast = inject(ToastService);
   private readonly appState = inject(AppStateService);
+  private readonly customersApi = inject(CustomersApiService);
   private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly cdr = inject(ChangeDetectorRef);
 
@@ -850,7 +852,7 @@ export class EditCustomerDialogComponent {
   private _loadCurrentTradeUnits(customerId: number): void {
     this.isLoadingCurrentTradeUnits.set(true);
     this.currentTradeUnitsError.set(null);
-    this.apiService.getCustomerTradeUnits(customerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.customersApi.getCustomerTradeUnits(customerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (tus) => {
         this.currentTradeUnits.set(tus);
         // Only ACTIVE manual memberships prefill the editable set — removed ones (isActive=false)
@@ -1182,7 +1184,7 @@ export class EditCustomerDialogComponent {
     // when the parameter is null/empty (see SqlDataService.cs). Previously this called
     // getTradeUnits() first just to round-trip the codes back as a scope, which was
     // dead weight once the local TU catalog was retired.
-    this.apiService.getCustomers().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.customersApi.getCustomers().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (customers) => {
         this._allProducersForSearch.set(customers);
         this.isLoadingProducers.set(false);
@@ -1302,7 +1304,7 @@ export class EditCustomerDialogComponent {
       // wasn't committed; reopening the dialog will show it again from the refreshed list).
       const dormantRemovals = this.removedDormantTuCodes();
       for (const code of dormantRemovals) {
-        this.apiService.removeDormantTradeUnit(customer.id, code).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        this.customersApi.removeDormantTradeUnit(customer.id, code).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
           error: err => {
             if (!alreadyShown(err)) {
               this.toast.error(`Couldn't remove trade unit ${code} — the producer may still have an open contract or ticket there.`);

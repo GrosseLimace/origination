@@ -15,7 +15,6 @@ export class AppStateService {
   private readonly _allProducersMode = signal(false);
   private readonly _searchQuery = signal<string>('');
   private readonly _selectedSavedListId = signal<string>('');
-  private readonly _customers = signal<Customer[]>([]);
   private readonly _contracts = signal<Contract[]>([]);
   private readonly _todaysTickets = signal<Ticket[]>([]);
   private readonly _tickets = signal<Ticket[]>([]);
@@ -33,16 +32,13 @@ export class AppStateService {
   private readonly _harvestWindows = signal<HarvestWindow[]>([]);
   private readonly _producerDetails = signal<ProducerDetails[]>([]);
   private readonly _pricingLines = signal<ContractPricingLine[]>([]);
-  private readonly _dataLoading = signal(false);
   private readonly _ticketsLoaded = signal(false);
   private readonly _ticketsTradeUnitKey = signal<string | null>(null);
   private readonly _notesLoaded = signal(false);
-  private readonly _customersLoading = signal(false);
   private readonly _contractsLoading = signal(false);
   private readonly _todaysTicketsLoading = signal(false);
   private readonly _contractsLoadFailed = signal(false);
   private readonly _ticketsLoadFailed = signal(false);
-  private readonly _customersLoadFailed = signal(false);
   private readonly _dpContractsLoadFailed = signal(false);
   private readonly _noteLastContactsLoadFailed = signal(false);
   private readonly _myRemindersLoadFailed = signal(false);
@@ -71,7 +67,6 @@ export class AppStateService {
   readonly selectedSavedListId = this._selectedSavedListId.asReadonly();
 
   // Data cache - persists across navigation
-  readonly customers = this._customers.asReadonly();
   readonly contracts = this._contracts.asReadonly();
   readonly todaysTickets = this._todaysTickets.asReadonly();
   readonly tickets = this._tickets.asReadonly();
@@ -123,10 +118,6 @@ export class AppStateService {
   }
 
   // Update data cache
-  setCustomers(customers: Customer[]): void {
-    this._customers.set(customers);
-  }
-
   setContracts(contracts: Contract[]): void {
     this._contracts.set(contracts);
   }
@@ -209,13 +200,6 @@ export class AppStateService {
     this._queryLibrary.set(items);
   }
 
-  // Global data loading flag — true while DataPreloadService is fetching on TU change
-  readonly dataLoading = this._dataLoading.asReadonly();
-
-  setDataLoading(loading: boolean): void {
-    this._dataLoading.set(loading);
-  }
-
   // True once the TU-wide ticket set has been loaded into `tickets` (via setTickets). List/NLQ
   // consumers (customer-list, build-list) gate their own lazy TU-wide fetch on this instead of
   // `tickets().length === 0`, because per-producer selection no longer populates `tickets` — so an
@@ -260,11 +244,10 @@ export class AppStateService {
   //   - Actionable Insights: Spot Loads waits on todaysTicketsLoading; the contract-based
   //     categories (Unconfirmed Contracts, Unshipped Bushels) wait on contractsLoading.
   //   - Dashboard: waits on customers + contracts, NOT tickets (it doesn't use them).
-  readonly customersLoading = this._customersLoading.asReadonly();
+  // The customers' own flag is CustomerStore.customersLoading, set by Customers' preload.
   readonly contractsLoading = this._contractsLoading.asReadonly();
   readonly todaysTicketsLoading = this._todaysTicketsLoading.asReadonly();
 
-  setCustomersLoading(loading: boolean): void { this._customersLoading.set(loading); }
   setContractsLoading(loading: boolean): void { this._contractsLoading.set(loading); }
   setTodaysTicketsLoading(loading: boolean): void { this._todaysTicketsLoading.set(loading); }
 
@@ -313,11 +296,6 @@ export class AppStateService {
   /** Same for the trade-unit-wide ticket reads. See setContractsLoadFailed. */
   setTicketsLoadFailed(failed: boolean): void { this._ticketsLoadFailed.set(failed); }
 
-  /** Same, for the trade-unit-wide PRODUCER read: an empty producer list otherwise reads as "no
-   *  producers in these trade units". Same tap-before-catchError rule as setContractsLoadFailed. */
-  readonly customersLoadFailed = this._customersLoadFailed.asReadonly();
-  setCustomersLoadFailed(failed: boolean): void { this._customersLoadFailed.set(failed); }
-
   /** Same, for the trade-unit-wide DP read. The [] fallback still flips dpContractsLoaded (so a DP
    *  prompt never waits forever), so without this a failure answers "no producers hold DP". */
   readonly dpContractsLoadFailed = this._dpContractsLoadFailed.asReadonly();
@@ -354,7 +332,6 @@ export class AppStateService {
   clearLoadFailures(): void {
     this._contractsLoadFailed.set(false);
     this._ticketsLoadFailed.set(false);
-    this._customersLoadFailed.set(false);
     this._dpContractsLoadFailed.set(false);
     this._noteLastContactsLoadFailed.set(false);
     this._myRemindersLoadFailed.set(false);
@@ -374,7 +351,6 @@ export class AppStateService {
     this._selectedCustomer.set(null);
     this._searchQuery.set('');
     this._selectedSavedListId.set('');
-    this._customers.set([]);
     this._contracts.set([]);
     this.clearTicketsCache();
     this._plantingIntentions.set([]);
@@ -387,8 +363,6 @@ export class AppStateService {
     this._savedLists.set([]);
     this._commodities.set([]);
     this._producerDetails.set([]);
-    this._dataLoading.set(false);
-    this._customersLoading.set(false);
     this._contractsLoading.set(false);
     this._todaysTicketsLoading.set(false);
     this._todaysTickets.set([]);

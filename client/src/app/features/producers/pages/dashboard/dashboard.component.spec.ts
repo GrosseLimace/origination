@@ -21,6 +21,7 @@ import {
 
 import { DashboardComponent } from './dashboard.component';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { CustomerStore } from '@features/customers';
 
 // Behaviour safety net for the origination dashboard ahead of an OnPush/memoisation refactor.
 // Everything is driven through public methods, signals and computeds plus the rendered DOM, so
@@ -170,7 +171,7 @@ function makeAppState() {
     producerDetails: signal<ProducerDetails[]>([]),
     customersLoading: signal(false),
     contractsLoading: signal(false),
-    dataLoading: signal(false),
+    todaysTicketsLoading: signal(false),
     allProducersMode: signal(false),
     selectedTradeUnits,
     inScopeTradeUnitCodes: computed<readonly string[]>(() => selectedTradeUnits()),
@@ -232,6 +233,7 @@ describe('DashboardComponent', () => {
     TestBed.configureTestingModule({
       imports: [DashboardComponent],
       providers: [
+        { provide: CustomerStore, useExisting: AppStateService },
         { provide: AppStateService, useValue: appState },
         { provide: DashboardStore, useValue: appState },
         { provide: TradeUnitContext, useValue: appState },

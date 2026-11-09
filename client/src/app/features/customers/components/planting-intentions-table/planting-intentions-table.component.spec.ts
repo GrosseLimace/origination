@@ -7,6 +7,7 @@ import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { Commodity, Customer, PlantingIntention } from '@models';
+import { CustomersApiService } from '../../data-access/customers-api.service';
 
 // Which trade unit a planting intention is recorded for. A test producer is on Pratt (2190) and
 // Tribune (2210); the form offers THAT PRODUCER's trade units, auto-fills when there is only one
@@ -44,6 +45,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
     tradeUnitsNeverAnswer = false;
     TestBed.configureTestingModule({
       providers: [
+        { provide: CustomersApiService, useExisting: ApiService },
         {
           provide: ApiService,
           useValue: {
@@ -341,6 +343,7 @@ describe('PlantingIntentionsTableComponent — rendering', () => {
     await TestBed.configureTestingModule({
       imports: [PlantingIntentionsTableComponent],
       providers: [
+        { provide: CustomersApiService, useExisting: ApiService },
         {
           provide: ApiService,
           useValue: {

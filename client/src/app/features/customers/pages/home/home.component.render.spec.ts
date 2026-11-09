@@ -21,6 +21,8 @@ import type {
 
 import { HomeComponent } from './home.component';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { CustomerStore } from '../../data-access/customer.store';
+import { CustomersApiService } from '../../data-access/customers-api.service';
 
 /**
  * Rendering tests for the producer page: the REAL home template, with selector-compatible stubs for
@@ -258,7 +260,9 @@ describe('HomeComponent (rendered)', () => {
     arrange?.(api, app);
     TestBed.configureTestingModule({
       providers: [
+        { provide: CustomersApiService, useExisting: ApiService },
         { provide: ApiService, useValue: api },
+        { provide: CustomerStore, useExisting: AppStateService },
         { provide: AppStateService, useValue: app },
         { provide: TradeUnitContext, useValue: app },
         { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn(), info: vi.fn() } },

@@ -9,6 +9,7 @@ import { ToastService } from '@core/services/toast.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { Customer, PlantingIntention } from '@models';
 import { MAX_BIN_SITES } from '@shared/utils/coordinates';
+import { CustomersApiService } from '../../data-access/customers-api.service';
 
 // Removing a trade unit doesn't unplant the acres. When the producer has planting intentions
 // recorded against the trade unit being removed, the dialog asks where those acres should count
@@ -45,6 +46,7 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
     saved = [];
     TestBed.configureTestingModule({
       providers: [
+        { provide: CustomersApiService, useExisting: ApiService },
         {
           provide: ApiService,
           useValue: {
@@ -264,6 +266,7 @@ describe('EditCustomerDialogComponent — bin sites', () => {
     details$ = new Subject<ProducerDetails>();
     TestBed.configureTestingModule({
       providers: [
+        { provide: CustomersApiService, useExisting: ApiService },
         {
           provide: ApiService,
           useValue: {
@@ -808,6 +811,7 @@ describe('EditCustomerDialogComponent — rendering', () => {
     await TestBed.configureTestingModule({
       imports: [EditCustomerDialogComponent],
       providers: [
+        { provide: CustomersApiService, useExisting: ApiService },
         {
           provide: ApiService,
           useValue: {
@@ -903,7 +907,7 @@ describe('EditCustomerDialogComponent — rendering', () => {
   it('names a linked producer once the all-producers list arrives after the dialog opened', async () => {
     // With no trade unit selected, linked producers are looked up in a list fetched in the background.
     const customers$ = new Subject<Customer[]>();
-    TestBed.inject(ApiService).getCustomers = () => customers$.asObservable();
+    TestBed.inject(CustomersApiService).getCustomers = () => customers$.asObservable();
     ref.setInput('selectedTradeUnits', []);
     await open(makeCustomer({ linkedProducerIds: ['OTHER'] }));
     expect(text()).not.toContain('Other Farm');

@@ -8,6 +8,8 @@ import { applyProducerDetails } from '@shared/utils/apply-producer-details';
 import { catchError, finalize, takeUntil } from 'rxjs/operators';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
+import { CustomerStore } from '../../data-access/customer.store';
+import { CustomersApiService } from '../../data-access/customers-api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
@@ -58,6 +60,8 @@ import { SelectedCustomerContext } from '@core/context/selected-customer-context
 export class HomeComponent {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
+  private readonly customerStore = inject(CustomerStore);
+  private readonly customersApi = inject(CustomersApiService);
   private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly toastService = inject(ToastService);
   private readonly usageTracking = inject(UsageTrackingService);
@@ -258,7 +262,7 @@ export class HomeComponent {
 
     // Only fetch from API if appState has no cached customers — otherwise use the cache.
     // This prevents a full reload every time the user navigates back from another page.
-    if (this.appState.customers().length === 0) {
+    if (this.customerStore.customers().length === 0) {
       this._loadAllData(this.selectedTradeUnits());
     }
     this._lastTradeUnitKey = [...this.selectedTradeUnits()].sort().join(',');
@@ -314,7 +318,7 @@ export class HomeComponent {
   private _restoreStateFromService(): void {
     this.selectedTradeUnits.set(this.tradeUnitContext.selectedTradeUnits());
 
-    const stateCustomers = this.appState.customers();
+    const stateCustomers = this.customerStore.customers();
     if (stateCustomers.length > 0) {
       this.customers.set(stateCustomers);
       this.contracts.set(this.appState.contracts());
@@ -406,14 +410,14 @@ export class HomeComponent {
     this._isLoading = true;
     this.loading.set(true);
 
-    this.apiService.getCustomers(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.customersApi.getCustomers(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         // Discard result if a newer request has already been issued.
         if (requestId !== this._customerRequestId) return;
         const list = data ?? [];
         this.customers.set(list);
-        this.appState.setCustomers(list);
-        this.appState.setCustomersLoadFailed(false);
+        this.customerStore.setCustomers(list);
+        this.customerStore.setCustomersLoadFailed(false);
         this.loading.set(false);
         this._isLoading = false;
         this.lists.enrichSavedLists();
@@ -429,7 +433,7 @@ export class HomeComponent {
       error: () => {
         if (requestId !== this._customerRequestId) return;
         // The producer list shows "Couldn't load producers" from this rather than "No producers found".
-        this.appState.setCustomersLoadFailed(true);
+        this.customerStore.setCustomersLoadFailed(true);
         this.loading.set(false);
         this._isLoading = false;
       }
@@ -535,7 +539,7 @@ export class HomeComponent {
 
     if (changed) {
       this.customers.set(updated);
-      this.appState.setCustomers(updated);
+      this.customerStore.setCustomers(updated);
       const sel = this.selectedCustomer();
       if (sel) {
         const updatedSel = updated.find(c => c.id === sel.id);
@@ -607,7 +611,7 @@ export class HomeComponent {
     // all trade units, so it stays correct across TU switches (it refreshes in the
     // background via _loadAllData / data-preload for freshness).
     this.customers.set([]);
-    this.appState.setCustomers([]);
+    this.customerStore.setCustomers([]);
     // Per-producer tickets accumulate in the local signal across selections, so clear them on TU
     // change to drop the prior TU's producers' tickets. (appState.tickets — the TU-wide list/NLQ
     // cache — is cleared separately by data-preload's clearTicketsCache.)
@@ -822,7 +826,7 @@ export class HomeComponent {
           const arr = [...this.customers()];
           arr[idx] = updated;
           this.customers.set(arr);
-          this.appState.setCustomers(arr);
+          this.customerStore.setCustomers(arr);
         } else {
           const cache = new Map(this._crossTradeUnitCustomers());
           cache.set(linkedCustomer.id, updated);
@@ -1273,7 +1277,7 @@ export class HomeComponent {
           // every other write site pushes both; this one didn't — so build-list and insights
           // kept serving the pre-merge commodity list until the next full
           // trade-unit reload happened to overwrite it.
-          this.appState.setCustomers(updated);
+          this.customerStore.setCustomers(updated);
         }
         if (this.selectedCustomer()?.id === customer.id) this.selectedCustomer.set(updatedCustomer);
         this._autoSaveInFlight.delete(customer.id);
@@ -1309,7 +1313,7 @@ export class HomeComponent {
       const slowNotice = setTimeout(
         () => this.toastService.info('Still saving trade units — this can take up to a minute. No need to save again.', 8000),
         HomeComponent.SLOW_TRADE_UNIT_SAVE_MS);
-      this.apiService.assignTradeUnits(data.customerId, data.tradeUnitCodes ?? [], data.scoularId).pipe(
+      this.customersApi.assignTradeUnits(data.customerId, data.tradeUnitCodes ?? [], data.scoularId).pipe(
         finalize(() => {
           clearTimeout(slowNotice);
           this._tradeUnitSavesInFlight.update(ids => {
@@ -1452,7 +1456,7 @@ export class HomeComponent {
             const arr = [...this.customers()];
             arr[idx] = updatedLinkedCustomer;
             this.customers.set(arr);
-            this.appState.setCustomers(arr);
+            this.customerStore.setCustomers(arr);
           }
           if (this._crossTradeUnitCustomers().has(linkedId)) {
             this._crossTradeUnitCustomers.update(cache => {
@@ -1478,7 +1482,7 @@ export class HomeComponent {
           this._propagatePrimaryContact(linkedCustomer, primaryRow);
         } else {
           // Linked producer not loaded locally — fetch by sourceId then propagate
-          this.apiService.getCustomerBySourceId(linkedIdStr).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+          this.customersApi.getCustomerBySourceId(linkedIdStr).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
             next: (fetched) => {
               const cache = new Map(this._crossTradeUnitCustomers());
               cache.set(fetched.id, fetched);
@@ -1512,7 +1516,7 @@ export class HomeComponent {
     }
 
     this.selectedCustomer.set(updated);
-    this.appState.setCustomers(this.customers());
+    this.customerStore.setCustomers(this.customers());
     this.appState.selectCustomer(updated);
 
     // Fetch any newly linked producers that aren't loaded yet so the dropdown updates
@@ -1565,7 +1569,7 @@ export class HomeComponent {
       this.planting.loadWithoutCache(customer.id);
     } else {
       // Linked customer is in a different trade unit — fetch them from the API
-      this.apiService.getCustomerById(customerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      this.customersApi.getCustomerById(customerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (fetched) => {
           // Merge producer details if available
           const pd = this.producerDetailsMap().get(fetched.id);

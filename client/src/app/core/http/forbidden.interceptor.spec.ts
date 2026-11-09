@@ -99,10 +99,10 @@ describe('forbiddenInterceptor', () => {
   it('through ApiService, a screen that checks alreadyShown adds no second toast', () => {
     // ApiService wraps the response in an ApiError; the check follows its cause back to the response.
     const api = TestBed.inject(ApiService);
-    api.getCustomers().subscribe({
-      error: err => { if (!alreadyShown(err)) toast.error('Failed to load customers'); },
+    api.getUserTradeUnits().subscribe({
+      error: err => { if (!alreadyShown(err)) toast.error('Failed to load trade units'); },
     });
-    backend.expectOne(`${API}/customers`).flush(
+    backend.expectOne(`${API}/usertradeunits`).flush(
       { error: { code: 'AUTHZ_PERMISSION_DENIED' } }, { status: 403, statusText: 'Forbidden' });
 
     expect(messages()).toEqual([PERMISSION_DENIED_MESSAGE]);
@@ -110,12 +110,12 @@ describe('forbiddenInterceptor', () => {
 
   it('through ApiService, a screen still shows its own message for any other failure', () => {
     const api = TestBed.inject(ApiService);
-    api.getCustomers().subscribe({
-      error: err => { if (!alreadyShown(err)) toast.error('Failed to load customers'); },
+    api.getUserTradeUnits().subscribe({
+      error: err => { if (!alreadyShown(err)) toast.error('Failed to load trade units'); },
     });
-    backend.expectOne(`${API}/customers`).flush(null, { status: 500, statusText: 'Server Error' });
+    backend.expectOne(`${API}/usertradeunits`).flush(null, { status: 500, statusText: 'Server Error' });
 
-    expect(messages()).toEqual(['Failed to load customers']);
+    expect(messages()).toEqual(['Failed to load trade units']);
   });
 });
 

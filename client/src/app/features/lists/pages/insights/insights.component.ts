@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { debounceTime, filter, pairwise, take } from 'rxjs/operators';
 import { AppStateService } from '@core/services/app-state.service';
+import { CustomerStore } from '@features/customers';
 import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
@@ -143,6 +144,7 @@ function expandSearchTermWithAliases(term: string): string[] {
 })
 export class InsightsComponent {
   private readonly appState = inject(AppStateService);
+  private readonly customerStore = inject(CustomerStore);
   private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly dataPreloadService = inject(DataPreloadService);
   private readonly toastService = inject(ToastService);
@@ -150,14 +152,14 @@ export class InsightsComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly usageTracking = inject(UsageTrackingService);
 
-  // Read directly from appState — DataPreloadService populates these on TU change
-  readonly customers = this.appState.customers;
+  // Read directly from the shared caches — the trade-unit load populates these on TU change
+  readonly customers = this.customerStore.customers;
   readonly contracts = this.appState.contracts;
   readonly todaysTickets = this.appState.todaysTickets;
   readonly commodities = this.appState.commodities;
   // Page shell waits only on customers (needed to group every category). Once customers are
   // in, the three cards render and each shows its OWN skeleton until its data arrives.
-  readonly isLoading = computed(() => this.appState.customersLoading());
+  readonly isLoading = computed(() => this.customerStore.customersLoading());
   // Per-category loading so a slow dataset only spins its own card:
   //   - Spot Loads is ticket-derived → waits on today's tickets (the slow ODS scan).
   //   - Unconfirmed Contracts + Unshipped Bushels are contract-derived → wait on contracts.
@@ -168,7 +170,9 @@ export class InsightsComponent {
       : this.appState.contractsLoading();
   }
   isBackgroundRefreshing = signal(false);
-  private readonly _dataLoading$ = toObservable(this.appState.dataLoading);
+  /** True until the core data (customers, contracts and today's tickets) has all arrived. */
+  private readonly _dataLoading$ = toObservable(computed(() =>
+    this.customerStore.customersLoading() || this.appState.contractsLoading() || this.appState.todaysTicketsLoading()));
   loadedAt = signal<Date | null>(null);
 
   expandedCategories = signal(new Set<InsightCategory>());

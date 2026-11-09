@@ -3,7 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { Observable, Subject, NEVER, of, throwError } from 'rxjs';
 import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
-import { CommodityConversion, Contract, Customer, Ticket } from '@models';
+import { CommodityConversion, Contract, Ticket } from '@models';
 import { DataPreloadService } from './data-preload.service';
 import { ApiService } from './api.service';
 import { AppStateService } from './app-state.service';
@@ -16,23 +16,16 @@ import { providePermissions } from '@testing/permission.stub';
  * assertions are on the state screens actually read. Pins:
  *  - nothing loads before sign-in; commodity conversions load once after sign-in even with no TU,
  *  - no trade units → every loading flag drops and no TU-scoped call is made,
- *  - dataLoading stays up until ALL THREE core reads (customers, contracts, today's tickets) land,
+ *  - each core dataset's loading flag drops as its own data lands (the customers' is Customers' preload's),
  *  - a contracts failure is RECORDED (outage banner) while the page still loads with [],
  *  - a today's-tickets TIMEOUT is "pending", not "failed"; a real error is "failed",
  *  - re-selecting the same trade units in another order does not reload; forceReload does,
  *  - a TU change drops the lazily-loaded ticket / note / DP caches,
- *  - the dashboard summary is pre-fetched under the sorted TU key for the current year.
+ *  - every module's preload runs with the selected trade units, and is cancelled by the next selection.
  */
 
 const PREFS_KEY = 'origination_user_prefs';
 const NOW = new Date('2026-10-13T12:00:00');
-
-function customer(id: number): Customer {
-  return {
-    id, scoularId: `C${id}`, name: `Farm ${id}`, farm: `Farm ${id}`, location: 'Pratt, KS',
-    phone: '', email: '', totalAcres: 0, linkedProducerIds: [], eSignEnabled: false, achEnabled: false,
-  };
-}
 
 function contract(id: number): Contract {
   return {
@@ -46,7 +39,7 @@ function ticket(id: number): Ticket {
 }
 
 type Api = Record<
-  | 'getCommodityConversions' | 'getCustomers' | 'getContracts' | 'getTodaysTickets' | 'getNotesLastContact'
+  | 'getCommodityConversions' | 'getContracts' | 'getTodaysTickets' | 'getNotesLastContact'
   | 'getMyReminders' | 'getPlantingIntentions' | 'getStoredGrain' | 'getDpContracts' | 'getSavedLists'
   | 'getCommodities' | 'getHarvestWindows' | 'getAllProducerDetails',
   ReturnType<typeof vi.fn<(...args: unknown[]) => Observable<unknown>>>
@@ -87,7 +80,6 @@ describe('DataPreloadService', () => {
     modulePreload = vi.fn((_tradeUnits: readonly string[]) => of(null) as Observable<unknown>);
     api = {
       getCommodityConversions: vi.fn(() => of<CommodityConversion[]>([])),
-      getCustomers: vi.fn(() => of([customer(1)])),
       getContracts: vi.fn(() => of([contract(1)])),
       getTodaysTickets: vi.fn(() => of([ticket(1)])),
       getNotesLastContact: vi.fn(() => of([])),
@@ -123,7 +115,7 @@ describe('DataPreloadService', () => {
     TestBed.tick();
 
     expect(api.getCommodityConversions).not.toHaveBeenCalled();
-    expect(api.getCustomers).not.toHaveBeenCalled();
+    expect(modulePreload).not.toHaveBeenCalled();
   });
 
   it('loads commodity conversions once after sign-in even with no trade unit selected', () => {
@@ -133,22 +125,18 @@ describe('DataPreloadService', () => {
     signIn();
 
     expect(appState.commodityConversions()).toEqual(conversions);
-    expect(api.getCustomers).not.toHaveBeenCalled();
+    expect(modulePreload).not.toHaveBeenCalled();
   });
 
   it('with no trade units, drops every loading flag and makes no trade-unit-scoped call', () => {
     create();
-    appState.setDataLoading(true);
-    appState.setCustomersLoading(true);
     appState.setContractsLoading(true);
     appState.setTodaysTicketsLoading(true);
     signIn();
 
-    expect(appState.dataLoading()).toBe(false);
-    expect(appState.customersLoading()).toBe(false);
     expect(appState.contractsLoading()).toBe(false);
     expect(appState.todaysTicketsLoading()).toBe(false);
-    expect(api.getCustomers).not.toHaveBeenCalled();
+    expect(api.getContracts).not.toHaveBeenCalled();
     expect(modulePreload).not.toHaveBeenCalled();
   });
 
@@ -157,39 +145,32 @@ describe('DataPreloadService', () => {
     selectTradeUnits(['1085', '2190']);
     signIn();
 
-    for (const fn of [api.getCustomers, api.getContracts, api.getTodaysTickets, api.getPlantingIntentions, api.getStoredGrain, api.getDpContracts]) {
+    for (const fn of [api.getContracts, api.getTodaysTickets, api.getPlantingIntentions, api.getStoredGrain, api.getDpContracts]) {
       expect(fn).toHaveBeenCalledWith(['1085', '2190']);
     }
-    expect(appState.customers()).toEqual([customer(1)]);
     expect(appState.contracts()).toEqual([contract(1)]);
     expect(appState.todaysTickets()).toEqual([ticket(1)]);
     expect(appState.dpContractsLoaded()).toBe(true);
   });
 
-  it('keeps dataLoading up until customers, contracts AND today\'s tickets have all landed', () => {
-    const customers$ = new Subject<Customer[]>();
+  it("drops each core dataset's loading flag as its own data lands", () => {
     const contracts$ = new Subject<Contract[]>();
     const tickets$ = new Subject<Ticket[]>();
-    api.getCustomers.mockReturnValue(customers$);
     api.getContracts.mockReturnValue(contracts$);
     api.getTodaysTickets.mockReturnValue(tickets$);
     create();
     selectTradeUnits(['1085']);
     signIn();
 
-    expect(appState.dataLoading()).toBe(true);
-
-    customers$.next([customer(1)]);
-    expect(appState.customersLoading()).toBe(false); // each screen can render as its own data lands
-    expect(appState.dataLoading()).toBe(true);
+    expect(appState.contractsLoading()).toBe(true);
+    expect(appState.todaysTicketsLoading()).toBe(true);
 
     tickets$.next([ticket(1)]);
-    expect(appState.todaysTicketsLoading()).toBe(false);
-    expect(appState.dataLoading()).toBe(true);
+    expect(appState.todaysTicketsLoading()).toBe(false); // each screen can render as its own data lands
+    expect(appState.contractsLoading()).toBe(true);
 
     contracts$.next([contract(1)]);
     expect(appState.contractsLoading()).toBe(false);
-    expect(appState.dataLoading()).toBe(false);
   });
 
   it('records a contracts failure for the outage banner while still loading the page with []', () => {
@@ -200,7 +181,7 @@ describe('DataPreloadService', () => {
 
     expect(appState.contractsLoadFailed()).toBe(true);
     expect(appState.contracts()).toEqual([]);
-    expect(appState.dataLoading()).toBe(false);
+    expect(appState.contractsLoading()).toBe(false);
   });
 
   it('clears a previous contracts failure when the next load succeeds, even if it is empty', () => {
@@ -247,21 +228,21 @@ describe('DataPreloadService', () => {
     signIn();
     selectTradeUnits(['2190', '1085']);
 
-    expect(api.getCustomers).toHaveBeenCalledTimes(1);
+    expect(modulePreload).toHaveBeenCalledTimes(1);
 
     selectTradeUnits(['2190']);
-    expect(api.getCustomers).toHaveBeenCalledTimes(2);
+    expect(modulePreload).toHaveBeenCalledTimes(2);
   });
 
   it('forceReload re-runs the load for the current trade units, and is a no-op with none selected', () => {
     const service = create();
     signIn();
     service.forceReload();
-    expect(api.getCustomers).not.toHaveBeenCalled();
+    expect(modulePreload).not.toHaveBeenCalled();
 
     selectTradeUnits(['1085']);
     service.forceReload();
-    expect(api.getCustomers).toHaveBeenCalledTimes(2);
+    expect(modulePreload).toHaveBeenCalledTimes(2);
   });
 
   it('drops the lazily-loaded ticket and note caches on a trade-unit change', () => {
@@ -310,14 +291,13 @@ describe('DataPreloadService', () => {
 
     expect(appState.storedGrain()).toEqual([]);
     expect(appState.dpContractsLoaded()).toBe(true);
-    expect(appState.dataLoading()).toBe(false);
+    expect(appState.contracts()).toEqual([contract(1)]);
   });
 
   // Each of these used to resolve a failure to [] with nothing recorded, so the screens showed
   // "no producers", "Never contacted", "No saved lists yet" and the like for an outage.
   describe('records which trade-unit reads failed, so an empty result is not shown as "none"', () => {
     const cases: [string, keyof Api, () => boolean][] = [
-      ['customers', 'getCustomers', () => appState.customersLoadFailed()],
       ['DP contracts', 'getDpContracts', () => appState.dpContractsLoadFailed()],
       ['last-contact dates', 'getNotesLastContact', () => appState.noteLastContactsLoadFailed()],
       ['follow-ups', 'getMyReminders', () => appState.myRemindersLoadFailed()],
@@ -333,7 +313,7 @@ describe('DataPreloadService', () => {
       signIn();
 
       expect(failed()).toBe(true);
-      expect(appState.dataLoading()).toBe(false);
+      expect(appState.contracts()).toEqual([contract(1)]);
     });
 
     it.each(cases)('%s: cleared when the next load succeeds, even if it is empty', (_name, call, failed) => {
@@ -389,10 +369,9 @@ describe('DataPreloadService', () => {
     selectTradeUnits(['1085']);
     signIn();
 
-    expect(appState.dataLoading()).toBe(false);
-    expect(appState.customers()).toHaveLength(1);
+    expect(appState.contracts()).toEqual([contract(1)]);
 
     selectTradeUnits(['2190']);
-    expect(api.getCustomers).toHaveBeenLastCalledWith(['2190']);
+    expect(api.getContracts).toHaveBeenLastCalledWith(['2190']);
   });
 });

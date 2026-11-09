@@ -31,7 +31,7 @@ describe('AppStateService', () => {
   it('initialises with default signal values', () => {
     expect(service.selectedCustomer()).toBeNull();
     expect(service.searchQuery()).toBe('');
-    expect(service.customers()).toEqual([]);
+    expect(service.contracts()).toEqual([]);
   });
 
   it('selectCustomer() stores the selected customer', () => {
@@ -50,22 +50,22 @@ describe('AppStateService', () => {
     expect(service.searchQuery()).toBe('grain');
   });
 
-  it('setCustomers() / contracts / tickets update data cache signals', () => {
-    service.setCustomers([mockCustomer]);
-    expect(service.customers()).toHaveLength(1);
-    expect(service.customers()[0].id).toBe(1);
+  it('setContracts() updates the data cache signal', () => {
+    service.setContracts([{ id: 7 } as never]);
+    expect(service.contracts()).toHaveLength(1);
+    expect(service.contracts()[0].id).toBe(7);
   });
 
   it('clearAll() resets all state to defaults, the trade-unit selection included', () => {
     service.selectCustomer(mockCustomer);
     context.setTradeUnits(['TU1']);
     service.setSearchQuery('test');
-    service.setCustomers([mockCustomer]);
+    service.setContracts([{ id: 7 } as never]);
     service.clearAll();
     expect(service.selectedCustomer()).toBeNull();
     expect(context.selectedTradeUnits()).toEqual([]);
     expect(service.searchQuery()).toBe('');
-    expect(service.customers()).toEqual([]);
+    expect(service.contracts()).toEqual([]);
   });
 
   it('clearAll() also clears every module store registered with SessionReset', () => {
@@ -85,7 +85,7 @@ describe('AppStateService', () => {
 
     it('exposes its state as signals', () => {
       // Guards the check below against passing vacuously if the surface stopped being found.
-      expect(publicSignals().length).toBeGreaterThanOrEqual(40);
+      expect(publicSignals().length).toBeGreaterThanOrEqual(36);
     });
 
     it('offers no .set or .update on any public signal — writes go through the service\'s methods', () => {
@@ -99,8 +99,8 @@ describe('AppStateService', () => {
     it('rejects a direct write at compile time', () => {
       // Never runs; `tsc -p tsconfig.spec.json` fails if any of these lines starts compiling again.
       const neverCalled = () => {
-        // @ts-expect-error customers is read-only
-        service.customers.set([]);
+        // @ts-expect-error contracts is read-only
+        service.contracts.set([]);
         // @ts-expect-error searchQuery is read-only
         service.searchQuery.update(q => q);
         // @ts-expect-error contractsLoadFailed is read-only
@@ -111,30 +111,28 @@ describe('AppStateService', () => {
 
     it('still drives computeds and effects through the read-only view', () => {
       const state = TestBed.inject(AppStateService);
-      const count = computed(() => state.customers().length);
+      const count = computed(() => state.contracts().length);
       const seen: string[] = [];
       TestBed.runInInjectionContext(() => effect(() => { seen.push(state.searchQuery()); }));
       TestBed.tick();
 
-      state.setCustomers([mockCustomer]);
+      state.setContracts([{ id: 7 } as never]);
       state.setSearchQuery('2040');
       TestBed.tick();
 
       expect(count()).toBe(1);
       expect(seen).toEqual(['', '2040']);
       // Same signal every read, so toObservable / effect subscriptions stay attached.
-      expect(state.customers).toBe(state.customers);
+      expect(state.contracts).toBe(state.contracts);
     });
 
     it('the new setters write what they are given', () => {
-      service.setCustomersLoading(true);
       service.setContractsLoading(true);
       service.setTodaysTicketsLoading(true);
       service.setCommodityConversions([{ commodityCode: 'YC', lbsPerUnit: 56 }]);
       service.setHarvestWindows([{ commodityCode: 'YC' } as never]);
       service.setQueryLibrary([{ queryText: 'q' } as never]);
 
-      expect(service.customersLoading()).toBe(true);
       expect(service.contractsLoading()).toBe(true);
       expect(service.todaysTicketsLoading()).toBe(true);
       expect(service.commodityConversions()).toEqual([{ commodityCode: 'YC', lbsPerUnit: 56 }]);

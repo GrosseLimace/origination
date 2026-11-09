@@ -107,13 +107,13 @@ a pure function, so it can be unit-tested and reused. Three things worth knowing
 ```mermaid
 flowchart LR
     UI[Home component]
-    UI -- "selectedTradeUnits change" --> Get[apiService.getCustomers / getContracts / getTickets / getNotes / getStoredGrain / getPlantingIntentions / getSavedLists / getAllProducerDetails / getCommodities]
+    UI -- "selectedTradeUnits change" --> Get[customersApi.getCustomers / apiService.getContracts / getTickets / getNotes / getStoredGrain / getPlantingIntentions / getSavedLists / getAllProducerDetails / getCommodities]
     Get --> CTL[Various controllers]
     CTL --> SVC[Module services<br/>Customers, Contracts, Engagement,<br/>Producers, Lists, Platform]
     SVC --> ODS[(ODS views<br/>vw_CurrentContracts, vw_CurrentTickets,<br/>vw_ContractPricing, vw_GNTA39D1)]
     SVC --> APP[(App DB tables<br/>Customer, CustomerTradeUnit, Notes, ProducerDetails,<br/>ProducerPlantingIntentions, SavedLists, Commodities)]
 
-    UI -- "customer click" --> ByCustomer[apiService.getContractsByCustomer / getTicketsByCustomer / getStoredGrainByCustomer / getPlantingIntentionsByCustomer / getProducerDetails / getPricingLinesByCustomer / getCustomerById / getCustomersLinkedTo]
+    UI -- "customer click" --> ByCustomer[apiService.getContractsByCustomer / getTicketsByCustomer / getStoredGrainByCustomer / getPlantingIntentionsByCustomer / getProducerDetails / getPricingLinesByCustomer / customersApi.getCustomerById / getCustomersLinkedTo]
     ByCustomer --> CTL
 ```
 
@@ -141,9 +141,11 @@ Customers used to be read directly from `originations.vw_CurrentCustomers` via a
 
 ### API service methods called
 
+The customer calls are on `CustomersApiService` (`features/customers/data-access`); the rest are still on `ApiService`.
+
 Bulk on init / TU change:
 
-- `getCustomers(tradeUnits?)`
+- `getCustomers(tradeUnits?)` (Customers' preload loads them first, into `CustomerStore`)
 - `getContracts(tradeUnits?)`
 - `getTickets(tradeUnits?)`
 - `getNotes(tradeUnits?)`
@@ -194,7 +196,7 @@ The pending values are stored in component signals (`pendingContractId`, `pendin
 
 ## State and caching
 
-- The home component reads heavily from `AppStateService`: `customers`, `contracts`, `tickets`, `notes`, `storedGrain`, `plantingIntentions`, `savedLists`, `producerDetails`, `pricingLines`, `selectedCustomer`, `selectedTradeUnits`. It also writes (`setCustomers`, `setContracts`, ...) after each successful fetch so other screens get the same cached data.
+- The home component reads heavily from `AppStateService`: `contracts`, `tickets`, `notes`, `storedGrain`, `plantingIntentions`, `savedLists`, `producerDetails`, `pricingLines`, `selectedCustomer`, `selectedTradeUnits`; and the customers from `CustomerStore`. It also writes (`CustomerStore.setCustomers`, `setContracts`, ...) after each successful fetch so other screens get the same cached data.
 - `DataPreloadService` may have already populated some of this on app load.
 - **Request deduplication** within the component: a `_customerRequestId` counter is incremented on every TU change. Stale responses with an outdated id are dropped to prevent the list from flipping back to the old TU's data when responses arrive out-of-order.
 

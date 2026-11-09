@@ -7,6 +7,7 @@ import { forkJoin, from, of, catchError, mergeMap, toArray, timeout, tap, Subjec
 import { MsalService } from '@azure/msal-angular';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
+import { CustomerStore, CustomersApiService } from '@features/customers';
 import { AppStateService } from '@core/services/app-state.service';
 import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
@@ -86,6 +87,8 @@ import { BuildListState, BuildListStore } from '../../data-access/build-list.sto
 export class BuildListComponent {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
+  private readonly customerStore = inject(CustomerStore);
+  private readonly customersApi = inject(CustomersApiService);
   private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly buildListStore = inject(BuildListStore);
 
@@ -396,7 +399,7 @@ export class BuildListComponent {
   });
 
   /** The trade-unit producer read failed, so an empty trade unit is an outage, not an answer. */
-  readonly customersLoadFailed = this.appState.customersLoadFailed;
+  readonly customersLoadFailed = this.customerStore.customersLoadFailed;
 
   /** The saved-list read failed and nothing replaced it, so an empty library is not "none yet". */
   readonly savedListsLoadFailed = computed(() =>
@@ -1283,7 +1286,7 @@ export class BuildListComponent {
     this._restoreUIState();
 
     const currentTus = this.tradeUnitContext.selectedTradeUnits();
-    const cachedCustomers = this.appState.customers();
+    const cachedCustomers = this.customerStore.customers();
 
     // If appState already has customer data (loaded by home page or a previous visit),
     // use it immediately for fast display, then do a background refresh to fill in
@@ -1383,9 +1386,9 @@ export class BuildListComponent {
     // background; the full note set is lazily fetched by _fetchAndFilter the first time a
     // query runs while it's missing, so page load never waits on the note download)
     forkJoin({
-      customers: this.apiService.getCustomers(tuParam).pipe(
-        tap(() => this.appState.setCustomersLoadFailed(false)),
-        catchError(() => { this.appState.setCustomersLoadFailed(true); return of([] as Customer[]); })),
+      customers: this.customersApi.getCustomers(tuParam).pipe(
+        tap(() => this.customerStore.setCustomersLoadFailed(false)),
+        catchError(() => { this.customerStore.setCustomersLoadFailed(true); return of([] as Customer[]); })),
       contracts: this.apiService.getContracts(tuParam).pipe(
         tap(() => this.appState.setContractsLoadFailed(false)),
         catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })),
@@ -1415,7 +1418,7 @@ export class BuildListComponent {
         if (data.producerDetails.length > 0) this.appState.setProducerDetails(data.producerDetails);
         this._mergeProducerDetails(data.producerDetails);
         // Write to appState so other pages and restore path can use it
-        this.appState.setCustomers(this.customers());
+        this.customerStore.setCustomers(this.customers());
         this.appState.setContracts(data.contracts);
         this.appState.setPlantingIntentions(data.plantingIntentions);
         this.appState.setStoredGrain(data.storedGrain);
@@ -1995,9 +1998,9 @@ export class BuildListComponent {
     const fetchingNotes = needsNotes && !this.appState.notesLoaded();
     let ticketFetchFailed = false;
     forkJoin({
-      customers: this.apiService.getCustomers(tuParam).pipe(
-        tap(() => this.appState.setCustomersLoadFailed(false)),
-        catchError(() => { this.appState.setCustomersLoadFailed(true); return of([] as Customer[]); })),
+      customers: this.customersApi.getCustomers(tuParam).pipe(
+        tap(() => this.customerStore.setCustomersLoadFailed(false)),
+        catchError(() => { this.customerStore.setCustomersLoadFailed(true); return of([] as Customer[]); })),
       contracts: this.apiService.getContracts(tuParam).pipe(
         tap(() => this.appState.setContractsLoadFailed(false)),
         catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })),

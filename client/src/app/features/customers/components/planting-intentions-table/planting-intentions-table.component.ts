@@ -9,6 +9,7 @@ import { InputComponent } from '@shared/components/input/input.component';
 import { Customer, PlantingIntention, Commodity } from '@models';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
+import { CustomersApiService } from '../../data-access/customers-api.service';
 import { ToastService } from '@core/services/toast.service';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
@@ -58,6 +59,7 @@ type PlantingRow = PlantingIntention;
 })
 export class PlantingIntentionsTableComponent {
   private apiService = inject(ApiService);
+  private readonly customersApi = inject(CustomersApiService);
   private destroyRef = inject(DestroyRef);
   private toast = inject(ToastService);
   private readonly tradeUnitContext = inject(TradeUnitContext);
@@ -145,7 +147,7 @@ export class PlantingIntentionsTableComponent {
     this.isLoadingProducerTradeUnits.set(this.producerTradeUnits().length === 0);
     // Codes only: the open-activity check the edit-customer dialog needs is a contract and ticket read
     // for the producer, which kept this picker waiting seconds for a flag it never uses.
-    this.apiService.getCustomerTradeUnits(customerId, { includeActivity: false }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.customersApi.getCustomerTradeUnits(customerId, { includeActivity: false }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: rows => {
         this.producerTradeUnits.set(rows.filter(r => r.isActive).map(r => r.tradeUnit.trim()).filter(Boolean).sort());
         this.isLoadingProducerTradeUnits.set(false);

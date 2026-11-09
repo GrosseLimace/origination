@@ -21,6 +21,8 @@ import {
 
 import { HomeComponent } from './home.component';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { CustomerStore } from '../../data-access/customer.store';
+import { CustomersApiService } from '../../data-access/customers-api.service';
 
 /**
  * Safety net for the producer page ahead of the OnPush conversion and decomposition. HomeComponent
@@ -321,7 +323,9 @@ function setup(opts: SetupOptions = {}): Harness {
 
   TestBed.configureTestingModule({
     providers: [
+      { provide: CustomersApiService, useExisting: ApiService },
       { provide: ApiService, useValue: api },
+      { provide: CustomerStore, useExisting: AppStateService },
       { provide: AppStateService, useValue: app },
       { provide: TradeUnitContext, useValue: app },
       { provide: ToastService, useValue: toast },

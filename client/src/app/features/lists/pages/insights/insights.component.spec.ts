@@ -7,6 +7,7 @@ import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket } from '@models';
+import { CustomerStore } from '@features/customers';
 
 // Regression guard for the Spot Loads performance fix (GetTodaysTicketsAsync). The backend now
 // returns ONLY unapplied tickets on /api/tickets/today (it stopped running the slow applied-ticket
@@ -64,7 +65,7 @@ describe('InsightsComponent — Spot Loads derivation', () => {
   const spotLoads = () => component.allInsights().filter(i => i.category === 'SpotLoads');
 
   it('flags an unapplied ticket with no covering contract as a spot load', () => {
-    appState.setCustomers([makeCustomer({ id: 1, scoularId: 'CUST1' })]);
+    TestBed.inject(CustomerStore).setCustomers([makeCustomer({ id: 1, scoularId: 'CUST1' })]);
     appState.setContracts([]);
     appState.setTodaysTickets([makeTicket({ id: 10, ticketNumber: 'T-10', isApplied: false })]);
 
@@ -74,7 +75,7 @@ describe('InsightsComponent — Spot Loads derivation', () => {
   });
 
   it('is invariant to applied tickets in the payload (backend no longer sends them)', () => {
-    appState.setCustomers([makeCustomer({ id: 1, scoularId: 'CUST1' })]);
+    TestBed.inject(CustomerStore).setCustomers([makeCustomer({ id: 1, scoularId: 'CUST1' })]);
     appState.setContracts([]);
     appState.setTodaysTickets([
       makeTicket({ id: 10, ticketNumber: 'T-10', isApplied: false }),
@@ -89,7 +90,7 @@ describe('InsightsComponent — Spot Loads derivation', () => {
   });
 
   it('does NOT flag an unapplied ticket covered by an open same-commodity contract', () => {
-    appState.setCustomers([makeCustomer({ id: 1, scoularId: 'CUST1' })]);
+    TestBed.inject(CustomerStore).setCustomers([makeCustomer({ id: 1, scoularId: 'CUST1' })]);
     appState.setContracts([
       makeContract({ ctrmCustomerId: 'CUST1', commodityCode: 'YC',
         deliveryStart: new Date('2026-05-01'), deliveryEnd: new Date('2026-06-30') }),

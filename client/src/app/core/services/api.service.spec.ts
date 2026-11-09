@@ -27,61 +27,11 @@ describe('ApiService', () => {
 
   // ── Customers ──────────────────────────────────────────────────────────────
 
-  it('getCustomers() calls GET /customers', () => {
-    service.getCustomers().subscribe();
-    const req = httpMock.expectOne(`${BASE}/customers`);
-    expect(req.request.method).toBe('GET');
-    req.flush([]);
-  });
-
-  it('getCustomers() passes tradeUnits as repeated params', () => {
-    service.getCustomers(['TU1', 'TU2']).subscribe();
-    const req = httpMock.expectOne(r => r.url === `${BASE}/customers`);
-    expect(req.request.params.getAll('tradeUnits')).toEqual(['TU1', 'TU2']);
-    req.flush([]);
-  });
-
   it('searchCustomers() calls GET /customers/search with searchTerm', () => {
     service.searchCustomers('Smith').subscribe();
     const req = httpMock.expectOne(r => r.url === `${BASE}/customers/search`);
     expect(req.request.params.get('searchTerm')).toBe('Smith');
     req.flush([]);
-  });
-
-  it('getCustomerById() calls GET /customers/:id', () => {
-    service.getCustomerById(42).subscribe();
-    const req = httpMock.expectOne(`${BASE}/customers/42`);
-    expect(req.request.method).toBe('GET');
-    req.flush({});
-  });
-
-  it('getCustomerTradeUnits() asks for the activity check by default', () => {
-    service.getCustomerTradeUnits(42).subscribe();
-    const req = httpMock.expectOne(r => r.url === `${BASE}/customers/42/trade-units`);
-    expect(req.request.params.has('includeActivity')).toBe(false);
-    req.flush([]);
-  });
-
-  it('getCustomerTradeUnits() can skip the activity check', () => {
-    service.getCustomerTradeUnits(42, { includeActivity: false }).subscribe();
-    const req = httpMock.expectOne(r => r.url === `${BASE}/customers/42/trade-units`);
-    expect(req.request.params.get('includeActivity')).toBe('false');
-    req.flush([]);
-  });
-
-  it('assignTradeUnits() sends only the codes for an existing producer', () => {
-    service.assignTradeUnits(42, ['1085']).subscribe();
-    const req = httpMock.expectOne(r => r.url === `${BASE}/customers/42/trade-units`);
-    expect(req.request.method).toBe('PUT');
-    expect(req.request.body).toEqual({ tradeUnitCodes: ['1085'] });
-    req.flush({ id: 42 });
-  });
-
-  it('assignTradeUnits() sends the producer code for a CTRM onboarding candidate (placeholder id)', () => {
-    service.assignTradeUnits(-1234567890123456, ['1085'], 'JONESFA').subscribe();
-    const req = httpMock.expectOne(r => r.url === `${BASE}/customers/-1234567890123456/trade-units`);
-    expect(req.request.body).toEqual({ tradeUnitCodes: ['1085'], scoularId: 'JONESFA' });
-    req.flush({ id: 5000000000000777 });
   });
 
   // ── DP Contracts ───────────────────────────────────────────────────────────
@@ -304,20 +254,20 @@ describe('ApiService', () => {
   // ── Error handling ─────────────────────────────────────────────────────────
 
   it('propagates HTTP errors as Error objects', () => new Promise<void>((resolve) => {
-    service.getCustomers().subscribe({
+    service.getUserTradeUnits().subscribe({
       error: (err: Error) => {
         expect(err).toBeInstanceOf(Error);
         resolve();
       }
     });
-    const req = httpMock.expectOne(`${BASE}/customers`);
+    const req = httpMock.expectOne(`${BASE}/usertradeunits`);
     req.flush('Server error', { status: 500, statusText: 'Internal Server Error' });
   }));
 
   it('throws an ApiError carrying the envelope, with status and traceId at their old property names', () => {
     let caught: unknown;
-    service.getCustomers().subscribe({ error: e => caught = e });
-    httpMock.expectOne(`${BASE}/customers`).flush(
+    service.getUserTradeUnits().subscribe({ error: e => caught = e });
+    httpMock.expectOne(`${BASE}/usertradeunits`).flush(
       { error: { code: 'INTERNAL_ERROR', message: 'Something went wrong (Ref: t-9)', traceId: 't-9' } },
       { status: 500, statusText: 'Internal Server Error' }
     );
@@ -333,8 +283,8 @@ describe('ApiService', () => {
 
   it('throws a network ApiError when the request never got a response', () => {
     let caught: unknown;
-    service.getCustomers().subscribe({ error: e => caught = e });
-    httpMock.expectOne(`${BASE}/customers`).error(new ProgressEvent('error'), { status: 0, statusText: 'Unknown Error' });
+    service.getUserTradeUnits().subscribe({ error: e => caught = e });
+    httpMock.expectOne(`${BASE}/usertradeunits`).error(new ProgressEvent('error'), { status: 0, statusText: 'Unknown Error' });
 
     expect(caught).toBeInstanceOf(ApiError);
     expect((caught as ApiError).category).toBe('network');
@@ -344,8 +294,8 @@ describe('ApiService', () => {
   it('still tells the user their session expired on a 401', () => {
     const spy = vi.spyOn(TestBed.inject(ToastService), 'error');
     let caught: unknown;
-    service.getCustomers().subscribe({ error: e => caught = e });
-    httpMock.expectOne(`${BASE}/customers`).flush(null, { status: 401, statusText: 'Unauthorized' });
+    service.getUserTradeUnits().subscribe({ error: e => caught = e });
+    httpMock.expectOne(`${BASE}/usertradeunits`).flush(null, { status: 401, statusText: 'Unauthorized' });
 
     expect(spy).toHaveBeenCalledWith('Your session has expired — please refresh the page to sign in again.');
     expect((caught as ApiError).category).toBe('unauthorized');
@@ -356,8 +306,8 @@ describe('ApiService', () => {
     const spy = vi.spyOn(TestBed.inject(ToastService), 'error');
     let caught: unknown;
 
-    service.getCustomers().subscribe({ error: e => caught = e });
-    httpMock.expectOne(`${BASE}/customers`).flush(
+    service.getUserTradeUnits().subscribe({ error: e => caught = e });
+    httpMock.expectOne(`${BASE}/usertradeunits`).flush(
       { error: { code: 'AUTHORIZATION_FORBIDDEN', message: 'Not your trade unit' } },
       { status: 403, statusText: 'Forbidden' }
     );
@@ -369,8 +319,8 @@ describe('ApiService', () => {
 
   it('does not toast other failures — the call site decides how to show them', () => {
     const spy = vi.spyOn(TestBed.inject(ToastService), 'error');
-    service.getCustomers().subscribe({ error: () => {} });
-    httpMock.expectOne(`${BASE}/customers`).flush(null, { status: 500, statusText: 'Internal Server Error' });
+    service.getUserTradeUnits().subscribe({ error: () => {} });
+    httpMock.expectOne(`${BASE}/usertradeunits`).flush(null, { status: 500, statusText: 'Internal Server Error' });
     expect(spy).not.toHaveBeenCalled();
   });
 });

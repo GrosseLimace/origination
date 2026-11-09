@@ -63,19 +63,10 @@ export class ApiService {
   }
 
   // ==========================================================================
-  // Customer Operations
+  // Customer search, and the user's and the system's trade units
   // ==========================================================================
-
-  /** Fetches all customers in the system */
-  getCustomers(tradeUnits?: string[]): Observable<Customer[]> {
-    let params = new HttpParams();
-    tradeUnits?.forEach(tu => params = params.append('tradeUnits', tu));
-    const key = `customers:${[...(tradeUnits ?? [])].sort().join(',')}`;
-    return this._dedupe(key,
-      this.http.get<Customer[]>(`${this.baseUrl}/customers`, { params })
-        .pipe(catchError(e => this.handleError(e)))
-    );
-  }
+  // The rest of the customer calls are the Customers module's (CustomersApiService). The two searches stay here
+  // because Help's troubleshooter, in core, runs them too.
 
   /** Searches customers by name (max 15 results) */
   searchCustomers(searchTerm: string, tradeUnits?: string[]): Observable<Customer[]> {
@@ -105,62 +96,12 @@ export class ApiService {
       .pipe(catchError(() => of([] as Customer[])));
   }
 
-  /** Assigns trade units to a producer, onboarding them into our tables if not present. For a
-   *  candidate the CTRM onboarding search returned, `customerId` is a negative placeholder and
-   *  `scoularId` is what the server onboards by (it mints the real id). */
-  assignTradeUnits(customerId: number, tradeUnitCodes: string[], scoularId?: string): Observable<Customer> {
-    const body = scoularId ? { tradeUnitCodes, scoularId } : { tradeUnitCodes };
-    return this.http.put<Customer>(`${this.baseUrl}/customers/${customerId}/trade-units`, body)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** A producer's trade-unit memberships for the edit dialog. Includes active memberships (shown as
-   *  chips) AND previously-removed ones (isActive=false), which the dialog offers as re-addable
-   *  suggestions. hasOpenActivity=false on an active locked (isManual=false) TU means it's dormant →
-   *  removable.
-   *
-   *  `includeActivity: false` skips the server's open-activity check (a full contract and unapplied-
-   *  ticket read for the producer) for callers that only need the codes; hasOpenActivity then comes
-   *  back true on every row and means nothing. */
-  getCustomerTradeUnits(customerId: number, options: { includeActivity?: boolean } = {}): Observable<{ tradeUnit: string; isManual: boolean; hasOpenActivity: boolean; isActive: boolean }[]> {
-    const params = options.includeActivity === false ? new HttpParams().set('includeActivity', 'false') : undefined;
-    return this.http.get<{ tradeUnit: string; isManual: boolean; hasOpenActivity: boolean; isActive: boolean }[]>(`${this.baseUrl}/customers/${customerId}/trade-units`, { params })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Removes a producer from a locked (sync-sourced) trade unit they're DORMANT in (no open
-   *  contract / unapplied ticket). The server re-validates and returns 409 if they're still active.
-   *  Returns the refreshed membership list. (Manual TU removal still goes through assignTradeUnits.) */
-  removeDormantTradeUnit(customerId: number, tradeUnit: string): Observable<{ tradeUnit: string; isManual: boolean; hasOpenActivity: boolean; isActive: boolean }[]> {
-    return this.http.delete<{ tradeUnit: string; isManual: boolean; hasOpenActivity: boolean; isActive: boolean }[]>(
-      `${this.baseUrl}/customers/${customerId}/trade-units/${encodeURIComponent(tradeUnit)}`)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
   /** All trade units in the system (code + description) for the onboarding assign dropdown. */
   getAllTradeUnits(): Observable<{ code: string; description?: string }[]> {
     return this._dedupe('all-trade-units',
       this.http.get<{ code: string; description?: string }[]>(`${this.baseUrl}/trade-units`)
         .pipe(catchError(() => of([] as { code: string; description?: string }[])))
     );
-  }
-
-  /** Fetches a single customer by ID */
-  getCustomerById(id: number): Observable<Customer> {
-    return this.http.get<Customer>(`${this.baseUrl}/customers/${id}`)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Fetches a single customer by their source system ID (CTRM customer code) */
-  getCustomerBySourceId(sourceId: string): Observable<Customer> {
-    return this.http.get<Customer>(`${this.baseUrl}/customers/by-source/${encodeURIComponent(sourceId)}`)
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Fetches customers whose linkedProducerIds contains the given source id (incoming links). */
-  getCustomersLinkedTo(sourceId: string): Observable<Customer[]> {
-    return this.http.get<Customer[]>(`${this.baseUrl}/customers/linked-to/${encodeURIComponent(sourceId)}`)
-      .pipe(catchError(() => of([] as Customer[])));
   }
 
 

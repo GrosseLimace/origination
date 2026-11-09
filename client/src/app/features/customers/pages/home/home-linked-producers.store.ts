@@ -2,7 +2,7 @@ import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core'
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { forkJoin, of } from 'rxjs';
 import { catchError, takeUntil } from 'rxjs/operators';
-import { ApiService } from '@core/services/api.service';
+import { CustomersApiService } from '../../data-access/customers-api.service';
 import type { Customer } from '@models';
 import { applyProducerDetails } from '@shared/utils/apply-producer-details';
 import { HomePageState } from './home-page.state';
@@ -14,7 +14,7 @@ import { HomePageState } from './home-page.state';
  */
 @Injectable()
 export class HomeLinkedProducersStore {
-  private readonly apiService = inject(ApiService);
+  private readonly customersApi = inject(CustomersApiService);
   private readonly page = inject(HomePageState);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -70,13 +70,13 @@ export class HomeLinkedProducersStore {
 
     // Outgoing: fetch each linked producer id this customer points to.
     const outgoingRequests = missing.map(sourceId =>
-      this.apiService.getCustomerBySourceId(sourceId).pipe(catchError(() => of(null as Customer | null)))
+      this.customersApi.getCustomerBySourceId(sourceId).pipe(catchError(() => of(null as Customer | null)))
     );
 
     // Incoming: fetch customers that link TO this one (reverse links). Needed so non-
     // loaded producers who reverse-link to this customer still appear in the dropdown.
     const incoming$ = customer.scoularId
-      ? this.apiService.getCustomersLinkedTo(customer.scoularId)
+      ? this.customersApi.getCustomersLinkedTo(customer.scoularId)
       : of([] as Customer[]);
 
     // Nothing to fetch — skip network entirely.

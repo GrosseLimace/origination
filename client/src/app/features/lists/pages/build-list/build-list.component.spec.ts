@@ -15,6 +15,7 @@ import { NlqFilterContext, NlqFilterResult, NlqFilterService } from '@core/servi
 import { Contract, Customer, NoteLastContact, QueryLibraryItem, RefinementFilters, SavedList, Ticket } from '@models';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { BuildListStore } from '../../data-access/build-list.store';
+import { CustomersApiService } from '@features/customers';
 
 // Behaviour safety net for the Build a List page ahead of its OnPush conversion and decomposition.
 // Everything is driven through public methods / signals / computeds and the REAL rendered template,
@@ -165,6 +166,7 @@ describe('BuildListComponent', () => {
       providers: [
         provideRouter([]),
         AppStateService,
+        { provide: CustomersApiService, useExisting: ApiService },
         { provide: ApiService, useValue: api },
         { provide: NlqFilterService, useValue: nlq },
         { provide: DataPreloadService, useValue: {} },

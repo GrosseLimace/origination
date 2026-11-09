@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { Observable, Subject, of, throwError } from 'rxjs';
-import { ApiService } from '@core/services/api.service';
+import { CustomersApiService } from '../../data-access/customers-api.service';
 import type { Customer, ProducerDetails } from '@models';
 import { HomePageState } from './home-page.state';
 import { HomeLinkedProducersStore } from './home-linked-producers.store';
@@ -26,7 +26,7 @@ describe('HomeLinkedProducersStore', () => {
       getCustomersLinkedTo: vi.fn((src: string): Observable<Customer[]> => of(linkedTo.get(src) ?? [])),
     };
     TestBed.configureTestingModule({
-      providers: [HomePageState, HomeLinkedProducersStore, { provide: ApiService, useValue: api }],
+      providers: [HomePageState, HomeLinkedProducersStore, { provide: CustomersApiService, useValue: api }],
     });
     store = TestBed.inject(HomeLinkedProducersStore);
     page = TestBed.inject(HomePageState);

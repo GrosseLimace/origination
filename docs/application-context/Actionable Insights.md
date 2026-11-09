@@ -42,7 +42,7 @@ A **"Refresh" button** with a "Updated {time}" label triggers `DataPreloadServic
 
 **Amounts (QTY pills) show 2 decimals.** Every insight amount is formatted via `formatInsightQty` (thousands separators + 2 decimals, e.g. `1,234.56 bu`), matching the rest of the app. This is deliberate — Spot Loads converts ticket pounds → bushels and a tiny load like `0.02 bu` must stay visible; rounding to whole bushels previously turned it into `0` and the pill disappeared. A spot load with **no commodity-conversion factor** still omits the amount (can't convert lb→bu).
 
-**Loading.** Per-card, not per-screen. The page shell waits on customers only (`isLoading` = `customersLoading`); after that each card has its own skeleton via `isCategoryLoading()` — Spot Loads on `todaysTicketsLoading`, the two contract cards on `contractsLoading`. So the contract cards appear as soon as contracts land while Spot Loads keeps spinning for tickets, and a slow `/tickets/today` no longer holds the whole screen. `dataLoading` (still an all-three flag) is used here only to clear the Refresh button's spinner.
+**Loading.** Per-card, not per-screen. The page shell waits on customers only (`isLoading` = `CustomerStore.customersLoading`); after that each card has its own skeleton via `isCategoryLoading()` — Spot Loads on `todaysTicketsLoading`, the two contract cards on `contractsLoading`. So the contract cards appear as soon as contracts land while Spot Loads keeps spinning for tickets, and a slow `/tickets/today` no longer holds the whole screen. All three flags together (customers, contracts and today's tickets) are used only to clear the Refresh button's spinner.
 
 **Spot Loads freshness (CTRM path).** The card is backed by one request, `GET /tickets/today`, fired by `DataPreloadService` on trade-unit change — not on navigation, so re-entering Insights renders instantly from the retained signal. Server-side that read is served **stale-while-revalidate** on `Ctrm:TradeUnitCurrentWindowCacheMinutes`, and `CtrmKeepWarmService` warms its window explicitly, so the card normally paints from a warm copy and updates in place when the refresh behind it lands. Its producer scope is the app's own `dbo.Customer`/`dbo.CustomerTradeUnit` snapshot — deliberately *not* unioned with ODS contract-derived codes, which added only commercial counterparties absent from `dbo.Customer` that could never render. See [CTRM GraphQL Data Source](./CTRM%20GraphQL%20Data%20Source.md).
 
@@ -54,7 +54,7 @@ flowchart LR
     State[(AppStateService<br/>customers, contracts, tickets, todaysTickets,<br/>commodities, commodityConversions)]
     Computed[allInsights computed signal]
     Refresh[DataPreloadService.forceReload]
-    API[apiService.getCustomers / getContracts / getTickets / getCommodities]
+    API[Customers' preload / apiService.getContracts / getTickets / getCommodities]
 
     UI -- "reads" --> State
     State --> Computed
@@ -73,7 +73,7 @@ The screen does **not** fetch its own data — it reads everything from `AppStat
 | Component | `client/src/app/features/lists/pages/insights/insights.component.ts` |
 | Template | `client/src/app/features/lists/pages/insights/insights.component.html` |
 | Data preload | `client/src/app/core/services/data-preload.service.ts` |
-| AppState signals consumed | `customers`, `contracts`, `todaysTickets`, `commodities`, `commodityConversions`, `dataLoading`, `ticketsLoading` |
+| State consumed | `CustomerStore` (`@features/customers`): `customers`, `customersLoading`. `AppStateService`: `contracts`, `todaysTickets`, `commodities`, `commodityConversions`, `contractsLoading`, `todaysTicketsLoading` |
 | Underlying ODS views (via other screens / preload) | `base.vw_CurrentContracts`, `base.vw_CurrentTickets`, `ctrm.vw_GNP024` (commodity conversions). Customers come from app-DB `dbo.Customer`. |
 | App tables (read indirectly via cached signals) | none directly |
 
@@ -99,7 +99,7 @@ So an Unconfirmed Contract opens the **Contracts** tab and expands that contract
 
 ## Refresh behavior
 
-The "Refresh" button calls `dataPreloadService.forceReload()`. `isBackgroundRefreshing` is set true; the component subscribes to `dataLoading$` pairwise to detect the `true → false` transition and clears the spinner when core data arrives. This bypasses any client cache and re-issues bulk API fetches.
+The "Refresh" button calls `dataPreloadService.forceReload()`. `isBackgroundRefreshing` is set true; the component watches the core group's three loading flags (customers, contracts and today's tickets) pairwise for the `true → false` transition and clears the spinner when all of that data has arrived. This bypasses any client cache and re-issues bulk API fetches.
 
 ## Auth and feature flags
 
@@ -129,7 +129,7 @@ The "Refresh" button calls `dataPreloadService.forceReload()`. `isBackgroundRefr
 
 | Symptom | Likely cause | First place to look |
 | --- | --- | --- |
-| All three categories empty | `selectedTradeUnits()` is empty, or `customers/contracts/tickets` haven't loaded yet | TU selector + `dataLoading()` flag; click Refresh |
+| All three categories empty | `selectedTradeUnits()` is empty, or `customers/contracts/tickets` haven't loaded yet | TU selector + the `customersLoading` / `contractsLoading` / `todaysTicketsLoading` flags; click Refresh |
 | Spot Loads shows tickets that have a matching contract | The commodity match logic is wrong, or a contract is out of date in ODS | Re-check the per-ticket loop in `allInsights`; verify `contracts()` is current |
 | Unshipped Bushels count includes contracts that look closed | Remaining now comes from `contract.openBalanceQuantity` (no ticket-math fallback). If the CTRM aggregate is stale, the count will be too. | Refresh; if still off, verify the CTRM read succeeded (`INFRASTRUCTURE_CTRM_UNAVAILABLE` in the API log means the pool is empty, not stale) |
 | Click-through opens wrong tab | `selectInsight` query-param wiring | `selectInsight()` body and the home page's `pendingTab` handler |

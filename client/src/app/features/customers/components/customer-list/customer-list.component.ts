@@ -8,6 +8,7 @@ import { StoredGrain, DpContract, Ticket, PlantingIntention, Contract } from '@m
 import { Customer, SavedList, Note, NoteLastContact, ReminderDue, ProducerDetails, QueryLibraryItem } from '@models';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
+import { CustomerStore } from '../../data-access/customer.store';
 import { AppStateService } from '@core/services/app-state.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { REMINDER_DUE_CLASS, reminderDueTier } from '@shared/utils/reminder-due';
@@ -80,6 +81,7 @@ export class CustomerListComponent {
 
   private readonly apiService = inject(ApiService);
   private readonly appStateService = inject(AppStateService);
+  private readonly customerStore = inject(CustomerStore);
   private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly scrollStore = inject(CustomerListScrollStore);
   private readonly msalService = inject(MsalService);
@@ -111,7 +113,7 @@ export class CustomerListComponent {
   /** The trade-unit producer read failed and nothing has replaced it, so an empty list is an outage,
    *  not "no producers". */
   readonly customersLoadFailed = computed(() =>
-    this.appStateService.customersLoadFailed() && this.customers().length === 0);
+    this.customerStore.customersLoadFailed() && this.customers().length === 0);
   /** The last-contact aggregate failed to load and nothing replaced it, so "no contact on record" is
    *  unknown rather than "Never contacted". */
   readonly contactHistoryUnavailable = computed(() =>

@@ -14,6 +14,7 @@ import { Customer, QueryLibraryItem, SavedList } from '@models';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { CustomerStore, CustomersApiService } from '@features/customers';
 
 /**
  * A trade-unit change reloads every dataset for the new selection. Until 2026-10-12 the prompt
@@ -92,6 +93,7 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
     TestBed.configureTestingModule({
       providers: [
         AppStateService,
+        { provide: CustomersApiService, useExisting: ApiService },
         { provide: ApiService, useValue: api },
         { provide: DataPreloadService, useValue: {} },
         { provide: ToastService, useValue: { info: vi.fn(), error: vi.fn(), success: vi.fn() } },
@@ -224,7 +226,7 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
     // for it - that bumps _queryGenId, the list's fetch is discarded as superseded, and the
     // hand-added producers it would have resolved never appear.
     const roster = [customer(1, 'Regular Farm'), customer(7, 'Hand-added Farm')];
-    appState.setCustomers(roster);
+    TestBed.inject(CustomerStore).setCustomers(roster);
     const c = mount();
     expect(c.coreDataLoaded()).toBe(true);
     expect(c.loading()).toBe(false);
