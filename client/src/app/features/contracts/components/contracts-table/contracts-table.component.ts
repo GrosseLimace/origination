@@ -1,11 +1,12 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, input, output, effect, signal, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, DestroyRef, effect, signal, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
-import { Customer, Contract, Ticket, ContractPricingLine } from '@models';
+import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
+import { Contract, Ticket, ContractPricingLine } from '@models';
 import { expandSearchWithAliases } from '@shared/utils/commodity-aliases';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
 import { contractPricingInfo, ContractPricingInfo } from '@shared/utils/contract-pricing-status';
@@ -38,8 +39,8 @@ interface ExtraColumn { key: ExtraColumnKey; label: string; value: (c: Contract)
     TicketDisplayNumberPipe
   ],
   templateUrl: './contracts-table.component.html',
-  // Every piece of state the template reads is a signal, an input, or one of the three expansion
-  // Sets mutated only from click handlers and the input-driven effect below, all of which mark the
+  // Every piece of state the template reads is a signal, or one of the three expansion Sets
+  // mutated only from click handlers and the customer / deep-link effect below, all of which mark the
   // view for check. The Default strategy was re-checking this table, the busiest in the app, on
   // every tick anywhere in the application.
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -50,6 +51,8 @@ export class ContractsTableComponent {
   private readonly cdr = inject(ChangeDetectorRef);
   /** The selected producer's contracts, tickets and pricing, with their loading and failure state. */
   private readonly activity = inject(SelectedProducerActivity);
+  /** The customer the screen shows, where a deep link asked it to open, and the page's width. */
+  private readonly context = inject(SelectedCustomerContext);
 
   /** Commodity code → lbs per bushel. Derived from the signal, so any replacement of the conversion
    *  list rebuilds it (it used to be cached until the list's length changed, and reset by hand in
@@ -66,8 +69,9 @@ export class ContractsTableComponent {
   readonly contracts = this.activity.contracts;
   readonly tickets = this.activity.tickets;
   readonly pricingLines = this.activity.pricingLines;
-  public customer = input.required<Customer>();
-  public openContractId = input<number | null>(null);
+  readonly customer = this.context.customer;
+  /** A contract a deep link asked to open and scroll to. */
+  readonly openContractId = computed(() => this.context.link().contractId ?? null);
 
   /** Set when the contract read FAILED, as opposed to returning nothing. The two are
    *  indistinguishable in the data, and showing "no contracts found" for a CTRM outage is how a
@@ -92,9 +96,6 @@ export class ContractsTableComponent {
    *  from a contract that genuinely has no applied tickets. Contracts arrive in ~2s and
    *  tickets take three date windows, so that window is always visible. */
   readonly isLoadingTickets = this.activity.isLoadingTickets;
-  /** Emitted when the optional fulfillment columns are shown/hidden, so the page can give the
-   *  contracts table full width (drop the Notes sidebar below) while expanded. */
-  public expandedColumnsChange = output<boolean>();
 
   expandedRows = new Set<number>();
   expandedTicketSections = new Set<number>();
@@ -148,7 +149,8 @@ export class ContractsTableComponent {
         this.currentSortDirection.set('none');
       }
     }
-    this.expandedColumnsChange.emit(this.showExtraColumns());
+    // The page gives the table its full width (drops the Notes sidebar) while the extra columns are open.
+    this.context.wideContent.set(this.showExtraColumns());
   }
 
   /** Full month name for labels like "April Undelivered". */
@@ -165,6 +167,10 @@ export class ContractsTableComponent {
   private _statusCache = new Map<number, string>();
 
   constructor() {
+    // Leaving the tab closes the table; it comes back with its extra columns collapsed, so the page gets its
+    // sidebar back.
+    inject(DestroyRef).onDestroy(() => this.context.wideContent.set(false));
+
     // Invalidate per-row caches whenever the underlying contracts or tickets change.
     // Expansion state is intentionally NOT touched here — tickets often arrive a beat
     // after contracts, and clearing expansion on every data tick was collapsing rows
@@ -194,8 +200,8 @@ export class ContractsTableComponent {
         // Defer scroll so contracts render before we try to find the row.
         this._scrollToContract(openId);
       }
-      // No markForCheck() here. The expansion Sets are plain objects, but this effect runs only on an
-      // input change, which already marks this OnPush view, and it runs during that view's refresh,
+      // No markForCheck() here. The expansion Sets are plain objects, but this effect runs only when the
+      // producer or the deep-linked contract changes, and it runs during this view's refresh,
       // before the template reads the Sets. Marking the view dirty from inside the refresh is what
       // made activity-summary loop (NG0103).
     });
@@ -526,7 +532,7 @@ export class ContractsTableComponent {
   });
 
   getPricingInfo(contract: Contract): PricingInfo {
-    // A contract not in the contracts() input (there is none today) still gets a correct answer.
+    // A contract not in the contracts() list (there is none today) still gets a correct answer.
     return this.pricingInfoByContract().get(contract.id) ?? this._computePricingInfo(contract);
   }
 

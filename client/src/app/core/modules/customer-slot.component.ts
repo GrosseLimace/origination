@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, ErrorHandler, Type, computed, effect, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ErrorHandler, PendingTasks, Type, computed, effect, inject, input, signal } from '@angular/core';
 import { NgComponentOutlet } from '@angular/common';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { CustomerPanel, CustomerSlot } from './module-manifest';
@@ -28,6 +28,7 @@ export class CustomerSlotComponent {
   private readonly registry = inject(ModuleRegistry);
   private readonly context = inject(SelectedCustomerContext);
   private readonly errorHandler = inject(ErrorHandler);
+  private readonly pendingTasks = inject(PendingTasks);
 
   /** Each panel's component, once its code has loaded. Keyed by the manifest's own object, which never changes. */
   private readonly loaded = signal<ReadonlyMap<CustomerPanel, Type<unknown>>>(new Map());
@@ -50,14 +51,15 @@ export class CustomerSlotComponent {
 
   /**
    * Loads a panel's code once. If it fails (a deploy replaced the chunk, the network dropped), the error is reported
-   * and the panel stays out; the slot's other panels are unaffected.
+   * and the panel stays out; the slot's other panels are unaffected. The app counts as busy while it loads.
    */
   private load(panel: CustomerPanel): void {
     if (this.requested.has(panel)) return;
     this.requested.add(panel);
+    const done = this.pendingTasks.add();
     panel.component().then(
-      type => this.loaded.update(loaded => new Map(loaded).set(panel, type)),
-      error => this.errorHandler.handleError(error),
+      type => { this.loaded.update(loaded => new Map(loaded).set(panel, type)); done(); },
+      error => { this.errorHandler.handleError(error); done(); },
     );
   }
 }

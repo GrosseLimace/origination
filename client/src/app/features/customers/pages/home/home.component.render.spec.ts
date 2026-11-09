@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ChangeDetectionStrategy, Component, Type, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Type, computed, inject, input, output, signal } from '@angular/core';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
+import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, Params, Router } from '@angular/router';
@@ -89,7 +90,9 @@ class StubProfile {
   readonly allCustomerStoredGrain = input<unknown>();
   readonly allCustomerDpContracts = input<unknown>();
   readonly linkedCustomers = input<Customer[]>([]);
-  readonly openContractId = input<number | null>(null);
+  // The deep-linked contract reaches the screen's pieces through SelectedCustomerContext, as the contracts tab reads it.
+  private readonly screen = inject(SelectedCustomerContext);
+  readonly openContractId = computed(() => this.screen.link().contractId ?? null);
   readonly openTab = input<unknown>();
   readonly openTicketCrop = input<unknown>();
   readonly openPlantingYear = input<unknown>();

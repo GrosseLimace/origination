@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ChangeDetectorRef, ComponentRef, signal } from '@angular/core';
+import { ChangeDetectorRef, ComponentRef, WritableSignal, signal } from '@angular/core';
 import { ContractsTableComponent } from './contracts-table.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { CommodityConversion, Contract, ContractPricingLine, Customer, Ticket } from '@models';
 import { SelectedProducerActivityFake, provideSelectedProducerActivity, selectedProducerActivityFake } from '@testing/selected-producer-activity.fake';
+import { CustomerScreenLink, SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 
 // Behaviour safety net for the per-row derivations (applied tickets, pricing status, delivery
 // stats, calculated status), the row sort, the search filter, the commodity grouping, the
@@ -29,6 +30,11 @@ function daysFromNow(n: number): Date {
   d.setHours(12, 0, 0, 0);
   return d;
 }
+
+/** The parts of SelectedCustomerContext the table reads: the customer, the deep link, and the page's width. */
+type ScreenContextFake = { customer: WritableSignal<Customer | null>; link: WritableSignal<CustomerScreenLink>; wideContent: WritableSignal<boolean> };
+const screenContext = (customer: Customer): ScreenContextFake =>
+  ({ customer: signal<Customer | null>(customer), link: signal<CustomerScreenLink>({}), wideContent: signal(false) });
 
 function makeCustomer(over: Partial<Customer> = {}): Customer {
   return {
@@ -95,6 +101,8 @@ describe('ContractsTableComponent', () => {
   let trackContractExpand: ReturnType<typeof vi.fn>;
   /** The selected producer's contracts, tickets and pricing, which the table reads from the page. */
   let activity: SelectedProducerActivityFake;
+  /** The customer the screen shows and its deep link, which the table reads from the page. */
+  let context: ScreenContextFake;
   const commodityConversions = signal<CommodityConversion[]>([]);
 
   function setInputs(inputs: {
@@ -110,6 +118,7 @@ describe('ContractsTableComponent', () => {
     };
     for (const [name, value] of Object.entries(inputs)) {
       if (fromActivity[name]) fromActivity[name].set(value as never);
+      else if (name === 'openContractId') context.link.update(link => ({ ...link, contractId: value as number | null }));
       else ref.setInput(name, value);
     }
     fixture.detectChanges();
@@ -135,18 +144,19 @@ describe('ContractsTableComponent', () => {
     trackContractExpand = vi.fn();
     commodityConversions.set([]);
     activity = selectedProducerActivityFake();
+    context = screenContext(makeCustomer());
     await TestBed.configureTestingModule({
       imports: [ContractsTableComponent],
       providers: [
         { provide: AppStateService, useValue: { commodityConversions, commodityConversionsLoadFailed: signal(false) } },
         { provide: UsageTrackingService, useValue: { trackContractExpand } },
         provideSelectedProducerActivity(activity),
+        { provide: SelectedCustomerContext, useValue: context },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(ContractsTableComponent);
     component = fixture.componentInstance;
     ref = fixture.componentRef;
-    ref.setInput('customer', makeCustomer());
   });
 
   afterEach(() => {
@@ -446,7 +456,7 @@ describe('ContractsTableComponent', () => {
       expect(bodyRows()).toHaveLength(0);
       expect(text()).toContain('No contracts match "canola"');
 
-      ref.setInput('customer', makeCustomer({ id: 99 }));
+      context.customer.set(makeCustomer({ id: 99 }));
       fixture.detectChanges();
       expect(component.searchQuery()).toBe('');
       expect(bodyRows()).toHaveLength(3);
@@ -629,9 +639,17 @@ describe('ContractsTableComponent', () => {
   // ── Extra columns ─────────────────────────────────────────────────────────
 
   describe('showExtraColumns', () => {
-    it('reveals the fulfillment columns with per-row values (em-dash when CTRM has no data) and tells the parent', () => {
-      const emitted: boolean[] = [];
-      component.expandedColumnsChange.subscribe(v => emitted.push(v));
+    it('gives the page its sidebar back when the table closes with its extra columns open', () => {
+      setInputs({ contracts: [makeContract({ id: 1 })] });
+      component.toggleExtraColumns();
+      expect(context.wideContent()).toBe(true);
+
+      fixture.destroy();
+
+      expect(context.wideContent()).toBe(false);
+    });
+
+    it('reveals the fulfillment columns with per-row values (em-dash when CTRM has no data) and asks the page for its full width', () => {
       setInputs({ contracts: [
         makeContract({ id: 1, sourceContractId: 'PCW1', quantity: 10000, openBalanceQuantity: 4000, settledQuantity: 5000 }),
         makeContract({ id: 2, sourceContractId: 'PCW2', quantity: 10000, openBalanceQuantity: undefined, settledQuantity: undefined }),
@@ -644,7 +662,7 @@ describe('ContractsTableComponent', () => {
 
       expect(columnHeaders().slice(-3)).toEqual(['Remaining Quantity', 'Total Delivered', 'Unsettled Quantity']);
       expect(component.detailColspan()).toBe(11);
-      expect(emitted).toEqual([true]);
+      expect(context.wideContent()).toBe(true);
       const cells = (id: number) => Array.from(bodyRows().find(r => r.id === `contract-row-${id}`)!.querySelectorAll('td')).slice(-3).map(td => (td.textContent ?? '').replace(/\s+/g, ' ').trim());
       expect(cells(1)).toEqual(['4,000.00 bushels', '6,000.00 bushels', '1,000.00 bushels']);
       expect(cells(2)).toEqual(['—', '—', '—']);
@@ -824,7 +842,6 @@ describe('ContractsTableComponent — bushel conversions failed to load', () => 
   function openTickets(tickets: Ticket[]): void {
     fixture = TestBed.createComponent(ContractsTableComponent);
     component = fixture.componentInstance;
-    fixture.componentRef.setInput('customer', makeCustomer());
     activity.contracts.set([makeContract({ id: 1, sourceContractId: 'PCW1' })]);
     activity.tickets.set(tickets);
     fixture.detectChanges();
@@ -842,6 +859,7 @@ describe('ContractsTableComponent — bushel conversions failed to load', () => 
       providers: [
         { provide: UsageTrackingService, useValue: { trackContractExpand: vi.fn() } },
         provideSelectedProducerActivity(activity = selectedProducerActivityFake()),
+        { provide: SelectedCustomerContext, useValue: screenContext(makeCustomer()) },
       ],
     }).compileComponents();
     state = TestBed.inject(AppStateService);

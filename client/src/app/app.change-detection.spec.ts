@@ -15,6 +15,8 @@ import { MsalService, MsalBroadcastService, MsalGuard } from '@azure/msal-angula
 import { makeMsalServiceMock, makeMsalBroadcastMock } from '@testing/msal.mocks';
 import { AppComponent } from './app.component';
 import { routes } from './app.routes';
+import { appModules } from './app.modules';
+import { APP_MODULES } from './core/modules/module-registry';
 import { By } from '@angular/platform-browser';
 import { HomeComponent } from './features/customers/pages/home/home.component';
 
@@ -70,6 +72,8 @@ describe('NG0103 probe', () => {
       providers: [
         provideZonelessChangeDetection(),
         provideRouter(routes),
+        // The app's modules, as main.ts provides them: the customer profile's module tabs render from these.
+        { provide: APP_MODULES, useValue: appModules },
         provideHttpClient(withInterceptors([req => of(new HttpResponse({ status: 200, body: body(req.urlWithParams) }))])),
         { provide: MsalService, useValue: makeMsalServiceMock({ name: 'Caden Egr', username: 'CEgr@scoular.com' }) },
         { provide: MsalBroadcastService, useValue: makeMsalBroadcastMock() },
@@ -91,6 +95,10 @@ describe('NG0103 probe', () => {
     if (other.length) console.log('[select] other errors:', [...new Set(other)].slice(0, 6));
     if (ng0103.length) console.log('[select] NG0103 x' + ng0103.length);
     expect(ng0103.length).toBe(0);
+    // The profile's tabs come from the modules: the Contracts module's Open Contracts tab and its table render.
+    const page = fixture.nativeElement as HTMLElement;
+    expect(page.textContent).toContain('Open Contracts');
+    expect(page.querySelector('app-contracts-table')).not.toBeNull();
   }, 60000);
 
   for (const url of ['/', '/build-list', '/insights', '/dashboard', '/bid-sheet', '/daily-digest', '/usage-dashboard', '/whats-new']) {
@@ -100,6 +108,8 @@ describe('NG0103 probe', () => {
         providers: [
           provideZonelessChangeDetection(),
           provideRouter(routes),
+        // The app's modules, as main.ts provides them: the customer profile's module tabs render from these.
+        { provide: APP_MODULES, useValue: appModules },
           provideHttpClient(withInterceptors([req => of(new HttpResponse({ status: 200, body: body(req.url) }))])),
           { provide: MsalService, useValue: makeMsalServiceMock({ name: 'Caden Egr', username: 'CEgr@scoular.com' }) },
           { provide: MsalBroadcastService, useValue: makeMsalBroadcastMock() },

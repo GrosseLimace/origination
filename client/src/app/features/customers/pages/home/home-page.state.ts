@@ -1,6 +1,7 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import { Subject } from 'rxjs';
 import type { Contract, Customer, DpContract, PlantingIntention, ProducerDetails, StoredGrain, Ticket } from '@models';
+import type { CustomerScreenSource } from '@core/context/selected-customer-context.service';
 
 /**
  * The producer page's shared state: the signals more than one part of the page reads or writes.
@@ -29,10 +30,34 @@ export class HomePageState {
   /** Producer-entered details (acres, contacts, links, grain on farm) by customer id. */
   readonly producerDetailsMap = signal<Map<number, ProducerDetails>>(new Map());
 
+  // Where a deep link (from Insights, the dashboard or a shared URL) asked the producer's profile to open. Set from
+  // the URL's query parameters, cleared when the user picks a producer themselves.
+  readonly pendingContractId = signal<number | null>(null);
+  readonly pendingTab = signal<string | null>(null);
+  readonly pendingTicketCrop = signal<string | null>(null);
+  readonly pendingPlantingYear = signal<number | null>(null);
+
   /** Emits whenever the user picks a new customer. Every async call kicked off by
    *  handleSelectCustomer is piped through takeUntil(this) so the prior selection's
    *  in-flight HTTP requests are cancelled the moment a new producer is clicked —
    *  stops stale linked-producer / notes / planting calls from clogging the browser's
    *  connection pool while the newly-selected customer waits for free sockets. */
   readonly cancelSelection$ = new Subject<void>();
+}
+
+/**
+ * The page's selected producer and deep link, as the customer screen's pieces read them through
+ * SelectedCustomerContext. Provided by HomeComponent as CUSTOMER_SCREEN_SOURCE.
+ */
+export function homeScreenSource(): CustomerScreenSource {
+  const page = inject(HomePageState);
+  return {
+    customer: page.selectedCustomer,
+    link: computed(() => ({
+      tab: page.pendingTab(),
+      contractId: page.pendingContractId(),
+      ticketCrop: page.pendingTicketCrop(),
+      plantingYear: page.pendingPlantingYear(),
+    })),
+  };
 }

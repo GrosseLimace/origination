@@ -1,11 +1,12 @@
-import { ChangeDetectionStrategy, Component, input, effect, inject, signal, computed } from '@angular/core';
+import { ChangeDetectionStrategy, Component, effect, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
-import { Customer, Ticket, Contract } from '@models';
+import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
+import { Ticket, Contract } from '@models';
 import { expandSearchWithAliases } from '@shared/utils/commodity-aliases';
 import { compareTicketNumbers, compareTicketsByDateThenNumber } from '@shared/utils/ticket-sort';
 import { ticketDisplayNumber } from '@shared/utils/ticket-display';
@@ -43,7 +44,7 @@ interface TicketGroup {
     TableCellComponent
   ],
   templateUrl: './tickets-table.component.html',
-  // Every piece of view state is an input, a signal or a computed. Sort, search and expansion were
+  // Every piece of view state is a signal or a computed. Sort, search and expansion were
   // plain fields; as signals, a write that is not a template event (the customer-reset and
   // auto-expand effects, a direct handleSort call) still marks the view.
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -53,6 +54,8 @@ export class TicketsTableComponent {
   private readonly usageTracking = inject(UsageTrackingService);
   /** The selected producer's tickets and contracts, with the ticket read's loading and failure state. */
   private readonly activity = inject(SelectedProducerActivity);
+  /** The customer the screen shows, and where a deep link asked it to open. */
+  private readonly context = inject(SelectedCustomerContext);
 
   /** Exposed for the template — shows the full shipment ticket number (prefix + number + suffix). */
   readonly ticketDisplayNumber = ticketDisplayNumber;
@@ -60,8 +63,9 @@ export class TicketsTableComponent {
   readonly isLoading = this.activity.isLoadingTickets;
   readonly tickets = this.activity.tickets;
   readonly contracts = this.activity.contracts;
-  public customer = input.required<Customer>();
-  public openCrop = input<string | null>(null);
+  readonly customer = this.context.customer;
+  /** A crop a deep link asked to open. */
+  readonly openCrop = computed(() => this.context.link().ticketCrop ?? null);
 
   /** Set when the ticket read FAILED, as opposed to the producer having no tickets. See the same signal
    *  on contracts-table: an empty list and a failed read look identical, and at harvest that means a
@@ -99,6 +103,7 @@ export class TicketsTableComponent {
   constructor() {
     effect(() => {
       const cust = this.customer();
+      if (!cust) return;
       if (this._previousCustomerId !== null && this._previousCustomerId !== cust.id) {
         this.currentSortColumn.set(null);
         this.currentSortDirection.set('none');

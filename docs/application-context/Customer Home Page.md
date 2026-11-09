@@ -129,7 +129,7 @@ When the trade-unit selector changes, the home component fires a parallel batch 
 | Customer profile sub-component | `client/src/app/features/customers/components/customer-profile/customer-profile.component.ts` |
 | Customer list sub-component | `client/src/app/features/customers/components/customer-list/customer-list.component.ts` |
 | Notes sidebar sub-component | `client/src/app/features/customers/components/notes/customer-notes.component.ts` |
-| Per-tab tables | `customer-profile/contracts-table/`, `tickets-table/`, `planting-intentions-table/`, `stored-grain-table/` |
+| Per-tab tables | Open Contracts and Unapplied Tickets are the Contracts module's tabs: `features/contracts/components/contracts-table/`, `tickets-table/` (contributed in `contracts.module.ts`). The profile's own: `planting-intentions-table/`, `stored-grain-table/`, `dp-contracts-table/` |
 | Producer Insights panels | `client/src/app/features/customers/components/producer-insights/`, `contract-pacing-card/`, `growth-opportunity/` |
 | Production coverage math | `client/src/app/shared/utils/production-coverage.ts` (+ `.spec.ts`) |
 | Customer map (shown on Build a List, so it belongs to Lists) | `client/src/app/features/lists/components/map/customer-map.component.ts` |
@@ -238,7 +238,7 @@ If you're touching this code, preserve the merge semantics. Contracts and ticket
 
 ## Contracts table — delivery math and loading states
 
-The Contracts tab inside `CustomerProfileComponent` is the most logic-heavy panel on this screen. Two things to know:
+The Open Contracts tab (the Contracts module's `ContractsTableComponent`, shown in the profile's tab strip) is the most logic-heavy panel on this screen. Two things to know:
 
 **Delivery math comes from one shared util.** `getContractDeliveryStats(contract)` in [`client/src/app/shared/utils/contract-delivery.ts`](../../client/src/app/shared/utils/contract-delivery.ts) is the single source of truth for `delivered`, `remaining`, `progressPercent`, and `isEffectivelyComplete`. It reads `contract.openBalanceQuantity` (CTRM's own aggregate, read live through the GraphQL API — see [CTRM GraphQL Data Source](./CTRM%20GraphQL%20Data%20Source.md)) — **not** a sum of applied tickets. A sub-0.1%-of-contract residue is treated as complete, so a 99.97%-delivered contract reports as filled. The same util is used by the Contracts table, Actionable Insights' Unshipped Bushels card, the customer-print report, and the Activity Summary — they no longer drift apart.
 

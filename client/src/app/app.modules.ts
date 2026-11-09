@@ -1,6 +1,7 @@
 import { ModuleManifest } from '@core/modules/module-manifest';
 import { bidSheetModule } from './features/bid-sheet/bid-sheet.module';
 import { calculatorsModule } from './features/calculators/calculators.module';
+import { contractsModule } from './features/contracts/contracts.module';
 import { customersModule } from './features/customers/customers.module';
 import { engagementModule } from './features/engagement/engagement.module';
 import { helpModule } from './features/help/help.module';
@@ -16,6 +17,7 @@ import { whatsNewModule } from './features/whats-new/whats-new.module';
  */
 export const appModules: readonly ModuleManifest[] = [
   customersModule,
+  contractsModule,
   engagementModule,
   producersModule,
   listsModule,

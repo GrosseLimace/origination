@@ -1,6 +1,30 @@
-import { Injectable, Signal, computed, inject } from '@angular/core';
+import { Injectable, InjectionToken, Signal, computed, inject, signal } from '@angular/core';
 import { Customer, CustomerSegment } from '@models';
 import { AppStateService } from '@core/services/app-state.service';
+
+/**
+ * Where a deep link asked the customer screen to open: a tab, and a row or group in it. The page that hosts the
+ * screen reads these from its URL; each piece of the screen acts on its own part and ignores the rest.
+ */
+export interface CustomerScreenLink {
+  /** A tab id: 'contracts', 'tickets', 'planting', 'storage', 'dpContracts'. */
+  tab?: string | null;
+  /** A contract to open and scroll to, on the contracts tab. */
+  contractId?: number | null;
+  /** A crop to open on the tickets tab. */
+  ticketCrop?: string | null;
+  /** A planting year to select. */
+  plantingYear?: number | null;
+}
+
+/** What the page hosting the customer screen tells the screen's pieces: the customer it shows, and its deep link. */
+export interface CustomerScreenSource {
+  readonly customer: Signal<Customer | null>;
+  readonly link: Signal<CustomerScreenLink>;
+}
+
+/** Provided by the page hosting the customer screen, beside SelectedCustomerContext. */
+export const CUSTOMER_SCREEN_SOURCE = new InjectionToken<CustomerScreenSource>('CUSTOMER_SCREEN_SOURCE');
 
 /**
  * The customer the customer screen is showing, for what the modules contribute to that screen: a contribution reads
@@ -9,8 +33,19 @@ import { AppStateService } from '@core/services/app-state.service';
  */
 @Injectable()
 export class SelectedCustomerContext {
-  /** The selected customer, or null before one is picked. */
-  readonly customer: Signal<Customer | null> = inject(AppStateService).selectedCustomer;
+  private readonly source = inject(CUSTOMER_SCREEN_SOURCE, { optional: true });
+
+  /** The selected customer, or null before one is picked: the page's own selection when it provides one. */
+  readonly customer: Signal<Customer | null> = this.source?.customer ?? inject(AppStateService).selectedCustomer;
+
+  /** Where a deep link asked the screen to open; empty when it didn't. */
+  readonly link: Signal<CustomerScreenLink> = this.source?.link ?? signal<CustomerScreenLink>({}).asReadonly();
+
+  /**
+   * Set by a piece of the screen that needs the page's full width while it's shown: the contracts table with its
+   * extra columns open. The page drops its sidebar meanwhile. The piece clears it when it closes.
+   */
+  readonly wideContent = signal(false);
 
   /**
    * The selected customer's segment, or null with no customer. Every customer is a producer until customers carry a

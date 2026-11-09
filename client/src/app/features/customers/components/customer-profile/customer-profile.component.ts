@@ -1,10 +1,8 @@
-import { Component, input, output, inject, effect, computed, linkedSignal, ChangeDetectionStrategy, ViewChild, ElementRef, signal, DestroyRef, HostListener } from '@angular/core';
+import { Component, input, output, inject, effect, computed, linkedSignal, ChangeDetectionStrategy, ViewChild, ElementRef, signal, DestroyRef, HostListener, Injector, Signal, runInInjectionContext, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { ApiService } from '@core/services/api.service';
 import { ThemeService } from '@core/services/theme.service';
-import { ContractsTableComponent } from '../contracts-table/contracts-table.component';
-import { TicketsTableComponent } from '../tickets-table/tickets-table.component';
 import { PlantingIntentionsTableComponent } from '../planting-intentions-table/planting-intentions-table.component';
 import { StoredGrainTableComponent } from '../stored-grain-table/stored-grain-table.component';
 import { DpContractsTableComponent } from '../dp-contracts-table/dp-contracts-table.component';
@@ -26,13 +24,22 @@ import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl, googleM
 import { binSiteHasCoordinates } from '@shared/utils/coordinates';
 import { buildProductionCoverage } from '@shared/utils/production-coverage';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
+import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
+import { CustomerTab } from '@core/modules/module-manifest';
+import { ModuleRegistry } from '@core/modules/module-registry';
+import { CustomerContributionComponent } from '@core/modules/customer-contribution.component';
 
 /** One tab in the producer profile's tab strip, with its count badge. */
 interface ProfileTab {
   id: string;
   label: string;
   shortLabel: string;
-  count: number;
+  /** The count beside the label, or null for none. */
+  count: number | null;
+  /** Position in the strip, lowest first; the profile's own tabs interleave with the modules'. */
+  order: number;
+  /** The module tab this is, for a tab a module contributes; absent for the profile's own. */
+  contribution?: CustomerTab;
 }
 
 @Component({
@@ -41,8 +48,7 @@ interface ProfileTab {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
-    ContractsTableComponent,
-    TicketsTableComponent,
+    CustomerContributionComponent,
     PlantingIntentionsTableComponent,
     StoredGrainTableComponent,
     DpContractsTableComponent,
@@ -233,9 +239,7 @@ export class CustomerProfileComponent {
   public onSaveCustomer = output<{ customerId: number; acres: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { siteKey: string; name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { binSiteKey?: string; commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[] }>();
   public linkedCustomers = input<Customer[]>([]);
   public onSelectLinkedCustomer = output<number>();
-  public openContractId = input<number | null>(null);
   public openTab = input<string | null>(null);
-  public openTicketCrop = input<string | null>(null);
   public openPlantingYear = input<number | null>(null);
 
   @ViewChild(PlantingIntentionsTableComponent) private plantingTable?: PlantingIntentionsTableComponent;
@@ -377,26 +381,21 @@ export class CustomerProfileComponent {
 
   @HostListener('document:keydown.escape')
   onEscape(): void { if (this.showAddToListMenu()) this.cancelAddToList(); }
-  /** True while the contracts table's optional columns are expanded (set from its output). */
-  contractsColumnsExpanded = signal(false);
+  private readonly registry = inject(ModuleRegistry);
+  private readonly context = inject(SelectedCustomerContext);
+  private readonly injector = inject(Injector);
 
   constructor() {
     effect(() => {
-      // Contracts wants full width only while its columns are expanded AND we're on the
-      // Contracts tab. Leaving the tab destroys the contracts-table (which comes back
-      // collapsed), so reset the flag on tab-leave and let the page revert to the sidebar.
-      const onContracts = this.activeTab() === 'contracts';
-      if (!onContracts && this.contractsColumnsExpanded()) {
-        this.contractsColumnsExpanded.set(false); // re-triggers this effect, which then emits false
-        return;
-      }
-      this.onContractsWideChange.emit(onContracts && this.contractsColumnsExpanded());
+      // A tab that needs the page's full width (the contracts table with its extra columns open) says so through the
+      // context, and clears it when it closes; the page drops its sidebar meanwhile.
+      this.onContractsWideChange.emit(this.context.wideContent());
     });
 
     effect(() => {
       // When arriving from Insights with a specific contract, switch to contracts tab
       // (contracts-table handles scrolling to the specific row)
-      const openContractId = this.openContractId();
+      const openContractId = this.context.link().contractId;
       if (openContractId != null) {
         this.activeTab.set('contracts');
       }
@@ -477,27 +476,6 @@ export class CustomerProfileComponent {
     });
 
     effect(() => {
-      const contracts = this.contracts();
-
-      // Update unapplied ticket count — a ticket is unapplied only when its contract prefix is U or L
-      const tickets = this.tickets();
-      this._unappliedTicketCount = tickets.filter(t => !t.isApplied).length;
-
-      // Update tabs cache
-      this._tabs = [
-        { id: 'contracts', label: 'Open Contracts', shortLabel: 'Cont', count: contracts.filter(c => !c.closedDate).length },
-        { id: 'tickets', label: 'Unapplied Tickets', shortLabel: 'Tick', count: this._unappliedTicketCount },
-        // Newest season only, not every year on record — the tab badge should answer "how many
-        // crops are planned for the season I'm looking at", not "how many rows exist in total".
-        { id: 'planting', label: 'Planting', shortLabel: 'Plan', count: this.newestSeasonIntentionCount() },
-        { id: 'storage', label: 'Storage', shortLabel: 'Stor', count: new Set(this.storedGrain().map(g => g.crop || 'Unknown')).size },
-        // Badge is distinct CONTRACTS, not commodities (which Storage uses) and not charge rows.
-        // A producer with 8 contracts across 2 commodities reads as 8.
-        { id: 'dpContracts', label: 'DP Contracts', shortLabel: 'DP', count: dpContractCount(this.dpContracts()) }
-      ];
-    });
-
-    effect(() => {
       // Rebuild effective commodities from tickets + user-added
       const tickets = this.tickets();
       const customer = this.customer();
@@ -575,8 +553,48 @@ export class CustomerProfileComponent {
     return this.plantingIntentions().filter(pi => years.has(pi.plantingYear));
   });
 
-  private _tabs: ProfileTab[] = [];
-  private _unappliedTicketCount = 0;
+  /** The profile's own tabs. Order values leave room for the modules' tabs (Open Contracts 10, Unapplied Tickets 20). */
+  private readonly ownTabs = computed<ProfileTab[]>(() => [
+    // Newest season only, not every year on record — the tab badge should answer "how many
+    // crops are planned for the season I'm looking at", not "how many rows exist in total".
+    { id: 'planting', label: 'Planting', shortLabel: 'Plan', count: this.newestSeasonIntentionCount(), order: 30 },
+    { id: 'storage', label: 'Storage', shortLabel: 'Stor', count: new Set(this.storedGrain().map(g => g.crop || 'Unknown')).size, order: 40 },
+    // Badge is distinct CONTRACTS, not commodities (which Storage uses) and not charge rows.
+    // A producer with 8 contracts across 2 commodities reads as 8.
+    { id: 'dpContracts', label: 'DP Contracts', shortLabel: 'DP', count: dpContractCount(this.dpContracts()), order: 50 },
+  ]);
+
+  /** Each module tab's count, created once, in the profile's injection context. */
+  private readonly tabBadges = new Map<CustomerTab, Signal<number | null>>();
+
+  private badgeOf(tab: CustomerTab): Signal<number | null> | null {
+    if (!tab.badge) return null;
+    let badge = this.tabBadges.get(tab);
+    if (!badge) {
+      badge = untracked(() => runInInjectionContext(this.injector, tab.badge!));
+      this.tabBadges.set(tab, badge);
+    }
+    return badge;
+  }
+
+  /** The tab strip: the profile's own tabs and the modules' tabs the user may see for this customer, in order. */
+  readonly tabs = computed<ProfileTab[]>(() => [
+    ...this.registry.customerTabs()
+      .filter(tab => this.context.appliesTo(tab))
+      .map(tab => ({ id: tab.id, label: tab.label, shortLabel: tab.shortLabel, count: this.badgeOf(tab)?.() ?? null, order: tab.order, contribution: tab })),
+    ...this.ownTabs(),
+  ].sort((a, b) => a.order - b.order));
+
+  /** The tab shown: the one picked, or the first when the picked one isn't in the strip (its module's tab isn't
+   *  shown to this user or for this customer). */
+  readonly shownTab = computed(() => {
+    const tabs = this.tabs();
+    const picked = this.activeTab();
+    return tabs.some(tab => tab.id === picked) ? picked : (tabs[0]?.id ?? null);
+  });
+
+  /** The module tab being shown, if the shown tab is one. */
+  readonly shownContribution = computed(() => this.tabs().find(tab => tab.id === this.shownTab())?.contribution ?? null);
   private _effectiveCommodities: string[] = [];
 
   toggleProducerInsights(): void {
@@ -605,12 +623,8 @@ export class CustomerProfileComponent {
     return this.themeService.isDarkMode();
   }
 
-  get tabs() {
-    return this._tabs;
-  }
-
   getTabClass(tabId: string): string {
-    const isActive = this.activeTab() === tabId;
+    const isActive = this.shownTab() === tabId;
     const baseClass = 'flex-1 text-center px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium rounded-full transition-all duration-200 border-0 outline-none';
 
     if (isActive) {
@@ -760,10 +774,6 @@ export class CustomerProfileComponent {
     const code = (c.commodityCode || '').trim().toUpperCase();
     if (code && code.includes(target)) return true;
     return false;
-  }
-
-  get unappliedTicketCount(): number {
-    return this._unappliedTicketCount;
   }
 
   getEffectiveCommodities(): string[] {

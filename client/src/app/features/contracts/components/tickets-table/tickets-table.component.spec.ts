@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ComponentRef, signal } from '@angular/core';
+import { ComponentRef, WritableSignal, signal } from '@angular/core';
 import { TicketsTableComponent } from './tickets-table.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { CommodityConversion, Contract, Customer, Ticket } from '@models';
 import { SelectedProducerActivityFake, provideSelectedProducerActivity, selectedProducerActivityFake } from '@testing/selected-producer-activity.fake';
+import { CustomerScreenLink, SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 
 // Behaviour safety net for the Unapplied Tickets tab: the loading / load-error / empty states,
 // the applied-vs-unapplied split, grouping by crop & elevator / crop / elevator, the per-group
@@ -30,6 +31,11 @@ function daysFromNow(n: number): Date {
   d.setHours(12, 0, 0, 0);
   return d;
 }
+
+/** The parts of SelectedCustomerContext the table reads: the customer, the deep link, and the page's width. */
+type ScreenContextFake = { customer: WritableSignal<Customer | null>; link: WritableSignal<CustomerScreenLink>; wideContent: WritableSignal<boolean> };
+const screenContext = (customer: Customer): ScreenContextFake =>
+  ({ customer: signal<Customer | null>(customer), link: signal<CustomerScreenLink>({}), wideContent: signal(false) });
 
 function makeCustomer(over: Partial<Customer> = {}): Customer {
   return {
@@ -97,6 +103,8 @@ describe('TicketsTableComponent', () => {
   let trackTicketDropdownOpen: ReturnType<typeof vi.fn>;
   /** The selected producer's tickets and contracts, which the table reads from the page. */
   let activity: SelectedProducerActivityFake;
+  /** The customer the screen shows and its deep link, which the table reads from the page. */
+  let context: ScreenContextFake;
   const commodityConversions = signal<CommodityConversion[]>([]);
 
   function setInputs(inputs: {
@@ -109,6 +117,8 @@ describe('TicketsTableComponent', () => {
     };
     for (const [name, value] of Object.entries(inputs)) {
       if (fromActivity[name]) fromActivity[name].set(value as never);
+      else if (name === 'customer') context.customer.set(value as Customer);
+      else if (name === 'openCrop') context.link.update(link => ({ ...link, ticketCrop: value as string | null }));
       else ref.setInput(name, value);
     }
     fixture.detectChanges();
@@ -166,18 +176,19 @@ describe('TicketsTableComponent', () => {
     trackTicketDropdownOpen = vi.fn();
     commodityConversions.set(CONVERSIONS);
     activity = selectedProducerActivityFake();
+    context = screenContext(makeCustomer());
     await TestBed.configureTestingModule({
       imports: [TicketsTableComponent],
       providers: [
         { provide: AppStateService, useValue: { commodityConversions, commodityConversionsLoadFailed: signal(false) } },
         { provide: UsageTrackingService, useValue: { trackTicketDropdownOpen } },
         provideSelectedProducerActivity(activity),
+        { provide: SelectedCustomerContext, useValue: context },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(TicketsTableComponent);
     component = fixture.componentInstance;
     ref = fixture.componentRef;
-    ref.setInput('customer', makeCustomer());
   });
 
   afterEach(() => {
@@ -541,7 +552,6 @@ describe('TicketsTableComponent — bushel conversions failed to load', () => {
 
   function render(tickets: Ticket[]): void {
     fixture = TestBed.createComponent(TicketsTableComponent);
-    fixture.componentRef.setInput('customer', makeCustomer());
     activity.tickets.set(tickets);
     fixture.detectChanges();
   }
@@ -552,6 +562,7 @@ describe('TicketsTableComponent — bushel conversions failed to load', () => {
       providers: [
         { provide: UsageTrackingService, useValue: { trackTicketDropdownOpen: vi.fn() } },
         provideSelectedProducerActivity(activity = selectedProducerActivityFake()),
+        { provide: SelectedCustomerContext, useValue: screenContext(makeCustomer()) },
       ],
     }).compileComponents();
     state = TestBed.inject(AppStateService);

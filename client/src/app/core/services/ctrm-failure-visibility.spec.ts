@@ -45,7 +45,7 @@ describe('CTRM failure visibility', () => {
     const read = (...parts: string[]) => readFileSync(join(process.cwd(), 'src', 'app', ...parts), 'utf8');
 
     it('contracts-table shows the error branch before "No contracts found"', () => {
-      const html = read('features', 'customers', 'components', 'contracts-table', 'contracts-table.component.html');
+      const html = read('features', 'contracts', 'components', 'contracts-table', 'contracts-table.component.html');
       const errorAt = html.indexOf('loadError()');
       const emptyAt = html.indexOf('No contracts found for this producer');
 
@@ -55,7 +55,7 @@ describe('CTRM failure visibility', () => {
     });
 
     it('tickets-table shows the error branch before "No unapplied delivery tickets"', () => {
-      const html = read('features', 'customers', 'components', 'tickets-table', 'tickets-table.component.html');
+      const html = read('features', 'contracts', 'components', 'tickets-table', 'tickets-table.component.html');
       const errorAt = html.indexOf('loadError()');
       const emptyAt = html.indexOf('No unapplied delivery tickets found for this producer');
 

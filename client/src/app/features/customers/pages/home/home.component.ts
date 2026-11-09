@@ -25,7 +25,7 @@ import {
   yieldEstimateYears
 } from './home-derivations';
 import { HomeBackgroundFailures } from './home-background-failures';
-import { HomePageState } from './home-page.state';
+import { HomePageState, homeScreenSource } from './home-page.state';
 import { HomeRemindersStore } from './home-reminders.store';
 import { HomeNotesStore } from './home-notes.store';
 import { HomeSavedListsStore } from './home-saved-lists.store';
@@ -33,7 +33,7 @@ import { HomeLinkedProducersStore } from './home-linked-producers.store';
 import { HomePlantingStore } from './home-planting.store';
 import { HomeProducerActivityStore } from './home-producer-activity.store';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
-import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
+import { CUSTOMER_SCREEN_SOURCE, SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 @Component({
   selector: 'app-home',
@@ -57,6 +57,7 @@ import { SelectedProducerActivity } from '@core/context/selected-producer-activi
     HomePageState, HomeBackgroundFailures, HomeRemindersStore, HomeNotesStore, HomeSavedListsStore, HomeLinkedProducersStore,
     HomePlantingStore, HomeProducerActivityStore, SelectedCustomerContext,
     { provide: SelectedProducerActivity, useExisting: HomeProducerActivityStore },
+    { provide: CUSTOMER_SCREEN_SOURCE, useFactory: homeScreenSource },
   ],
   // The template reads only signals, computeds, getLinkedGroup() (which reads signals) and two
   // constant flags, and every async writer (API callbacks, effects, the resize listener, the
@@ -128,10 +129,11 @@ export class HomeComponent {
   /** True when the open-contracts table has its extra columns expanded — drops the Notes
    *  sidebar below the profile so the table gets the full page width. */
   readonly contractsWide = signal(false);
-  readonly pendingContractId = signal<number | null>(null);
-  readonly pendingTab = signal<string | null>(null);
-  readonly pendingPlantingYear = signal<number | null>(null);
-  readonly pendingTicketCrop = signal<string | null>(null);
+  /** Where a deep link asked the profile to open (see HomePageState); the screen's pieces read it through SelectedCustomerContext. */
+  readonly pendingContractId = this.page.pendingContractId;
+  readonly pendingTab = this.page.pendingTab;
+  readonly pendingPlantingYear = this.page.pendingPlantingYear;
+  readonly pendingTicketCrop = this.page.pendingTicketCrop;
   readonly selectedTradeUnits = this.page.selectedTradeUnits;
   /** The own and team lists the selected producer can be quick-added to from the profile header. */
   readonly savedListsForSelectedCustomer = this.lists.savedListsForSelectedCustomer;

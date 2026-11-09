@@ -600,14 +600,14 @@
         <!-- Pill-style tab navigation -->
         <div class="w-full bg-gray-100 dark:bg-gray-800 rounded-full p-0.5 sm:p-1 mb-6 overflow-x-auto">
           <div class="flex min-w-0">
-            @for (tab of tabs; track tab.id) {
+            @for (tab of tabs(); track tab.id) {
               <button
                 type="button"
                 [class]="getTabClass(tab.id)"
                 (click)="selectTab(tab.id)"
               >
-                <span class="hidden sm:inline whitespace-nowrap">{{ tab.label }} ({{ tab.count }})</span>
-                <span class="sm:hidden whitespace-nowrap">{{ tab.shortLabel }} ({{ tab.count }})</span>
+                <span class="hidden sm:inline whitespace-nowrap">{{ tab.label }}@if (tab.count !== null) { ({{ tab.count }})}</span>
+                <span class="sm:hidden whitespace-nowrap">{{ tab.shortLabel }}@if (tab.count !== null) { ({{ tab.count }})}</span>
               </button>
             }
           </div>
@@ -615,13 +615,7 @@
 
         <!-- Tab Content -->
         <div class="pb-8">
-          @switch (activeTab()) {
-            @case ('contracts') {
-              <app-contracts-table [customer]="customer()" [openContractId]="openContractId()" (expandedColumnsChange)="contractsColumnsExpanded.set($event)"></app-contracts-table>
-            }
-            @case ('tickets') {
-              <app-tickets-table [customer]="customer()" [openCrop]="openTicketCrop()"></app-tickets-table>
-            }
+          @switch (shownTab()) {
             @case ('planting') {
               <!-- The projected-production vs. contracted breakdown that used to sit here now lives
                    in the Growth Opportunity panel under Producer Insights, so this tab stays focused
@@ -644,6 +638,12 @@
             }
             @case ('dpContracts') {
               <app-dp-contracts-table [dpContracts]="dpContracts()" [customer]="customer()" [isLoading]="isLoadingDpContracts()"></app-dp-contracts-table>
+            }
+            @default {
+              <!-- A tab a module contributes: Open Contracts and Unapplied Tickets (Contracts). -->
+              @if (shownContribution(); as tab) {
+                <app-customer-contribution [contribution]="tab" />
+              }
             }
           }
         </div>
