@@ -285,8 +285,8 @@ Four contexts are registered:
 | Symptom | First place to look |
 | --- | --- |
 | 403 from any endpoint | Check `UserEntitlementService` — likely the user has no entitled TUs, or the requested TU isn't in their set. |
-| Empty result from a customer-bound endpoint | Verify `appState.selectedTradeUnits()` is non-empty; many service methods early-return for empty TU lists. |
-| Dashboards stale after TU change | `appState.clearDashboardCache()` should fire on TU change — check `AppStateService` constructor and the TU selector. |
+| Empty result from a customer-bound endpoint | Verify `tradeUnitContext.selectedTradeUnits()` is non-empty; many service methods early-return for empty TU lists. |
+| Dashboards stale after TU change | Producers' `preload` (`features/producers/producers.module.ts`) clears `DashboardStore`'s caches on every new selection — check `DataPreloadService` still runs the modules' preloads. |
 | Login loop / "deep link lost" | `auth.guard.ts` and `main.ts` deep-link sessionStorage handshake — make sure both halves are still in place. |
 | "Cross-database query not supported" SQL error | You introduced a join across `OriginationDbContext` and `ApplicationDbContext`. Move the join to C# (pull rows from each context, match in memory via `dbo.Customer`). |
 | Actionable Insights / Dashboard slow, and they load at the same time | Both gate on the single `dataLoading` flag, which waits on the whole core group (customers + contracts + today's tickets). The long pole is usually the ODS ticket/contract scan — and `getTodaysTickets` additionally scans the storage view via the customer-storage gate. See the loading model + perf note under DataPreloadService. |

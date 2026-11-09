@@ -549,6 +549,13 @@ client/src/app/
     ├── bid-sheet/  usage-analytics/  calculators/  whats-new/
 ```
 
+*As built in Phase 3 (2026-11-09):*
+- **`core/` is grouped by concern, as above, and keeps a `services/` folder** for what Phase 4 moves out: `ApiService`, `AppStateService`, `DataPreloadService`, the NLQ engine and the rest (§5.5). The help panel and its services are in `core/help`.
+- **`shared/` kept its `components/` folder** rather than renaming it `ui/`.
+- **A module folder has `index.ts`, `<module>.module.ts`, and whichever of `pages/`, `components/`, `data-access/`, `utils/` and `models/` it needs.** Most models are still in `src/app/models` (§5.5).
+- **There is no `contracts/` folder yet.** Everything Contracts will own is a customer-screen component, and those move in Phase 4.
+- **`help/` is a module**, holding the Help page.
+
 ### 5.2 The module manifest
 
 Each module describes itself once in a manifest, and the app composes the result:
@@ -700,7 +707,7 @@ export const APP_MODULES: ModuleManifest[] = [
 
 **`ModuleRegistry`** (in core) collects every module's contributions and keeps the ones whose permissions the user holds, e.g. `customerTabs = computed(() => APP_MODULES.flatMap(m => m.customerTabs ?? []).filter(t => access.hasAll(t.requires)))`. Every extension point is derived from it:
 
-- **Routes:** `app.routes.ts` maps every module's routes and adds `canMatch: [permissionGuard]`, which reads each route's `data.requires`. **The guard waits for the first `/api/me/permissions` load and denies if it fails;** it never allows a route on a default while permissions are still loading. eTMS's guard let a typed URL through in that window. This replaces today's per-route env ternaries; the build-time `environment.*Enabled` flags can feed `PermissionService` as an extra "module switched off in this environment" input.
+- **Routes:** `app.routes.ts` maps every module's routes and adds `canMatch: [permissionGuard]`, which reads each route's `data.requires`. **The guard waits for the first `/api/me/permissions` load and denies if it fails;** it never allows a route on a default while permissions are still loading. eTMS's guard let a typed URL through in that window. This replaces today's per-route env ternaries; the build-time `environment.*Enabled` flags can feed `PermissionService` as an extra "module switched off in this environment" input. *(Phase 3 removed those flags instead; see "Built in Phase 3" below.)*
 - **Nav:** the header renders `registry.navItems()`. Desktop and mobile menus come from the same list, so the duplicated markup at `header.component.html:72-107` and `:151-193` goes away. The user menu renders the items with `menu: 'user'`.
 - **Customer screen slots:**
   - Each host renders its slots from the registry with `NgComponentOutlet`: `registry.customerTabs()`, `registry.customerPanels('summary')`, and so on.
@@ -712,6 +719,34 @@ export const APP_MODULES: ModuleManifest[] = [
   - `DataPreloadService` becomes an orchestrator. On trade-unit change it runs `preload` only for the modules in `/api/me/permissions` `modules[]`, so traders never fetch planting, storage, DP or producer details.
   - Inside a module, `preload` skips stores whose read permission the user doesn't hold.
   - *Decided in Phase 3 (2026-11-09): the `modules[]` gate comes in Phase 4.* Phase 3 runs every module's `preload`, each checking its own permissions. The only one so far, Producers' dashboard-summary prefetch, already skips users without `planting-estimates:read`, so the gate would change nothing yet. Phase 4 adds the gate when Producers' store preloads arrive. That means `PermissionService` keeping `modules[]`, and a rule for Calculators, Help and What's New, which own no permissions and so never appear in it.
+
+**Built in Phase 3 (2026-11-09).** The manifest has `id`, `routes`, `nav` and `preload`; the customer-screen slot types come with the slots in Phase 4. Where it differs from the design above:
+- **Pages are typed rather than raw Angular `Routes`.**
+  - A `ModuleRoute` is `{ path, requires, loadComponent }`, and `moduleRoutes()` in `core/modules` turns the pages into routes.
+  - Every page gets `authGuard`. A page that names permissions also gets `permissionGuard`, with those permissions as its route data.
+  - `requires` can't be left out, so a page open to anyone signed in says so with `[]`.
+- **Each page requires what its screen reads:**
+  - Dashboard: `planting-estimates:read`.
+  - Build a List: `query-library:read` and `saved-lists:read:own`.
+  - Actionable Insights: `customers:read`, `contracts:read` and `tickets:read`.
+  - Bid Sheet: `bid-sheets:read`.
+  - Manage Groups (`/daily-digest`): `recap-groups:read`.
+  - Both Usage Dashboard pages: `usage-reports:read`.
+  - Home, What's New and Help need sign-in only.
+
+  A composition-root spec (`app.modules.spec.ts`) pins this list and checks that each link requires what its page does.
+- **The route flags were removed** rather than fed to `PermissionService`.
+  - `bidSheetEnabled`, `usageDashboardEnabled` and `dailyDigestEnabled` were on in every environment.
+  - To switch a module off in one environment, remove its permissions from that environment's roles in the grant editor.
+  - The remaining `environment.*Enabled` flags switch features inside a page, not whole pages, so they stay.
+- **`NavItem` adds `shortLabel` and `icon`.**
+  - The desktop bar shows the short label below its widest breakpoint.
+  - The icon is SVG path data, so the header draws any module's link without importing anything from it.
+- **The registry exposes `mainNav()` and `userNav()`.** The desktop bar and the mobile menu both render `mainNav()`. The mobile menu therefore now has the desktop order (Dashboard, Build a List, Insights, Bid Sheet), which swapped Insights and Build a List there.
+- **The header keeps the home link** ("Producers", in the mobile menu only), along with Help, Trade Unit Preferences, the theme switch and sign-out. Customers takes the home link over when its label comes from the segment (§6).
+- **The slot inventory's "Daily Digest *(user menu)*" is the Manage Groups link.** Engagement contributes it, and it opens `/daily-digest`. It isn't one of the header's own items.
+- **`preload` takes the trade units and returns an Observable.** The orchestrator subscribes, so the next selection cancels it along with the rest of the load. Producers' preload is the dashboard-summary prefetch, which runs only for users holding `planting-estimates:read`.
+- **`app.modules.ts` imports each manifest from its `<module>.module.ts`, not from `index.ts`.** An index also exports components that the build can't drop. Importing through the indexes put every module's screens in the initial bundle: 1.22 MB against 1.05 MB.
 
 **Result:**
 - A Trader-only user gets the same home page: customer list, profile shell, the Open Contracts tab (plus a sales-side tickets tab once Q3 defines one), and the notes/reminders sidebar.
@@ -746,6 +781,14 @@ Add ESLint, since none exists today. Use `@angular-eslint` plus `eslint-plugin-b
 - **Ban deep imports** with the plugin's entry-point rule.
 - **Wire `ng lint` into CI.**
 
+*Done in Phase 3 (2026-11-08):*
+- **The packages** are `eslint`, `angular-eslint` (the single package that now replaces `@angular-eslint/*`), `typescript-eslint`, `eslint-plugin-boundaries` and `eslint-import-resolver-typescript`, all with SBOM rows.
+- **Only the boundary rules are on.** Angular's recommended rule sets come with `angular-eslint` but aren't turned on; that is a separate decision.
+- **`npm run lint` runs in the PR workflow** ahead of the client tests.
+- **The module map in `eslint.config.js` mirrors the backend's, plus the SPA-only modules** (Calculators, Help, What's New), with one exception: Customers may import Calculators until the customer screen's `floating` slot hosts the launcher (Phase 4).
+- **Shared and core may also import the plain models in `src/app/models` and the environment settings.**
+- **The composition root isn't checked:** `main.ts`, `setup-tests.ts` and `app.*`. Specs may also import `src/testing`.
+
 ### 5.5 What moves where
 
 | Today | Goes to |
@@ -772,6 +815,26 @@ Add ESLint, since none exists today. Use `@angular-eslint` plus `eslint-plugin-b
 - **Phase 3** splits only what the owning module alone calls: the Bid Sheet and Usage Analytics clients, and Engagement's recap-group client (which the bid sheet may use, since Bid Sheet builds on Engagement). The shared error handler and request deduplication moved to `core/http`.
 - **Phase 4** moves each customer-screen component together with its service, API calls and state.
 - Platform's own calls (commodities, trade units, preferences, the entitlements catalog) stay in core for good.
+
+**Phase 3 moved these rows of the table:**
+- **To `core/layout`:** the header, the trade-unit selector and the toast container.
+- **To `core/help`:** the help panel and its services.
+- **To `core/auth`:** `authGuard`.
+- **Pages, to their modules:**
+  - The Planting Intentions Dashboard to Producers.
+  - Build a List, Actionable Insights and the customer map to Lists.
+  - The Daily Digest page to Engagement.
+  - The usage dashboard to Usage Analytics.
+- **State:**
+  - The trade-unit selection and groups to `core/context/TradeUnitContext`.
+  - Build a List's state and the map's geocode cache to Lists' stores.
+  - The dashboard caches to Producers' `DashboardStore`.
+- **Deleted:** the dead code in the last row.
+
+**Left for Phase 4:**
+- **The producer utils in `shared/utils` and the producer models,** by the rule above: customer-screen components use them.
+- **The other module models in `src/app/models`:** `bid-sheet`, `barchart`, `usage-dashboard`, `whats-new`, `help`, `query-library` and `refine-filters`. Phase 3 didn't move them; Phase 4 moves them with each module's remaining files.
+- **`DataPreloadService`.** It is the orchestrator now (§5.2), but it stays in `core/services`.
 
 ---
 
@@ -967,6 +1030,27 @@ Phases 1–4 deliver modularity and stand on their own even if traders slip. Pha
 - **Platform needs no module, and that is enforced too.** Where Platform needs a module's answer, it declares an extension the module implements (§4.4).
 - **Not yet checked by running the app.** The tests are reflection- and unit-level; no test starts the app. Click through each module once the app is up on the integration branch.
 
+**Phase 3 was done on 2026-11-09,** on `feature_ModularArchitecture-Phase3`, in eight reviewed steps (nine commits). Before the steps came one backend commit, letting Bid Sheet build on Engagement. The steps:
+1. ESLint and the boundary rules.
+2. The shell and help panel into `core`, and the dead code deleted.
+3. Module folders with index files and one alias per module.
+4. API clients for the modules that alone use them.
+5. `TradeUnitContext` and module UI state.
+6. Manifests, the registry and preload.
+7. Routes and nav from the manifests.
+8. This close-out.
+
+Where it differs from the row above:
+- **`ApiService` and `AppStateService` were split only part of the way, and NLQ stays in core.**
+  - A service moves with the components that use it, and most of those are customer-screen components that move in Phase 4 (§5.5).
+  - Bid Sheet, Usage Analytics and Engagement's recap groups have their own clients.
+  - `ApiService` went from about 1,270 lines to about 840.
+- **Bid Sheet builds on Engagement** (decided at the start of the phase), because a bid sheet can be shared with a recap group. Both the backend boundary tests and the SPA's lint rules allow it (§3, §4.4).
+- **Pages now require the permissions their screens read,** and the three route flags are gone (§5.2). Nothing changes for current users, who all hold `Originator` and `Editor`.
+- **One visible change:** the mobile menu now lists the module links in the desktop order.
+- **Deferred to Phase 4:** the `modules[]` preload gate, the customer-screen slot types, and the remaining model and util moves (§5.2, §5.5).
+- **Checked locally:** the app was run on 2026-11-09 and the header, mobile and profile menus work. The click through each module that the Phase 2 note asks for is still to do.
+
 **This plan builds on `main` only.** It doesn't wait for or plan around other branches, the mobile app's included. That work gets redone on the new structure once this lands.
 
 **Phases 1–4 reach `main` together** (decided 2026-11-07). Nothing can be tested before Phase 4 is done, so `feature_ModularArchitecture` is the integration branch. Each phase is built on its own branch cut from it, one phase at a time, and merged back. `main` is merged in at the start of each phase, and the integration branch goes to `main` once it has been tested.
@@ -1030,7 +1114,8 @@ Phases 1–4 deliver modularity and stand on their own even if traders slip. Pha
   - Audit columns follow `sql.md`; grant rows have no `Modified` columns.
   - One custom `write` action per resource in place of `create`, `update` and `delete` (the guide allows a custom action when its standard set doesn't fit, §4.2).
   - A permission's key is its own string (`notes:write`), not a Guid; roles keep the guide's Guid ids.
-- **SBOM** (README + CLAUDE.md): ArchUnitNET, ESLint, `@angular-eslint`, `eslint-plugin-boundaries` when they're added.
+- **SBOM** (README + CLAUDE.md): ArchUnitNET, ESLint, `@angular-eslint`, `eslint-plugin-boundaries` when they're added. *Done: ArchUnitNET with the boundary tests, and the ESLint packages in Phase 3.*
+- **[STYLE-DEVIATIONS.md](docs/application-context/STYLE-DEVIATIONS.md), client:** core grouped by concern, and module folders with a public `index.ts` and `data-access/` (recorded in Phase 3).
 
 ---
 

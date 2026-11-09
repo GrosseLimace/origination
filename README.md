@@ -21,14 +21,20 @@ GrainOriginatorPortal/
 │
 └── client/                                 # Angular 21 SPA
     └── src/app/
+        ├── app.modules.ts                  # lists every module's manifest; the only file that knows them all
+        ├── app.routes.ts                   # the modules' pages, plus the catch-all
         ├── core/
         │   ├── access/                     # PermissionService, permissionGuard, *appHasPermission
         │   ├── auth/                       # auth.guard.ts (functional CanActivateFn), deep-link restore
+        │   ├── context/                    # TradeUnitContext: the selected trade units and the user's groups
+        │   ├── http/                       # 403 interceptor, shared API error handling, request dedupe
+        │   ├── modules/                    # ModuleManifest, ModuleRegistry, moduleRoutes
         │   ├── layout/                     # header, trade-unit selector, toast container
         │   ├── help/                       # help panel and its services
         │   ├── handlers/                   # global-error.handler.ts
-        │   └── services/                   # api, app-state, toast, nlq-filter, usage-tracking, theme
-        ├── features/                       # one folder per module; others import it only through its index.ts
+        │   └── services/                   # api, app-state, data-preload, toast, nlq-filter, usage-tracking, theme
+        ├── features/                       # one folder per module, with its <module>.module.ts manifest;
+        │                                   #   others import it only through its index.ts
         │   ├── customers/                  # home page and the customer screen's components
         │   ├── producers/                  # Planting Intentions Dashboard
         │   ├── lists/                      # Build a List, Actionable Insights, the customer map
