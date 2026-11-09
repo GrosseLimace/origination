@@ -30,6 +30,7 @@ import { HomeNotesStore } from './home-notes.store';
 import { HomeSavedListsStore } from './home-saved-lists.store';
 import { HomeLinkedProducersStore } from './home-linked-producers.store';
 import { HomePlantingStore } from './home-planting.store';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -55,6 +56,7 @@ import { HomePlantingStore } from './home-planting.store';
 export class HomeComponent {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
+  private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly toastService = inject(ToastService);
   private readonly usageTracking = inject(UsageTrackingService);
   private readonly destroyRef = inject(DestroyRef);
@@ -276,7 +278,7 @@ export class HomeComponent {
 
     // React to global trade unit changes made via TradeUnitSelectorComponent
     effect(() => {
-      const tradeUnits = this.appState.selectedTradeUnits();
+      const tradeUnits = this.tradeUnitContext.selectedTradeUnits();
       if (!this._initialized) return;
       const key = [...tradeUnits].sort().join(',');
       if (key === this._lastTradeUnitKey) return;
@@ -308,7 +310,7 @@ export class HomeComponent {
   }
 
   private _restoreStateFromService(): void {
-    this.selectedTradeUnits.set(this.appState.selectedTradeUnits());
+    this.selectedTradeUnits.set(this.tradeUnitContext.selectedTradeUnits());
 
     const stateCustomers = this.appState.customers();
     if (stateCustomers.length > 0) {

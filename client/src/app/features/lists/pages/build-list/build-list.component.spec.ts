@@ -13,6 +13,8 @@ import { PermissionStub, permissionStub, providePermissions } from '@testing/per
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 import { NlqFilterContext, NlqFilterResult, NlqFilterService } from '@core/services/nlq-filter.service';
 import { Contract, Customer, NoteLastContact, QueryLibraryItem, RefinementFilters, SavedList, Ticket } from '@models';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { BuildListStore } from '../../data-access/build-list.store';
 
 // Behaviour safety net for the Build a List page ahead of its OnPush conversion and decomposition.
 // Everything is driven through public methods / signals / computeds and the REAL rendered template,
@@ -179,8 +181,8 @@ describe('BuildListComponent', () => {
       ],
     });
     appState = TestBed.inject(AppStateService);
-    appState.setUserGroups([]); // groups "loaded" (none needed here), so the header does not block on them
-    appState.setTradeUnits(['1000']);
+    TestBed.inject(TradeUnitContext).setUserGroups([]); // groups "loaded" (none needed here), so the header does not block on them
+    TestBed.inject(TradeUnitContext).setTradeUnits(['1000']);
   });
 
   afterEach(() => {
@@ -233,7 +235,7 @@ describe('BuildListComponent', () => {
     });
 
     it('with no trade unit selected, loads nothing and disables every library prompt', () => {
-      appState.setTradeUnits([]);
+      TestBed.inject(TradeUnitContext).setTradeUnits([]);
       const c = mount();
 
       expect(api.getCustomers).not.toHaveBeenCalled();
@@ -912,7 +914,7 @@ describe('BuildListComponent', () => {
       expect(c.hasGenerated()).toBe(true);
       api.getCustomers.mockReturnValue(of([DELTA]));
 
-      appState.setTradeUnits(['2000']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2000']);
       TestBed.tick();
 
       expect(api.getCustomers).toHaveBeenLastCalledWith(['2000']);
@@ -924,7 +926,7 @@ describe('BuildListComponent', () => {
     });
 
     it('falls back to all of the user\'s trade units for scoping when only a group is selected', () => {
-      appState.setTradeUnits([]);
+      TestBed.inject(TradeUnitContext).setTradeUnits([]);
       const c = mount();
       expect(c.effectiveTradeUnits()).toEqual(['1000', '2000']);
       expect(c.hasTradeUnits()).toBe(true);
@@ -938,7 +940,7 @@ describe('BuildListComponent', () => {
       first.togglePendingState('KS');
       fixture.destroy();
 
-      const saved = appState.buildListState();
+      const saved = TestBed.inject(BuildListStore).buildListState();
       expect(saved?.queryText).toBe(LIB_CONTRACTS.queryText);
       expect([...saved!.filteredCustomerIds].sort()).toEqual([1, 3]);
       expect(saved?.tradeUnits).toEqual(['1000']);
@@ -955,15 +957,15 @@ describe('BuildListComponent', () => {
       const first = mount();
       first.selectLibraryQuery(LIB_ALL);
       fixture.destroy();
-      expect(appState.buildListState()?.tradeUnits).toEqual(['1000']);
+      expect(TestBed.inject(BuildListStore).buildListState()?.tradeUnits).toEqual(['1000']);
 
-      appState.setTradeUnits(['2000']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2000']);
       const second = mount();
 
       expect(second.queryText()).toBe('');
       expect(second.hasGenerated()).toBe(false);
       expect(second.selectedLibraryQuery()).toBeNull();
-      expect(appState.buildListState()).toBeNull();
+      expect(TestBed.inject(BuildListStore).buildListState()).toBeNull();
     });
 
     it('all-producers mode shows the pick-a-trade-unit gate instead of the library', () => {

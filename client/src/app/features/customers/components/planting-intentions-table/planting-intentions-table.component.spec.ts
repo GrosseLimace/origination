@@ -5,7 +5,7 @@ import { NEVER, of, Subject } from 'rxjs';
 import { PlantingIntentionsTableComponent } from './planting-intentions-table.component';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
-import { AppStateService } from '@core/services/app-state.service';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { Commodity, Customer, PlantingIntention } from '@models';
 
 // Which trade unit a planting intention is recorded for. A test producer is on Pratt (2190) and
@@ -54,7 +54,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
         },
         { provide: ToastService, useValue: { error: () => {}, success: () => {} } },
         {
-          provide: AppStateService,
+          provide: TradeUnitContext,
           useValue: {
             inScopeTradeUnitCodes,
             inScopeGroupNames: signal<readonly string[]>([]),
@@ -351,7 +351,7 @@ describe('PlantingIntentionsTableComponent — rendering', () => {
         },
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
         {
-          provide: AppStateService,
+          provide: TradeUnitContext,
           useValue: {
             inScopeTradeUnitCodes: signal<readonly string[]>(['2190']),
             inScopeGroupNames: signal<readonly string[]>([]),

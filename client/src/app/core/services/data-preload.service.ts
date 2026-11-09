@@ -9,17 +9,19 @@ import { AppStateService } from './app-state.service';
 import { Customer, Contract, Ticket, NoteLastContact, ReminderDue, PlantingIntention, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
 import { environment } from '@env/environment';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 @Injectable({ providedIn: 'root' })
 export class DataPreloadService {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
+  private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly destroyRef = inject(DestroyRef);
   private readonly _forceReload$ = new Subject<string[]>();
 
   /** Re-run the full data load with the current trade units, cancelling any in-progress load. */
   forceReload(): void {
-    const tradeUnits = this.appState.selectedTradeUnits();
+    const tradeUnits = this.tradeUnitContext.selectedTradeUnits();
     if (tradeUnits.length === 0) return;
     this._forceReload$.next(tradeUnits);
   }
@@ -29,7 +31,7 @@ export class DataPreloadService {
     const msalService = inject(MsalService);
 
     const tuChanges$ = merge(
-      toObservable(this.appState.selectedTradeUnits).pipe(
+      toObservable(this.tradeUnitContext.selectedTradeUnits).pipe(
         distinctUntilChanged((a, b) => [...a].sort().join(',') === [...b].sort().join(','))
       ),
       this._forceReload$

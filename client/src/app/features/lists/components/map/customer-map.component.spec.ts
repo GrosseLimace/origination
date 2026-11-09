@@ -4,7 +4,7 @@ import { ComponentRef } from '@angular/core';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { CustomerMapComponent } from './customer-map.component';
-import { AppStateService } from '@core/services/app-state.service';
+import { MapGeocodeCacheStore } from '../../data-access/map-geocode-cache.store';
 import { Customer } from '@models';
 
 // The Angular-rendered parts of the producer map: the location-count badge, the "Focused on" legend,
@@ -63,7 +63,7 @@ describe('CustomerMapComponent', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         {
-          provide: AppStateService,
+          provide: MapGeocodeCacheStore,
           useValue: {
             mapGeocodeCache: geocodeCache,
             setGeocodeCache: (key: string, value: { lat: number; lng: number }) => geocodeCache.set(key, value),

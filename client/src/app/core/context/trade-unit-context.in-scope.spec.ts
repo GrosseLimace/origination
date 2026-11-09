@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
-import { AppStateService } from './app-state.service';
+import { TradeUnitContext } from './trade-unit-context.service';
 
 const ORGANICS = { groupName: 'Organics & IP', tradeUnitCodes: ['2080', '2090', '2093', '2094', '2291', '2295'] };
 const CORN_BELT = { groupName: 'Corn Belt', tradeUnitCodes: ['2115', '2190'] };
@@ -11,13 +11,13 @@ const CORN_BELT = { groupName: 'Corn Belt', tradeUnitCodes: ['2115', '2190'] };
  * and an empty selection means ALL of the user's groups — matching what the trade-unit selector
  * already does when it computes available units.
  */
-describe('AppStateService.inScopeGroupNames', () => {
-  let state: AppStateService;
+describe('TradeUnitContext.inScopeGroupNames', () => {
+  let state: TradeUnitContext;
 
   beforeEach(() => {
     localStorage.clear();
     TestBed.configureTestingModule({});
-    state = TestBed.inject(AppStateService);
+    state = TestBed.inject(TradeUnitContext);
   });
 
   it('is empty until the groups load, so nothing scoped leaks in early', () => {
@@ -80,13 +80,13 @@ describe('AppStateService.inScopeGroupNames', () => {
  * collapses a selected unit up to its group name, which loses the granularity needed to scope
  * commodities to 2090/2291/2295 — only half of the Organics & IP units.
  */
-describe('AppStateService.inScopeTradeUnitCodes', () => {
-  let state: AppStateService;
+describe('TradeUnitContext.inScopeTradeUnitCodes', () => {
+  let state: TradeUnitContext;
 
   beforeEach(() => {
     localStorage.clear();
     TestBed.configureTestingModule({});
-    state = TestBed.inject(AppStateService);
+    state = TestBed.inject(TradeUnitContext);
   });
 
   it('is empty until the groups load', () => {

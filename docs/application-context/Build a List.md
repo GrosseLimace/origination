@@ -76,9 +76,9 @@ The screen does **not** make per-customer API calls — it operates entirely on 
 - `apiService.saveList(payload)` / `updateList(id, payload)` / `deleteList(id)` — save dialog and saved-list actions.
 - `apiService.logQuerySearch({ searchText, matchedQueryId? })` — fired when a library search produces no match (data feeds the Usage Dashboard "Query search gaps" panel).
 
-### AppStateService signals it reads / writes
+### State it reads / writes
 
-Reads (heavy): `customers`, `contracts`, `tickets`, `notes`, `storedGrain`, `plantingIntentions`, `commodities`, `commodityConversions`, `producerDetails`, `selectedTradeUnits`, `dataLoading`. Writes only when bulk-fetching is necessary; mostly read-only since DataPreloadService has already populated state.
+Reads (heavy) from `AppStateService`: `customers`, `contracts`, `tickets`, `notes`, `storedGrain`, `plantingIntentions`, `commodities`, `commodityConversions`, `producerDetails`, `dataLoading`; the trade-unit selection from `TradeUnitContext`. Its own query and results persist across navigation in `BuildListStore` (`features/lists/data-access`). Writes only when bulk-fetching is necessary; mostly read-only since DataPreloadService has already populated state.
 
 ## NLQ pipeline
 

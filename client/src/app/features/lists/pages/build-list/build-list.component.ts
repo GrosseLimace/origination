@@ -7,7 +7,7 @@ import { forkJoin, from, of, catchError, mergeMap, toArray, timeout, tap, Subjec
 import { MsalService } from '@azure/msal-angular';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
-import { AppStateService, BuildListState } from '@core/services/app-state.service';
+import { AppStateService } from '@core/services/app-state.service';
 import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
@@ -49,6 +49,8 @@ import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
 import { environment } from '@env/environment';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { BuildListState, BuildListStore } from '../../data-access/build-list.store';
 
 @Component({
   selector: 'app-build-list',
@@ -84,6 +86,8 @@ import { environment } from '@env/environment';
 export class BuildListComponent {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
+  private readonly tradeUnitContext = inject(TradeUnitContext);
+  private readonly buildListStore = inject(BuildListStore);
 
   /** True when the trade-unit contract or ticket read FAILED, so an empty result set is an outage
    *  rather than a genuine answer. Every empty state on this screen has to check it: a CTRM timeout
@@ -274,7 +278,7 @@ export class BuildListComponent {
     // already cleared for the new TU while appState still holds the old, larger one (the two
     // clears are independent subscribers to selectedTradeUnits with no ordering guarantee). That
     // marked tickets ready and let a ticket query silently run against the wrong TU's deliveries.
-    const currentTu = this.appState.selectedTradeUnits().join(',');
+    const currentTu = this.tradeUnitContext.selectedTradeUnits().join(',');
     if (appTicketsTu !== currentTu) return;
     if (appTickets.length > this.tickets().length) {
       untracked(() => {
@@ -289,14 +293,14 @@ export class BuildListComponent {
   });
 
   private _tuEffect = effect(() => {
-    this.appState.selectedTradeUnits();
+    this.tradeUnitContext.selectedTradeUnits();
     if (!this._initialized) {
       this._initialized = true;
       return;
     }
     untracked(() => {
       this.clearQuery();
-      const tus = this.appState.selectedTradeUnits();
+      const tus = this.tradeUnitContext.selectedTradeUnits();
       this._initTradeUnits = tus.slice(); // Update so destroy handler saves state correctly
       if (tus.length > 0) {
         this._loadFresh(true); // TU changed — clear stale data
@@ -332,7 +336,7 @@ export class BuildListComponent {
    *  selected), there are none. */
   private _teamListsEffect = effect(() => {
     const canSee = this.canSeeTeamLists();
-    const tus = this.appState.selectedTradeUnits();
+    const tus = this.tradeUnitContext.selectedTradeUnits();
     untracked(() => {
       if (!canSee || tus.length === 0) {
         this.teamSavedLists.set([]);
@@ -344,7 +348,7 @@ export class BuildListComponent {
 
   /** Returns the effective trade units — explicit selection if any, otherwise all user-accessible TUs. */
   readonly effectiveTradeUnits = computed(() => {
-    const explicit = this.appState.selectedTradeUnits();
+    const explicit = this.tradeUnitContext.selectedTradeUnits();
     return explicit.length > 0 ? explicit : this._allUserTradeUnits();
   });
 
@@ -352,7 +356,7 @@ export class BuildListComponent {
   readonly hasTradeUnits = computed(() => this.effectiveTradeUnits().length > 0);
   /** True only when the user has EXPLICITLY selected at least one trade unit (a group selection
    *  alone does not count). Drives team-list scoping/empty-state messaging. */
-  readonly hasSelectedTradeUnit = computed(() => this.appState.selectedTradeUnits().length > 0);
+  readonly hasSelectedTradeUnit = computed(() => this.tradeUnitContext.selectedTradeUnits().length > 0);
   /** Comma-separated display names of the members the manager is currently building a list for. */
   readonly buildingForMembersLabel = computed(() => this.buildingForMembers().map(m => m.displayName).join(', '));
   /** "All Producers" mode is a customer-home search affordance with no trade-unit scope.
@@ -410,7 +414,7 @@ export class BuildListComponent {
    *  against whatever is selected now (see loadSavedList), so the same list is reusable across
    *  trade units. */
   readonly visibleSavedLists = computed(() =>
-    filterSavedListsByTradeUnitOverlap(this.savedLists(), this.appState.selectedTradeUnits()));
+    filterSavedListsByTradeUnitOverlap(this.savedLists(), this.tradeUnitContext.selectedTradeUnits()));
 
   readonly activeRefinementCount = computed(() => countActiveRefinements(this.appliedRefinements()));
 
@@ -584,8 +588,8 @@ export class BuildListComponent {
     // the trade-unit catalog — the chip filters those rows (user 2026-10-09).
     if (this.showGrainOnFarmFilters()) return this._grainCropsInResults();
     const scoped = scopeCommodities(this.plantingCommodities(), {
-      groupNames: this.appState.inScopeGroupNames(),
-      tradeUnitCodes: this.appState.inScopeTradeUnitCodes(),
+      groupNames: this.tradeUnitContext.inScopeGroupNames(),
+      tradeUnitCodes: this.tradeUnitContext.inScopeTradeUnitCodes(),
     });
     if (scoped.length > 0) {
       const codes = new Set<string>();
@@ -1104,7 +1108,7 @@ export class BuildListComponent {
 
 
   constructor() {
-    this._initTradeUnits = this.appState.selectedTradeUnits().slice();
+    this._initTradeUnits = this.tradeUnitContext.selectedTradeUnits().slice();
 
     // Load saved lists eagerly — they're user-scoped, not TU-dependent
     const cachedSavedLists = this.appState.savedLists();
@@ -1242,14 +1246,14 @@ export class BuildListComponent {
     this.destroyRef.onDestroy(() => {
       // If trade units changed while this component was alive, discard state entirely
       // so re-mounting shows a blank query for the new selection.
-      const currentTus = this.appState.selectedTradeUnits();
+      const currentTus = this.tradeUnitContext.selectedTradeUnits();
       const tradeUnitsChanged = currentTus.length !== this._initTradeUnits.length ||
         currentTus.some(tu => !this._initTradeUnits.includes(tu));
 
       if (tradeUnitsChanged) {
-        this.appState.clearBuildListState();
+        this.buildListStore.clearBuildListState();
       } else {
-        this.appState.setBuildListState({
+        this.buildListStore.setBuildListState({
           queryText: this.queryText(),
           filteredCustomerIds: this.filteredCustomers().map(c => c.id),
           hasGenerated: this.hasGenerated(),
@@ -1278,7 +1282,7 @@ export class BuildListComponent {
     // Restore UI state (query text, refinements, etc.) — this is safe, never corrupted
     this._restoreUIState();
 
-    const currentTus = this.appState.selectedTradeUnits();
+    const currentTus = this.tradeUnitContext.selectedTradeUnits();
     const cachedCustomers = this.appState.customers();
 
     // If appState already has customer data (loaded by home page or a previous visit),
@@ -1305,7 +1309,7 @@ export class BuildListComponent {
       }
 
       // Restore filtered results if we had a previous query for the same TUs
-      const saved = this.appState.buildListState();
+      const saved = this.buildListStore.buildListState();
       const savedTus = saved?.tradeUnits ?? [];
       const tusMatch = savedTus.length === currentTus.length
         && currentTus.every(tu => savedTus.includes(tu));
@@ -1372,7 +1376,7 @@ export class BuildListComponent {
     }
 
     // Use explicitly selected TUs only
-    const tus = this.appState.selectedTradeUnits();
+    const tus = this.tradeUnitContext.selectedTradeUnits();
     const tuParam = tus.length > 0 ? tus : undefined;
 
     // Fetch core data (everything except tickets and notes — tickets are slow and load in
@@ -1536,19 +1540,19 @@ export class BuildListComponent {
   }
 
   private _restoreUIState(): void {
-    const saved = this.appState.buildListState();
+    const saved = this.buildListStore.buildListState();
     if (!saved) return;
 
     // If trade units changed since state was saved, clear everything —
     // the user must re-enter and regenerate for the new selection.
-    const currentTus = this.appState.selectedTradeUnits();
+    const currentTus = this.tradeUnitContext.selectedTradeUnits();
     const savedTus = saved.tradeUnits ?? [];
     const tradeUnitsMatch = currentTus.length > 0 && savedTus.length > 0
       && currentTus.length === savedTus.length
       && currentTus.every(tu => savedTus.includes(tu));
 
     if (!tradeUnitsMatch) {
-      this.appState.clearBuildListState();
+      this.buildListStore.clearBuildListState();
       return;
     }
 
@@ -1620,7 +1624,7 @@ export class BuildListComponent {
     this.memberSearchTerm.set('');
     this.memberSearchResults.set([]);
     this.activeSavedList.set(null);
-    this.appState.clearBuildListState();
+    this.buildListStore.clearBuildListState();
   }
 
   /** Called when user clicks a query card from the library. */
@@ -1812,14 +1816,14 @@ export class BuildListComponent {
       return;
     }
     this._dpFetchInFlight = true;
-    const tu = this.appState.selectedTradeUnits();
+    const tu = this.tradeUnitContext.selectedTradeUnits();
     const tuParam = tu.length > 0 ? tu : undefined;
     // Capture the trade units this fetch is for. DataPreloadService clears the shared DP cache
     // reactively on a trade-unit change; if the user switches while this request is in flight, the
     // reset fires first and then a stale response would write the OLD trade unit's rows back into
     // a cache the whole app reads, flipping dpContractsLoaded with the wrong data.
     const fetchedForTu = tu.join(',');
-    const isStale = () => this.appState.selectedTradeUnits().join(',') !== fetchedForTu;
+    const isStale = () => this.tradeUnitContext.selectedTradeUnits().join(',') !== fetchedForTu;
 
     this.apiService.getDpContracts(tuParam).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
@@ -1855,7 +1859,7 @@ export class BuildListComponent {
       return;
     }
     this._scopedNotesFetchInFlight = true;
-    const tu = this.appState.selectedTradeUnits();
+    const tu = this.tradeUnitContext.selectedTradeUnits();
     // Author ("by me") fetches are NOT TU-filtered: a by-me note on a LINKED producer in another TU
     // still counts (same reason batched mode omits TU), and the by-me set is small so it's free to
     // fetch all. Other scoped fetches (content / window / pinned) keep the TU scope.
@@ -1960,7 +1964,7 @@ export class BuildListComponent {
 
     // Fast path: if requested TUs match what's already loaded AND all data the query
     // needs is ready, skip the fetch and run NLQ directly against in-memory data.
-    const currentTus = this.appState.selectedTradeUnits();
+    const currentTus = this.tradeUnitContext.selectedTradeUnits();
     const tusMatch = tradeUnits.length === currentTus.length
       && tradeUnits.every(tu => currentTus.includes(tu));
     const query = this.queryText().toLowerCase();
@@ -2543,7 +2547,7 @@ export class BuildListComponent {
     }
 
     this.isProcessing.set(true);
-    const tuParam = this.appState.selectedTradeUnits();
+    const tuParam = this.tradeUnitContext.selectedTradeUnits();
     const tus = tuParam.length > 0 ? tuParam : undefined;
 
     // Fetch contracts AND the season yield targets for each planting year in parallel. The
@@ -2655,7 +2659,7 @@ export class BuildListComponent {
   /** Step 1: open the member picker for the current trade unit(s). Requires an explicit TU selection
    *  (members are scoped to it). */
   openBuildForMembersPicker(): void {
-    const tus = this.appState.selectedTradeUnits();
+    const tus = this.tradeUnitContext.selectedTradeUnits();
     if (tus.length === 0) return;
     this.assignTargetIds.set(new Set());
     this.teamMembers.set([]);
@@ -2823,7 +2827,7 @@ export class BuildListComponent {
   /** Reloads the team lists for the given trade units (defaults to the explicitly
    *  selected trade unit(s) — not effectiveTradeUnits(), to avoid surfacing other groups' lists).
    *  Silent on failure — the team view is supplementary to the user's own saved lists. */
-  private _refreshTeamLists(tus: string[] = this.appState.selectedTradeUnits()): void {
+  private _refreshTeamLists(tus: string[] = this.tradeUnitContext.selectedTradeUnits()): void {
     if (!this.canSeeTeamLists() || tus.length === 0) {
       this.teamSavedLists.set([]);
       return;

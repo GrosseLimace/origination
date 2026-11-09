@@ -131,7 +131,7 @@ the Edit Bids header's Share button is hidden, and the delete dialog offers only
 ## State and caching
 
 - Every location is loaded once, unscoped: a location is one company-wide row, and a sheet decides which of them you work from.
-- `mapGeocodeCache` (a `Map` on `AppStateService`) caches geocoded address → lat/lon results, capped at 500 entries.
+- The 500-entry geocode cache this section used to list here (`MapGeocodeCacheStore`, in Lists) belongs to Build a List's customer map; the bid sheet doesn't use it.
 
 ## Drag-drop reordering
 

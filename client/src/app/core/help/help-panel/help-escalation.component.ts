@@ -8,6 +8,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
 import { HelpIconComponent } from '@shared/components/help-icon/help-icon.component';
 import { environment } from '../../../../environments/environment';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 /** Screen names for the support details, by route. */
 const PAGE_NAMES: Record<string, string> = {
@@ -46,6 +47,7 @@ type CopyTarget = 'short' | 'details';
 })
 export class HelpEscalationComponent {
   private readonly appState = inject(AppStateService);
+  private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly panel = inject(HelpPanelService);
   private readonly help = inject(HelpService);
   private readonly usageTracking = inject(UsageTrackingService);
@@ -77,7 +79,7 @@ export class HelpEscalationComponent {
     const v = this.whatsNew.version();
     const route = this.panel.route();
     const error = this.panel.lastError();
-    const units = this.appState.allProducersMode() ? 'All Producers' : [...this.appState.inScopeTradeUnitCodes()].join(', ') || 'None selected';
+    const units = this.appState.allProducersMode() ? 'All Producers' : [...this.tradeUnitContext.inScopeTradeUnitCodes()].join(', ') || 'None selected';
     // The last few answers they read, by title: what support needs to know they've already tried.
     const viewed = this.panel.viewedFaqIds().slice(-3).map(id => this.help.faq(id)?.question ?? id);
 

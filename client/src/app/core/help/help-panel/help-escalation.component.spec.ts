@@ -5,6 +5,7 @@ import { TestBed } from '@angular/core/testing';
 import type { AppVersionInfo, Customer } from '@models';
 import { HelpEscalationComponent } from './help-escalation.component';
 import { AppStateService } from '@core/services/app-state.service';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { HelpPanelService } from '@core/help/help-panel.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
@@ -25,7 +26,7 @@ async function renderCard(helpDeskUrl = environment.helpDeskUrl) {
   });
   (result.fixture.componentInstance as { helpDeskUrl: string }).helpDeskUrl = helpDeskUrl;
   const appState = result.fixture.debugElement.injector.get(AppStateService);
-  appState.setTradeUnits(['2040']);
+  result.fixture.debugElement.injector.get(TradeUnitContext).setTradeUnits(['2040']);
   appState.selectCustomer({ id: 7, name: 'PRAIRIE RIDGE FARMS LLC', scoularId: 'PRRIDGE' } as Customer);
   result.fixture.detectChanges();
   return { ...result, tracking };

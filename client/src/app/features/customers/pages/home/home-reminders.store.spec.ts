@@ -8,6 +8,7 @@ import { OutlookCalendarService } from '@core/services/outlook-calendar.service'
 import type { Customer, Reminder, ReminderDue } from '@models';
 import { HomePageState } from './home-page.state';
 import { HomeRemindersStore } from './home-reminders.store';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 function reminder(id: number, over: Partial<Reminder> = {}): Reminder {
   return {
@@ -50,6 +51,7 @@ describe('HomeRemindersStore', () => {
         HomePageState, HomeRemindersStore,
         { provide: ApiService, useValue: api },
         { provide: AppStateService, useValue: appState },
+        { provide: TradeUnitContext, useValue: appState },
         { provide: ToastService, useValue: toast },
         { provide: OutlookCalendarService, useValue: outlook },
       ],

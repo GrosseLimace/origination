@@ -6,11 +6,13 @@ import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { ApiService } from './api.service';
 import { AppStateService } from './app-state.service';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 @Injectable({ providedIn: 'root' })
 export class UserPreferencesService {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
+  private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly destroyRef = inject(DestroyRef);
 
   // Guard: don't save back to the API until we've loaded the initial prefs from the DB.
@@ -36,10 +38,10 @@ export class UserPreferencesService {
       // This GET races /usertradeunits. If the groups already came back EMPTY, the saved selection
       // is for trade units the user no longer has — re-applying it would make the preload request
       // them, the server would strip them to "no filter", and they'd see every producer. Skip it.
-      if (this.appState.noTradeUnitAssignments()) return;
+      if (this.tradeUnitContext.noTradeUnitAssignments()) return;
       // If the groups already came back populated, keep only what's still assigned (same pruning
       // UserTradeUnitsService does when the groups land after the preference).
-      const groups = this.appState.userGroups();
+      const groups = this.tradeUnitContext.userGroups();
       const groupNames = groups.length
         ? pref.selectedGroupNames.filter(g => groups.some(x => x.groupName === g))
         : pref.selectedGroupNames;
@@ -47,33 +49,33 @@ export class UserPreferencesService {
       const units = groups.length
         ? pref.selectedTradeUnits.filter(u => available.has(u))
         : pref.selectedTradeUnits;
-      if (groupNames.length) this.appState.setSelectedGroupNames(groupNames);
-      if (units.length)      this.appState.setTradeUnits(units);
-      this.appState.savePrefsToLocalStorage(groupNames, units);
+      if (groupNames.length) this.tradeUnitContext.setSelectedGroupNames(groupNames);
+      if (units.length)      this.tradeUnitContext.setTradeUnits(units);
+      this.tradeUnitContext.savePrefsToLocalStorage(groupNames, units);
     });
 
     // Save to localStorage + API whenever trade units change (debounced).
     // Skip while in "All Producers" mode — that mode clears the selection in-memory but must
     // never overwrite the saved preference (which stays the user's real trade group).
-    toObservable(this.appState.selectedTradeUnits).pipe(
+    toObservable(this.tradeUnitContext.selectedTradeUnits).pipe(
       debounceTime(800),
       filter(() => this.prefsLoaded && !this.appState.allProducersMode()),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe(units => {
-      const groups = this.appState.selectedGroupNames();
-      this.appState.savePrefsToLocalStorage(groups, units);
+      const groups = this.tradeUnitContext.selectedGroupNames();
+      this.tradeUnitContext.savePrefsToLocalStorage(groups, units);
       this.apiService.saveUserPreference(groups, units).pipe(catchError(() => of(null))).subscribe();
     });
 
     // Save to localStorage + API whenever group names change (debounced).
     // Skip while in "All Producers" mode (see note above) so the saved preference is preserved.
-    toObservable(this.appState.selectedGroupNames).pipe(
+    toObservable(this.tradeUnitContext.selectedGroupNames).pipe(
       debounceTime(800),
       filter(() => this.prefsLoaded && !this.appState.allProducersMode()),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe(groups => {
-      const units = this.appState.selectedTradeUnits();
-      this.appState.savePrefsToLocalStorage(groups, units);
+      const units = this.tradeUnitContext.selectedTradeUnits();
+      this.tradeUnitContext.savePrefsToLocalStorage(groups, units);
       this.apiService.saveUserPreference(groups, units).pipe(catchError(() => of(null))).subscribe();
     });
   }

@@ -7,6 +7,7 @@ import { ApiService } from './api.service';
 import { AppStateService } from './app-state.service';
 import { DataPreloadService } from './data-preload.service';
 import { environment } from '../../../environments/environment';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 const GROUPS = [
   { groupName: 'West', tradeUnitCodes: ['1085', '2190'], tradeUnits: [{ code: '1085' }, { code: '2190', description: 'Pratt, KS' }] },
@@ -54,6 +55,7 @@ describe('UserTradeUnitsService', () => {
         UserTradeUnitsService,
         { provide: ApiService, useValue: api },
         { provide: AppStateService, useValue: appState },
+        { provide: TradeUnitContext, useValue: appState },
         { provide: DataPreloadService, useValue: dataPreload },
       ],
     });

@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AppStateService } from '@core/services/app-state.service';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 @Component({
   selector: 'app-trade-unit-selector',
@@ -32,6 +33,7 @@ export class TradeUnitSelectorComponent implements OnInit {
   }
   private readonly userTradeUnits = inject(UserTradeUnitsService);
   private readonly appState = inject(AppStateService);
+  private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly destroyRef = inject(DestroyRef);
 
   // Dropdown open/close state — local only
@@ -44,7 +46,7 @@ export class TradeUnitSelectorComponent implements OnInit {
    *  app state (set by UserTradeUnitsService on every load, including the refresh after the
    *  Trade Unit Preferences popup closes) so it appears/clears no matter which path loaded. */
   readonly noTradeUnitsAssigned = computed(() =>
-    this.appState.noTradeUnitAssignments() && this.appState.userGroups().length === 0);
+    this.tradeUnitContext.noTradeUnitAssignments() && this.tradeUnitContext.userGroups().length === 0);
 
   // Draft selection used when deferred=true — null means dropdown is closed/no pending edit
   private readonly _draftTradeUnits = signal<string[] | null>(null);
@@ -52,11 +54,11 @@ export class TradeUnitSelectorComponent implements OnInit {
   // Effective selection shown in the dropdown: draft when deferred+open, else app state
   private readonly _effectiveTradeUnits = computed(() => {
     const draft = this._draftTradeUnits();
-    return this.deferred() && draft !== null ? draft : this.appState.selectedTradeUnits();
+    return this.deferred() && draft !== null ? draft : this.tradeUnitContext.selectedTradeUnits();
   });
 
   ngOnInit(): void {
-    if (!this.appState.userGroupsLoaded()) {
+    if (!this.tradeUnitContext.userGroupsLoaded()) {
       this._fetchGroups();
     }
   }
@@ -96,27 +98,27 @@ export class TradeUnitSelectorComponent implements OnInit {
   // Using computed() instead of getters ensures Angular's reactive system
   // tracks these as signal dependencies for OnPush change detection.
 
-  readonly userGroups = computed(() => this.appState.userGroups());
-  readonly selectedTradeUnits = computed(() => this.appState.selectedTradeUnits());
-  readonly selectedGroupNames = computed(() => this.appState.selectedGroupNames());
+  readonly userGroups = computed(() => this.tradeUnitContext.userGroups());
+  readonly selectedTradeUnits = computed(() => this.tradeUnitContext.selectedTradeUnits());
+  readonly selectedGroupNames = computed(() => this.tradeUnitContext.selectedGroupNames());
   readonly allProducersMode = computed(() => this.appState.allProducersMode());
 
   // ---- Group helpers ----
 
   getAvailableTradeUnits(): string[] {
-    return this.userTradeUnits.computeAvailableTradeUnits(this.appState.userGroups(), this.appState.selectedGroupNames());
+    return this.userTradeUnits.computeAvailableTradeUnits(this.tradeUnitContext.userGroups(), this.tradeUnitContext.selectedGroupNames());
   }
 
   getGroupButtonText(): string {
     if (this.appState.allProducersMode()) return 'All Producers';
-    const sel = this.appState.selectedGroupNames();
+    const sel = this.tradeUnitContext.selectedGroupNames();
     if (sel.length === 0) return 'Select a Group';
     if (sel.length === 1) return sel[0];
     return `${sel.length} groups selected`;
   }
 
   isGroupSelected(groupName: string): boolean {
-    return this.appState.selectedGroupNames().includes(groupName);
+    return this.tradeUnitContext.selectedGroupNames().includes(groupName);
   }
 
   /** Enter "All Producers" mode: a session-only override that clears scope so the customer
@@ -125,8 +127,8 @@ export class TradeUnitSelectorComponent implements OnInit {
    *  the mode and skips persisting the empty selection — the saved preference stays a group. */
   selectAllProducers(): void {
     this.appState.setAllProducersMode(true);
-    this.appState.setSelectedGroupNames([]);
-    this.appState.setTradeUnits([]);
+    this.tradeUnitContext.setSelectedGroupNames([]);
+    this.tradeUnitContext.setTradeUnits([]);
     this.isGroupDropdownOpen.set(false);
   }
 
@@ -140,14 +142,14 @@ export class TradeUnitSelectorComponent implements OnInit {
   toggleGroupSelection(groupName: string): void {
     // Picking a real group exits All Producers mode (mutually exclusive).
     this.appState.setAllProducersMode(false);
-    const current = this.appState.selectedGroupNames();
+    const current = this.tradeUnitContext.selectedGroupNames();
     // Single-select: if already selected, deselect; otherwise select only this one
     const updated = current.includes(groupName) ? [] : [groupName];
-    this.appState.setSelectedGroupNames(updated);
+    this.tradeUnitContext.setSelectedGroupNames(updated);
     // Remove selected trade units no longer in the selected group
     const available = this.getAvailableTradeUnits();
-    const filteredUnits = this.appState.selectedTradeUnits().filter(u => available.includes(u));
-    this.appState.setTradeUnits(filteredUnits);
+    const filteredUnits = this.tradeUnitContext.selectedTradeUnits().filter(u => available.includes(u));
+    this.tradeUnitContext.setTradeUnits(filteredUnits);
     // Close the dropdown after selection
     this.isGroupDropdownOpen.set(false);
   }
@@ -160,7 +162,7 @@ export class TradeUnitSelectorComponent implements OnInit {
       this.isGroupDropdownOpen.set(false);
       // In deferred mode, snapshot current app state as the draft
       if (this.deferred()) {
-        this._draftTradeUnits.set([...this.appState.selectedTradeUnits()]);
+        this._draftTradeUnits.set([...this.tradeUnitContext.selectedTradeUnits()]);
       }
     } else if (this.deferred()) {
       // Closed without Done — discard draft
@@ -181,7 +183,7 @@ export class TradeUnitSelectorComponent implements OnInit {
     if (this.deferred()) {
       const draft = this._draftTradeUnits();
       if (draft !== null) {
-        this.appState.setTradeUnits(draft);
+        this.tradeUnitContext.setTradeUnits(draft);
       }
       this._draftTradeUnits.set(null);
     }
@@ -191,13 +193,13 @@ export class TradeUnitSelectorComponent implements OnInit {
 
   toggleTradeUnit(unit: string): void {
     if (this.deferred()) {
-      const current = this._draftTradeUnits() ?? [...this.appState.selectedTradeUnits()];
+      const current = this._draftTradeUnits() ?? [...this.tradeUnitContext.selectedTradeUnits()];
       const index = current.indexOf(unit);
       this._draftTradeUnits.set(index > -1 ? current.filter((_, i) => i !== index) : [...current, unit]);
     } else {
-      const current = this.appState.selectedTradeUnits();
+      const current = this.tradeUnitContext.selectedTradeUnits();
       const index = current.indexOf(unit);
-      this.appState.setTradeUnits(index > -1 ? current.filter((_, i) => i !== index) : [...current, unit]);
+      this.tradeUnitContext.setTradeUnits(index > -1 ? current.filter((_, i) => i !== index) : [...current, unit]);
     }
   }
 
@@ -205,7 +207,7 @@ export class TradeUnitSelectorComponent implements OnInit {
     if (this.deferred()) {
       this._draftTradeUnits.set([]);
     } else {
-      this.appState.setTradeUnits([]);
+      this.tradeUnitContext.setTradeUnits([]);
     }
   }
 
@@ -215,7 +217,7 @@ export class TradeUnitSelectorComponent implements OnInit {
 
   /** Description/location for a trade unit code (e.g. "Pratt, KS"), or '' when unknown. */
   descriptionFor(code: string): string {
-    return this.appState.tradeUnitDescriptions().get(code) ?? '';
+    return this.tradeUnitContext.tradeUnitDescriptions().get(code) ?? '';
   }
 
   getTradeUnitButtonText(): string {

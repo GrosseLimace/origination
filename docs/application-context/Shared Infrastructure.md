@@ -7,7 +7,7 @@
 - Angular 21 SPA + ASP.NET Core (.NET 10) Web API.
 - **Two databases**: `OriginationDbContext` reads ODS views (read-only), `ApplicationDbContext` owns the application's tables (read/write).
 - **Auth**: Azure AD via MSAL (frontend) and Microsoft.Identity.Web (backend). Tokens are JWT bearer; cache is `sessionStorage` per security review.
-- **State**: Angular signals via `AppStateService` (single global service). No NgRx.
+- **State**: Angular signals. No NgRx. `AppStateService` holds the shared data caches, `TradeUnitContext` the trade-unit scope, and each module keeps its own screen state in its stores.
 - **Authorization model**: trade-unit entitlements are a *UX filter*, not an access boundary. See [SECURITY-MODEL.md](./SECURITY-MODEL.md).
 
 ## Architecture at a glance
@@ -47,7 +47,7 @@ flowchart LR
 
 `client/src/app/core/services/app-state.service.ts`
 
-The app's global state container, built on Angular signals. No NgRx, no Redux — every screen reads and writes signals here directly.
+The shared data caches, built on Angular signals: the trade-unit-wide data the customer screen, Build a List, Actionable Insights and the Planting Dashboard read. Customer-screen data moves into its modules' stores as those components move.
 
 **Signals exposed (commonly read across screens):**
 
@@ -64,17 +64,24 @@ The app's global state container, built on Angular signals. No NgRx, no Redux �
 | `commodities`, `commodityConversions`, `harvestWindows` | reference | Crop catalog and lb-per-bushel conversions |
 | `producerDetails` | `ProducerDetails[]` | App-DB enrichment (acres, bin sites, grain on farm, etc.) |
 | `pricingLines` | `ContractPricingLine[]` | Pricing lines for the selected producer — CTRM (live, inline on the contract) or ODS `vw_ContractPricing` per `Ctrm:Source` |
-| `selectedTradeUnits`, `selectedGroupNames` | `string[]` | The TU selector's current state |
 | `allProducersMode` | `boolean` | Session-only "All Producers" selector mode — clears TU scope so the customer list searches every producer (incl. ODS producers with no contract/ticket) for onboarding. Never persisted. |
 | `selectedCustomer` | `Customer \| null` | Driven by Home page navigation |
 | `dataLoading` | `boolean` | Global flag — true while the core preload (customers + contracts + today's tickets) is in flight. Both Insights and the Dashboard gate their spinners on this. |
-| `ticketsLoading` | `boolean` | True while the background bulk `/api/tickets` set is still arriving (separate from the fast today's-tickets fetch). |
 | `dashboardCache`, `preloadedDashboardSummary` | dashboard-specific cache | See Planting Intentions Dashboard doc |
-| `mapGeocodeCache` | `Map<string, {lat, lng}>` | Used by Bid Sheet's Leaflet map |
+
+**Setters** mirror the signals (`setCustomers`, `setContracts`, ...). There is also `clearSelection`, and `clearAll` for sign-out, which also clears `TradeUnitContext`.
+
+### `TradeUnitContext`
+
+`client/src/app/core/context/trade-unit-context.service.ts`
+
+The trade units the app is working in, which every module scopes its reads to: `userGroups` (with `tradeUnitDescriptions`, code → location), the selector's `selectedTradeUnits` and `selectedGroupNames`, and the `inScopeGroupNames` / `inScopeTradeUnitCodes` that selection puts in play (an empty selection means all of the user's units).
 
 **localStorage persistence:** key `origination_user_prefs` stores `{ groups?, units? }` — the trade-unit selection. Restored on construction.
 
-**Setters** mirror the signals (`setCustomers`, `setContracts`, ...). There is also `clearBuildListState`, `clearSelection`, `clearAll`.
+### Module stores
+
+Screen state a module keeps for the session lives in that module: Build a List's query and results (`BuildListStore`) and the customer map's geocode cache (`MapGeocodeCacheStore`, capped at 500 entries) in `features/lists/data-access`, and the customer list's scroll position (`CustomerListScrollStore`) in `features/customers/data-access`.
 
 ### `UserTradeUnitsService`
 

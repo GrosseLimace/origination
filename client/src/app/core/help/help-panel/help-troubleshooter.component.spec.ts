@@ -6,6 +6,7 @@ import type { Customer } from '@models';
 import { HelpTroubleshooterComponent } from './help-troubleshooter.component';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { HelpPanelService } from '@core/help/help-panel.service';
 import { HelpPanelStateService } from '@core/help/help-panel-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
@@ -41,11 +42,12 @@ async function renderTroubleshooter(options: { assigned?: boolean } = {}) {
   });
   const injector = result.fixture.debugElement.injector;
   const appState = injector.get(AppStateService);
+  const tradeUnitContext = injector.get(TradeUnitContext);
   if (options.assigned === false) {
-    appState.markNoTradeUnitAssignments();
+    tradeUnitContext.markNoTradeUnitAssignments();
   } else {
-    appState.setUserGroups(groups);
-    appState.setTradeUnits(['2040']);
+    tradeUnitContext.setUserGroups(groups);
+    tradeUnitContext.setTradeUnits(['2040']);
   }
   const panel = injector.get(HelpPanelService);
   result.fixture.detectChanges();
@@ -63,7 +65,7 @@ async function renderTroubleshooter(options: { assigned?: boolean } = {}) {
     return (document.getElementById('help-trouble-0-result')?.textContent ?? '').replace(/\s+/g, ' ');
   }
 
-  return { ...result, api, tracking, openPreferences, appState, panel, lookUp, answer };
+  return { ...result, api, tracking, openPreferences, appState, tradeUnitContext, panel, lookUp, answer };
 }
 
 describe('HelpTroubleshooterComponent', () => {
@@ -122,7 +124,7 @@ describe('HelpTroubleshooterComponent', () => {
   });
 
   it('offers to switch to one of the user\'s other trade units, selecting the code exactly as its group lists it', async () => {
-    const { appState, tracking, fixture, api, lookUp, answer } = await renderTroubleshooter();
+    const { appState, tradeUnitContext, tracking, fixture, api, lookUp, answer } = await renderTroubleshooter();
     api.searchCustomers.mockReturnValue(of([producer(['2190'])]));
 
     await lookUp('Smith');
@@ -135,16 +137,16 @@ describe('HelpTroubleshooterComponent', () => {
     fixture.detectChanges();
 
     expect(appState.allProducersMode()).toBe(false);
-    expect(appState.selectedGroupNames()).toEqual(['West']);
+    expect(tradeUnitContext.selectedGroupNames()).toEqual(['West']);
     // Padded, as the group has it: a trimmed copy would show as unselected in the selector.
-    expect(appState.selectedTradeUnits()).toEqual(['2190 ']);
+    expect(tradeUnitContext.selectedTradeUnits()).toEqual(['2190 ']);
     expect(answer()).toContain('Switched to trade unit 2190 · Garden City, KS.');
     expect(screen.queryByRole('button', { name: 'Switch to 2190' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Open producer' })).toBeTruthy();
   });
 
   it('counts nothing as selected in All Producers mode, so a producer in the user\'s own unit can still be switched to', async () => {
-    const { appState, fixture, api, lookUp } = await renderTroubleshooter();
+    const { appState, tradeUnitContext, fixture, api, lookUp } = await renderTroubleshooter();
     appState.setAllProducersMode(true);
     fixture.detectChanges();
     api.searchCustomers.mockReturnValue(of([producer(['2040'])]));
@@ -155,8 +157,8 @@ describe('HelpTroubleshooterComponent', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Switch to 2040' }));
 
     expect(appState.allProducersMode()).toBe(false);
-    expect(appState.selectedGroupNames()).toEqual(['Central']);
-    expect(appState.selectedTradeUnits()).toEqual(['2040']);
+    expect(tradeUnitContext.selectedGroupNames()).toEqual(['Central']);
+    expect(tradeUnitContext.selectedTradeUnits()).toEqual(['2040']);
   });
 
   it('points to Trade Unit Preferences when the producer is only in a trade unit the user doesn\'t have', async () => {
@@ -174,7 +176,7 @@ describe('HelpTroubleshooterComponent', () => {
   });
 
   it('falls back to the customer master and sets up onboarding in All Producers mode', async () => {
-    const { api, appState, panel, tracking, lookUp, answer } = await renderTroubleshooter();
+    const { api, appState, tradeUnitContext, panel, tracking, lookUp, answer } = await renderTroubleshooter();
     const showOnScreen = vi.spyOn(panel, 'showOnScreen').mockImplementation(() => undefined);
     api.searchOdsCustomers.mockReturnValue(of([{ id: 0, name: 'SMITH FARMS INC' } as Customer]));
 
@@ -187,8 +189,8 @@ describe('HelpTroubleshooterComponent', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open and add' }));
 
     expect(appState.allProducersMode()).toBe(true);
-    expect(appState.selectedGroupNames()).toEqual([]);
-    expect(appState.selectedTradeUnits()).toEqual([]);
+    expect(tradeUnitContext.selectedGroupNames()).toEqual([]);
+    expect(tradeUnitContext.selectedTradeUnits()).toEqual([]);
     expect(showOnScreen).toHaveBeenCalledWith('producer-search');
   });
 

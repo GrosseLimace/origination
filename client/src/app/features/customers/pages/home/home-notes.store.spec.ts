@@ -9,6 +9,7 @@ import type { Customer, Note, NoteLastContact } from '@models';
 import { HomeBackgroundFailures } from './home-background-failures';
 import { HomePageState } from './home-page.state';
 import { HomeNotesStore } from './home-notes.store';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 function note(id: number, customerId: number, createdAt: string, over: Partial<Note> = {}): Note {
   return {
@@ -64,6 +65,7 @@ describe('HomeNotesStore', () => {
         HomePageState, HomeNotesStore,
         { provide: ApiService, useValue: api },
         { provide: AppStateService, useValue: appState },
+        { provide: TradeUnitContext, useValue: appState },
         { provide: ToastService, useValue: toast },
         { provide: HomeBackgroundFailures, useValue: failures },
       ],

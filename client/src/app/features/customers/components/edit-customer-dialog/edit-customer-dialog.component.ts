@@ -14,6 +14,7 @@ import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { buildGrainOnFarmOptions, indexCommoditiesByCode, isLegacyGrainGroup, grainOnFarmTitle } from '@shared/utils/grain-on-farm';
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
 import { AppStateService } from '@core/services/app-state.service';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 /** One bin-site row as edited: every field is the text in its input. Capacity holds the grouped
  *  display text ("50,000"). */
@@ -71,6 +72,7 @@ export class EditCustomerDialogComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly toast = inject(ToastService);
   private readonly appState = inject(AppStateService);
+  private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly cdr = inject(ChangeDetectorRef);
 
   public isOpen = input(false);
@@ -398,7 +400,7 @@ export class EditCustomerDialogComponent {
    *  (the Organics & IP crops). Every user-facing read in this dialog goes through here, so the
    *  full-list fallback in _loadCommoditiesFallback() is covered too. */
   private readonly scopedCommodities = computed(() =>
-    scopeCommodities(this.allCommodities(), { groupNames: this.appState.inScopeGroupNames(), tradeUnitCodes: this.appState.inScopeTradeUnitCodes() }));
+    scopeCommodities(this.allCommodities(), { groupNames: this.tradeUnitContext.inScopeGroupNames(), tradeUnitCodes: this.tradeUnitContext.inScopeTradeUnitCodes() }));
   filteredCommodities = signal<Commodity[]>([]);
   showSuggestions = signal(false);
 

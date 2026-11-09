@@ -16,6 +16,8 @@ import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-tra
 import { CardComponent, CardContentComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { TradeUnitSelectorComponent } from '@core/layout/trade-unit-selector/trade-unit-selector.component';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { CustomerListScrollStore } from '../../data-access/customer-list-scroll.store';
 
 /** The follow-up badge on a producer row — the signed-in user's next open reminder for them. */
 interface ReminderBadge {
@@ -78,6 +80,8 @@ export class CustomerListComponent {
 
   private readonly apiService = inject(ApiService);
   private readonly appStateService = inject(AppStateService);
+  private readonly tradeUnitContext = inject(TradeUnitContext);
+  private readonly scrollStore = inject(CustomerListScrollStore);
   private readonly msalService = inject(MsalService);
   private readonly nlqFilterService = inject(NlqFilterService);
   private readonly destroyRef = inject(DestroyRef);
@@ -100,7 +104,7 @@ export class CustomerListComponent {
    *  roster-growth re-run in the constructor; -1 so the first resolve always counts as growth. */
   private _nlqResolvedForCustomerCount = -1;
   readonly hasTradeUnitSelection = computed(() =>
-    this.appStateService.selectedTradeUnits().length > 0 || this.appStateService.selectedGroupNames().length > 0
+    this.tradeUnitContext.selectedTradeUnits().length > 0 || this.tradeUnitContext.selectedGroupNames().length > 0
   );
   /** "All Producers" mode — search spans every producer (our table + ODS onboarding fallback). */
   readonly allProducersMode = computed(() => this.appStateService.allProducersMode());
@@ -142,13 +146,13 @@ export class CustomerListComponent {
       debounceTime(150),
       switchMap(searchTerm => {
         this.searchLoading.set(true);
-        const explicitUnits = this.appStateService.selectedTradeUnits();
-        const selectedGroups = this.appStateService.selectedGroupNames();
+        const explicitUnits = this.tradeUnitContext.selectedTradeUnits();
+        const selectedGroups = this.tradeUnitContext.selectedGroupNames();
         let tradeUnits: string[] | undefined;
         if (explicitUnits.length > 0) {
           tradeUnits = explicitUnits;
         } else if (selectedGroups.length > 0) {
-          tradeUnits = this._computeAvailableTradeUnits(this.appStateService.userGroups(), selectedGroups);
+          tradeUnits = this._computeAvailableTradeUnits(this.tradeUnitContext.userGroups(), selectedGroups);
         }
         // Only fall back to the ODS master once the term is specific enough — a 1–2 char
         // term is a broad LIKE scan over the whole customer master (slow) and never a
@@ -205,7 +209,7 @@ export class CustomerListComponent {
 
     // Scroll to last selected customer after first render
     afterNextRender(() => {
-      const lastId = this.appStateService.lastScrolledCustomerId();
+      const lastId = this.scrollStore.lastScrolledCustomerId();
       if (lastId !== null) {
         const el = this.scrollContainer?.nativeElement
           ?.querySelector<HTMLElement>(`#customer-item-${lastId}`);
@@ -332,8 +336,8 @@ export class CustomerListComponent {
     // results from the previous TU don't persist into the new view.
     let _tuInitialized = false;
     effect(() => {
-      this.appStateService.selectedTradeUnits();
-      this.appStateService.selectedGroupNames();
+      this.tradeUnitContext.selectedTradeUnits();
+      this.tradeUnitContext.selectedGroupNames();
       if (!_tuInitialized) { _tuInitialized = true; return; }
       untracked(() => {
         if (this.searchInputValue) this.clearSearch();
@@ -362,8 +366,8 @@ export class CustomerListComponent {
       const selectedCustomer = this.selectedCustomer();
       if (selectedCustomer) {
         const newId = selectedCustomer.id;
-        if (newId !== this.appStateService.lastScrolledCustomerId()) {
-          this.appStateService.setLastScrolledCustomerId(newId);
+        if (newId !== this.scrollStore.lastScrolledCustomerId()) {
+          this.scrollStore.setLastScrolledCustomerId(newId);
           if (this._scrollTimeoutId !== null) clearTimeout(this._scrollTimeoutId);
           this._scrollTimeoutId = setTimeout(() => {
             this._scrollTimeoutId = null;
@@ -384,15 +388,15 @@ export class CustomerListComponent {
   }
 
   get selectedTradeUnits(): string[] {
-    return this.appStateService.selectedTradeUnits();
+    return this.tradeUnitContext.selectedTradeUnits();
   }
 
   // ---- Group / trade unit helpers (read-only — for search scoping) ----
 
   getAvailableTradeUnits(): string[] {
     return this._computeAvailableTradeUnits(
-      this.appStateService.userGroups(),
-      this.appStateService.selectedGroupNames()
+      this.tradeUnitContext.userGroups(),
+      this.tradeUnitContext.selectedGroupNames()
     );
   }
 
@@ -486,7 +490,7 @@ export class CustomerListComponent {
    *  saved-list-trade-units.ts). Trade units govern visibility only — picking one runs its query
    *  against the currently loaded roster (_runSavedListNlq fetches with the current selection). */
   getVisibleSavedLists(): SavedList[] {
-    return filterSavedListsByTradeUnitOverlap(this.savedLists(), this.appStateService.selectedTradeUnits());
+    return filterSavedListsByTradeUnitOverlap(this.savedLists(), this.tradeUnitContext.selectedTradeUnits());
   }
 
   /** Called when the user selects a saved list from the dropdown. */
@@ -538,7 +542,7 @@ export class CustomerListComponent {
 
     const runId = ++this._activeSavedListRunId;
     const query = savedList.query;
-    const selectedTU = this.appStateService.selectedTradeUnits();
+    const selectedTU = this.tradeUnitContext.selectedTradeUnits();
     const tuParam = selectedTU.length > 0 ? selectedTU : undefined;
 
     // Only fetch data types the query actually needs — skip unnecessary slow fetches
@@ -694,8 +698,8 @@ export class CustomerListComponent {
     this.appStateService.setSearchQuery('');
     this.selectedListId.set('all');
     this.appStateService.setSelectedSavedListId('all');
-    this.appStateService.setTradeUnits([]);
-    this.appStateService.setSelectedGroupNames([]);
+    this.tradeUnitContext.setTradeUnits([]);
+    this.tradeUnitContext.setSelectedGroupNames([]);
     this.searchFailed.set(false);
     this.filteredCustomers.set([]);
     this.clearSelection.emit();

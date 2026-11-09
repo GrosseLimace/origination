@@ -13,6 +13,7 @@ import { providePermissions } from '@testing/permission.stub';
 import { Customer, QueryLibraryItem, SavedList } from '@models';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 /**
  * A trade-unit change reloads every dataset for the new selection. Until 2026-10-12 the prompt
@@ -105,7 +106,7 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
     // The template is 1,800 lines of real DOM; the behaviour under test is class-level.
     TestBed.overrideComponent(BuildListComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
     appState = TestBed.inject(AppStateService);
-    appState.setTradeUnits(['1000']);
+    TestBed.inject(TradeUnitContext).setTradeUnits(['1000']);
   });
 
   function mount(): BuildListComponent {
@@ -120,7 +121,7 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
     api.land(0, [customer(1, 'First TU Farm')]);
     expect(c.coreDataLoaded()).toBe(true);
 
-    appState.setTradeUnits(['2000']);
+    TestBed.inject(TradeUnitContext).setTradeUnits(['2000']);
     TestBed.tick();
     expect(c.loading()).toBe(true);
     expect(c.coreDataLoaded()).toBe(false);
@@ -144,9 +145,9 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
     const c = mount();
     api.land(0, []);
 
-    appState.setTradeUnits(['2000']);
+    TestBed.inject(TradeUnitContext).setTradeUnits(['2000']);
     TestBed.tick();
-    appState.setTradeUnits(['2000', '3000']);
+    TestBed.inject(TradeUnitContext).setTradeUnits(['2000', '3000']);
     TestBed.tick();
     expect(api.batches.length).toBe(3);
 
@@ -165,12 +166,12 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
     const c = mount();
     api.land(0, []);
 
-    appState.setTradeUnits(['2000']);
+    TestBed.inject(TradeUnitContext).setTradeUnits(['2000']);
     TestBed.tick();
     c.selectLibraryQuery(PROMPT);
     expect(c.isProcessing()).toBe(true);
 
-    appState.setTradeUnits(['3000']);
+    TestBed.inject(TradeUnitContext).setTradeUnits(['3000']);
     TestBed.tick();
     expect(c.queryText()).toBe('');
     expect(c.isProcessing()).toBe(false);
@@ -187,7 +188,7 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
     const c = mount();
     api.land(0, []);
 
-    appState.setTradeUnits(['2000']);
+    TestBed.inject(TradeUnitContext).setTradeUnits(['2000']);
     TestBed.tick();
     c.selectLibraryQuery({ ...PROMPT, queryText: 'Producers who delivered this month' });
     expect(c.isProcessing()).toBe(true);
@@ -247,11 +248,11 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
   it('deselecting every trade unit drops the reload that was in flight for the old one', () => {
     const c = mount();
     api.land(0, []);
-    appState.setTradeUnits(['2000']);
+    TestBed.inject(TradeUnitContext).setTradeUnits(['2000']);
     TestBed.tick();
     expect(c.loading()).toBe(true);
 
-    appState.setTradeUnits([]);
+    TestBed.inject(TradeUnitContext).setTradeUnits([]);
     TestBed.tick();
     expect(c.loading()).toBe(false);
     expect(c.coreDataLoaded()).toBe(false);
@@ -265,8 +266,8 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
   it('still refuses prompts when only a group is selected (no explicit trade unit)', () => {
     const c = mount();
     api.land(0, []);
-    appState.setSelectedGroupNames(['Western']);
-    appState.setTradeUnits([]);
+    TestBed.inject(TradeUnitContext).setSelectedGroupNames(['Western']);
+    TestBed.inject(TradeUnitContext).setTradeUnits([]);
     TestBed.tick();
     // The fallback says the user HAS trade units; the gate must ignore that.
     expect(c.hasTradeUnits()).toBe(true);

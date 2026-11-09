@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { of, throwError } from 'rxjs';
 import { TradeUnitSelectorComponent } from './trade-unit-selector.component';
 import { AppStateService } from '@core/services/app-state.service';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 
 const GROUP = { groupName: 'West', tradeUnitCodes: ['1085'], tradeUnits: [{ code: '1085' }] };
@@ -20,7 +21,7 @@ describe('TradeUnitSelectorComponent — empty / error states', () => {
     tradeUnits = {
       // Mirror the real service: an empty result flags "no assignments" in app state.
       load: vi.fn(() => {
-        TestBed.inject(AppStateService).markNoTradeUnitAssignments();
+        TestBed.inject(TradeUnitContext).markNoTradeUnitAssignments();
         return of([]);
       }),
       openPreferences: vi.fn(),
@@ -31,7 +32,7 @@ describe('TradeUnitSelectorComponent — empty / error states', () => {
   function renderSelector(stacked = false) {
     return render(TradeUnitSelectorComponent, {
       inputs: { stacked },
-      providers: [AppStateService, { provide: UserTradeUnitsService, useValue: tradeUnits }],
+      providers: [AppStateService, TradeUnitContext, { provide: UserTradeUnitsService, useValue: tradeUnits }],
     });
   }
 
@@ -49,7 +50,7 @@ describe('TradeUnitSelectorComponent — empty / error states', () => {
     const { fixture } = await renderSelector();
     expect(screen.getByText('No trade units assigned')).toBeTruthy();
 
-    TestBed.inject(AppStateService).setUserGroups([GROUP]);
+    TestBed.inject(TradeUnitContext).setUserGroups([GROUP]);
     fixture.detectChanges();
 
     expect(screen.queryByText('No trade units assigned')).toBeNull();

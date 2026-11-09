@@ -7,6 +7,7 @@ import { InteractionStatus } from '@azure/msal-browser';
 import { UserPreferencesService } from './user-preferences.service';
 import { ApiService } from './api.service';
 import { AppStateService } from './app-state.service';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 /**
  * The saved trade-unit selection round-trip. Pins the guards that each exist because of a real bug:
@@ -90,6 +91,7 @@ describe('UserPreferencesService', () => {
       providers: [
         { provide: ApiService, useValue: { getUserPreference, saveUserPreference } },
         { provide: AppStateService, useValue: appState },
+        { provide: TradeUnitContext, useValue: appState },
         { provide: MsalBroadcastService, useValue: { inProgress$ } },
         { provide: MsalService, useValue: { instance: { getAllAccounts: () => accounts } } },
       ],

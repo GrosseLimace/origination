@@ -9,6 +9,8 @@ import { AppStateService } from '@core/services/app-state.service';
 import { NlqFilterContext, NlqFilterService } from '@core/services/nlq-filter.service';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 import { Customer, NoteLastContact, ProducerDetails, ReminderDue, SavedList } from '@models';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { CustomerListScrollStore } from '../../data-access/customer-list-scroll.store';
 
 // Behaviour safety net for the producer list ahead of its OnPush conversion. Pins, through the
 // signal inputs and the rendered DOM:
@@ -188,7 +190,7 @@ describe('CustomerListComponent', () => {
     }).compileComponents();
     appState = TestBed.inject(AppStateService);
     // Groups already loaded, so the embedded trade-unit selector never calls load().
-    appState.setUserGroups([KANSAS, NEBRASKA]);
+    TestBed.inject(TradeUnitContext).setUserGroups([KANSAS, NEBRASKA]);
   });
 
   afterEach(() => {
@@ -211,7 +213,7 @@ describe('CustomerListComponent', () => {
       expect(text()).toContain('Search for any producer');
 
       appState.setAllProducersMode(false);
-      appState.setTradeUnits(['2190']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       render();
       expect(text()).toContain('Loading producers...');
       expect(resetButton()).not.toBeNull();
@@ -224,7 +226,7 @@ describe('CustomerListComponent', () => {
     });
 
     it('says the producer list failed to load instead of "No producers found"', () => {
-      appState.setTradeUnits(['2190']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       appState.setCustomersLoadFailed(true);
       create({ customers: [] });
 
@@ -233,7 +235,7 @@ describe('CustomerListComponent', () => {
     });
 
     it('drops the failure message once producers arrive (e.g. the page\'s own retry succeeded)', () => {
-      appState.setTradeUnits(['2190']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       appState.setCustomersLoadFailed(true);
       create({ customers: [] });
 
@@ -249,7 +251,7 @@ describe('CustomerListComponent', () => {
 
   describe('rows', () => {
     it('renders name, Scoular ID, acres, formatted location / phone, and e-mail only when present', () => {
-      appState.setTradeUnits(['2190']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       create({
         customers: [
           makeCustomer({ id: 1, name: 'Alpha Ag', scoularId: 'ALPHA', totalAcres: 1200, phone: '316.555.0142', email: 'alpha@example.com' }),
@@ -273,7 +275,7 @@ describe('CustomerListComponent', () => {
     });
 
     it('tints the selected row, emits clicks, and prefetches only after a 350ms hover dwell', () => {
-      appState.setTradeUnits(['2190']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       const alpha = makeCustomer({ id: 1, name: 'Alpha Ag' });
       const bravo = makeCustomer({ id: 2, name: 'Bravo Bros' });
       create({ customers: [alpha, bravo], selectedCustomer: bravo });
@@ -308,7 +310,7 @@ describe('CustomerListComponent', () => {
       fixture.detectChanges();
       expect(row(1).className).toContain('bg-green-50');
       expect(row(2).className).not.toContain('bg-green-50');
-      expect(appState.lastScrolledCustomerId()).toBe(1);
+      expect(TestBed.inject(CustomerListScrollStore).lastScrolledCustomerId()).toBe(1);
     });
   });
 
@@ -316,7 +318,7 @@ describe('CustomerListComponent', () => {
 
   describe('last contacted badge', () => {
     it('says the date is unavailable, not "Never contacted", when the last-contact load failed', () => {
-      appState.setTradeUnits(['2190']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       appState.setNoteLastContactsLoadFailed(true);
       create({ customers: [makeCustomer({ id: 1, scoularId: 'C1' })], noteLastContacts: [] });
 
@@ -325,7 +327,7 @@ describe('CustomerListComponent', () => {
     });
 
     it('still says "Never contacted" when the load succeeded and the producer has no notes', () => {
-      appState.setTradeUnits(['2190']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       create({ customers: [makeCustomer({ id: 1, scoularId: 'C1' })], noteLastContacts: [] });
 
       expect(rowText(1)).toContain('Never contacted');
@@ -333,7 +335,7 @@ describe('CustomerListComponent', () => {
     });
 
     it('words the most recent note by day / month / year and colours it by recency', () => {
-      appState.setTradeUnits(['2190']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       create({
         customers: [1, 2, 3, 4, 5, 6, 7].map(id => makeCustomer({ id, scoularId: `C${id}` })),
         noteLastContacts: [
@@ -362,7 +364,7 @@ describe('CustomerListComponent', () => {
     });
 
     it('surfaces the newest note across the whole linked-producer chain, including reverse links fetched separately', () => {
-      appState.setTradeUnits(['2190']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       create({
         customers: [
           makeCustomer({ id: 1, scoularId: 'A1', linkedProducerIds: ['B1'] }),
@@ -389,7 +391,7 @@ describe('CustomerListComponent', () => {
 
   describe('follow-up badge', () => {
     it('shows the soonest open reminder per producer with overdue / today / tomorrow / in-N wording', () => {
-      appState.setTradeUnits(['2190']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       create({
         customers: [1, 2, 3, 4, 5].map(id => makeCustomer({ id, scoularId: `C${id}` })),
         myReminders: [
@@ -422,7 +424,7 @@ describe('CustomerListComponent', () => {
 
   describe('search', () => {
     it('debounces typing into one API search scoped to the selected trade units, overlaying producer details', () => {
-      appState.setTradeUnits(['2190']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       api.searchCustomers.mockReturnValue(of([makeCustomer({ id: 5, name: 'Smith Farms', totalAcres: 0 })]));
       create({
         customers: [makeCustomer({ id: 1, name: 'Alpha Ag' })],
@@ -442,7 +444,7 @@ describe('CustomerListComponent', () => {
     });
 
     it('scopes a group-only selection to the sorted union of that group\'s trade units, with no ODS fallback', () => {
-      appState.setSelectedGroupNames(['Kansas']);
+      TestBed.inject(TradeUnitContext).setSelectedGroupNames(['Kansas']);
       create({ customers: [] });
 
       typeSearch('nobody');
@@ -471,7 +473,7 @@ describe('CustomerListComponent', () => {
     // Changed deliberately: a failed search used to fall back to the whole loaded roster, which
     // read as "everyone matched". It now shows no rows and an inline "Search failed" state.
     it('shows a "Search failed" state, not the loaded roster, when the search request fails', () => {
-      appState.setTradeUnits(['2190']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       api.searchCustomers.mockReturnValue(throwError(() => new Error('boom')));
       create({ customers: [makeCustomer({ id: 1, name: 'Alpha Ag' }), makeCustomer({ id: 2, name: 'Bravo Bros' })] });
 
@@ -484,7 +486,7 @@ describe('CustomerListComponent', () => {
     });
 
     it('clears the failed state on the next successful search, and on clearing the search', () => {
-      appState.setTradeUnits(['2190']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       api.searchCustomers.mockReturnValue(throwError(() => new Error('boom')));
       create({ customers: [makeCustomer({ id: 1, name: 'Alpha Ag' })] });
       typeSearch('smith');
@@ -520,7 +522,7 @@ describe('CustomerListComponent', () => {
     });
 
     it('returns to the roster when the search is cleared with X or the trade-unit selection changes', () => {
-      appState.setTradeUnits(['2190']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       api.searchCustomers.mockReturnValue(of([makeCustomer({ id: 5, name: 'Smith Farms' })]));
       create({ customers: [makeCustomer({ id: 1, name: 'Alpha Ag' })] });
       typeSearch('smith');
@@ -534,7 +536,7 @@ describe('CustomerListComponent', () => {
 
       typeSearch('smith');
       expect(rowNames()).toEqual(['Smith Farms']);
-      appState.setTradeUnits(['2191']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2191']);
       render();
       expect(component.searchInputValue).toBe('');
       expect(appState.searchQuery()).toBe('');
@@ -542,7 +544,7 @@ describe('CustomerListComponent', () => {
     });
 
     it('re-runs the search restored from app state when the list remounts', () => {
-      appState.setTradeUnits(['2190']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       appState.setSearchQuery('smith');
       api.searchCustomers.mockReturnValue(of([makeCustomer({ id: 5, name: 'Smith Farms' })]));
       create({ customers: [makeCustomer({ id: 1, name: 'Alpha Ag' })] });
@@ -566,7 +568,7 @@ describe('CustomerListComponent', () => {
     ];
 
     it('offers only overlapping lists once loaded, filters to the list\'s NLQ result with a member count, and back to all', () => {
-      appState.setTradeUnits(['2190']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       create({
         customers: roster(),
         loading: true,
@@ -591,7 +593,7 @@ describe('CustomerListComponent', () => {
     });
 
     it('applies manual includes / excludes, shows "No producers found" for an empty result, and falls back to all when the list disappears', () => {
-      appState.setTradeUnits(['2190']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       create({
         customers: roster(),
         savedLists: [
@@ -619,7 +621,7 @@ describe('CustomerListComponent', () => {
     // _enrichSavedLists skips lists that already carry ids. A component-local cache would change
     // which membership those surfaces show and persist, so it is not a drop-in cleanup.
     it('PINS CURRENT BEHAVIOUR: writes the resolved customerIds onto the caller\'s list object and clears them on re-pick', () => {
-      appState.setTradeUnits(['2190']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       const callerList = makeList({ id: 10, tradeUnits: '2190,2191' });   // still visible after the TU switch
       create({ customers: roster(), savedLists: [callerList] });
 
@@ -628,7 +630,7 @@ describe('CustomerListComponent', () => {
       expect(appState.savedLists()).toEqual([]);   // the appState write only patches lists it already holds
 
       // The roster changes trade unit: the stale ids are dropped from the caller's object too.
-      appState.setTradeUnits(['2191']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2191']);
       render();
       expect(callerList.customerIds).toBeUndefined();
     });
@@ -638,8 +640,8 @@ describe('CustomerListComponent', () => {
 
   describe('reset', () => {
     it('clears the trade-unit selection, saved list and search, and tells the parent to drop the selection', () => {
-      appState.setTradeUnits(['2190']);
-      appState.setSelectedGroupNames(['Kansas']);
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
+      TestBed.inject(TradeUnitContext).setSelectedGroupNames(['Kansas']);
       create({ customers: [makeCustomer({ id: 1, stateProvince: 'KS' })], savedLists: [makeList({ id: 10 })] });
       pickSavedList('10');
       let cleared = 0;
@@ -649,8 +651,8 @@ describe('CustomerListComponent', () => {
       fixture.detectChanges();
 
       expect(cleared).toBe(1);
-      expect(appState.selectedTradeUnits()).toEqual([]);
-      expect(appState.selectedGroupNames()).toEqual([]);
+      expect(TestBed.inject(TradeUnitContext).selectedTradeUnits()).toEqual([]);
+      expect(TestBed.inject(TradeUnitContext).selectedGroupNames()).toEqual([]);
       expect(appState.selectedSavedListId()).toBe('all');
       expect(appState.searchQuery()).toBe('');
       expect(text()).toContain('Select Trade Units');

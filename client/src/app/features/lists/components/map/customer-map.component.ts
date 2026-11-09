@@ -4,10 +4,10 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { Customer } from '@models';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
-import { AppStateService } from '@core/services/app-state.service';
 import { resolveCustomerAddress } from '@shared/utils/address';
 import { environment } from '@env/environment';
 import * as L from 'leaflet';
+import { MapGeocodeCacheStore } from '../../data-access/map-geocode-cache.store';
 
 // Fix Leaflet default marker icon paths when bundled via npm
 const iconDefault = L.icon({
@@ -39,7 +39,7 @@ interface StateInfo {
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class CustomerMapComponent {
-  private readonly appState = inject(AppStateService);
+  private readonly geocodeCache = inject(MapGeocodeCacheStore);
   private readonly destroyRef = inject(DestroyRef);
   private readonly http = inject(HttpClient);
 
@@ -61,7 +61,7 @@ export class CustomerMapComponent {
 
   // Use shared cache from AppStateService so geocoded coords persist across navigation
   private get _geocodeCache(): Map<string, { lat: number; lng: number }> {
-    return this.appState.mapGeocodeCache;
+    return this.geocodeCache.mapGeocodeCache;
   }
 
   /** Maps state abbreviations to their full names for Nominatim geocoding requests. */
@@ -354,7 +354,7 @@ export class CustomerMapComponent {
         for (const result of results) {
           if (result.lat != null && result.lng != null) {
             const coords = { lat: result.lat, lng: result.lng };
-            this.appState.setGeocodeCache(result.key, coords);
+            this.geocodeCache.setGeocodeCache(result.key, coords);
             const group = addressGroups.get(result.key);
             if (group) {
               for (const customerId of group.customerIds) {

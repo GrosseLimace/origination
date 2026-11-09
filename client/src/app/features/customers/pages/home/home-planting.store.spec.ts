@@ -8,6 +8,7 @@ import type { Customer, PlantingIntention, ProducerDetails } from '@models';
 import { HomeBackgroundFailures } from './home-background-failures';
 import { HomePageState } from './home-page.state';
 import { HomePlantingStore } from './home-planting.store';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 const pi = (id: number, customerId = 1, over: Partial<PlantingIntention> = {}) =>
   ({ id, customerId, customerName: 'P', tradeUnit: 'TU1', plantingYear: 2027, crop: 'CORN', acres: 10, ...over }) as PlantingIntention;
@@ -38,6 +39,7 @@ describe('HomePlantingStore', () => {
         HomePageState, HomePlantingStore,
         { provide: ApiService, useValue: api },
         { provide: AppStateService, useValue: appState },
+        { provide: TradeUnitContext, useValue: appState },
         { provide: ToastService, useValue: toast },
         { provide: HomeBackgroundFailures, useValue: failures },
       ],

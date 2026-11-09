@@ -14,7 +14,6 @@ import { OverlayModule, ConnectedPosition } from '@angular/cdk/overlay';
 import type * as Leaflet from 'leaflet';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
-import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { HandledErrorReporter } from '@core/services/handled-error-reporter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
@@ -36,6 +35,7 @@ import {
 } from '../../utils/print-layout';
 import { BidSheetApiService } from '../../data-access/bid-sheet-api.service';
 import { RecapGroupsApiService } from '@features/engagement';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 /**
  * One Edit Bids column, as the user chose it: a single crop in a single delivery month of a single
@@ -129,7 +129,7 @@ export class BidSheetComponent {
   private readonly apiService = inject(ApiService);
   private readonly bidSheetApi = inject(BidSheetApiService);
   private readonly recapGroupsApi = inject(RecapGroupsApiService);
-  private readonly appState = inject(AppStateService);
+  private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly toastService = inject(ToastService);
   private readonly handledErrors = inject(HandledErrorReporter);
   private readonly usageTracking = inject(UsageTrackingService);
@@ -1479,7 +1479,7 @@ export class BidSheetComponent {
     // so the picker never goes blank.
     // Drop commodities scoped to a trade group the user isn't in (organics). Applied to the
     // fallback too, or a failed curated fetch would leak them into a conventional picker.
-    const inScope = { groupNames: this.appState.inScopeGroupNames(), tradeUnitCodes: this.appState.inScopeTradeUnitCodes() };
+    const inScope = { groupNames: this.tradeUnitContext.inScopeGroupNames(), tradeUnitCodes: this.tradeUnitContext.inScopeTradeUnitCodes() };
     const curated = scopeCommodities(this.plantingCommodities(), inScope);
     const source = curated.length > 0 ? curated : scopeCommodities(this.allCommodities(), inScope);
     for (const c of source) {
@@ -4911,8 +4911,8 @@ export class BidSheetComponent {
   }
 
   clearAllFilters(): void {
-    this.appState.setSelectedGroupNames([]);
-    this.appState.setTradeUnits([]);
+    this.tradeUnitContext.setSelectedGroupNames([]);
+    this.tradeUnitContext.setTradeUnits([]);
     this.searchQuery.set('');
     this.selectedBasis.set('all');
     this.selectedCrop.set('');

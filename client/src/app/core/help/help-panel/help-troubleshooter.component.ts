@@ -10,6 +10,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 import { HelpIconComponent } from '@shared/components/help-icon/help-icon.component';
 import { revealAfterRender } from '@shared/utils/help-reveal';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 /** The troubleshooters help-faq.json may start. help-faq.drift.spec.ts holds the content to this list. */
 export const HELP_TROUBLESHOOTERS = ['missing-producer'] as const;
@@ -44,6 +45,7 @@ const MIN_NAME = 3;
 export class HelpTroubleshooterComponent {
   private readonly api = inject(ApiService);
   private readonly appState = inject(AppStateService);
+  private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly panel = inject(HelpPanelService);
   private readonly router = inject(Router);
   private readonly usageTracking = inject(UsageTrackingService);
@@ -63,10 +65,10 @@ export class HelpTroubleshooterComponent {
 
   /** Step 1, answered from app state. */
   readonly selection = computed(() => {
-    if (this.appState.noTradeUnitAssignments()) return { kind: 'none-assigned' as const };
+    if (this.tradeUnitContext.noTradeUnitAssignments()) return { kind: 'none-assigned' as const };
     if (this.appState.allProducersMode()) return { kind: 'all-producers' as const };
-    const codes = [...this.appState.inScopeTradeUnitCodes()];
-    if (!this.appState.userGroupsLoaded() || codes.length === 0) return { kind: 'unknown' as const };
+    const codes = [...this.tradeUnitContext.inScopeTradeUnitCodes()];
+    if (!this.tradeUnitContext.userGroupsLoaded() || codes.length === 0) return { kind: 'unknown' as const };
     return { kind: 'selected' as const, label: codes.map(c => this.describe(c)).join(', ') };
   });
 
@@ -98,13 +100,13 @@ export class HelpTroubleshooterComponent {
 
   /** Selects the producer's trade unit the way the selector would: its group, then the unit. */
   switchTo(tradeUnit: string): void {
-    const group = this.appState.userGroups().find(g => g.tradeUnitCodes.some(c => c.trim() === tradeUnit));
+    const group = this.tradeUnitContext.userGroups().find(g => g.tradeUnitCodes.some(c => c.trim() === tradeUnit));
     // Select the code exactly as the group lists it: the selector compares raw codes, so a trimmed
     // copy of a padded code would show as unselected and be pruned.
     const code = group?.tradeUnitCodes.find(c => c.trim() === tradeUnit) ?? tradeUnit;
     this.appState.setAllProducersMode(false);
-    if (group) this.appState.setSelectedGroupNames([group.groupName]);
-    this.appState.setTradeUnits([code]);
+    if (group) this.tradeUnitContext.setSelectedGroupNames([group.groupName]);
+    this.tradeUnitContext.setTradeUnits([code]);
     this.switched.set(true);
   }
 
@@ -120,8 +122,8 @@ export class HelpTroubleshooterComponent {
    */
   openAndAdd(): void {
     this.appState.setAllProducersMode(true);
-    this.appState.setSelectedGroupNames([]);
-    this.appState.setTradeUnits([]);
+    this.tradeUnitContext.setSelectedGroupNames([]);
+    this.tradeUnitContext.setTradeUnits([]);
     this.panel.showOnScreen('producer-search');
   }
 
@@ -139,7 +141,7 @@ export class HelpTroubleshooterComponent {
   }
 
   describe(code: string): string {
-    const description = this.appState.tradeUnitDescriptions().get(code);
+    const description = this.tradeUnitContext.tradeUnitDescriptions().get(code);
     return description ? `${code} · ${description}` : code;
   }
 
@@ -149,11 +151,11 @@ export class HelpTroubleshooterComponent {
     if (found.length > 0) {
       const customer = found[0];
       const units = (customer.activeTradeUnits ?? []).map(u => u.trim());
-      const selected = new Set(this.appState.allProducersMode() ? [] : this.appState.inScopeTradeUnitCodes());
+      const selected = new Set(this.appState.allProducersMode() ? [] : this.tradeUnitContext.inScopeTradeUnitCodes());
       const inSelection = units.find(u => selected.has(u));
       if (inSelection) return { kind: 'in-selection', customer, tradeUnit: inSelection };
 
-      const mine = new Set(this.appState.userGroups().flatMap(g => g.tradeUnitCodes.map(c => c.trim())));
+      const mine = new Set(this.tradeUnitContext.userGroups().flatMap(g => g.tradeUnitCodes.map(c => c.trim())));
       const switchable = units.find(u => mine.has(u));
       return { kind: 'other-trade-unit', customer, tradeUnit: switchable ?? units[0] ?? '', canSwitch: switchable !== undefined };
     }

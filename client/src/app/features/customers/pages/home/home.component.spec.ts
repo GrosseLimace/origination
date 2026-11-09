@@ -20,6 +20,7 @@ import {
 } from '@models';
 
 import { HomeComponent } from './home.component';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 /**
  * Safety net for the producer page ahead of the OnPush conversion and decomposition. HomeComponent
@@ -322,6 +323,7 @@ function setup(opts: SetupOptions = {}): Harness {
     providers: [
       { provide: ApiService, useValue: api },
       { provide: AppStateService, useValue: app },
+      { provide: TradeUnitContext, useValue: app },
       { provide: ToastService, useValue: toast },
       { provide: NlqFilterService, useValue: nlq },
       { provide: UsageTrackingService, useValue: { trackProfileOpened: vi.fn() } },

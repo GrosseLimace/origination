@@ -15,6 +15,7 @@ import { ticketDisplayNumber } from '@shared/utils/ticket-display';
 import { CardComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { TradeUnitSelectorComponent } from '@core/layout/trade-unit-selector/trade-unit-selector.component';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 type InsightCategory = 'UnconfirmedContracts' | 'SpotLoads' | 'UnshippedBushels';
 type InsightPriority = 'Urgent' | 'Warning' | 'Info';
@@ -142,6 +143,7 @@ function expandSearchTermWithAliases(term: string): string[] {
 })
 export class InsightsComponent {
   private readonly appState = inject(AppStateService);
+  private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly dataPreloadService = inject(DataPreloadService);
   private readonly toastService = inject(ToastService);
   private readonly router = inject(Router);
@@ -507,7 +509,7 @@ export class InsightsComponent {
   ];
 
   get selectedTradeUnits(): string[] {
-    return this.appState.selectedTradeUnits();
+    return this.tradeUnitContext.selectedTradeUnits();
   }
 
   constructor() {
@@ -516,7 +518,7 @@ export class InsightsComponent {
     // single effect tracking allInsights() fired 3 times per load (customers,
     // contracts, tickets) and collapsed any category the user had already opened.
     effect(() => {
-      this.appState.selectedTradeUnits(); // track TU changes
+      this.tradeUnitContext.selectedTradeUnits(); // track TU changes
       untracked(() => {
         this.expandedCustomers.set(new Set());
         this.expandedCategories.set(new Set());

@@ -19,6 +19,7 @@ import {
 } from '@models';
 
 import { DashboardComponent } from './dashboard.component';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 // Behaviour safety net for the origination dashboard ahead of an OnPush/memoisation refactor.
 // Everything is driven through public methods, signals and computeds plus the rendered DOM, so
@@ -231,6 +232,7 @@ describe('DashboardComponent', () => {
       imports: [DashboardComponent],
       providers: [
         { provide: AppStateService, useValue: appState },
+        { provide: TradeUnitContext, useValue: appState },
         { provide: ApiService, useValue: api },
         { provide: ToastService, useValue: toast },
         { provide: UsageTrackingService, useValue: usage },

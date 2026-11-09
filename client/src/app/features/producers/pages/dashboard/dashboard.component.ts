@@ -31,6 +31,7 @@ import {
   filterIntentionsForYear, groupIntentionsByCropKey, inPlantingScope, inScopeAcresForYear, intentionProductionPairs,
   plantingYearsDescending, projectedProduction, weightedAverageYield,
 } from '../../utils/dashboard-planting';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 @Component({
   selector: 'app-dashboard',
@@ -42,6 +43,7 @@ import {
 export class DashboardComponent {
   private readonly apiService = inject(ApiService);
   private readonly appStateService = inject(AppStateService);
+  private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly toastService = inject(ToastService);
   private readonly usageTracking = inject(UsageTrackingService);
   private readonly router = inject(Router);
@@ -84,7 +86,7 @@ export class DashboardComponent {
   private readonly _scopedTradeUnitSet = computed(() =>
     this.appStateService.allProducersMode()
       ? new Set<string>()
-      : new Set(this.appStateService.inScopeTradeUnitCodes())
+      : new Set(this.tradeUnitContext.inScopeTradeUnitCodes())
   );
   readonly storedGrain = computed(() => {
     const customerIds = new Set(this.appStateService.customers().map(c => c.id));
@@ -93,7 +95,7 @@ export class DashboardComponent {
   allCommodities = signal<Commodity[]>([]);
 
   get selectedTradeUnits(): string[] {
-    return this.appStateService.selectedTradeUnits();
+    return this.tradeUnitContext.selectedTradeUnits();
   }
 
   private readonly _localLoading = signal(false);
@@ -213,7 +215,7 @@ export class DashboardComponent {
   private readonly _commodityByCode = computed(() => new Map(this.allCommodities().map(c => [c.code, c])));
 
   // Memoized trade unit key — avoids re-deriving sorted string 10+ times per cycle
-  readonly tradeUnitKey = computed(() => [...this.appStateService.selectedTradeUnits()].sort().join(','));
+  readonly tradeUnitKey = computed(() => [...this.tradeUnitContext.selectedTradeUnits()].sort().join(','));
 
   // Pre-indexed intentions by crop key — O(n) lookup instead of O(n²) in cropDetailsRows
   private readonly _intentionsByCropKey = computed(() =>
@@ -382,7 +384,7 @@ export class DashboardComponent {
   });
 
   readonly showProducerTradeUnitColumn = computed(() =>
-    this.appStateService.selectedTradeUnits().length > 1
+    this.tradeUnitContext.selectedTradeUnits().length > 1
   );
 
   // Crop chips — semantics differ between views (see withIntentionsChipOptions / withoutIntentionsChipOptions).
@@ -449,7 +451,7 @@ export class DashboardComponent {
     // include closed contracts not present in vw_CurrentContracts.
     effect(() => {
       const year = this.selectedPlantingYear();
-      const tus = this.appStateService.selectedTradeUnits();
+      const tus = this.tradeUnitContext.selectedTradeUnits();
 
       // Cleared on year/trade-unit change, so last year's failure does not caption this year's chart
       // while the new read is still in flight.

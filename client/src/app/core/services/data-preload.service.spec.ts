@@ -7,6 +7,7 @@ import { CommodityConversion, Contract, Customer, DashboardSummary, Ticket } fro
 import { DataPreloadService } from './data-preload.service';
 import { ApiService } from './api.service';
 import { AppStateService } from './app-state.service';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 /**
  * The trade-unit-wide preload that feeds every screen. Driven against the REAL AppStateService so the
@@ -69,7 +70,7 @@ describe('DataPreloadService', () => {
   }
 
   function selectTradeUnits(units: string[]): void {
-    appState.setTradeUnits(units);
+    TestBed.inject(TradeUnitContext).setTradeUnits(units);
     TestBed.tick();
   }
 

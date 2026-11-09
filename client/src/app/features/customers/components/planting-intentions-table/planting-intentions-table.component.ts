@@ -10,7 +10,6 @@ import { Customer, PlantingIntention, Commodity } from '@models';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
-import { AppStateService } from '@core/services/app-state.service';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
 import { environment } from '@env/environment';
@@ -18,6 +17,7 @@ import { CropFieldsPanelComponent } from '../field-plan/crop-fields-panel.compon
 import { ProgramEnrollmentCardComponent } from '../field-plan/programs/program-enrollment-card.component';
 import { ProgramRegistry } from '../field-plan/programs/program-registry';
 import { FieldPlanStore } from '../field-plan/store/field-plan.store';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 
 type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'tradeUnit';
@@ -60,7 +60,7 @@ export class PlantingIntentionsTableComponent {
   private apiService = inject(ApiService);
   private destroyRef = inject(DestroyRef);
   private toast = inject(ToastService);
-  private appState = inject(AppStateService);
+  private readonly tradeUnitContext = inject(TradeUnitContext);
   private cdr = inject(ChangeDetectorRef);
 
   public isLoading = input(false);
@@ -89,7 +89,7 @@ export class PlantingIntentionsTableComponent {
   get tradeUnitOptions(): string[] {
     const own = this.producerTradeUnits();
     if (own.length > 0) return own;
-    return [...this.appState.inScopeTradeUnitCodes()];
+    return [...this.tradeUnitContext.inScopeTradeUnitCodes()];
   }
 
   /** True when the Add options are a fallback because the producer has no trade-unit assignment. */
@@ -107,7 +107,7 @@ export class PlantingIntentionsTableComponent {
 
   /** "2190 — Pratt, KS" when a description is known, else just the code. Flags stale tags. */
   tradeUnitLabel(code: string): string {
-    const description = this.appState.tradeUnitDescriptions().get(code);
+    const description = this.tradeUnitContext.tradeUnitDescriptions().get(code);
     const own = this.producerTradeUnits();
     const stale = own.length > 0 && !own.includes(code);
     return `${code}${description ? ' — ' + description : ''}${stale ? ' (no longer assigned)' : ''}`;
@@ -561,7 +561,7 @@ export class PlantingIntentionsTableComponent {
     // than cached: these are plain fields, not signals, but this runs per keystroke so it always
     // reflects the current selection. The fallback is scoped too, so a transient curated-list
     // failure can't leak organics into a conventional picker.
-    const inScope = { groupNames: this.appState.inScopeGroupNames(), tradeUnitCodes: this.appState.inScopeTradeUnitCodes() };
+    const inScope = { groupNames: this.tradeUnitContext.inScopeGroupNames(), tradeUnitCodes: this.tradeUnitContext.inScopeTradeUnitCodes() };
     const curated = scopeCommodities(this.plantingCommodities(), inScope);
     const source = curated.length > 0 ? curated : scopeCommodities(this.allCommodities(), inScope);
     const matches: { c: Commodity; rank: number }[] = [];
