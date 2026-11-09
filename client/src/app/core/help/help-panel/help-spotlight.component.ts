@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, signal, untracked } from '@angular/core';
 
-import { HelpPanelService } from '@core/services/help-panel.service';
+import { HelpPanelService } from '@core/help/help-panel.service';
 import { HelpIconComponent } from '@shared/components/help-icon/help-icon.component';
 
 /**

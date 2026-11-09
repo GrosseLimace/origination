@@ -2,8 +2,8 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { DatePipe } from '@angular/common';
 
 import { AppStateService } from '@core/services/app-state.service';
-import { HelpPanelService } from '@core/services/help-panel.service';
-import { HelpService } from '@core/services/help.service';
+import { HelpPanelService } from '@core/help/help-panel.service';
+import { HelpService } from '@core/help/help.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
 import { HelpIconComponent } from '@shared/components/help-icon/help-icon.component';

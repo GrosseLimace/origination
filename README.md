@@ -22,7 +22,10 @@ GrainOriginatorPortal/
 └── client/                                 # Angular 21 SPA
     └── src/app/
         ├── core/
-        │   ├── guards/                     # auth.guard.ts (functional CanActivateFn)
+        │   ├── access/                     # PermissionService, permissionGuard, *appHasPermission
+        │   ├── auth/                       # auth.guard.ts (functional CanActivateFn), deep-link restore
+        │   ├── layout/                     # header, trade-unit selector, toast container
+        │   ├── help/                       # help panel and its services
         │   ├── handlers/                   # global-error.handler.ts
         │   └── services/                   # api, app-state, toast, nlq-filter, usage-tracking, theme
         ├── features/

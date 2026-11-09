@@ -216,7 +216,7 @@ Registration: `Program.cs` calls `AddPlatform()` (`Api/Platform/PlatformModule.c
 
 ### Route guards
 
-`client/src/app/guards/auth.guard.ts` — wraps `MsalGuard.canActivate()` and adds the deep-link save behavior.
+`client/src/app/core/auth/auth.guard.ts` — wraps `MsalGuard.canActivate()` and adds the deep-link save behavior.
 
 `client/src/app/core/access/permission.guard.ts` — `permissionGuard`, a `canMatch` guard: the route matches only when the user holds every permission in its `data.requires`, written `data: requires('usage-reports:read')`. It waits for the first permissions load and denies if that failed, so a typed URL never gets through on the empty set held while loading. A refused route falls through to the catch-all, and its code is never downloaded. Used on the usage dashboard routes.
 

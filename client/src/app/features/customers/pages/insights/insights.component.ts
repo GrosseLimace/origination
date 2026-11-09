@@ -14,7 +14,7 @@ import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
 import { ticketDisplayNumber } from '@shared/utils/ticket-display';
 import { CardComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
-import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
+import { TradeUnitSelectorComponent } from '@core/layout/trade-unit-selector/trade-unit-selector.component';
 
 type InsightCategory = 'UnconfirmedContracts' | 'SpotLoads' | 'UnshippedBushels';
 type InsightPriority = 'Urgent' | 'Warning' | 'Info';

@@ -19,7 +19,7 @@
 
 /* App chrome metrics.
    --app-header-h must match the rendered height of app-header (see
-   shared/components/header/header.component.html): py-5 + the 3rem avatar, which is
+   core/layout/header/header.component.html): py-5 + the 3rem avatar, which is
    the tallest element in the row (taller than the h-11 lockup and the h-10 buttons).
    Mobile and desktop are both driven by that same avatar, so one value covers both.
    --app-main-pad mirrors the padding on <main> in app.component.html (p-4 sm:p-6).

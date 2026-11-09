@@ -12,12 +12,12 @@ import { filter, map } from 'rxjs';
 import { HelpAction } from '@models';
 
 // Project services
-import { AppStateService } from './app-state.service';
+import { AppStateService } from '../services/app-state.service';
 import { HelpPanelStateService } from './help-panel-state.service';
 import { HelpService } from './help.service';
-import { ToastService } from './toast.service';
-import { UsageTrackingService } from './usage-tracking.service';
-import { UserTradeUnitsService } from './user-trade-units.service';
+import { ToastService } from '../services/toast.service';
+import { UsageTrackingService } from '../services/usage-tracking.service';
+import { UserTradeUnitsService } from '../services/user-trade-units.service';
 
 // Shared utils
 import { matchHelpQuestion } from '@shared/utils/help-match';

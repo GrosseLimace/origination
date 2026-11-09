@@ -26,7 +26,7 @@ import { PermissionService } from '@core/access/permission.service';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { HelpPanelService } from '@core/services/help-panel.service';
+import { HelpPanelService } from '@core/help/help-panel.service';
 
 // Shared components
 import { ButtonComponent } from '@shared/components/button/button.component';

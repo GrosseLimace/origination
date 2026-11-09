@@ -24,16 +24,10 @@ describe('AppStateService', () => {
   });
 
   it('initialises with default signal values', () => {
-    expect(service.currentView()).toBe('customers');
     expect(service.selectedCustomer()).toBeNull();
     expect(service.selectedTradeUnits()).toEqual([]);
     expect(service.searchQuery()).toBe('');
     expect(service.customers()).toEqual([]);
-  });
-
-  it('setView() updates currentView signal', () => {
-    service.setView('dashboard');
-    expect(service.currentView()).toBe('dashboard');
   });
 
   it('selectCustomer() stores the selected customer', () => {

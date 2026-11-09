@@ -49,7 +49,6 @@ module.exports = defineConfig(
       // and aren't checked.
       'boundaries/elements': [
         { type: 'core', pattern: 'src/app/core', partialMatch: false },
-        { type: 'core', pattern: 'src/app/guards', partialMatch: false },
         { type: 'shared', pattern: 'src/app/shared', partialMatch: false },
         { type: 'models', pattern: 'src/app/models', partialMatch: false },
         { type: 'feature', pattern: 'src/app/features/*', capture: ['module'], partialMatch: false },
@@ -62,11 +61,10 @@ module.exports = defineConfig(
       'boundaries/dependencies': ['error', dependencies],
     },
   },
-  // Known violations, warnings until they are fixed: shared components that inject core state (the header, the
-  // trade-unit selector, the help panel and the toast container), features importing each other directly, and
-  // ApiService typing recap groups with the daily digest's models.
+  // Known violations, warnings until they are fixed: features importing each other directly, and ApiService typing
+  // recap groups with the daily digest's models.
   {
-    files: ['src/app/shared/**/*.ts', 'src/app/features/**/*.ts', 'src/app/core/services/api.service.ts'],
+    files: ['src/app/features/**/*.ts', 'src/app/core/services/api.service.ts'],
     rules: {
       'boundaries/dependencies': ['warn', dependencies],
     },

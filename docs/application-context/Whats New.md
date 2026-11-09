@@ -174,7 +174,7 @@ The same values are logged once at startup, so App Insights shows which build is
 | `client/src/app/features/whats-new/components/whats-new-dialog/` | The once-per-deploy dialog |
 | `client/src/app/features/whats-new/pages/whats-new/` | The `/whats-new` page |
 | `client/src/app/app.component.ts` / `.html` | Loads once authenticated, owns the open state, `@defer`s the dialog |
-| `client/src/app/shared/components/header/header.component.*` | Profile-menu row, dot, build line |
+| `client/src/app/core/layout/header/header.component.*` | Profile-menu row, dot, build line |
 
 ## Troubleshooting
 

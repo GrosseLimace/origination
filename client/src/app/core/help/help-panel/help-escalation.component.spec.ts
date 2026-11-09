@@ -5,7 +5,7 @@ import { TestBed } from '@angular/core/testing';
 import type { AppVersionInfo, Customer } from '@models';
 import { HelpEscalationComponent } from './help-escalation.component';
 import { AppStateService } from '@core/services/app-state.service';
-import { HelpPanelService } from '@core/services/help-panel.service';
+import { HelpPanelService } from '@core/help/help-panel.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { WhatsNewService } from '@core/services/whats-new.service';
 import { provideTestEnvironment } from '@testing/test-providers';

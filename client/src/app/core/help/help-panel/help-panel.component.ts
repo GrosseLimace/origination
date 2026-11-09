@@ -5,8 +5,8 @@ import { Router } from '@angular/router';
 import { A11yModule } from '@angular/cdk/a11y';
 
 import { HelpFaq } from '@models';
-import { HelpPanelService } from '@core/services/help-panel.service';
-import { HelpService } from '@core/services/help.service';
+import { HelpPanelService } from '@core/help/help-panel.service';
+import { HelpService } from '@core/help/help.service';
 import { HelpIconComponent } from '@shared/components/help-icon/help-icon.component';
 import { HelpAnswerCardComponent } from './help-answer-card.component';
 import { HelpEscalationComponent } from './help-escalation.component';

@@ -1,6 +1,6 @@
 import { Routes } from '@angular/router';
 
-import { authGuard } from './guards/auth.guard';
+import { authGuard } from './core/auth/auth.guard';
 import { permissionGuard, requires } from '@core/access/permission.guard';
 import { environment } from '../environments/environment';
 

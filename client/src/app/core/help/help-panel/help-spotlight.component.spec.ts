@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/angular';
 import { HELP_ANCHOR_TIPS, HelpSpotlightComponent } from './help-spotlight.component';
-import { HelpPanelService } from '@core/services/help-panel.service';
+import { HelpPanelService } from '@core/help/help-panel.service';
 import { provideTestEnvironment } from '@testing/test-providers';
 
 interface Rect { left: number; top: number; width: number; height: number; }

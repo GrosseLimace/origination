@@ -5,9 +5,9 @@ import { Router, provideRouter } from '@angular/router';
 import type { HelpFaq } from '@models';
 import { HelpPanelService } from './help-panel.service';
 import { HelpService } from './help.service';
-import { UsageTrackingService } from './usage-tracking.service';
-import { UserTradeUnitsService } from './user-trade-units.service';
-import { AppStateService } from './app-state.service';
+import { UsageTrackingService } from '../services/usage-tracking.service';
+import { UserTradeUnitsService } from '../services/user-trade-units.service';
+import { AppStateService } from '../services/app-state.service';
 
 function faq(id: string, question: string, keywords: string[]): HelpFaq {
   return { id, question, keywords, routes: [], answer: 'A.', feature: 'system', related: [], uiLabels: [], lastVerified: '2026-10-13' };

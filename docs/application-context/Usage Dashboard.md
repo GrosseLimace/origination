@@ -174,7 +174,7 @@ reconstruct), `query-library-usage`, `query-search-gaps`, and `users/{id}/detail
 | Shared formatting / sorting | `client/src/app/features/usage-dashboard/utils/` (`usage-format.ts`, `table-sort.ts`) |
 | Sort icon, manager filter, exclusions panel | `client/src/app/features/usage-dashboard/components/` |
 | Frontend tracking service | `client/src/app/core/services/usage-tracking.service.ts` |
-| Admin guard | `client/src/app/guards/admin.guard.ts` |
+| Route guard | `permissionGuard` with `requires('usage-reports:read')` (`client/src/app/core/access/permission.guard.ts`) |
 | Controller | `api/GrainOriginatorPortal.Api/Modules/UsageAnalytics/Controllers/UsageDashboardController.cs` |
 | Click-event endpoint | `api/GrainOriginatorPortal.Api/Platform/Telemetry/Controllers/ClickEventsController.cs` |
 | Service | `api/GrainOriginatorPortal.Api/Modules/UsageAnalytics/Services/UsageDashboardService.cs` |

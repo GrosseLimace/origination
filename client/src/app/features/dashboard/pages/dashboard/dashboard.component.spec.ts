@@ -9,7 +9,7 @@ import { ApiService } from '@core/services/api.service';
 import { AppStateService, DashboardCacheEntry } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
+import { TradeUnitSelectorComponent } from '@core/layout/trade-unit-selector/trade-unit-selector.component';
 import { commodityChipClass } from '@shared/utils/commodity-color';
 import { CommodityChipClassPipe } from '@shared/pipes/commodity-chip-class.pipe';
 import { makeMsalServiceMock } from '@testing/msal.mocks';

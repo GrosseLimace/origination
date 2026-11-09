@@ -5,7 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import { Customer } from '@models';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
-import { HelpPanelService } from '@core/services/help-panel.service';
+import { HelpPanelService } from '@core/help/help-panel.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 import { HelpIconComponent } from '@shared/components/help-icon/help-icon.component';

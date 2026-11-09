@@ -4,8 +4,8 @@ import { TestBed } from '@angular/core/testing';
 import { render, screen, fireEvent } from '@testing-library/angular';
 import type { HelpContent } from '@models';
 import { HelpPanelComponent } from './help-panel.component';
-import { HelpPanelService } from '@core/services/help-panel.service';
-import { HelpService } from '@core/services/help.service';
+import { HelpPanelService } from '@core/help/help-panel.service';
+import { HelpService } from '@core/help/help.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { provideTestEnvironment } from '@testing/test-providers';
 

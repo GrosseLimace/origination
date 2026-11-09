@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import type { HelpAction, HelpContent } from '@models';
-import { HELP_ANCHOR_TIPS } from '@shared/components/help-panel/help-spotlight.component';
-import { HELP_TROUBLESHOOTERS } from '@shared/components/help-panel/help-troubleshooter.component';
+import { HELP_ANCHOR_TIPS } from '@core/help/help-panel/help-spotlight.component';
+import { HELP_TROUBLESHOOTERS } from '@core/help/help-panel/help-troubleshooter.component';
 
 /**
  * Keeps the help content in step with the app.

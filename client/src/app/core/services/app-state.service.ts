@@ -52,7 +52,6 @@ export class AppStateService {
   private readonly _userGroups = signal<{ groupName: string; tradeUnitCodes: string[]; tradeUnits?: { code: string; description?: string }[] }[]>([]);
   private readonly _userGroupsLoaded = signal(false);
   private readonly _noTradeUnitAssignments = signal(false);
-  private readonly _currentView = signal<'customers' | 'insights' | 'buildlist' | 'dashboard'>('customers');
   private readonly _selectedCustomer = signal<Customer | null>(null);
   private readonly _selectedTradeUnits = signal<string[]>([]);
   private readonly _selectedGroupNames = signal<string[]>([]);
@@ -80,7 +79,6 @@ export class AppStateService {
   private readonly _producerDetails = signal<ProducerDetails[]>([]);
   private readonly _pricingLines = signal<ContractPricingLine[]>([]);
   private readonly _dataLoading = signal(false);
-  private readonly _ticketsLoading = signal(false);
   private readonly _ticketsLoaded = signal(false);
   private readonly _ticketsTradeUnitKey = signal<string | null>(null);
   private readonly _notesLoaded = signal(false);
@@ -152,9 +150,6 @@ export class AppStateService {
     }
     return map;
   });
-
-  // View state
-  readonly currentView = this._currentView.asReadonly();
 
   // Selection state
   readonly selectedCustomer = this._selectedCustomer.asReadonly();
@@ -267,10 +262,6 @@ export class AppStateService {
   readonly harvestWindows = this._harvestWindows.asReadonly();
   readonly producerDetails = this._producerDetails.asReadonly();
   readonly pricingLines = this._pricingLines.asReadonly();
-
-  setView(view: 'customers' | 'insights' | 'buildlist' | 'dashboard'): void {
-    this._currentView.set(view);
-  }
 
   selectCustomer(customer: Customer | null): void {
     this._selectedCustomer.set(customer);
@@ -388,16 +379,6 @@ export class AppStateService {
 
   setDataLoading(loading: boolean): void {
     this._dataLoading.set(loading);
-  }
-
-  // Tickets-specific loading flag — true while the full ticket set is still arriving.
-  // Flipped false independently of dataLoading so insights cards that don't depend on
-  // the full ticket set (Unconfirmed Contracts, Spot Loads) can render as soon as
-  // their own data is ready.
-  readonly ticketsLoading = this._ticketsLoading.asReadonly();
-
-  setTicketsLoading(loading: boolean): void {
-    this._ticketsLoading.set(loading);
   }
 
   // True once the TU-wide ticket set has been loaded into `tickets` (via setTickets). List/NLQ

@@ -10,8 +10,8 @@ import { NgTemplateOutlet } from '@angular/common';
 import { HelpAction, HelpFaq } from '@models';
 
 // Core services
-import { HelpPanelService } from '@core/services/help-panel.service';
-import { HelpService } from '@core/services/help.service';
+import { HelpPanelService } from '@core/help/help-panel.service';
+import { HelpService } from '@core/help/help.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 
 // Shared
