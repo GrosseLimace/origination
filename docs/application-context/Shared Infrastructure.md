@@ -7,7 +7,7 @@
 - Angular 21 SPA + ASP.NET Core (.NET 10) Web API.
 - **Two databases**: `OriginationDbContext` reads ODS views (read-only), `ApplicationDbContext` owns the application's tables (read/write).
 - **Auth**: Azure AD via MSAL (frontend) and Microsoft.Identity.Web (backend). Tokens are JWT bearer; cache is `sessionStorage` per security review.
-- **State**: Angular signals via `AppStateService` (single global service). No NgRx.
+- **State**: Angular signals. No NgRx. `AppStateService` holds the shared data caches, `TradeUnitContext` the trade-unit scope, and each module keeps its own screen state in its stores.
 - **Authorization model**: trade-unit entitlements are a *UX filter*, not an access boundary. See [SECURITY-MODEL.md](./SECURITY-MODEL.md).
 
 ## Architecture at a glance
@@ -30,14 +30,14 @@ flowchart LR
 
 ## Frontend services
 
-### `ApiService`
+### `ApiService` and the module API clients
 
-`client/src/app/core/services/api.service.ts`
+`client/src/app/core/services/api.service.ts`, and each module's `data-access/*-api.service.ts`
 
-- ~68 public methods. Every API call in the app goes through here.
+- **Module clients:** a module whose screens are the only callers has its own client: `BidSheetApiService` (locations, bids, sheets, the preference and the BarChart catalog), `UsageDashboardApiService`, and Engagement's `RecapGroupsApiService` (exported from `@features/engagement` for the bid sheet's share dialog). The calls the customer screen uses stay in `ApiService` until those components move into their modules, along with Platform's own (commodities, trade units, preferences, the entitlements catalog, telemetry config).
 - **Base URL** comes from `environment.apiBaseUrl` (`client/src/environments/environment.ts`).
-- **Request deduplication** for expensive ODS endpoints — see `_dedupe<T>(key, request)`. Used by `getCustomers`, `getContracts`, `getTickets`, `getNotes`, `getStoredGrain`, `getCommodities`, `getElevators`, `getBidSheetLocations`, `getAllProducerDetails`, `getSavedLists`, etc. If two callers ask for the same key in flight, they share one HTTP request.
-- **Error handling** is centralized: a 401 toasts a session-expired message; every failure is logged in dev mode and re-thrown as an `ApiError`. A 403 is shown by `forbiddenInterceptor` instead (see below).
+- **Request deduplication** for expensive endpoints — `dedupeRequests()` in `core/http/dedupe-requests.ts`, one in-flight map per client. Used by `getCustomers`, `getContracts`, `getTickets`, `getNotes`, `getStoredGrain`, `getAllProducerDetails`, `getSavedLists`, the bid sheet's locations and preference, and BarChart coverage, among others. If two callers ask for the same key in flight, they share one HTTP request.
+- **Error handling** is shared by every client: `injectApiErrorHandler()` in `core/http/api-error-handler.ts`. A 401 toasts a session-expired message; every failure is logged in dev mode and re-thrown as an `ApiError`. A 403 is shown by `forbiddenInterceptor` instead (see below).
 
 ### `forbiddenInterceptor` and `alreadyShown`
 
@@ -47,7 +47,7 @@ flowchart LR
 
 `client/src/app/core/services/app-state.service.ts`
 
-The app's global state container, built on Angular signals. No NgRx, no Redux — every screen reads and writes signals here directly.
+The shared data caches, built on Angular signals: the trade-unit-wide data the customer screen, Build a List, Actionable Insights and the Planting Dashboard read. Customer-screen data moves into its modules' stores as those components move.
 
 **Signals exposed (commonly read across screens):**
 
@@ -64,17 +64,23 @@ The app's global state container, built on Angular signals. No NgRx, no Redux �
 | `commodities`, `commodityConversions`, `harvestWindows` | reference | Crop catalog and lb-per-bushel conversions |
 | `producerDetails` | `ProducerDetails[]` | App-DB enrichment (acres, bin sites, grain on farm, etc.) |
 | `pricingLines` | `ContractPricingLine[]` | Pricing lines for the selected producer — CTRM (live, inline on the contract) or ODS `vw_ContractPricing` per `Ctrm:Source` |
-| `selectedTradeUnits`, `selectedGroupNames` | `string[]` | The TU selector's current state |
 | `allProducersMode` | `boolean` | Session-only "All Producers" selector mode — clears TU scope so the customer list searches every producer (incl. ODS producers with no contract/ticket) for onboarding. Never persisted. |
 | `selectedCustomer` | `Customer \| null` | Driven by Home page navigation |
 | `dataLoading` | `boolean` | Global flag — true while the core preload (customers + contracts + today's tickets) is in flight. Both Insights and the Dashboard gate their spinners on this. |
-| `ticketsLoading` | `boolean` | True while the background bulk `/api/tickets` set is still arriving (separate from the fast today's-tickets fetch). |
-| `dashboardCache`, `preloadedDashboardSummary` | dashboard-specific cache | See Planting Intentions Dashboard doc |
-| `mapGeocodeCache` | `Map<string, {lat, lng}>` | Used by Bid Sheet's Leaflet map |
+
+**Setters** mirror the signals (`setCustomers`, `setContracts`, ...). There is also `clearSelection`, and `clearAll` for sign-out, which also clears `TradeUnitContext`.
+
+### `TradeUnitContext`
+
+`client/src/app/core/context/trade-unit-context.service.ts`
+
+The trade units the app is working in, which every module scopes its reads to: `userGroups` (with `tradeUnitDescriptions`, code → location), the selector's `selectedTradeUnits` and `selectedGroupNames`, and the `inScopeGroupNames` / `inScopeTradeUnitCodes` that selection puts in play (an empty selection means all of the user's units).
 
 **localStorage persistence:** key `origination_user_prefs` stores `{ groups?, units? }` — the trade-unit selection. Restored on construction.
 
-**Setters** mirror the signals (`setCustomers`, `setContracts`, ...). There is also `clearBuildListState`, `clearSelection`, `clearAll`.
+### Module stores
+
+Screen state a module keeps for the session lives in that module: Build a List's query and results (`BuildListStore`) and the customer map's geocode cache (`MapGeocodeCacheStore`, capped at 500 entries) in `features/lists/data-access`, and the customer list's scroll position (`CustomerListScrollStore`) in `features/customers/data-access`.
 
 ### `UserTradeUnitsService`
 
@@ -100,7 +106,20 @@ Coordinates the bulk fetch of customer/contract/ticket/note data when trade unit
 **Loading model (important for "why is this screen slow").** On a TU change the service fires several requests and streams each into AppState as it lands:
 
 - **Core group** = `getCustomers` + `getContracts` + `getTodaysTickets`. `dataLoading` flips false only when **all three** arrive. Both **Actionable Insights** and the **Planting Intentions Dashboard** gate their spinner on `dataLoading`, so they render together — and a slow ODS query (contracts, or today's tickets) holds both screens.
-- **Background group** (non-blocking, streamed via `merge`): bulk `getTickets`, notes, planting intentions, stored grain, saved lists, commodities, harvest windows, producer details, and a pre-fetched dashboard summary.
+- **Background group** (non-blocking, streamed via `merge`): bulk `getTickets`, notes, planting intentions, stored grain, saved lists, commodities, harvest windows, producer details.
+- **Module preloads**, merged into the same load so the next trade-unit change cancels them too: each module's manifest may declare a `preload` (see Module manifests below). Today that is Producers', which pre-fetches the Planting Dashboard's summary for users who may read it. A preload that fails ends quietly without stopping the rest.
+
+### Module manifests and `ModuleRegistry`
+
+`client/src/app/core/modules/` and `client/src/app/app.modules.ts`
+
+Each module (a folder under `features/`) declares a `ModuleManifest` in its `<module>.module.ts` (`producersModule` in `producers.module.ts`, …). `app.modules.ts` is the only file that lists them all, and imports each manifest from that file rather than the module's `index.ts`, so a module's components stay out of the initial bundle; `main.ts` provides that list as `APP_MODULES`, and core reads it through `ModuleRegistry`, so core never imports a module. A manifest carries the module's id and, optionally:
+
+- **`routes`**, its pages, each naming the permissions it needs (`requires`; empty for a page every signed-in user may open). `app.routes.ts` builds the router's routes from every manifest with `moduleRoutes` (`core/modules/module-routes.ts`), then adds the catch-all that sends any other path home. Every page gets `authGuard`; a page that names permissions also gets `permissionGuard`, with them as its route data.
+- **`nav`**, its header links, each naming the same permissions as its page, a label (and a shorter one for the desktop bar below `2xl`), its icon as SVG path data, an `order`, and its menu: `main` for the desktop bar and the mobile menu, `user` for the profile menu. The header draws `ModuleRegistry.mainNav()` and `userNav()`, which keep only the links the user's permissions allow, sorted by `order`. The header's own items stay in its template: the logo and the mobile menu's home link, Help, What's New and Trade Unit Preferences.
+- **`preload(tradeUnits)`**, which returns its work as an Observable and loads only what the user may read.
+
+No page is switched on or off per environment: a module is turned off in one environment by taking its permissions away from that environment's roles, which closes the API as well.
 
 > **Known perf cost:** `getTodaysTickets` runs the customer-storage gate (a scan of `ctrm.vw_GNTA39D1`, see the Ticket note below), so it isn't as fast as the "core group" comment assumes — and since it's in the blocking group, it can delay both screens. There's an in-flight change to drop the storage scan from that path and let each screen/category load on its own data; if you're reading this after that merges, the model above will have per-dataset loading flags.
 
@@ -216,9 +235,9 @@ Registration: `Program.cs` calls `AddPlatform()` (`Api/Platform/PlatformModule.c
 
 ### Route guards
 
-`client/src/app/guards/auth.guard.ts` — wraps `MsalGuard.canActivate()` and adds the deep-link save behavior.
+`client/src/app/core/auth/auth.guard.ts` — wraps `MsalGuard.canActivate()` and adds the deep-link save behavior.
 
-`client/src/app/core/access/permission.guard.ts` — `permissionGuard`, a `canMatch` guard: the route matches only when the user holds every permission in its `data.requires`, written `data: requires('usage-reports:read')`. It waits for the first permissions load and denies if that failed, so a typed URL never gets through on the empty set held while loading. A refused route falls through to the catch-all, and its code is never downloaded. Used on the usage dashboard routes.
+`client/src/app/core/access/permission.guard.ts` — `permissionGuard`, a `canMatch` guard: the route matches only when the user holds every permission in its `data.requires`, written `data: requires('usage-reports:read')`. It waits for the first permissions load and denies if that failed, so a typed URL never gets through on the empty set held while loading. A refused route falls through to the catch-all, and its code is never downloaded. `moduleRoutes` adds it to every page whose manifest names permissions: the Planting Intentions Dashboard, Build a List, Actionable Insights, Bid Sheet, Manage Groups and the usage dashboard pages.
 
 ### Permissions (frontend)
 
@@ -266,8 +285,8 @@ Four contexts are registered:
 | Symptom | First place to look |
 | --- | --- |
 | 403 from any endpoint | Check `UserEntitlementService` — likely the user has no entitled TUs, or the requested TU isn't in their set. |
-| Empty result from a customer-bound endpoint | Verify `appState.selectedTradeUnits()` is non-empty; many service methods early-return for empty TU lists. |
-| Dashboards stale after TU change | `appState.clearDashboardCache()` should fire on TU change — check `AppStateService` constructor and the TU selector. |
+| Empty result from a customer-bound endpoint | Verify `tradeUnitContext.selectedTradeUnits()` is non-empty; many service methods early-return for empty TU lists. |
+| Dashboards stale after TU change | Producers' `preload` (`features/producers/producers.module.ts`) clears `DashboardStore`'s caches on every new selection — check `DataPreloadService` still runs the modules' preloads. |
 | Login loop / "deep link lost" | `auth.guard.ts` and `main.ts` deep-link sessionStorage handshake — make sure both halves are still in place. |
 | "Cross-database query not supported" SQL error | You introduced a join across `OriginationDbContext` and `ApplicationDbContext`. Move the join to C# (pull rows from each context, match in memory via `dbo.Customer`). |
 | Actionable Insights / Dashboard slow, and they load at the same time | Both gate on the single `dataLoading` flag, which waits on the whole core group (customers + contracts + today's tickets). The long pole is usually the ODS ticket/contract scan — and `getTodaysTickets` additionally scans the storage view via the customer-storage gate. See the loading model + perf note under DataPreloadService. |

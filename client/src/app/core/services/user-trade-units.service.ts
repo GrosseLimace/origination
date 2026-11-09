@@ -1,9 +1,9 @@
 import { Injectable, inject } from '@angular/core';
 import { Observable, map, tap } from 'rxjs';
 import { ApiService } from './api.service';
-import { AppStateService } from './app-state.service';
 import { DataPreloadService } from './data-preload.service';
 import { environment } from '../../../environments/environment';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 export interface UserTradeUnitGroup {
   groupName: string;
@@ -23,7 +23,7 @@ export interface UserTradeUnitGroup {
 @Injectable({ providedIn: 'root' })
 export class UserTradeUnitsService {
   private readonly api = inject(ApiService);
-  private readonly appState = inject(AppStateService);
+  private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly dataPreload = inject(DataPreloadService);
 
   /** Close-watch for the currently open preferences window, if any. */
@@ -76,9 +76,9 @@ export class UserTradeUnitsService {
   }
 
   private clearForNoAssignments(): void {
-    this.appState.markNoTradeUnitAssignments();
-    if (this.appState.selectedGroupNames().length > 0) this.appState.setSelectedGroupNames([]);
-    if (this.appState.selectedTradeUnits().length > 0) this.appState.setTradeUnits([]);
+    this.tradeUnitContext.markNoTradeUnitAssignments();
+    if (this.tradeUnitContext.selectedGroupNames().length > 0) this.tradeUnitContext.setSelectedGroupNames([]);
+    if (this.tradeUnitContext.selectedTradeUnits().length > 0) this.tradeUnitContext.setTradeUnits([]);
   }
 
   /** Open the Trade Unit Preferences app in a popup window (new tab if the browser refuses a
@@ -116,18 +116,18 @@ export class UserTradeUnitsService {
   }
 
   private applyGroups(groups: UserTradeUnitGroup[]): void {
-    this.appState.setUserGroups(groups);
+    this.tradeUnitContext.setUserGroups(groups);
 
     // Keep the group selection, minus groups that no longer exist
-    const prevGroups = this.appState.selectedGroupNames();
+    const prevGroups = this.tradeUnitContext.selectedGroupNames();
     if (prevGroups.length > 0) {
-      this.appState.setSelectedGroupNames(prevGroups.filter(g => groups.some(m => m.groupName === g)));
+      this.tradeUnitContext.setSelectedGroupNames(prevGroups.filter(g => groups.some(m => m.groupName === g)));
     }
     // Keep the trade-unit selection, minus units no longer available
-    const prevUnits = this.appState.selectedTradeUnits();
+    const prevUnits = this.tradeUnitContext.selectedTradeUnits();
     if (prevUnits.length > 0) {
-      const available = this.computeAvailableTradeUnits(groups, this.appState.selectedGroupNames());
-      this.appState.setTradeUnits(prevUnits.filter(u => available.includes(u)));
+      const available = this.computeAvailableTradeUnits(groups, this.tradeUnitContext.selectedGroupNames());
+      this.tradeUnitContext.setTradeUnits(prevUnits.filter(u => available.includes(u)));
     }
   }
 
@@ -149,7 +149,7 @@ export class UserTradeUnitsService {
    */
   private watchForClose(win: Window): void {
     this.stopWatching();
-    this.lastGroupsKey = this.groupsKey(this.appState.userGroups());
+    this.lastGroupsKey = this.groupsKey(this.tradeUnitContext.userGroups());
     const watchUntil = Date.now() + UserTradeUnitsService.FOCUS_WATCH_MAX_MS;
     try { sessionStorage.setItem(UserTradeUnitsService.WATCH_MARKER_KEY, String(watchUntil)); } catch { /* storage unavailable */ }
 
@@ -216,7 +216,7 @@ export class UserTradeUnitsService {
         if (!hadBaseline) return;
         if (groups.length === 0) return;
 
-        const selection = this.appState.selectedTradeUnits();
+        const selection = this.tradeUnitContext.selectedTradeUnits();
         if (selection.length === 0) return; // they pick a group, then trade units — never us
         if (this.selectionKey() === selectionBefore) this.dataPreload.forceReload();
       },
@@ -228,7 +228,7 @@ export class UserTradeUnitsService {
   }
 
   private selectionKey(): string {
-    return [...this.appState.selectedTradeUnits()].sort().join(',');
+    return [...this.tradeUnitContext.selectedTradeUnits()].sort().join(',');
   }
 
   private groupsKey(groups: { groupName: string; tradeUnitCodes: string[] }[]): string {

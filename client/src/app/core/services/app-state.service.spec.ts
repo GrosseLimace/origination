@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { computed, effect, isSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { AppStateService } from './app-state.service';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { Customer } from '@models';
 
 const mockCustomer: Customer = {
@@ -18,22 +19,18 @@ const mockCustomer: Customer = {
 
 describe('AppStateService', () => {
   let service: AppStateService;
+  let context: TradeUnitContext;
 
   beforeEach(() => {
-    service = new AppStateService();
+    TestBed.configureTestingModule({});
+    service = TestBed.inject(AppStateService);
+    context = TestBed.inject(TradeUnitContext);
   });
 
   it('initialises with default signal values', () => {
-    expect(service.currentView()).toBe('customers');
     expect(service.selectedCustomer()).toBeNull();
-    expect(service.selectedTradeUnits()).toEqual([]);
     expect(service.searchQuery()).toBe('');
     expect(service.customers()).toEqual([]);
-  });
-
-  it('setView() updates currentView signal', () => {
-    service.setView('dashboard');
-    expect(service.currentView()).toBe('dashboard');
   });
 
   it('selectCustomer() stores the selected customer', () => {
@@ -47,11 +44,6 @@ describe('AppStateService', () => {
     expect(service.selectedCustomer()).toBeNull();
   });
 
-  it('setTradeUnits() updates the selectedTradeUnits signal', () => {
-    service.setTradeUnits(['TU1', 'TU2']);
-    expect(service.selectedTradeUnits()).toEqual(['TU1', 'TU2']);
-  });
-
   it('setSearchQuery() updates the searchQuery signal', () => {
     service.setSearchQuery('grain');
     expect(service.searchQuery()).toBe('grain');
@@ -63,27 +55,16 @@ describe('AppStateService', () => {
     expect(service.customers()[0].id).toBe(1);
   });
 
-  it('clearAll() resets all state to defaults', () => {
+  it('clearAll() resets all state to defaults, the trade-unit selection included', () => {
     service.selectCustomer(mockCustomer);
-    service.setTradeUnits(['TU1']);
+    context.setTradeUnits(['TU1']);
     service.setSearchQuery('test');
     service.setCustomers([mockCustomer]);
     service.clearAll();
     expect(service.selectedCustomer()).toBeNull();
-    expect(service.selectedTradeUnits()).toEqual([]);
+    expect(context.selectedTradeUnits()).toEqual([]);
     expect(service.searchQuery()).toBe('');
     expect(service.customers()).toEqual([]);
-  });
-
-  it('setGeocodeCache() stores geocode entries and enforces LRU cap', () => {
-    service.setGeocodeCache('key1', { lat: 41.2, lng: -96.1 });
-    expect(service.mapGeocodeCache.get('key1')).toEqual({ lat: 41.2, lng: -96.1 });
-  });
-
-  it('clearMapGeocodeCache() empties the geocode cache', () => {
-    service.setGeocodeCache('key1', { lat: 41.2, lng: -96.1 });
-    service.clearMapGeocodeCache();
-    expect(service.mapGeocodeCache.size).toBe(0);
   });
 
   describe('read-only public surface', () => {
@@ -94,7 +75,7 @@ describe('AppStateService', () => {
 
     it('exposes its state as signals', () => {
       // Guards the check below against passing vacuously if the surface stopped being found.
-      expect(publicSignals().length).toBeGreaterThanOrEqual(43);
+      expect(publicSignals().length).toBeGreaterThanOrEqual(40);
     });
 
     it('offers no .set or .update on any public signal — writes go through the service\'s methods', () => {
@@ -110,8 +91,8 @@ describe('AppStateService', () => {
       const neverCalled = () => {
         // @ts-expect-error customers is read-only
         service.customers.set([]);
-        // @ts-expect-error selectedTradeUnits is read-only
-        service.selectedTradeUnits.update(u => u);
+        // @ts-expect-error searchQuery is read-only
+        service.searchQuery.update(q => q);
         // @ts-expect-error contractsLoadFailed is read-only
         service.contractsLoadFailed.set(true);
       };
@@ -119,19 +100,18 @@ describe('AppStateService', () => {
     });
 
     it('still drives computeds and effects through the read-only view', () => {
-      TestBed.configureTestingModule({});
       const state = TestBed.inject(AppStateService);
       const count = computed(() => state.customers().length);
-      const seen: string[][] = [];
-      TestBed.runInInjectionContext(() => effect(() => { seen.push(state.selectedTradeUnits()); }));
+      const seen: string[] = [];
+      TestBed.runInInjectionContext(() => effect(() => { seen.push(state.searchQuery()); }));
       TestBed.tick();
 
       state.setCustomers([mockCustomer]);
-      state.setTradeUnits(['2040']);
+      state.setSearchQuery('2040');
       TestBed.tick();
 
       expect(count()).toBe(1);
-      expect(seen).toEqual([[], ['2040']]);
+      expect(seen).toEqual(['', '2040']);
       // Same signal every read, so toObservable / effect subscriptions stay attached.
       expect(state.customers).toBe(state.customers);
     });
@@ -150,15 +130,6 @@ describe('AppStateService', () => {
       expect(service.commodityConversions()).toEqual([{ commodityCode: 'YC', lbsPerUnit: 56 }]);
       expect(service.harvestWindows()).toEqual([{ commodityCode: 'YC' }]);
       expect(service.queryLibrary()).toEqual([{ queryText: 'q' }]);
-    });
-
-    it('markNoTradeUnitAssignments drops the groups but leaves the loaded flag alone', () => {
-      service.setUserGroups([{ groupName: 'West', tradeUnitCodes: ['1085'] }]);
-      service.markNoTradeUnitAssignments();
-
-      expect(service.userGroups()).toEqual([]);
-      expect(service.noTradeUnitAssignments()).toBe(true);
-      expect(service.userGroupsLoaded()).toBe(true);
     });
 
     it('clearLoadFailures resets both trade-unit failure flags', () => {

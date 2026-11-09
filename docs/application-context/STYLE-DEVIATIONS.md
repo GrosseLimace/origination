@@ -305,6 +305,36 @@ The permission ids are typed (`PermissionId`, generated from `AppPermissions`), 
 
 ## Client
 
+### Core grouped by concern, and modules behind a public `index.ts`
+`angular.md` "File and Folder Structure" · `client/src/app/core/*`, `client/src/app/features/<module>`
+
+The guide groups `core/` by kind (`services/`, `guards/`, `interceptors/`) and gives each feature
+`components/`, `pages/`, `services/` and `models/`. From Phase 3 of the
+[modular architecture plan](../../agents-docs/plans/plan-modular-architecture.md) (2026-11-09), the
+client is organised as follows:
+- **`core/` is grouped by concern:** `access` (permissions and their guard), `auth`, `context` (the
+  trade-unit selection), `http` (the 403 interceptor and the shared error handling), `layout`, `help`
+  and `modules`. A guard sits beside what it guards: `core/access/permission.guard.ts`.
+- **Each folder under `features/` is a module** with its own:
+  - `index.ts`, its public API;
+  - `<module>.module.ts` manifest, which declares its pages, header links and preload;
+  - `data-access/` for its API clients and stores, where the guide has `services/`.
+
+`core/services` still holds what moves into the modules in Phase 4.
+
+The guide's split into `core`, `shared` and `features` still holds, and lint enforces it more strictly
+than the guide asks (`eslint.config.js`):
+- Core never imports a feature.
+- Shared imports only shared.
+- A module imports another module only if it builds on it, and only through that module's
+  `index.ts`. The per-module aliases (`@features/lists`) resolve to the index alone.
+
+`data-access/` holds a module's stores as well as its clients, which the guide's `services/` doesn't
+convey.
+
+**Revisit if:** the guide adopts a module or library layout, or this app splits into separately built
+libraries. The modules then map one-to-one onto them.
+
 ### `@it/design-system` (`scoular-*`) classes largely unused
 `angular.design-system-classes-unused`
 

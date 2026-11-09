@@ -21,18 +21,27 @@ GrainOriginatorPortal/
 │
 └── client/                                 # Angular 21 SPA
     └── src/app/
+        ├── app.modules.ts                  # lists every module's manifest; the only file that knows them all
+        ├── app.routes.ts                   # the modules' pages, plus the catch-all
         ├── core/
-        │   ├── guards/                     # auth.guard.ts (functional CanActivateFn)
+        │   ├── access/                     # PermissionService, permissionGuard, *appHasPermission
+        │   ├── auth/                       # auth.guard.ts (functional CanActivateFn), deep-link restore
+        │   ├── context/                    # TradeUnitContext: the selected trade units and the user's groups
+        │   ├── http/                       # 403 interceptor, shared API error handling, request dedupe
+        │   ├── modules/                    # ModuleManifest, ModuleRegistry, moduleRoutes
+        │   ├── layout/                     # header, trade-unit selector, toast container
+        │   ├── help/                       # help panel and its services
         │   ├── handlers/                   # global-error.handler.ts
-        │   └── services/                   # api, app-state, toast, nlq-filter, usage-tracking, theme
-        ├── features/
-        │   ├── customers/                  # components + home/insights pages
-        │   ├── dashboard/
-        │   ├── build-list/
+        │   └── services/                   # api, app-state, data-preload, toast, nlq-filter, usage-tracking, theme
+        ├── features/                       # one folder per module, with its <module>.module.ts manifest;
+        │                                   #   others import it only through its index.ts
+        │   ├── customers/                  # home page and the customer screen's components
+        │   ├── producers/                  # Planting Intentions Dashboard
+        │   ├── lists/                      # Build a List, Actionable Insights, the customer map
+        │   ├── engagement/                 # Daily Digest (recap groups)
         │   ├── bid-sheet/
-        │   ├── calculators/
-        │   ├── daily-digest/
-        │   └── usage-dashboard/
+        │   ├── usage-analytics/            # usage dashboard
+        │   ├── calculators/  help/  whats-new/
         ├── shared/
         │   └── components/                 # button, badge, card, table, dialog, input, select, etc.
         └── models/                         # TypeScript interfaces
@@ -82,6 +91,7 @@ dotnet test
 # Angular tests
 cd client
 npm test            # Vitest
+npm run lint        # module boundary rules (client/eslint.config.js)
 ```
 
 ## API Endpoints
@@ -241,7 +251,7 @@ Azure AD bearer tokens via `Microsoft.Identity.Web`. All API endpoints require a
 
 ## Software Bill of Materials (SBOM)
 
-Last Updated: 2026-11-07
+Last Updated: 2026-11-08
 
 ### Backend Dependencies (C# / .NET 10)
 
@@ -287,6 +297,11 @@ Last Updated: 2026-11-07
 | vitest | 4.1.12 | MIT | Unit testing framework (CVE fix: ≥4.1.0; security fix ≥4.1.12: `@vitest/mocker` pasted the module URL and export names from an unauthenticated manual-mock registration straight into generated JavaScript, allowing code injection, and on Windows a backslash `..` path slipped past the 4.1.11 redirect allowlist — GHSA-qxg6-89mg-rqv8 / GHSA-xp26-3454-mjgp; earlier fix ≥4.1.11: `@vitest/mocker` registered a redirect-mock target without checking Vite’s file-serving allowlist, so a client reaching the dev server’s unauthenticated HMR socket could read files outside the project root — `@vitest/ui` and `@vitest/coverage-v8` pinned to the same version to keep the family in lockstep) |
 | happy-dom | 21.0.4 | MIT | Browser-like DOM for the Vitest unit tests (dev only; never shipped). Security fix ≥21.0.4: the ES-module compiler pasted an `import { a as <alias> }` alias into generated code unchecked, so untrusted module source could run code on the host — GHSA-834v-8h66-3h79, Dependabot #160; only reachable with `enableJavaScriptEvaluation: true`, which we never set. 21.x also stops loading CSS files and iframes by default |
 | typescript | 5.9.3 | Apache-2.0 | TypeScript compiler |
+| eslint | 10.14.0 | MIT | Linter that runs the module boundary rules in `client/eslint.config.js` (`npm run lint`, CI). Dev only; never shipped |
+| angular-eslint | 21.4.0 | MIT | The `ng lint` builder. Its Angular rule sets are installed but not turned on. Dev only |
+| typescript-eslint | 8.72.1 | MIT | TypeScript parser for ESLint. Dev only |
+| eslint-plugin-boundaries | 7.4.2 | MIT | Module boundary rules: core never imports a feature, shared imports only shared, a feature reaches another only through its `index.ts`. Dev only |
+| eslint-import-resolver-typescript | 4.4.5 | ISC | Resolves the tsconfig path aliases (`@core/*`, `@features/<module>`, …) so the boundary rules see where an import lands. Dev only |
 | esbuild | ≥0.28.1 | MIT | Bundler — transitive (via @angular/build, vitest), pinned in `overrides` (security fix: RCE via NPM_CONFIG_REGISTRY + Windows path traversal, ≥0.28.1) |
 | vite | ≥7.3.7 <8 | MIT | Dev server/bundler + Vitest engine — transitive (via @angular/build, vitest), pinned in `overrides` (security fixes: `server.fs.deny` bypass + launch-editor NTLM disclosure on Windows ≥7.3.5; launch-editor passed `%` unescaped to cmd.exe on Windows via the dev server's /__open-in-editor, letting %VAR% expand into a command ≥7.3.7 (GHSA-698v-4r3x-3vcv) — the old ≥7.3.5 floor sat inside that range. Row previously omitted the `<8` bound the override has always carried) |
 | @babel/core | ≥7.29.6 | MIT | JS compiler — transitive (via @angular/build, @angular/compiler-cli), pinned in `overrides` (security fix: arbitrary file read via sourceMappingURL, ≥7.29.6) |

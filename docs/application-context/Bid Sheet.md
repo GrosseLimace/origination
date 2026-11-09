@@ -2,17 +2,17 @@
 
 ## At a Glance
 
-- **Route**: `/bid-sheet` (env-gated by `environment.bidSheetEnabled`)
+- **Route**: `/bid-sheet` (needs `bid-sheets:read`)
 - **Component**: [`client/src/app/features/bid-sheet/pages/bid-sheet/bid-sheet.component.ts`](../../client/src/app/features/bid-sheet/pages/bid-sheet/bid-sheet.component.ts)
 - **Template**: [`bid-sheet.component.html`](../../client/src/app/features/bid-sheet/pages/bid-sheet/bid-sheet.component.html)
-- **Access**: any signed-in Scoular user who holds `bid-sheets:read` (every persona role does), **and** the env flag is enabled. Changing sheets, locations and bids needs `bid-sheets:write`.
+- **Access**: any signed-in Scoular user who holds `bid-sheets:read` (every persona role does). Changing sheets, locations and bids needs `bid-sheets:write`.
 - **Primary user goal**: track competitor bids on a map, compare them against Scoular's reference location, and edit bids per location/commodity/month.
 
 This is the merchandiser's competitive-pricing view. It overlays bid locations on a Leaflet map, color-coded by whether each location is matching, beating, or under reference.
 
 ## How users reach it
 
-- "Bid Sheet" link in the sidebar (only present when `environment.bidSheetEnabled === true`).
+- "Bid Sheet" link in the header nav, shown only to users holding `bid-sheets:read`.
 
 ## What it shows
 
@@ -55,6 +55,7 @@ flowchart LR
 | Template | `client/src/app/features/bid-sheet/pages/bid-sheet/bid-sheet.component.html` |
 | Print layout util (+ spec) | `client/src/app/features/bid-sheet/utils/print-layout.ts` — builds the `PrintLayoutModel` both the preview and the printed sheet render |
 | BarChart picker | `client/src/app/features/bid-sheet/components/barchart-picker/barchart-picker.component.ts` (+ `.html`, `.spec.ts`) |
+| API client | `client/src/app/features/bid-sheet/data-access/bid-sheet-api.service.ts` — locations, bids, sheets, the preference and the BarChart catalog; recap groups for the share dialog come from Engagement's `RecapGroupsApiService` |
 | Sheet multi-select | `client/src/app/features/bid-sheet/components/sheet-multi-select/sheet-multi-select.component.ts` (+ `.html`) — the checkbox list shared by the map toolbar and the Edit Bids header |
 | Controller | `api/GrainOriginatorPortal.Api/Modules/BidSheet/Controllers/BidSheetController.cs` |
 | BarChart catalog controller | `api/GrainOriginatorPortal.Api/Modules/BidSheet/Controllers/BarchartController.cs` |
@@ -130,7 +131,7 @@ the Edit Bids header's Share button is hidden, and the delete dialog offers only
 ## State and caching
 
 - Every location is loaded once, unscoped: a location is one company-wide row, and a sheet decides which of them you work from.
-- `mapGeocodeCache` (a `Map` on `AppStateService`) caches geocoded address → lat/lon results, capped at 500 entries.
+- The 500-entry geocode cache this section used to list here (`MapGeocodeCacheStore`, in Lists) belongs to Build a List's customer map; the bid sheet doesn't use it.
 
 ## Drag-drop reordering
 
@@ -514,9 +515,9 @@ arrangement; with the sheet no longer scoped by trade unit there is one arrangem
 read any more.
 
 > **Do not put column preferences on the sheet.** `BidSheets` carries `CropOrder`, `HiddenCrops`,
-> `SelectedMonths` and `SelectedYears`, with a `PUT /bidsheet/sheets/{id}/layout` endpoint and an
-> `ApiService.setBidSheetLayout` to write them. That whole path is **dead**: nothing on the client
-> calls it and `_applySheet` ignores those four fields. It looks like the natural home for
+> `SelectedMonths` and `SelectedYears`, with a `PUT /bidsheet/sheets/{id}/layout` endpoint. That whole
+> path is **dead**: the client's `setBidSheetLayout` was never called and was deleted in 2026-11, and
+> `_applySheet` ignores those four fields. It looks like the natural home for
 > `SelectedColumns` and is not — a sheet is shared with its members, and which columns you are
 > looking at is yours, the same reasoning that puts `SelectedBidSheetIds` on the per-user row.
 
@@ -571,9 +572,9 @@ ticked is NOT persisted — it is a per-print choice, like the crop/month sets i
 ## Auth and feature flags
 
 - `authGuard` — required.
-- **`environment.bidSheetEnabled`** — checked in [`client/src/app/app.routes.ts`](../../client/src/app/app.routes.ts) (around line 30). When false, the route isn't registered (deep links 404 / redirect home) and the sidebar doesn't show the link.
+- **`bid-sheets:read`** gates the page and its header link, both declared in [`bid-sheet.module.ts`](../../client/src/app/features/bid-sheet/bid-sheet.module.ts). A user without it never sees the link, and a typed `/bid-sheet` goes home. There is no environment flag any more (removed 2026-11-09): to switch the Bid Sheet off in one environment, take its permissions away from that environment's roles, which also closes the API.
 - `BidSheetController` needs `bid-sheets:read`, and every write on it `bid-sheets:write`, except saving your bid-sheet preference, which needs `preferences:write:own`. Creating or updating a location still validates the trade unit it is attributed to via `IUserEntitlementService.ValidateTradeUnitsOrThrowAsync`; reads are unscoped by design, and the two destructive operations (deleting a location, deleting a commodity's bids) are restricted to the row's creator or a holder of `bid-sheet-locations:delete:global`. See AR-05 in `SECURITY-REVIEWS/ACCEPTED-RISKS.md`.
-- **`environment.barchartBidsEnabled`** — gates the "Add from BarChart" entry point and the fed-bid badges. Read directly by the component (not the router), so the screen still works normally when it's off. Currently **on for local and dev, off for QA and prod**, since the vendor feed is only loaded in dev.
+- **`environment.barchartBidsEnabled`** — gates the "Add from BarChart" entry point and the fed-bid badges. Read directly by the component (not the router), so the screen still works normally when it's off. **On in every environment:** QA since 2026-08-26, and prod since the 2026-10-20 release, once the prod catalog had finished its first full load. Each environment needs its catalog loaded before the flag goes on, because an empty catalog makes the picker return nothing, which looks like a broken feature.
 - `BarchartController` needs `bid-feed:read`, and `refresh-bids` also `bid-sheets:write`. Catalog reads are deliberately **not** TU-scoped: the catalog is global vendor data with no Scoular customer information in it. TU entitlement is enforced on the write that creates a placement, and on `refresh-bids`, against the row's persisted trade unit.
 
 ## External integrations
@@ -603,7 +604,7 @@ ticked is NOT persisted — it is a per-print choice, like the crop/month sets i
 | Markers all in the wrong location | Geocode result mis-cached. Each location's lat/lon is stored on the row; re-geocode by editing the address. | `BidSheetLocations.Latitude/Longitude` |
 | Bid edits don't appear after save | `bulkUpsertBidSheetBids` succeeded but UI cache didn't refresh | Verify the post-save `getAllBidSheetLocations` re-fetch fires |
 | Drag-drop order doesn't stick across sessions | The sheet order save failed silently | Network tab for `PUT /bidsheet/sheets/{id}/location-order`; check `BidSheetLocationLinks.SortOrder` for that sheet |
-| Sidebar link missing | `environment.bidSheetEnabled === false` for this build | `client/src/environments/environment.ts` |
+| Header link missing | The user lacks `bid-sheets:read` | `/api/me/permissions` in the Network tab, then the user's roles |
 | 403 on a `/api/bidsheet/...` call | User isn't entitled to the requested TU | `UserEntitlementService.ValidateTradeUnitsOrThrowAsync` — check the user's entitlement set |
 | Printed sheet has no logo | Relative asset path inside the `about:blank` popup | `printLogoUrl` must be `window.location.origin` + path |
 | Print columns squeezed / headers ellipsised, or preview ≠ print | Widths and band split no longer come from the same builder | `utils/print-layout.ts` — `buildLocationsDown` / `buildLocationsAcross` are the only source; run `print-layout.spec.ts` |

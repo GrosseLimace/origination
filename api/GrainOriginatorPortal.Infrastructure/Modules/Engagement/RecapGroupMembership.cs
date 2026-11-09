@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore;
 
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Infrastructure.Platform.Extensions;
 
 namespace GrainOriginatorPortal.Infrastructure.Modules.Engagement;
 

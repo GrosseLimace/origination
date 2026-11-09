@@ -4,7 +4,6 @@ using Microsoft.Extensions.DependencyInjection;
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Modules.Engagement.Repositories;
-using GrainOriginatorPortal.Infrastructure.Platform.Extensions;
 
 namespace GrainOriginatorPortal.Infrastructure.Modules.Engagement;
 

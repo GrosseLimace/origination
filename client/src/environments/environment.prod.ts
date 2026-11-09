@@ -3,17 +3,9 @@ export const environment = {
   // Title case to match Local / Dev / QA — the original value here was lowercase
   // 'production', which rendered an odd lowercase pill next to the title-cased ones.
   envName: 'Production',
-  bidSheetEnabled: true,
   // "Add from BarChart" picker + fed-bid display. ON since the 2026-10-20 release: the PROD catalog
   // finished its first full 7-day load on 2026-10-20 (84k listings, 4,024 locations, priced daily).
   barchartBidsEnabled: true,
-  usageDashboardEnabled: true,
-  // Daily Digest (recap groups): ON in PROD. Surfaces the /daily-digest route + the
-  // "Daily Recap" nav link. NOTE: enabling the UI is only half of launch — the prod
-  // Notes Daily Recap Logic App must also be deployed (it's what actually sends the
-  // recaps), and the recap migrations (CreateDailyRecapGroups, AddGetRecapNotesProc)
-  // must be applied to the prod DB. Merge this branch as part of that launch.
-  dailyDigestEnabled: true,
   // @-mention a Teams channel in a note. Needs delegated Channel.ReadBasic.All with admin consent
   // on THIS environment's SPA app registration, plus a federated identity credential on the
   // 'Origination API - Production' registration for the on-behalf-of exchange (see

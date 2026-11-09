@@ -2,7 +2,7 @@ using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Api.Platform.ReferenceData.Mappings;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
-using GrainOriginatorPortal.Infrastructure.Platform.Extensions;
+using GrainOriginatorPortal.Infrastructure.Modules.Engagement;
 using GrainOriginatorPortal.Api.Modules.BidSheet.Models.Requests;
 using GrainOriginatorPortal.Api.Modules.BidSheet.Models.Responses;
 using GrainOriginatorPortal.Infrastructure.Modules.BidSheet.Abstractions;

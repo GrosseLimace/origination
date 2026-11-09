@@ -1,64 +1,17 @@
-import { Injectable, signal, computed } from '@angular/core';
-import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, ReminderDue, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, RefinementFilters, ContractPricingLine, QueryLibraryItem } from '@models';
+import { Injectable, inject, signal } from '@angular/core';
+import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, ReminderDue, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow, ContractPricingLine, QueryLibraryItem } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
-
-export interface DashboardCacheEntry {
-  tradeUnitsKey: string;
-  /** Planting year the year-specific entries below were loaded for. Part of the cache key: the
-   *  dashboard resets selectedPlantingYear to the current year on every construction while this
-   *  cache survives navigation, so matching on tradeUnitsKey alone re-applied another year's
-   *  estimates/market shares/harvest figures. */
-  year: number;
-  customers: Customer[];
-  contracts: Contract[];
-  plantingIntentions: PlantingIntention[];
-  storedGrain: StoredGrain[];
-  commodities: Commodity[];
-  savedYieldEstimates: DashboardPlantingEstimate[];
-  savedMarketShares: DashboardMarketShare[];
-  savedActualHarvest: DashboardActualHarvest[];
-  loadedAt: Date;
-}
-
-export interface BuildListState {
-  queryText: string;
-  filteredCustomerIds: number[];
-  hasGenerated: boolean;
-  showMap: boolean;
-  detectedState: string | null;
-  tradeUnits: string[];
-  appliedRefinements?: RefinementFilters;
-  notContactedDaysInput?: string;
-  showRefinePanel?: boolean;
-  manuallyIncludedCustomerIds?: number[];
-  manuallyExcludedCustomerIds?: number[];
-  showManageMembersPanel?: boolean;
-  selectedLibraryQuery?: QueryLibraryItem | null;
-  /** When a saved list is the active context, persist it so navigating away and back
-   *  restores the "Active List" indicator and keeps Save/Update wired to the same list
-   *  (rather than dropping back to a no-context state that creates a new list on save). */
-  activeSavedList?: SavedList | null;
-}
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 @Injectable({
   providedIn: 'root'
 })
 export class AppStateService {
-  private static readonly PREFS_KEY = 'origination_user_prefs';
-
   // Writable state lives here, private. Each one is exposed below as a read-only signal next to its
   // documentation, and changes only through this service's methods — so every write to shared state
   // is a named, searchable call rather than a .set() from whichever component happened to hold it.
-  private readonly _userGroups = signal<{ groupName: string; tradeUnitCodes: string[]; tradeUnits?: { code: string; description?: string }[] }[]>([]);
-  private readonly _userGroupsLoaded = signal(false);
-  private readonly _noTradeUnitAssignments = signal(false);
-  private readonly _currentView = signal<'customers' | 'insights' | 'buildlist' | 'dashboard'>('customers');
   private readonly _selectedCustomer = signal<Customer | null>(null);
-  private readonly _selectedTradeUnits = signal<string[]>([]);
-  private readonly _selectedGroupNames = signal<string[]>([]);
   private readonly _allProducersMode = signal(false);
-  private readonly _lastScrolledCustomerId = signal<number | null>(null);
-  private readonly _buildListState = signal<BuildListState | null>(null);
   private readonly _searchQuery = signal<string>('');
   private readonly _selectedSavedListId = signal<string>('');
   private readonly _customers = signal<Customer[]>([]);
@@ -80,7 +33,6 @@ export class AppStateService {
   private readonly _producerDetails = signal<ProducerDetails[]>([]);
   private readonly _pricingLines = signal<ContractPricingLine[]>([]);
   private readonly _dataLoading = signal(false);
-  private readonly _ticketsLoading = signal(false);
   private readonly _ticketsLoaded = signal(false);
   private readonly _ticketsTradeUnitKey = signal<string | null>(null);
   private readonly _notesLoaded = signal(false);
@@ -98,133 +50,17 @@ export class AppStateService {
   private readonly _harvestWindowsLoadFailed = signal(false);
   private readonly _commodityConversionsLoadFailed = signal(false);
   private readonly _sourceLoadPending = signal(false);
-  private readonly _dashboardCache = signal<DashboardCacheEntry | null>(null);
-  private readonly _preloadedDashboardSummary = signal<(DashboardSummary & { tradeUnitsKey: string; year: number }) | null>(null);
 
-  constructor() {
-    try {
-      const raw = localStorage.getItem(AppStateService.PREFS_KEY);
-      if (raw) {
-        const saved = JSON.parse(raw) as { groups?: string[]; units?: string[] };
-        if (saved.groups?.length) this._selectedGroupNames.set(saved.groups);
-        if (saved.units?.length)  this._selectedTradeUnits.set(saved.units);
-      }
-    } catch { /* ignore parse errors */ }
-  }
-
-  savePrefsToLocalStorage(groups: string[], units: string[]): void {
-    try {
-      localStorage.setItem(AppStateService.PREFS_KEY, JSON.stringify({ groups, units }));
-    } catch { /* ignore */ }
-  }
-
-  // Trade unit groups cache — loaded once and shared globally. tradeUnits carries each code's
-  // description/location (e.g. "Pratt, KS"); tradeUnitCodes is kept for code-only consumers.
-  readonly userGroups = this._userGroups.asReadonly();
-  readonly userGroupsLoaded = this._userGroupsLoaded.asReadonly();
-
-  /** True once /usertradeunits has answered with NO assignments for this user. Distinct from
-   *  `userGroupsLoaded` (deliberately left false in that case so a retry is natural). Lets the
-   *  preference restore skip re-applying a saved selection the user is no longer entitled to. */
-  readonly noTradeUnitAssignments = this._noTradeUnitAssignments.asReadonly();
-
-  setUserGroups(groups: { groupName: string; tradeUnitCodes: string[]; tradeUnits?: { code: string; description?: string }[] }[]): void {
-    this._userGroups.set(groups);
-    this._userGroupsLoaded.set(true);
-    this._noTradeUnitAssignments.set(false);
-  }
-
-  /** /usertradeunits answered with no assignments: drop the groups and record why. Leaves
-   *  userGroupsLoaded alone on purpose (see noTradeUnitAssignments). */
-  markNoTradeUnitAssignments(): void {
-    this._userGroups.set([]);
-    this._noTradeUnitAssignments.set(true);
-  }
-
-  /** Trade-unit code → description/location (e.g. "2190" → "Pratt, KS"), from the loaded groups.
-   *  Empty until groups load (or for older cached data without descriptions). */
-  readonly tradeUnitDescriptions = computed(() => {
-    const map = new Map<string, string>();
-    for (const g of this.userGroups()) {
-      for (const tu of g.tradeUnits ?? []) {
-        if (tu.description && !map.has(tu.code)) map.set(tu.code, tu.description);
-      }
-    }
-    return map;
-  });
-
-  // View state
-  readonly currentView = this._currentView.asReadonly();
+  // The trade-unit selection lives in TradeUnitContext; setTickets records which one the tickets were loaded for.
+  private readonly tradeUnitContext = inject(TradeUnitContext);
 
   // Selection state
   readonly selectedCustomer = this._selectedCustomer.asReadonly();
-  readonly selectedTradeUnits = this._selectedTradeUnits.asReadonly();
-  readonly selectedGroupNames = this._selectedGroupNames.asReadonly();
   // "All Producers" mode — a session-only override that clears scope so the customer-list
   // search spans all producers (our table + ODS onboarding fallback). Deliberately NOT
   // persisted (localStorage or server preference) and starts false every session, so the
   // user's saved preference always remains a real trade group, never "All Producers".
   readonly allProducersMode = this._allProducersMode.asReadonly();
-
-  /**
-   * Trade group names currently in play — used to scope the commodity pickers (Organics & IP).
-   *
-   * Precedence matches the rest of the app: individually selected trade units win (a group counts
-   * if any of its codes is selected), then selected groups, then — per the selector's
-   * _computeAvailableTradeUnits — an empty selection means ALL of the user's groups, not none.
-   * Empty until userGroups loads, at which point every consumer re-filters on its own.
-   *
-   * Selecting an Organics unit alongside a conventional one is additive: both groups come back,
-   * so the organic crops show without hiding anything else.
-   */
-  readonly inScopeGroupNames = computed<readonly string[]>(() => {
-    const groups = this.userGroups();
-    const units = this.selectedTradeUnits();
-    const names = this.selectedGroupNames();
-
-    if (units.length > 0) {
-      const selected = new Set(units.map(u => u.trim()));
-      return groups
-        .filter(g => g.tradeUnitCodes.some(c => selected.has(c.trim())))
-        .map(g => g.groupName);
-    }
-    // Intersect rather than echo the names back, so a stale saved selection can't invent a group.
-    if (names.length > 0) {
-      return groups.filter(g => names.includes(g.groupName)).map(g => g.groupName);
-    }
-    return groups.map(g => g.groupName);
-  });
-
-  /**
-   * Trade unit codes currently in play — the unit-level counterpart to inScopeGroupNames, used to
-   * scope commodities restricted to specific units rather than a whole group.
-   *
-   * Precedence is identical: explicit units win, then selected groups expanded to their member
-   * codes, then — nothing selected means ALL of the user's units, not none. Kept separate from
-   * inScopeGroupNames rather than derived from it because that computed deliberately collapses
-   * units up to their group name, which loses exactly the granularity this needs: selecting 2080
-   * and selecting 2291 both yield 'Organics & IP'.
-   */
-  readonly inScopeTradeUnitCodes = computed<readonly string[]>(() => {
-    const groups = this.userGroups();
-    const units = this.selectedTradeUnits();
-    const names = this.selectedGroupNames();
-
-    if (units.length > 0) return units.map(u => u.trim()).filter(Boolean);
-    if (names.length > 0) {
-      return groups
-        .filter(g => names.includes(g.groupName))
-        .flatMap(g => g.tradeUnitCodes.map(c => c.trim()))
-        .filter(Boolean);
-    }
-    return groups.flatMap(g => g.tradeUnitCodes.map(c => c.trim())).filter(Boolean);
-  });
-
-  // Scroll state — tracks last customer scrolled to in the list so re-navigation doesn't re-scroll
-  readonly lastScrolledCustomerId = this._lastScrolledCustomerId.asReadonly();
-
-  // Build a List UI state — persists across navigation
-  readonly buildListState = this._buildListState.asReadonly();
 
   // Search state
   readonly searchQuery = this._searchQuery.asReadonly();
@@ -268,20 +104,8 @@ export class AppStateService {
   readonly producerDetails = this._producerDetails.asReadonly();
   readonly pricingLines = this._pricingLines.asReadonly();
 
-  setView(view: 'customers' | 'insights' | 'buildlist' | 'dashboard'): void {
-    this._currentView.set(view);
-  }
-
   selectCustomer(customer: Customer | null): void {
     this._selectedCustomer.set(customer);
-  }
-
-  setTradeUnits(tradeUnits: string[]): void {
-    this._selectedTradeUnits.set(tradeUnits);
-  }
-
-  setSelectedGroupNames(groups: string[]): void {
-    this._selectedGroupNames.set(groups);
   }
 
   setAllProducersMode(on: boolean): void {
@@ -311,7 +135,7 @@ export class AppStateService {
 
   setTickets(tickets: Ticket[]): void {
     this._tickets.set(tickets);
-    this._ticketsTradeUnitKey.set(this.selectedTradeUnits().join(','));
+    this._ticketsTradeUnitKey.set(this.tradeUnitContext.selectedTradeUnits().join(','));
     this._ticketsLoaded.set(true);
   }
 
@@ -388,16 +212,6 @@ export class AppStateService {
 
   setDataLoading(loading: boolean): void {
     this._dataLoading.set(loading);
-  }
-
-  // Tickets-specific loading flag — true while the full ticket set is still arriving.
-  // Flipped false independently of dataLoading so insights cards that don't depend on
-  // the full ticket set (Unconfirmed Contracts, Spot Loads) can render as soon as
-  // their own data is ready.
-  readonly ticketsLoading = this._ticketsLoading.asReadonly();
-
-  setTicketsLoading(loading: boolean): void {
-    this._ticketsLoading.set(loading);
   }
 
   // True once the TU-wide ticket set has been loaded into `tickets` (via setTickets). List/NLQ
@@ -547,70 +361,14 @@ export class AppStateService {
     this._harvestWindowsLoadFailed.set(false);
   }
 
-  // Dashboard cache — keyed by trade unit so navigating back shows data instantly
-  readonly dashboardCache = this._dashboardCache.asReadonly();
-
-  setDashboardCache(entry: DashboardCacheEntry): void {
-    this._dashboardCache.set(entry);
-  }
-
-  clearDashboardCache(): void {
-    this._dashboardCache.set(null);
-  }
-
-  // Pre-fetched dashboard summary — DataPreloadService populates this for the current year
-  // so the dashboard component can render without waiting for its own API calls.
-  readonly preloadedDashboardSummary = this._preloadedDashboardSummary.asReadonly();
-
-  setPreloadedDashboardSummary(tradeUnitsKey: string, year: number, summary: DashboardSummary): void {
-    this._preloadedDashboardSummary.set({ tradeUnitsKey, year, ...summary });
-  }
-
-  clearPreloadedDashboardSummary(): void {
-    this._preloadedDashboardSummary.set(null);
-  }
-
-  // Geocode cache — plain Map (not a signal) so mutation is cheap and in-place
-  // Capped at 500 entries to prevent unbounded memory growth (LRU-style: evict oldest on overflow)
-  private readonly GEOCODE_CACHE_MAX = 500;
-  mapGeocodeCache = new Map<string, { lat: number; lng: number }>();
-
-  setGeocodeCache(key: string, value: { lat: number; lng: number }): void {
-    if (this.mapGeocodeCache.size >= this.GEOCODE_CACHE_MAX) {
-      // Map iteration order is insertion order — delete the oldest entry
-      const firstKey = this.mapGeocodeCache.keys().next().value;
-      if (firstKey !== undefined) this.mapGeocodeCache.delete(firstKey);
-    }
-    this.mapGeocodeCache.set(key, value);
-  }
-
-  clearMapGeocodeCache(): void {
-    this.mapGeocodeCache.clear();
-  }
-
-  setLastScrolledCustomerId(id: number | null): void {
-    this._lastScrolledCustomerId.set(id);
-  }
-
-  setBuildListState(state: BuildListState): void {
-    this._buildListState.set(state);
-  }
-
-  clearBuildListState(): void {
-    this._buildListState.set(null);
-  }
-
   clearSelection(): void {
     this._selectedCustomer.set(null);
   }
 
   // Clear all state (for logout or reset)
   clearAll(): void {
-    this._userGroups.set([]);
-    this._userGroupsLoaded.set(false);
+    this.tradeUnitContext.clear();
     this._selectedCustomer.set(null);
-    this._selectedTradeUnits.set([]);
-    this._selectedGroupNames.set([]);
     this._searchQuery.set('');
     this._selectedSavedListId.set('');
     this._customers.set([]);
@@ -626,10 +384,6 @@ export class AppStateService {
     this._savedLists.set([]);
     this._commodities.set([]);
     this._producerDetails.set([]);
-    this._buildListState.set(null);
-    this._lastScrolledCustomerId.set(null);
-    this._dashboardCache.set(null);
-    this._preloadedDashboardSummary.set(null);
     this._dataLoading.set(false);
     this._customersLoading.set(false);
     this._contractsLoading.set(false);

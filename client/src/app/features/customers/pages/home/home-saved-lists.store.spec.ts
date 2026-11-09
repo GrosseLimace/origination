@@ -12,6 +12,7 @@ import type { Customer, Note, QueryLibraryItem, SavedList } from '@models';
 import { HomeBackgroundFailures } from './home-background-failures';
 import { HomePageState } from './home-page.state';
 import { HomeSavedListsStore } from './home-saved-lists.store';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 const customer = (id: number) => ({ id, scoularId: `S-${id}`, name: `P${id}` }) as Customer;
 const list = (id: number, over: Partial<SavedList> = {}): SavedList =>
@@ -78,6 +79,7 @@ describe('HomeSavedListsStore', () => {
         HomePageState, HomeSavedListsStore,
         { provide: ApiService, useValue: api },
         { provide: AppStateService, useValue: appState },
+        { provide: TradeUnitContext, useValue: appState },
         { provide: ToastService, useValue: toast },
         { provide: NlqFilterService, useValue: nlq },
         { provide: HomeBackgroundFailures, useValue: failures },

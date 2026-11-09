@@ -2,9 +2,9 @@
 
 ## At a Glance
 
-- **Route**: `/usage-dashboard` (needs `usage-reports:read`, env-gated by `environment.usageDashboardEnabled`)
-- **Component**: [`client/src/app/features/usage-dashboard/pages/usage-dashboard/usage-dashboard.component.ts`](../../client/src/app/features/usage-dashboard/pages/usage-dashboard/usage-dashboard.component.ts)
-- **Template**: [`usage-dashboard.component.html`](../../client/src/app/features/usage-dashboard/pages/usage-dashboard/usage-dashboard.component.html)
+- **Route**: `/usage-dashboard` (needs `usage-reports:read`)
+- **Component**: [`client/src/app/features/usage-analytics/pages/usage-dashboard/usage-dashboard.component.ts`](../../client/src/app/features/usage-analytics/pages/usage-dashboard/usage-dashboard.component.ts)
+- **Template**: [`usage-dashboard.component.html`](../../client/src/app/features/usage-analytics/pages/usage-dashboard/usage-dashboard.component.html)
 - **Access**: `authGuard` + `permissionGuard` with `usage-reports:read`.
 - **Primary user goal**: monitor adoption, spot inactive originators, identify underused features, and find gaps in the query library — feed product / management decisions.
 
@@ -49,12 +49,12 @@ sent, for every caller who passes the read policy.
 | --- | --- |
 | Access rules | `api/GrainOriginatorPortal.Api/Authorization/UsageDashboardAccess.cs` |
 | Manager roster + subtree | `api/GrainOriginatorPortal.Api/Modules/UsageAnalytics/Services/ManagerDirectoryService.cs` |
-| Manager filter (presentational) | `client/src/app/features/usage-dashboard/components/manager-filter/` |
+| Manager filter (presentational) | `client/src/app/features/usage-analytics/components/manager-filter/` |
 | Default-to-self + roster load | `usage-dashboard.component.ts` (`loadManagers`, `applyDefaultManager`) |
 
 ## How users reach it
 
-- "Usage Dashboard" item in the profile menu — only rendered when (a) the user has the `Admin` role and (b) `environment.usageDashboardEnabled === true`.
+- "Usage Dashboard" item in the profile menu, shown only to users holding `usage-reports:read`, the permission the routes and the API check. The item and both routes are declared in [`usage-analytics.module.ts`](../../client/src/app/features/usage-analytics/usage-analytics.module.ts).
 
 ## Vocabulary
 
@@ -169,12 +169,13 @@ reconstruct), `query-library-usage`, `query-search-gaps`, and `users/{id}/detail
 
 | Layer | Path |
 | --- | --- |
-| Component | `client/src/app/features/usage-dashboard/pages/usage-dashboard/usage-dashboard.component.ts` |
-| Drill-down | `client/src/app/features/usage-dashboard/pages/user-usage-detail/user-usage-detail.component.ts` |
-| Shared formatting / sorting | `client/src/app/features/usage-dashboard/utils/` (`usage-format.ts`, `table-sort.ts`) |
-| Sort icon, manager filter, exclusions panel | `client/src/app/features/usage-dashboard/components/` |
+| Component | `client/src/app/features/usage-analytics/pages/usage-dashboard/usage-dashboard.component.ts` |
+| Drill-down | `client/src/app/features/usage-analytics/pages/user-usage-detail/user-usage-detail.component.ts` |
+| Shared formatting / sorting | `client/src/app/features/usage-analytics/utils/` (`usage-format.ts`, `table-sort.ts`) |
+| Sort icon, manager filter, exclusions panel | `client/src/app/features/usage-analytics/components/` |
+| API client | `client/src/app/features/usage-analytics/data-access/usage-dashboard-api.service.ts` |
 | Frontend tracking service | `client/src/app/core/services/usage-tracking.service.ts` |
-| Admin guard | `client/src/app/guards/admin.guard.ts` |
+| Route guard | `permissionGuard` with `requires('usage-reports:read')` (`client/src/app/core/access/permission.guard.ts`) |
 | Controller | `api/GrainOriginatorPortal.Api/Modules/UsageAnalytics/Controllers/UsageDashboardController.cs` |
 | Click-event endpoint | `api/GrainOriginatorPortal.Api/Platform/Telemetry/Controllers/ClickEventsController.cs` |
 | Service | `api/GrainOriginatorPortal.Api/Modules/UsageAnalytics/Services/UsageDashboardService.cs` |
@@ -323,7 +324,7 @@ POST /api/diagnostics/usage-rollups/backfill?days=90
 
 ## Feature flag
 
-`environment.usageDashboardEnabled`. Route registered conditionally; menu item conditionally rendered.
+None. `environment.usageDashboardEnabled` was removed on 2026-11-09: `usage-reports:read` gates the routes and the menu item.
 
 ## Troubleshooting
 

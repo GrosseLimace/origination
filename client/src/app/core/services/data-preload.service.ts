@@ -9,17 +9,21 @@ import { AppStateService } from './app-state.service';
 import { Customer, Contract, Ticket, NoteLastContact, ReminderDue, PlantingIntention, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
 import { environment } from '@env/environment';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { ModuleRegistry } from '@core/modules/module-registry';
 
 @Injectable({ providedIn: 'root' })
 export class DataPreloadService {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
+  private readonly tradeUnitContext = inject(TradeUnitContext);
+  private readonly moduleRegistry = inject(ModuleRegistry);
   private readonly destroyRef = inject(DestroyRef);
   private readonly _forceReload$ = new Subject<string[]>();
 
   /** Re-run the full data load with the current trade units, cancelling any in-progress load. */
   forceReload(): void {
-    const tradeUnits = this.appState.selectedTradeUnits();
+    const tradeUnits = this.tradeUnitContext.selectedTradeUnits();
     if (tradeUnits.length === 0) return;
     this._forceReload$.next(tradeUnits);
   }
@@ -29,7 +33,7 @@ export class DataPreloadService {
     const msalService = inject(MsalService);
 
     const tuChanges$ = merge(
-      toObservable(this.appState.selectedTradeUnits).pipe(
+      toObservable(this.tradeUnitContext.selectedTradeUnits).pipe(
         distinctUntilChanged((a, b) => [...a].sort().join(',') === [...b].sort().join(','))
       ),
       this._forceReload$
@@ -70,8 +74,6 @@ export class DataPreloadService {
         this.appState.setContractsLoading(true);
         this.appState.clearLoadFailures();
         this.appState.setTodaysTicketsLoading(true);
-        this.appState.clearDashboardCache();
-        this.appState.clearPreloadedDashboardSummary();
         // The TU-wide ticket set is no longer eagerly bulk-loaded — it's lazily fetched by the
         // list/NLQ consumers (customer-list, build-list) when a ticket query needs it. Clear it on
         // TU change so those consumers re-fetch for the new TU instead of reusing the prior TU's set.
@@ -217,21 +219,11 @@ export class DataPreloadService {
           })
         );
 
-        // Pre-fetch dashboard summary for the current year so the Dashboard page
-        // renders immediately when the user navigates to it (no extra API round-trip).
-        const tuKey = [...tradeUnits].sort().join(',');
-        const currentYear = new Date().getFullYear();
-        // A failed prefetch is left unset rather than stored as an empty summary. The dashboard adopts a
-        // preloaded summary without fetching its own, so an empty one showed a season with no
-        // estimates, market shares or harvest, and kept showing it for the rest of the session.
-        const dashboardSummary$ = this.apiService.getDashboardSummary(tuKey, currentYear).pipe(
-          tap(summary => {
-            this.appState.setPreloadedDashboardSummary(tuKey, currentYear, summary);
-          }),
-          catchError(() => of(null))
-        );
+        // Each module's own preload (the Planting Dashboard's summary, for one), cancelled with the rest by the
+        // next trade-unit change.
+        const modulePreloads = this.moduleRegistry.preloads(tradeUnits);
 
-        return merge(customers$, contracts$, todaysTickets$, notes$, reminders$, plantingIntentions$, storedGrain$, dpContracts$, savedLists$, commodities$, harvestWindows$, producerDetails$, dashboardSummary$);
+        return merge(customers$, contracts$, todaysTickets$, notes$, reminders$, plantingIntentions$, storedGrain$, dpContracts$, savedLists$, commodities$, harvestWindows$, producerDetails$, ...modulePreloads);
       }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe();

@@ -39,7 +39,8 @@ public class ModuleBoundaryTests
         ["Engagement"] = ["Customers"],
         ["Producers"] = ["Contracts", "Customers"],
         ["Lists"] = ["Producers", "Contracts", "Customers"],
-        ["BidSheet"] = [],
+        // A bid sheet can be shared with a Daily Recap group.
+        ["BidSheet"] = ["Engagement"],
         // The usage dashboard names the customers, contracts and query-library prompts people used.
         ["UsageAnalytics"] = ["Lists", "Contracts", "Customers"],
     };

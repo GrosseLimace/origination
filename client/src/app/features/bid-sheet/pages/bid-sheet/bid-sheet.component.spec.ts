@@ -4,6 +4,8 @@ import { Router } from '@angular/router';
 import { Subject, of } from 'rxjs';
 
 import { ApiService } from '@core/services/api.service';
+import { BidSheetApiService } from '../../data-access/bid-sheet-api.service';
+import { RecapGroupsApiService } from '@features/engagement';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
@@ -66,9 +68,7 @@ describe('BidSheetComponent — board symbols and printed values', () => {
       renameBidSheet: () => of(null),
       deleteBidSheet: () => of(undefined),
       setBidSheetShares: () => of(null),
-      setBidSheetLayout: () => of(null),
       addBidSheetLocation: () => of(null),
-      removeBidSheetLocation: () => of(null),
       setBidSheetRowOrder: () => of(null),
       getBidSheetLocationSheetCount: () => of(0),
       getEntitlementsCatalog: () => of({ people: [], tradeUnits: [], groups: [] }),
@@ -76,6 +76,8 @@ describe('BidSheetComponent — board symbols and printed values', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -637,6 +639,8 @@ describe('BidSheetComponent — filter dropdown sources', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -762,6 +766,8 @@ describe('BidSheetComponent — catalog location as comparison reference', () =>
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -907,6 +913,8 @@ describe('BidSheetComponent — catalog pin price label in Both mode', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -1016,6 +1024,8 @@ describe('BidSheetComponent — catalog pin tooltip is text, not markup', () => 
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -1096,6 +1106,8 @@ describe('BidSheetComponent — the saved price mode survives a reload', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -1162,6 +1174,8 @@ describe('BidSheetComponent — the catalog popup answers the price toggle', () 
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -1375,6 +1389,8 @@ describe('BidSheetComponent — the "+ Add" menu and building a sheet from a bat
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -1506,6 +1522,8 @@ describe('BidSheetComponent — map scope follows the open sheet', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -1653,6 +1671,8 @@ describe('BidSheetComponent — map labels appear in stages as you zoom in', () 
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -1716,6 +1736,8 @@ describe('BidSheetComponent — narrowing scope clears catalog-anchored state', 
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -1780,6 +1802,8 @@ describe('BidSheetComponent — added pins match catalog pins in All scope', () 
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -1845,6 +1869,8 @@ describe('BidSheetComponent — bid moved in the last 24 hours', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -1966,6 +1992,8 @@ describe('BidSheetComponent — sharing with people, desks and groups', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -2076,6 +2104,8 @@ describe('BidSheetComponent — renaming a location stays on the sheet', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -2216,6 +2246,8 @@ describe('BidSheetComponent — removing locations from the sheet', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -2293,6 +2325,8 @@ describe('BidSheetComponent — the Yearly period is retired', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -2530,6 +2564,8 @@ describe('BidSheetComponent — the popup follows the last pin clicked', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -2658,6 +2694,8 @@ describe('BidSheetComponent — an open popup follows the pin you click', () => 
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -2773,6 +2811,8 @@ describe('BidSheetComponent — two locations that share a name stay apart', () 
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -2923,6 +2963,8 @@ describe('BidSheetComponent — several bid sheets shown at once', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },
@@ -3143,6 +3185,8 @@ describe('BidSheetComponent — owner actions act on the sheet they were raised 
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
+        { provide: BidSheetApiService, useValue: api },
+        { provide: RecapGroupsApiService, useValue: api },
         { provide: ToastService, useValue: { show: () => {}, error: () => {}, success: () => {}, info: () => {} } },
         { provide: Router, useValue: { navigate: () => {} } },
         { provide: UsageTrackingService, useValue: { postClickEvent: () => {} } },

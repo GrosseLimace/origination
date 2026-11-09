@@ -6,7 +6,7 @@ notes live in [docs/application-context/](docs/application-context/), operations
 [agents-docs/audits/AUDIT-TRACKING.json](agents-docs/audits/AUDIT-TRACKING.json).
 
 ## Software Bill of Materials (SBOM)
-Last Updated: 2026-11-07
+Last Updated: 2026-11-08
 
 Direct dependencies plus the transitive packages pinned for security. This is the compact copy
 company policy asks for here; [README.md](README.md#software-bill-of-materials-sbom) has the same
@@ -53,6 +53,11 @@ rows with the security notes behind each pin. Update BOTH in the same commit as 
 | vitest | 4.1.12 | MIT | Unit testing framework |
 | happy-dom | 21.0.4 | MIT | Test DOM for Vitest |
 | typescript | 5.9.3 | Apache-2.0 | TypeScript compiler |
+| eslint | 10.14.0 | MIT | Linter for the module boundary rules (dev only) |
+| angular-eslint | 21.4.0 | MIT | `ng lint` builder (dev only) |
+| typescript-eslint | 8.72.1 | MIT | TypeScript parser for ESLint (dev only) |
+| eslint-plugin-boundaries | 7.4.2 | MIT | Module boundary rules (dev only) |
+| eslint-import-resolver-typescript | 4.4.5 | ISC | Resolves tsconfig path aliases for the boundary rules (dev only) |
 | esbuild | ≥0.28.1 | MIT | Bundler |
 | vite | ≥7.3.5 | MIT | Dev server/bundler |
 | @babel/core | ≥7.29.6 | MIT | JS compiler |

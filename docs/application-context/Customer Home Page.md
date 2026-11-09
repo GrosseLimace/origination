@@ -46,7 +46,7 @@ Stacked in this order inside `@if (showProducerInsights())`:
 producer on several trade units plants different acres for each and the Planting Intentions
 dashboard sums acres by that field. The Add and Edit dialogs
 (`planting-intentions-table/`) offer the *producer's own* active trade units (fetched on open from
-`GET /api/customers/{id}/trade-units`, with descriptions from `appState.tradeUnitDescriptions`).
+`GET /api/customers/{id}/trade-units`, with descriptions from `TradeUnitContext.tradeUnitDescriptions`).
 One trade unit → shown read-only; several → the originator must pick, preselected when exactly one
 of them is selected in the header. Same crop, year and type for two trade units are two rows, not
 one accumulated row. The API rejects a trade unit the producer is not active in (400). A producer
@@ -131,7 +131,7 @@ When the trade-unit selector changes, the home component fires a parallel batch 
 | Per-tab tables | `customer-profile/contracts-table/`, `tickets-table/`, `planting-intentions-table/`, `stored-grain-table/` |
 | Producer Insights panels | `client/src/app/features/customers/components/producer-insights/`, `contract-pacing-card/`, `growth-opportunity/` |
 | Production coverage math | `client/src/app/shared/utils/production-coverage.ts` (+ `.spec.ts`) |
-| Customer map (in profile) | `client/src/app/features/customers/components/map/customer-map.component.ts` |
+| Customer map (shown on Build a List, so it belongs to Lists) | `client/src/app/features/lists/components/map/customer-map.component.ts` |
 | Controllers | `CustomersController`, `ContractsController`, `TicketsController`, `NotesController`, `PlantingIntentionsController`, `StoredGrainController`, `ProducerDetailsController`, `LinkedProducersController` (`customers/linked-to`), `ContractPacingController` (`contracts/pacing`), `SavedListsController`, `CommoditiesController` |
 | Services | Each controller's module service: `CustomerService`, `ContractService`, `TicketService`, `NoteService`, `PlantingIntentionService`, `StoredGrainService`, `ProducerDetailsService`, `SavedListService`, `CommodityService` (module layout in [`Shared Infrastructure.md`](./Shared%20Infrastructure.md#services-and-repositories-by-module)) |
 | ODS views read | `base.vw_CurrentContracts`, `base.vw_CurrentTickets`, `base.vw_ContractPricing`, `ctrm.vw_GNTA39D1` |
@@ -290,7 +290,7 @@ All mutations refresh the relevant `appState` signal on success so other screens
 
 | Symptom | Likely cause | First place to look |
 | --- | --- | --- |
-| Customer list is empty | TU selector empty or user has no entitled TUs | TU selector → `appState.selectedTradeUnits()`; check Network tab for `getCustomers` 200/empty vs 403 |
+| Customer list is empty | TU selector empty or user has no entitled TUs | TU selector → `TradeUnitContext.selectedTradeUnits()`; check Network tab for `getCustomers` 200/empty vs 403 |
 | Selected producer's storage tab is empty even though storage exists in DB | StoredGrain merge race; or TU-fetch stale response wiping per-customer fetch | `home.component.ts:335-352` — confirm merge logic still in place |
 | Profile won't open from a deep link | `customerId` query param malformed, or producer not in any of the user's entitled TUs | Devtools console + `_selectCustomerById` flow; `getCustomerById` may return 404 |
 | Notes don't show "Last contacted" | The `lastContactedDate` computed reads `note.createdAt`, not `modifiedAt` (modify reflects pin/edits, not actual contact). See comments around `home.component.ts:91-95` |

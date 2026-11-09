@@ -1,13 +1,10 @@
 export const environment = {
   production: false,
   envName: 'QA',
-  bidSheetEnabled: true,
   // "Add from BarChart" picker + fed-bid display. On for QA testing. The catalog must be loaded before
   // testers look: an empty catalog makes the picker return nothing, which reads as a broken feature
   // rather than as missing data.
   barchartBidsEnabled: true,
-  usageDashboardEnabled: true,
-  dailyDigestEnabled: true,
   // @-mention a Teams channel in a note. The channel lookup runs in the API on-behalf-of the caller,
   // so it needs delegated Team.ReadBasic.All + Channel.ReadBasic.All with admin consent on the API
   // app registration (NOT the SPA — that moved server-side on 2026-09-15) and a federated credential

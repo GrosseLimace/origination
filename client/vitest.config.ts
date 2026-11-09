@@ -8,14 +8,15 @@ export default defineConfig({
   // during transform, so component tests can render real DOM under Vitest.
   plugins: [angular()],
   resolve: {
-    alias: {
-      '@core': resolve(__dirname, 'src/app/core'),
-      '@shared': resolve(__dirname, 'src/app/shared'),
-      '@features': resolve(__dirname, 'src/app/features'),
-      '@models': resolve(__dirname, 'src/app/models/index.ts'),
-      '@env': resolve(__dirname, 'src/environments'),
-      '@testing': resolve(__dirname, 'src/testing'),
-    }
+    alias: [
+      { find: '@core', replacement: resolve(__dirname, 'src/app/core') },
+      { find: '@shared', replacement: resolve(__dirname, 'src/app/shared') },
+      // One alias per module, to its public index.ts only, as in tsconfig.json: "@features/x/deep/path" doesn't resolve.
+      { find: /^@features\/([a-z-]+)$/, replacement: resolve(__dirname, 'src/app/features') + '/$1/index.ts' },
+      { find: '@models', replacement: resolve(__dirname, 'src/app/models/index.ts') },
+      { find: '@env', replacement: resolve(__dirname, 'src/environments') },
+      { find: '@testing', replacement: resolve(__dirname, 'src/testing') },
+    ]
   },
   test: {
     environment: 'happy-dom',

@@ -16,9 +16,10 @@ using GrainOriginatorPortal.Infrastructure.Platform.Extensions;
 namespace GrainOriginatorPortal.Api.Tests.Modules;
 
 /// <summary>
-/// Platform declares an extension when one module needs an answer only another module has, and the two must not
-/// depend on each other: Bid Sheet asks who is in a recap group, and Engagement answers. Nothing has a fallback,
-/// so the app must register an implementation of every one.
+/// Platform declares an extension when it needs an answer only a module has, since Platform may not depend on a
+/// module: the entitlement check asks Customers which trade units a customer is in, and the commodity seed asks
+/// Contracts for the commodities on purchase contracts. Nothing has a fallback, so the app must register an
+/// implementation of every one.
 /// </summary>
 public class PlatformExtensionsTests
 {
@@ -41,7 +42,7 @@ public class PlatformExtensionsTests
         services.AddUsageAnalyticsModule();
         var registered = services.Select(d => d.ServiceType).ToHashSet();
 
-        var extensions = typeof(IRecapGroupMembership).Assembly.GetTypes()
+        var extensions = typeof(ICustomerTradeUnits).Assembly.GetTypes()
             .Where(t => t.IsInterface && t.Namespace == Extensions)
             .ToList();
 

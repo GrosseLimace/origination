@@ -3,8 +3,8 @@
 ## At a Glance
 
 - **Route**: `/insights`
-- **Component**: [`client/src/app/features/customers/pages/insights/insights.component.ts`](../../client/src/app/features/customers/pages/insights/insights.component.ts)
-- **Template**: [`insights.component.html`](../../client/src/app/features/customers/pages/insights/insights.component.html)
+- **Component**: [`client/src/app/features/lists/pages/insights/insights.component.ts`](../../client/src/app/features/lists/pages/insights/insights.component.ts)
+- **Template**: [`insights.component.html`](../../client/src/app/features/lists/pages/insights/insights.component.html)
 - **Access**: any authenticated Scoular user (`authGuard`).
 - **Primary user goal**: surface the three highest-priority work items per producer — unconfirmed contracts, spot loads, and unshipped bushels past delivery — and click straight through to the relevant section of the customer profile.
 
@@ -70,8 +70,8 @@ The screen does **not** fetch its own data — it reads everything from `AppStat
 
 | Layer | Path |
 | --- | --- |
-| Component | `client/src/app/features/customers/pages/insights/insights.component.ts` |
-| Template | `client/src/app/features/customers/pages/insights/insights.component.html` |
+| Component | `client/src/app/features/lists/pages/insights/insights.component.ts` |
+| Template | `client/src/app/features/lists/pages/insights/insights.component.html` |
 | Data preload | `client/src/app/core/services/data-preload.service.ts` |
 | AppState signals consumed | `customers`, `contracts`, `todaysTickets`, `commodities`, `commodityConversions`, `dataLoading`, `ticketsLoading` |
 | Underlying ODS views (via other screens / preload) | `base.vw_CurrentContracts`, `base.vw_CurrentTickets`, `ctrm.vw_GNP024` (commodity conversions). Customers come from app-DB `dbo.Customer`. |

@@ -65,7 +65,7 @@ describe('CTRM failure visibility', () => {
     });
 
     it('build-list guards both "no producers" states with sourceLoadFailed', () => {
-      const html = read('features', 'build-list', 'pages', 'build-list', 'build-list.component.html');
+      const html = read('features', 'lists', 'pages', 'build-list', 'build-list.component.html');
 
       // Both the trade-unit empty state and the query-result empty state.
       expect(html.split('sourceLoadFailed()').length - 1).toBeGreaterThanOrEqual(2);

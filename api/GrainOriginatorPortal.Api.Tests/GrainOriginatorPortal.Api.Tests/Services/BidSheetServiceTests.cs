@@ -6,7 +6,7 @@ using Moq;
 // Project namespaces
 using GrainOriginatorPortal.Api.Platform.Access;
 using GrainOriginatorPortal.Infrastructure.Platform.Access;
-using GrainOriginatorPortal.Infrastructure.Platform.Extensions;
+using GrainOriginatorPortal.Infrastructure.Modules.Engagement;
 using GrainOriginatorPortal.Api.Modules.BidSheet.Models.Requests;
 using GrainOriginatorPortal.Api.Modules.BidSheet.Services;
 using GrainOriginatorPortal.Infrastructure.Modules.BidSheet.Entities;

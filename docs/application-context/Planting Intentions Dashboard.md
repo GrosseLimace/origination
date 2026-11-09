@@ -3,8 +3,8 @@
 ## At a Glance
 
 - **Route**: `/dashboard`
-- **Component**: [`client/src/app/features/dashboard/pages/dashboard/dashboard.component.ts`](../../client/src/app/features/dashboard/pages/dashboard/dashboard.component.ts)
-- **Template**: [`dashboard.component.html`](../../client/src/app/features/dashboard/pages/dashboard/dashboard.component.html)
+- **Component**: [`client/src/app/features/producers/pages/dashboard/dashboard.component.ts`](../../client/src/app/features/producers/pages/dashboard/dashboard.component.ts)
+- **Template**: [`dashboard.component.html`](../../client/src/app/features/producers/pages/dashboard/dashboard.component.html)
 - **Access**: any authenticated Scoular user (`authGuard`).
 - **Primary user goal**: plan and track planting for the upcoming season — yield estimates, market share targets, actual harvest results, and the per-producer roll-up of intentions and contracts for that crop year.
 
@@ -72,8 +72,8 @@ Every row in `dbo.ProducerPlantingIntentions` carries the trade unit it was reco
 
 | Layer | Path |
 | --- | --- |
-| Component | `client/src/app/features/dashboard/pages/dashboard/dashboard.component.ts` |
-| Template | `client/src/app/features/dashboard/pages/dashboard/dashboard.component.html` |
+| Component | `client/src/app/features/producers/pages/dashboard/dashboard.component.ts` |
+| Template | `client/src/app/features/producers/pages/dashboard/dashboard.component.html` |
 | Controller | `api/GrainOriginatorPortal.Api/Modules/Producers/Controllers/DashboardPlantingEstimatesController.cs` (`planting-estimates:read`; the three upserts and the actual-harvest delete also need `planting-estimates:write`) |
 | Service methods (group: Dashboard) | `GetDashboardSummaryAsync`, `GetDashboardPlantingEstimatesAsync`, `UpsertDashboardPlantingEstimatesAsync`, `GetDashboardMarketSharesAsync`, `UpsertDashboardMarketSharesAsync`, `GetDashboardActualHarvestAsync`, `UpsertDashboardActualHarvestAsync`, `DeleteDashboardActualHarvestAsync` |
 | App tables | `dbo.DashboardPlantingEstimates`, `dbo.DashboardMarketShares`, `dbo.DashboardActualHarvests`, `dbo.ProducerPlantingIntentions`, `dbo.Commodities` |
@@ -117,9 +117,10 @@ Unique-ish constraints exist on `(TradeUnitKey, PlantingYear, Crop|CropCategory)
 
 ## State and caching
 
-- `appState.dashboardCache` (`DashboardCacheEntry`) caches the last summary keyed by trade unit so re-entering the screen renders instantly.
-- `appState.preloadedDashboardSummary` is set by `DataPreloadService` so the dashboard doesn't have to wait on its own fetch on cold load.
-- `clearDashboardCache()` fires when trade units change.
+- Both caches live in Producers' `DashboardStore` (`features/producers/data-access/dashboard.store.ts`).
+- `dashboardCache` (`DashboardCacheEntry`) caches the last summary keyed by trade unit so re-entering the screen renders instantly.
+- `preloadedDashboardSummary` is set by the Producers module's preload (`preloadDashboardSummary` in `producers.module.ts`, run by `DataPreloadService` on a trade-unit change) so the dashboard doesn't have to wait on its own fetch on cold load. It is fetched only for users holding `planting-estimates:read`.
+- Both caches are cleared when trade units change, by that same preload.
 
 ## User actions
 
@@ -156,7 +157,7 @@ The "system" username has historically been used for `Created/ModifiedBy` on das
 | Filter by Crop dropdown shows duplicate `WHEAT` and `Wheat` | A contract row in ODS still uses ALL CAPS that the title-case helper isn't catching, or a stale entry in the App DB. Remember Prod hasn't run the cleanup yet. | `availableCrops` computed; the SQL audit query under "Crop title-casing" |
 | Saved estimate disappears after refresh | Upsert hit a unique constraint and one row was overwritten. | Check `Created/ModifiedAt` columns; verify only one `(TradeUnitKey, Crop, PlantingYear)` row per crop |
 | "By Crop" tab shows different totals than "Producers" tab | Categorization mismatch (planting intentions use `category`, contracts use `commodityGroup` / `commodityDescription`). The `_toTitleCase` helper merges them, but only if both side's strings normalize to the same thing. | `availableCrops` computed; check both signal sources |
-| Dashboard slow on first open | `preloadedDashboardSummary` not populated yet (TU just changed) | `DataPreloadService` flow; the bundled `getDashboardSummary` fetch |
+| Dashboard slow on first open | `preloadedDashboardSummary` not populated yet (TU just changed) | `preloadDashboardSummary` in `producers.module.ts`, run by `DataPreloadService`; the user needs `planting-estimates:read` |
 | A producer's acres are missing or lower than their profile shows | Rows are tagged to another of the producer's trade units (or to one they have left). Only rows tagged to a trade unit in scope count here. | Profile → Planting tab: each row's "Trade Unit" line; move it via Edit. `scripts/planting-intentions-trade-unit-audit.sql` for the full list |
 
 ## References

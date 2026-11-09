@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import type { HelpAction, HelpContent } from '@models';
-import { HELP_ANCHOR_TIPS } from '@shared/components/help-panel/help-spotlight.component';
-import { HELP_TROUBLESHOOTERS } from '@shared/components/help-panel/help-troubleshooter.component';
+import { HELP_ANCHOR_TIPS } from '@core/help/help-panel/help-spotlight.component';
+import { HELP_TROUBLESHOOTERS } from '@core/help/help-panel/help-troubleshooter.component';
 
 /**
  * Keeps the help content in step with the app.
@@ -40,11 +40,16 @@ const appSource = sourceFiles(appRoot)
   .replace(/&amp;/g, '&')
   .replace(/\s+/g, ' ');
 
-/** Every route path declared in app.routes.ts, as "/", "/build-list", … */
+/**
+ * Every page the modules declare, as "/", "/build-list", …: the paths in each features/<module>/<module>.module.ts.
+ * Nav links there start with "/" and page paths never do, so the links are skipped.
+ */
 const declaredRoutes = new Set(
-  [...readFileSync(join(appRoot, 'app.routes.ts'), 'utf-8').matchAll(/path:\s*'([^']*)'/g)]
-    .map(m => m[1])
-    .filter(path => path !== '**')
+  readdirSync(join(appRoot, 'features'))
+    .map(module => join(appRoot, 'features', module, `${module}.module.ts`))
+    .filter(manifest => existsSync(manifest))
+    .flatMap(manifest => [...readFileSync(manifest, 'utf-8').matchAll(/path:\s*'([^']*)'/g)].map(m => m[1]))
+    .filter(path => !path.startsWith('/'))
     .map(path => '/' + path)
 );
 

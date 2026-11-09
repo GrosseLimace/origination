@@ -20,6 +20,7 @@ import type {
 } from '@models';
 
 import { HomeComponent } from './home.component';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 /**
  * Rendering tests for the producer page: the REAL home template, with selector-compatible stubs for
@@ -259,6 +260,7 @@ describe('HomeComponent (rendered)', () => {
       providers: [
         { provide: ApiService, useValue: api },
         { provide: AppStateService, useValue: app },
+        { provide: TradeUnitContext, useValue: app },
         { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn(), info: vi.fn() } },
         {
           provide: NlqFilterService,

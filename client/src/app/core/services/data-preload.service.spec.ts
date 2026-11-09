@@ -3,10 +3,13 @@ import { TestBed } from '@angular/core/testing';
 import { Observable, Subject, NEVER, of, throwError } from 'rxjs';
 import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
-import { CommodityConversion, Contract, Customer, DashboardSummary, Ticket } from '@models';
+import { CommodityConversion, Contract, Customer, Ticket } from '@models';
 import { DataPreloadService } from './data-preload.service';
 import { ApiService } from './api.service';
 import { AppStateService } from './app-state.service';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { APP_MODULES } from '@core/modules/module-registry';
+import { providePermissions } from '@testing/permission.stub';
 
 /**
  * The trade-unit-wide preload that feeds every screen. Driven against the REAL AppStateService so the
@@ -45,7 +48,7 @@ function ticket(id: number): Ticket {
 type Api = Record<
   | 'getCommodityConversions' | 'getCustomers' | 'getContracts' | 'getTodaysTickets' | 'getNotesLastContact'
   | 'getMyReminders' | 'getPlantingIntentions' | 'getStoredGrain' | 'getDpContracts' | 'getSavedLists'
-  | 'getCommodities' | 'getHarvestWindows' | 'getAllProducerDetails' | 'getDashboardSummary',
+  | 'getCommodities' | 'getHarvestWindows' | 'getAllProducerDetails',
   ReturnType<typeof vi.fn<(...args: unknown[]) => Observable<unknown>>>
 >;
 
@@ -54,6 +57,8 @@ describe('DataPreloadService', () => {
   let appState: AppStateService;
   let inProgress$: Subject<InteractionStatus>;
   let accounts: { username: string }[];
+  /** One module's preload, standing in for every module the app lists. */
+  let modulePreload: ReturnType<typeof vi.fn<(tradeUnits: readonly string[]) => Observable<unknown>>>;
 
   function create(): DataPreloadService {
     const service = TestBed.inject(DataPreloadService);
@@ -69,7 +74,7 @@ describe('DataPreloadService', () => {
   }
 
   function selectTradeUnits(units: string[]): void {
-    appState.setTradeUnits(units);
+    TestBed.inject(TradeUnitContext).setTradeUnits(units);
     TestBed.tick();
   }
 
@@ -79,7 +84,7 @@ describe('DataPreloadService', () => {
     localStorage.removeItem(PREFS_KEY);
     inProgress$ = new Subject<InteractionStatus>();
     accounts = [];
-    const emptySummary: DashboardSummary = { estimates: [], marketShares: [], actualHarvest: [] };
+    modulePreload = vi.fn((_tradeUnits: readonly string[]) => of(null) as Observable<unknown>);
     api = {
       getCommodityConversions: vi.fn(() => of<CommodityConversion[]>([])),
       getCustomers: vi.fn(() => of([customer(1)])),
@@ -94,13 +99,14 @@ describe('DataPreloadService', () => {
       getCommodities: vi.fn(() => of([])),
       getHarvestWindows: vi.fn(() => of([])),
       getAllProducerDetails: vi.fn(() => of([])),
-      getDashboardSummary: vi.fn(() => of(emptySummary)),
     };
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: api },
         { provide: MsalBroadcastService, useValue: { inProgress$ } },
         { provide: MsalService, useValue: { instance: { getAllAccounts: () => accounts } } },
+        { provide: APP_MODULES, useValue: [{ id: 'producers', preload: modulePreload }] },
+        providePermissions(),
       ],
     });
   });
@@ -143,7 +149,7 @@ describe('DataPreloadService', () => {
     expect(appState.contractsLoading()).toBe(false);
     expect(appState.todaysTicketsLoading()).toBe(false);
     expect(api.getCustomers).not.toHaveBeenCalled();
-    expect(api.getDashboardSummary).not.toHaveBeenCalled();
+    expect(modulePreload).not.toHaveBeenCalled();
   });
 
   it('loads every dataset for the selected trade units into app state', () => {
@@ -274,15 +280,25 @@ describe('DataPreloadService', () => {
     expect(appState.notesLoaded()).toBe(false);
   });
 
-  it('pre-fetches the dashboard summary under the sorted trade-unit key for the current year', () => {
-    const summary: DashboardSummary = { estimates: [], marketShares: [], actualHarvest: [] };
-    api.getDashboardSummary.mockReturnValue(of(summary));
+  it("runs each module's preload with the selected trade units", () => {
     create();
     selectTradeUnits(['2190', '1085']);
     signIn();
 
-    expect(api.getDashboardSummary).toHaveBeenCalledWith('1085,2190', 2026);
-    expect(appState.preloadedDashboardSummary()).toEqual({ tradeUnitsKey: '1085,2190', year: 2026, ...summary });
+    expect(modulePreload).toHaveBeenCalledTimes(1);
+    expect(modulePreload).toHaveBeenCalledWith(['2190', '1085']);
+  });
+
+  it("cancels a module's preload when the trade units change before it finishes", () => {
+    let cancelled = 0;
+    modulePreload.mockImplementation(() => new Observable(() => () => { cancelled++; }));
+    create();
+    selectTradeUnits(['1085']);
+    signIn();
+    selectTradeUnits(['2190']);
+
+    expect(cancelled).toBe(1);
+    expect(modulePreload).toHaveBeenCalledTimes(2);
   });
 
   it('a failing secondary read does not stop the others', () => {
@@ -367,13 +383,16 @@ describe('DataPreloadService', () => {
     expect(appState.commodityConversionsLoadFailed()).toBe(true);
   });
 
-  it('a failed dashboard-summary prefetch is left unset, so the dashboard fetches its own instead of showing an empty season', () => {
-    api.getDashboardSummary.mockReturnValue(throwError(() => new Error('500')));
+  it('a module preload that fails does not stop the trade-unit load, now or on the next change', () => {
+    modulePreload.mockImplementation(() => throwError(() => new Error('500')));
     create();
     selectTradeUnits(['1085']);
     signIn();
 
-    expect(appState.preloadedDashboardSummary()).toBeNull();
     expect(appState.dataLoading()).toBe(false);
+    expect(appState.customers()).toHaveLength(1);
+
+    selectTradeUnits(['2190']);
+    expect(api.getCustomers).toHaveBeenLastCalledWith(['2190']);
   });
 });

@@ -77,7 +77,7 @@ describe('CTRM failure flags — lifecycle', () => {
     const sites: [string, string[], RegExp][] = [
       ['data-preload contracts', ['core', 'services', 'data-preload.service.ts'], /setContractsLoadFailed/],
       ['data-preload tickets', ['core', 'services', 'data-preload.service.ts'], /setTicketsLoadFailed/],
-      ['build-list', ['features', 'build-list', 'pages', 'build-list', 'build-list.component.ts'], /setContractsLoadFailed/],
+      ['build-list', ['features', 'lists', 'pages', 'build-list', 'build-list.component.ts'], /setContractsLoadFailed/],
       ['customer-list', ['features', 'customers', 'components', 'customer-list', 'customer-list.component.ts'], /setContractsLoadFailed/],
     ];
 
@@ -129,7 +129,7 @@ describe('CTRM failure flags — lifecycle', () => {
     });
 
     it('the dashboard crop-year read flags locally', () => {
-      const text = src('features', 'dashboard', 'pages', 'dashboard', 'dashboard.component.ts');
+      const text = src('features', 'producers', 'pages', 'dashboard', 'dashboard.component.ts');
 
       expect(text).toMatch(/cropYearLoadFailed\.set\(true\)/);
       expect(text).not.toMatch(/setContractsLoadFailed\(true\)/);
@@ -207,7 +207,7 @@ describe('CTRM failure flags — lifecycle', () => {
       // Source-level because the effect itself needs the whole component to stand up. Blunt, but it fails
       // loudly if the line is moved back inside untracked() - which is exactly how this regressed.
       const text = readFileSync(
-        join(process.cwd(), 'src', 'app', 'features', 'build-list', 'pages', 'build-list', 'build-list.component.ts'),
+        join(process.cwd(), 'src', 'app', 'features', 'lists', 'pages', 'build-list', 'build-list.component.ts'),
         'utf8');
 
       const effectStart = text.indexOf('private _dataReadyEffect = effect(() => {');

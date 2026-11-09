@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, ElementRef, HostListener, inject, i
 
 import { CALCULATOR_TYPES, CalculatorType } from '../models/calculator.model';
 import { CalculatorWidgetComponent } from './calculator-widget.component';
-import { HelpPanelStateService } from '@core/services/help-panel-state.service';
+import { HelpPanelStateService } from '@core/help/help-panel-state.service';
 
 /**
  * Floating launcher for the originator calculators. Renders a fixed FAB on the customer

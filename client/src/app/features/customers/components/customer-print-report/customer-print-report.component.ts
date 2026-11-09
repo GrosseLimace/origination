@@ -13,6 +13,7 @@ import { buildLbsPerBushelMap, findYieldEstimate, sumInBushels } from '@shared/u
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
 import { binSiteGrainBreakdown, formatLastBid, grainOnFarmColorKey, indexCommoditiesByCode } from '@shared/utils/grain-on-farm';
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 
 /** The report's include toggles whose default depends on the data. */
@@ -53,10 +54,11 @@ export class CustomerPrintReportComponent {
   private readonly msalService = inject(MsalService);
   private readonly toastService = inject(ToastService);
   private readonly appState = inject(AppStateService);
+  private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly currencyPipe = inject(CurrencyPipe);
   private readonly datePipe = inject(DatePipe);
 
-  readonly noTradeUnit = computed(() => this.appState.selectedTradeUnits().length === 0);
+  readonly noTradeUnit = computed(() => this.tradeUnitContext.selectedTradeUnits().length === 0);
 
   // Inputs
   public isOpen = input(false);
