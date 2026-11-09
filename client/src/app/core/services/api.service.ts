@@ -63,7 +63,7 @@ import { ApiError } from '@core/errors/api-error';
  * All methods return RxJS Observables for async data handling.
  */
 /** A recap group as the server sends it: an int id, and the CC list under ccList. */
-type RecapGroupDto = import('@features/daily-digest/models/recap-group.model').RecapGroup & { id: number | string; ccList?: string[] };
+type RecapGroupDto = import('@features/engagement').RecapGroup & { id: number | string; ccList?: string[] };
 
 /** A saved list as the server sends it: the three JSON columns arrive as strings. */
 type SavedListDto = Omit<SavedList, 'filters' | 'includedCustomerIds' | 'excludedCustomerIds'> & {
@@ -164,8 +164,8 @@ export class ApiService {
 
   /** Fetches the full entitlements directory (people / trade units / TU groups) used by the
    *  Daily Digest Recap Group picker. One call returns all three lists. */
-  getEntitlementsCatalog(): Observable<import('@features/daily-digest/models/entitlements-catalog.model').EntitlementsCatalog> {
-    return this.http.get<import('@features/daily-digest/models/entitlements-catalog.model').EntitlementsCatalog>(`${this.baseUrl}/entitlements/catalog`)
+  getEntitlementsCatalog(): Observable<import('@models').EntitlementsCatalog> {
+    return this.http.get<import('@models').EntitlementsCatalog>(`${this.baseUrl}/entitlements/catalog`)
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -178,7 +178,7 @@ export class ApiService {
   /** Shapes a server RecapGroupDto into the frontend RecapGroup (int id -> string). */
   private mapRecapGroup(
     dto: RecapGroupDto,
-  ): import('@features/daily-digest/models/recap-group.model').RecapGroup {
+  ): import('@features/engagement').RecapGroup {
     return {
       id: String(dto.id),
       name: dto.name,
@@ -201,7 +201,7 @@ export class ApiService {
    *  endpoint ignores the field today; omitting it means a future change that starts honouring it
    *  can't silently switch off an existing group's recap. */
   private toRecapGroupBody(
-    req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest,
+    req: import('@features/engagement').RecapGroupSaveRequest,
     isCreate: boolean,
   ) {
     return {
@@ -215,7 +215,7 @@ export class ApiService {
   }
 
   /** Fetches the current user's recap groups. */
-  getRecapGroups(): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup[]> {
+  getRecapGroups(): Observable<import('@features/engagement').RecapGroup[]> {
     return this.http.get<RecapGroupDto[]>(`${this.baseUrl}/dailyrecapgroups`)
       .pipe(
         map(list => list.map(g => this.mapRecapGroup(g))),
@@ -225,8 +225,8 @@ export class ApiService {
 
   /** Creates a new recap group. */
   createRecapGroup(
-    req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest,
-  ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
+    req: import('@features/engagement').RecapGroupSaveRequest,
+  ): Observable<import('@features/engagement').RecapGroup> {
     return this.http.post<RecapGroupDto>(`${this.baseUrl}/dailyrecapgroups`, this.toRecapGroupBody(req, true))
       .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
   }
@@ -234,8 +234,8 @@ export class ApiService {
   /** Updates an existing recap group. */
   updateRecapGroup(
     id: string,
-    req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest,
-  ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
+    req: import('@features/engagement').RecapGroupSaveRequest,
+  ): Observable<import('@features/engagement').RecapGroup> {
     return this.http.put<RecapGroupDto>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}`, this.toRecapGroupBody(req, false))
       .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
   }
@@ -244,7 +244,7 @@ export class ApiService {
   setRecapGroupEnabled(
     id: string,
     enabled: boolean,
-  ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
+  ): Observable<import('@features/engagement').RecapGroup> {
     return this.http.put<RecapGroupDto>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}/enabled`, { enabled })
       .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
   }

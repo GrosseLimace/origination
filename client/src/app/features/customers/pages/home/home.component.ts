@@ -17,7 +17,7 @@ import { CustomerProfileComponent } from '../../components/customer-profile/cust
 import { CustomerNotesComponent } from '../../components/customer-notes/customer-notes.component';
 import { CustomerRemindersComponent, ReminderDraft } from '../../components/customer-reminders/customer-reminders.component';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent } from '@shared/components/card/card.component';
-import { CalculatorLauncherComponent } from '@features/calculators/components/calculator-launcher.component';
+import { CalculatorLauncherComponent } from '@features/calculators';
 import { environment } from '@env/environment';
 import {
   commodityCodesFrom, describeLastContacted, linkedGroupOf, mergeIncomingById, mergeYieldEstimates,

@@ -30,3 +30,4 @@ export * from './field-plan.model';
 export * from './tdisc.model';
 export * from './fd-cic.model';
 export * from './help.model';
+export * from './entitlements-catalog.model';

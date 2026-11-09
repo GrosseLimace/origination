@@ -1,4 +1,4 @@
-import { EntitlementsCatalog } from '@features/daily-digest/models/entitlements-catalog.model';
+import { EntitlementsCatalog } from '@models';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { MsalService } from '@azure/msal-angular';
@@ -6,7 +6,7 @@ import { of } from 'rxjs';
 
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
-import { RecapGroup, RecapGroupSaveRequest, RecapMember } from '@features/daily-digest/models/recap-group.model';
+import { RecapGroup, RecapGroupSaveRequest, RecapMember } from '../../models/recap-group.model';
 
 import { DailyDigestComponent } from './daily-digest.component';
 

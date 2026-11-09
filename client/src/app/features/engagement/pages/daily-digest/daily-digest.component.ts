@@ -13,8 +13,8 @@ import {
   DialogDescriptionComponent,
   DialogFooterComponent,
 } from '@shared/components/dialog/dialog.component';
-import { DeliveryMethod, MemberType, RecapGroup, RecapGroupSaveRequest, RecapMember } from '@features/daily-digest/models/recap-group.model';
-import { EntitlementsCatalog } from '@features/daily-digest/models/entitlements-catalog.model';
+import { DeliveryMethod, MemberType, RecapGroup, RecapGroupSaveRequest, RecapMember } from '../../models/recap-group.model';
+import { EntitlementsCatalog } from '@models';
 
 type MemberTab = 'people' | 'trade-units' | 'groups';
 

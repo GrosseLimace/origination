@@ -3,8 +3,8 @@
 ## At a Glance
 
 - **Route**: `/build-list`
-- **Component**: [`client/src/app/features/build-list/pages/build-list/build-list.component.ts`](../../client/src/app/features/build-list/pages/build-list/build-list.component.ts)
-- **Template**: [`build-list.component.html`](../../client/src/app/features/build-list/pages/build-list/build-list.component.html)
+- **Component**: [`client/src/app/features/lists/pages/build-list/build-list.component.ts`](../../client/src/app/features/lists/pages/build-list/build-list.component.ts)
+- **Template**: [`build-list.component.html`](../../client/src/app/features/lists/pages/build-list/build-list.component.html)
 - **Access**: any signed-in Scoular user reaches the page (`authGuard`). The API needs `query-library:read` for the library and `saved-lists:read:own` / `saved-lists:write:own` for your own lists, which every persona role holds.
 - **Primary user goal**: build a list of producers using **natural-language queries (NLQ)**, **library prompts**, and **refinement filters**, then save it for daily reuse.
 
@@ -57,8 +57,8 @@ The screen does **not** make per-customer API calls — it operates entirely on 
 
 | Layer | Path |
 | --- | --- |
-| Component | `client/src/app/features/build-list/pages/build-list/build-list.component.ts` |
-| Template | `client/src/app/features/build-list/pages/build-list/build-list.component.html` |
+| Component | `client/src/app/features/lists/pages/build-list/build-list.component.ts` |
+| Template | `client/src/app/features/lists/pages/build-list/build-list.component.html` |
 | NLQ engine | `client/src/app/core/services/nlq-filter.service.ts` |
 | Refine-filters model | `client/src/app/models/refine-filters.model.ts` |
 | Saved-list model | `client/src/app/models/saved-list.model.ts` |

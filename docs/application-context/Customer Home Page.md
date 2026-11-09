@@ -131,7 +131,7 @@ When the trade-unit selector changes, the home component fires a parallel batch 
 | Per-tab tables | `customer-profile/contracts-table/`, `tickets-table/`, `planting-intentions-table/`, `stored-grain-table/` |
 | Producer Insights panels | `client/src/app/features/customers/components/producer-insights/`, `contract-pacing-card/`, `growth-opportunity/` |
 | Production coverage math | `client/src/app/shared/utils/production-coverage.ts` (+ `.spec.ts`) |
-| Customer map (in profile) | `client/src/app/features/customers/components/map/customer-map.component.ts` |
+| Customer map (shown on Build a List, so it belongs to Lists) | `client/src/app/features/lists/components/map/customer-map.component.ts` |
 | Controllers | `CustomersController`, `ContractsController`, `TicketsController`, `NotesController`, `PlantingIntentionsController`, `StoredGrainController`, `ProducerDetailsController`, `LinkedProducersController` (`customers/linked-to`), `ContractPacingController` (`contracts/pacing`), `SavedListsController`, `CommoditiesController` |
 | Services | Each controller's module service: `CustomerService`, `ContractService`, `TicketService`, `NoteService`, `PlantingIntentionService`, `StoredGrainService`, `ProducerDetailsService`, `SavedListService`, `CommodityService` (module layout in [`Shared Infrastructure.md`](./Shared%20Infrastructure.md#services-and-repositories-by-module)) |
 | ODS views read | `base.vw_CurrentContracts`, `base.vw_CurrentTickets`, `base.vw_ContractPricing`, `ctrm.vw_GNTA39D1` |

@@ -13,17 +13,17 @@ export const routes: Routes = [
   {
     path: 'build-list',
     canActivate: [authGuard],
-    loadComponent: () => import('./features/build-list/pages/build-list/build-list.component').then(m => m.BuildListComponent)
+    loadComponent: () => import('./features/lists/pages/build-list/build-list.component').then(m => m.BuildListComponent)
   },
   {
     path: 'insights',
     canActivate: [authGuard],
-    loadComponent: () => import('./features/customers/pages/insights/insights.component').then(m => m.InsightsComponent)
+    loadComponent: () => import('./features/lists/pages/insights/insights.component').then(m => m.InsightsComponent)
   },
   {
     path: 'dashboard',
     canActivate: [authGuard],
-    loadComponent: () => import('./features/dashboard/pages/dashboard/dashboard.component').then(m => m.DashboardComponent)
+    loadComponent: () => import('./features/producers/pages/dashboard/dashboard.component').then(m => m.DashboardComponent)
   },
   environment.bidSheetEnabled
     ? {
@@ -38,7 +38,7 @@ export const routes: Routes = [
     ? {
         path: 'daily-digest',
         canActivate: [authGuard],
-        loadComponent: () => import('./features/daily-digest/pages/daily-digest/daily-digest.component').then(m => m.DailyDigestComponent)
+        loadComponent: () => import('./features/engagement/pages/daily-digest/daily-digest.component').then(m => m.DailyDigestComponent)
       }
     : { path: 'daily-digest', redirectTo: '' },
   environment.usageDashboardEnabled
@@ -47,7 +47,7 @@ export const routes: Routes = [
         canMatch: [permissionGuard],
         canActivate: [authGuard],
         data: requires('usage-reports:read'),
-        loadComponent: () => import('./features/usage-dashboard/pages/usage-dashboard/usage-dashboard.component').then(m => m.UsageDashboardComponent)
+        loadComponent: () => import('./features/usage-analytics/pages/usage-dashboard/usage-dashboard.component').then(m => m.UsageDashboardComponent)
       }
     : { path: 'usage-dashboard', redirectTo: '' },
   environment.usageDashboardEnabled
@@ -56,7 +56,7 @@ export const routes: Routes = [
         canMatch: [permissionGuard],
         canActivate: [authGuard],
         data: requires('usage-reports:read'),
-        loadComponent: () => import('./features/usage-dashboard/pages/user-usage-detail/user-usage-detail.component').then(m => m.UserUsageDetailComponent)
+        loadComponent: () => import('./features/usage-analytics/pages/user-usage-detail/user-usage-detail.component').then(m => m.UserUsageDetailComponent)
       }
     : { path: 'usage-dashboard/users/:userId', redirectTo: '' },
   // Release notes. Not flag-gated: the notes file itself is the switch — a deploy that adds no

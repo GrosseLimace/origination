@@ -206,7 +206,7 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
   });
 
   it('the template gates the prompt library on a trade unit only, never on the reload', () => {
-    const html = readFileSync(join(process.cwd(), 'src', 'app', 'features', 'build-list', 'pages', 'build-list', 'build-list.component.html'), 'utf8');
+    const html = readFileSync(join(process.cwd(), 'src', 'app', 'features', 'lists', 'pages', 'build-list', 'build-list.component.html'), 'utf8');
     const at = html.indexOf('(click)="selectLibraryQuery(item)"');
     expect(at, 'library button click handler not found').toBeGreaterThan(-1);
     const button = html.slice(at, html.indexOf('>', at));

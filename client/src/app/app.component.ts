@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterOutlet } from '@angular/router';
 import { HeaderComponent } from '@core/layout/header/header.component';
 import { ToastContainerComponent } from '@core/layout/toast-container/toast-container.component';
-import { WhatsNewDialogComponent } from '@features/whats-new/components/whats-new-dialog/whats-new-dialog.component';
+import { WhatsNewDialogComponent } from '@features/whats-new';
 import { HelpPanelComponent } from '@core/help/help-panel/help-panel.component';
 import { IdleTimeoutService } from '@core/services/idle-timeout.service';
 import { DataPreloadService } from '@core/services/data-preload.service';

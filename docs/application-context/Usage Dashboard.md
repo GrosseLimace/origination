@@ -3,8 +3,8 @@
 ## At a Glance
 
 - **Route**: `/usage-dashboard` (needs `usage-reports:read`, env-gated by `environment.usageDashboardEnabled`)
-- **Component**: [`client/src/app/features/usage-dashboard/pages/usage-dashboard/usage-dashboard.component.ts`](../../client/src/app/features/usage-dashboard/pages/usage-dashboard/usage-dashboard.component.ts)
-- **Template**: [`usage-dashboard.component.html`](../../client/src/app/features/usage-dashboard/pages/usage-dashboard/usage-dashboard.component.html)
+- **Component**: [`client/src/app/features/usage-analytics/pages/usage-dashboard/usage-dashboard.component.ts`](../../client/src/app/features/usage-analytics/pages/usage-dashboard/usage-dashboard.component.ts)
+- **Template**: [`usage-dashboard.component.html`](../../client/src/app/features/usage-analytics/pages/usage-dashboard/usage-dashboard.component.html)
 - **Access**: `authGuard` + `permissionGuard` with `usage-reports:read`.
 - **Primary user goal**: monitor adoption, spot inactive originators, identify underused features, and find gaps in the query library — feed product / management decisions.
 
@@ -49,7 +49,7 @@ sent, for every caller who passes the read policy.
 | --- | --- |
 | Access rules | `api/GrainOriginatorPortal.Api/Authorization/UsageDashboardAccess.cs` |
 | Manager roster + subtree | `api/GrainOriginatorPortal.Api/Modules/UsageAnalytics/Services/ManagerDirectoryService.cs` |
-| Manager filter (presentational) | `client/src/app/features/usage-dashboard/components/manager-filter/` |
+| Manager filter (presentational) | `client/src/app/features/usage-analytics/components/manager-filter/` |
 | Default-to-self + roster load | `usage-dashboard.component.ts` (`loadManagers`, `applyDefaultManager`) |
 
 ## How users reach it
@@ -169,10 +169,10 @@ reconstruct), `query-library-usage`, `query-search-gaps`, and `users/{id}/detail
 
 | Layer | Path |
 | --- | --- |
-| Component | `client/src/app/features/usage-dashboard/pages/usage-dashboard/usage-dashboard.component.ts` |
-| Drill-down | `client/src/app/features/usage-dashboard/pages/user-usage-detail/user-usage-detail.component.ts` |
-| Shared formatting / sorting | `client/src/app/features/usage-dashboard/utils/` (`usage-format.ts`, `table-sort.ts`) |
-| Sort icon, manager filter, exclusions panel | `client/src/app/features/usage-dashboard/components/` |
+| Component | `client/src/app/features/usage-analytics/pages/usage-dashboard/usage-dashboard.component.ts` |
+| Drill-down | `client/src/app/features/usage-analytics/pages/user-usage-detail/user-usage-detail.component.ts` |
+| Shared formatting / sorting | `client/src/app/features/usage-analytics/utils/` (`usage-format.ts`, `table-sort.ts`) |
+| Sort icon, manager filter, exclusions panel | `client/src/app/features/usage-analytics/components/` |
 | Frontend tracking service | `client/src/app/core/services/usage-tracking.service.ts` |
 | Route guard | `permissionGuard` with `requires('usage-reports:read')` (`client/src/app/core/access/permission.guard.ts`) |
 | Controller | `api/GrainOriginatorPortal.Api/Modules/UsageAnalytics/Controllers/UsageDashboardController.cs` |

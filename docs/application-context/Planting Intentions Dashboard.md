@@ -3,8 +3,8 @@
 ## At a Glance
 
 - **Route**: `/dashboard`
-- **Component**: [`client/src/app/features/dashboard/pages/dashboard/dashboard.component.ts`](../../client/src/app/features/dashboard/pages/dashboard/dashboard.component.ts)
-- **Template**: [`dashboard.component.html`](../../client/src/app/features/dashboard/pages/dashboard/dashboard.component.html)
+- **Component**: [`client/src/app/features/producers/pages/dashboard/dashboard.component.ts`](../../client/src/app/features/producers/pages/dashboard/dashboard.component.ts)
+- **Template**: [`dashboard.component.html`](../../client/src/app/features/producers/pages/dashboard/dashboard.component.html)
 - **Access**: any authenticated Scoular user (`authGuard`).
 - **Primary user goal**: plan and track planting for the upcoming season — yield estimates, market share targets, actual harvest results, and the per-producer roll-up of intentions and contracts for that crop year.
 
@@ -72,8 +72,8 @@ Every row in `dbo.ProducerPlantingIntentions` carries the trade unit it was reco
 
 | Layer | Path |
 | --- | --- |
-| Component | `client/src/app/features/dashboard/pages/dashboard/dashboard.component.ts` |
-| Template | `client/src/app/features/dashboard/pages/dashboard/dashboard.component.html` |
+| Component | `client/src/app/features/producers/pages/dashboard/dashboard.component.ts` |
+| Template | `client/src/app/features/producers/pages/dashboard/dashboard.component.html` |
 | Controller | `api/GrainOriginatorPortal.Api/Modules/Producers/Controllers/DashboardPlantingEstimatesController.cs` (`planting-estimates:read`; the three upserts and the actual-harvest delete also need `planting-estimates:write`) |
 | Service methods (group: Dashboard) | `GetDashboardSummaryAsync`, `GetDashboardPlantingEstimatesAsync`, `UpsertDashboardPlantingEstimatesAsync`, `GetDashboardMarketSharesAsync`, `UpsertDashboardMarketSharesAsync`, `GetDashboardActualHarvestAsync`, `UpsertDashboardActualHarvestAsync`, `DeleteDashboardActualHarvestAsync` |
 | App tables | `dbo.DashboardPlantingEstimates`, `dbo.DashboardMarketShares`, `dbo.DashboardActualHarvests`, `dbo.ProducerPlantingIntentions`, `dbo.Commodities` |

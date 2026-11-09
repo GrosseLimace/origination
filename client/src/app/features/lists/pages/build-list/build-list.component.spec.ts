@@ -976,7 +976,7 @@ describe('BuildListComponent', () => {
   });
 
   // ── Characterisation added before the 2026-10-14 decomposition ────────────
-  // Pins behaviour of logic that moved into features/build-list/utils, through the real template.
+  // Pins behaviour of logic that moved into features/lists/utils, through the real template.
 
   describe('characterisation', () => {
     it('marks a saved list carrying refinements as "Refined" in the library, and not a plain one', () => {

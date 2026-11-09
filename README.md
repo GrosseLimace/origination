@@ -28,14 +28,14 @@ GrainOriginatorPortal/
         │   ├── help/                       # help panel and its services
         │   ├── handlers/                   # global-error.handler.ts
         │   └── services/                   # api, app-state, toast, nlq-filter, usage-tracking, theme
-        ├── features/
-        │   ├── customers/                  # components + home/insights pages
-        │   ├── dashboard/
-        │   ├── build-list/
+        ├── features/                       # one folder per module; others import it only through its index.ts
+        │   ├── customers/                  # home page and the customer screen's components
+        │   ├── producers/                  # Planting Intentions Dashboard
+        │   ├── lists/                      # Build a List, Actionable Insights, the customer map
+        │   ├── engagement/                 # Daily Digest (recap groups)
         │   ├── bid-sheet/
-        │   ├── calculators/
-        │   ├── daily-digest/
-        │   └── usage-dashboard/
+        │   ├── usage-analytics/            # usage dashboard
+        │   ├── calculators/  help/  whats-new/
         ├── shared/
         │   └── components/                 # button, badge, card, table, dialog, input, select, etc.
         └── models/                         # TypeScript interfaces
@@ -295,7 +295,7 @@ Last Updated: 2026-11-08
 | angular-eslint | 21.4.0 | MIT | The `ng lint` builder. Its Angular rule sets are installed but not turned on. Dev only |
 | typescript-eslint | 8.72.1 | MIT | TypeScript parser for ESLint. Dev only |
 | eslint-plugin-boundaries | 7.4.2 | MIT | Module boundary rules: core never imports a feature, shared imports only shared, a feature reaches another only through its `index.ts`. Dev only |
-| eslint-import-resolver-typescript | 4.4.5 | ISC | Resolves the tsconfig path aliases (`@core/*`, `@features/*`, …) so the boundary rules see where an import lands. Dev only |
+| eslint-import-resolver-typescript | 4.4.5 | ISC | Resolves the tsconfig path aliases (`@core/*`, `@features/<module>`, …) so the boundary rules see where an import lands. Dev only |
 | esbuild | ≥0.28.1 | MIT | Bundler — transitive (via @angular/build, vitest), pinned in `overrides` (security fix: RCE via NPM_CONFIG_REGISTRY + Windows path traversal, ≥0.28.1) |
 | vite | ≥7.3.7 <8 | MIT | Dev server/bundler + Vitest engine — transitive (via @angular/build, vitest), pinned in `overrides` (security fixes: `server.fs.deny` bypass + launch-editor NTLM disclosure on Windows ≥7.3.5; launch-editor passed `%` unescaped to cmd.exe on Windows via the dev server's /__open-in-editor, letting %VAR% expand into a command ≥7.3.7 (GHSA-698v-4r3x-3vcv) — the old ≥7.3.5 floor sat inside that range. Row previously omitted the `<8` bound the override has always carried) |
 | @babel/core | ≥7.29.6 | MIT | JS compiler — transitive (via @angular/build, @angular/compiler-cli), pinned in `overrides` (security fix: arbitrary file read via sourceMappingURL, ≥7.29.6) |
