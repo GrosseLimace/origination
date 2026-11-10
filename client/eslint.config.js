@@ -16,10 +16,7 @@ const boundaries = require('eslint-plugin-boundaries');
  * src/app/features is a module. Imports between modules only follow these arrows, and only to an index.ts.
  */
 const moduleDependsOn = {
-  customers: [
-    // The home page renders the calculator launcher until the customer screen's floating slot hosts it.
-    'calculators',
-  ],
+  customers: [],
   contracts: ['customers'],
   engagement: ['customers'],
   producers: ['contracts', 'customers'],

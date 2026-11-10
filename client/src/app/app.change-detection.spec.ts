@@ -72,6 +72,13 @@ async function settle(fixture: { whenStable(): Promise<unknown> }, ms = 1500) {
   await Promise.race([fixture.whenStable(), new Promise(r => setTimeout(r, ms))]);
 }
 
+/** Settles until `ready` holds, or `ms` pass. A lazily loaded part can take longer than one settle while the whole suite
+ *  runs, so a check on it waits for it rather than for a fixed time. */
+async function settleUntil(fixture: { whenStable(): Promise<unknown> }, ready: () => boolean, ms = 15000) {
+  const deadline = Date.now() + ms;
+  while (!ready() && Date.now() < deadline) await settle(fixture, 500);
+}
+
 describe('NG0103 probe', () => {
   it('selects producers on Home without infinite change detection', async () => {
     errors.length = 0;
@@ -116,7 +123,7 @@ describe('NG0103 probe', () => {
     expect(tabButtons().map(tabLabel)).toEqual(['Open Contracts', 'Unapplied Tickets', 'Planting', 'Storage', 'DP Contracts']);
     const errorsBefore = errors.length;
     tabButtons().find(b => tabLabel(b) === 'Planting')!.click();
-    await settle(fixture, 2500);
+    await settleUntil(fixture, () => !!page.querySelector('app-planting-intentions-table')?.textContent?.includes('250'));
     expect(page.querySelector('app-planting-intentions-table')?.textContent).toContain('250');
     expect(errors.slice(errorsBefore).map(e => String((e as Error)?.message ?? e).slice(0, 160))).toEqual([]);
   }, 60000);

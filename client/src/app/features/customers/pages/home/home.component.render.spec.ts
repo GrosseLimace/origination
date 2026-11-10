@@ -132,22 +132,29 @@ class StubReminders {
   readonly isLoading = this.engagement.isLoadingReminders;
 }
 
-/** Engagement's sidebar panels, as its manifest contributes them, with the stub cards for components. */
+@Component({
+  selector: 'app-calculator-panel', standalone: true, changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `@if (customer(); as producer) { <div data-testid="calculator">{{ producer.name }}</div> }`,
+})
+class StubCalculator {
+  // Read from the page, as the real panel does.
+  readonly customer = inject(SelectedCustomerContext).customer;
+}
+
+/** Engagement's sidebar panels and Calculators' floating launcher, as their manifests contribute them, with stubs
+ *  for components. */
 const sidebarModules: ModuleManifest[] = [{
   id: 'engagement',
   customerPanels: [
     { slot: 'sidebar', id: 'follow-ups', requires: [], order: 10, component: () => Promise.resolve(StubReminders) },
     { slot: 'sidebar', id: 'notes', requires: [], order: 20, component: () => Promise.resolve(StubNotes) },
   ],
+}, {
+  id: 'calculators',
+  customerPanels: [
+    { slot: 'floating', id: 'calculator-launcher', requires: [], order: 10, component: () => Promise.resolve(StubCalculator) },
+  ],
 }];
-
-@Component({
-  selector: 'app-calculator-launcher', standalone: true, changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<div data-testid="calculator">{{ producerName() }}</div>`,
-})
-class StubCalculator {
-  readonly producerName = input('');
-}
 
 /** Stands in for the app shell, which is OnPush too: home rendered inside an OnPush parent must still
  *  refresh from its own signals, with nothing marking the parent. */
@@ -282,7 +289,7 @@ describe('HomeComponent (rendered)', () => {
     });
     TestBed.overrideComponent(HomeComponent, {
       set: {
-        imports: [StubList, StubProfile, StubCalculator, CustomerSlotComponent],
+        imports: [StubList, StubProfile, CustomerSlotComponent],
       },
     });
     fixture = TestBed.createComponent(root);

@@ -16,8 +16,6 @@ import { Customer, ProducerDetails, DashboardPlantingEstimate } from '@models';
 import { CustomerListComponent } from '../../components/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
 import { CustomerSlotComponent } from '@core/modules/customer-slot.component';
-import { CalculatorLauncherComponent } from '@features/calculators';
-import { environment } from '@env/environment';
 import {
   commodityCodesFrom, linkedGroupOf, mergeIncomingById, mergeYieldEstimates,
   yieldEstimateYears
@@ -43,8 +41,7 @@ import { ProducerEdit, ProducerEditing } from '@core/context/producer-editing';
   imports: [
     CustomerListComponent,
     CustomerProfileComponent,
-    CustomerSlotComponent,
-    CalculatorLauncherComponent
+    CustomerSlotComponent
   ],
   templateUrl: './home.component.html',
   // Page-scoped state and behaviour, one instance per visit to the page. SelectedCustomerContext is the customer
@@ -94,8 +91,6 @@ export class HomeComponent implements ProducerEditing {
 
   /** Enables the "Team Lists" tab in the Add-to-List dropdown (see HomeSavedListsStore). */
   readonly canEditTeamLists = this.lists.canEditTeamLists;
-  /** Gates the floating calculator launcher (Profitability calc + future calculators). */
-  readonly calculatorEnabled = environment.calculatorEnabled;
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 

@@ -794,7 +794,7 @@ Add ESLint, since none exists today. Use `@angular-eslint` plus `eslint-plugin-b
 - **The packages** are `eslint`, `angular-eslint` (the single package that now replaces `@angular-eslint/*`), `typescript-eslint`, `eslint-plugin-boundaries` and `eslint-import-resolver-typescript`, all with SBOM rows.
 - **Only the boundary rules are on.** Angular's recommended rule sets come with `angular-eslint` but aren't turned on; that is a separate decision.
 - **`npm run lint` runs in the PR workflow** ahead of the client tests.
-- **The module map in `eslint.config.js` mirrors the backend's, plus the SPA-only modules** (Calculators, Help, What's New), with one exception: Customers may import Calculators until the customer screen's `floating` slot hosts the launcher (Phase 4).
+- **The module map in `eslint.config.js` mirrors the backend's, plus the SPA-only modules** (Calculators, Help, What's New). Customers could import Calculators until the home page's `floating` slot hosted the launcher; that exception went in Phase 4.
 - **Shared and core may also import the plain models in `src/app/models` and the environment settings.**
 - **The composition root isn't checked:** `main.ts`, `setup-tests.ts` and `app.*`. Specs may also import `src/testing`.
 
