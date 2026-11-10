@@ -21,4 +21,22 @@ export const engagementModule: ModuleManifest = {
       menu: 'user',
     },
   ],
+  // The home page's right column: the user's follow-ups for the producer above the producer's notes. Both apply to
+  // every customer; adding and changing them needs reminders:write:own and notes:write, which the cards check.
+  customerPanels: [
+    {
+      slot: 'sidebar',
+      id: 'follow-ups',
+      requires: ['reminders:read:own'],
+      order: 10,
+      component: () => import('./components/follow-ups-panel/follow-ups-panel.component').then(m => m.FollowUpsPanelComponent),
+    },
+    {
+      slot: 'sidebar',
+      id: 'notes',
+      requires: ['notes:read'],
+      order: 20,
+      component: () => import('./components/notes-panel/notes-panel.component').then(m => m.NotesPanelComponent),
+    },
+  ],
 };

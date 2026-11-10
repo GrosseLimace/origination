@@ -4,12 +4,13 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
+import { HasPermissionDirective } from '@core/access/has-permission.directive';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ToastService } from '@core/services/toast.service';
 import { ApiService } from '@core/services/api.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { TeamsDirectoryService, GraphTeamsChannel } from '@core/services/teams-directory.service';
-import { Customer, Note, NoteMention, MentionCatalog } from '@models';
+import { TeamsDirectoryService } from '../../data-access/teams-directory.service';
+import { Customer, Note, NoteMention, MentionCatalog, GraphTeamsChannel } from '@models';
 import { environment } from '@env/environment';
 import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
@@ -30,7 +31,7 @@ interface MentionOption {
 @Component({
   selector: 'app-customer-notes',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent, ClampOverflowDirective],
+  imports: [CommonModule, FormsModule, ButtonComponent, ClampOverflowDirective, HasPermissionDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './customer-notes.component.html'
 })

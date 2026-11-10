@@ -6,9 +6,11 @@ import { CustomerNotesComponent } from './customer-notes.component';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { Customer, MentionCatalog, Note, NoteMention } from '@models';
-import { TeamsDirectoryService } from '@core/services/teams-directory.service';
+import { TeamsDirectoryService } from '../../data-access/teams-directory.service';
 import { SelectedProducerEngagementFake, provideSelectedProducerEngagement, selectedProducerEngagementFake } from '@testing/selected-producer-engagement.fake';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
+import { permissionStub, providePermissions } from '@testing/permission.stub';
+import { PermissionId } from '@core/access/permission-ids.generated';
 
 // Covers the note search filter (content + author + created/modified date, ALL typed words required)
 // and the combined view segmentation (@mention = green text, search match = green highlight).
@@ -199,6 +201,8 @@ describe('CustomerNotesComponent — degraded notice in the rendered picker', ()
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
         provideSelectedProducerEngagement(engagement = selectedProducerEngagementFake()),
         SelectedCustomerContext,
+        // The rendered add-note form needs notes:write.
+        providePermissions(permissionStub(['notes:write'])),
       ],
     });
     const fixture = TestBed.createComponent(CustomerNotesComponent);
@@ -247,5 +251,47 @@ describe('CustomerNotesComponent — degraded notice in the rendered picker', ()
     typeInNote(fixture, 'Call @zz');
     expect(fixture.componentInstance.mentionDropdownOpen()).toBe(false);
     expect(notice(fixture)).toBeNull();
+  });
+});
+
+// Real template: adding, pinning, editing and deleting a note need notes:write.
+describe('CustomerNotesComponent — write controls', () => {
+  function render(granted: PermissionId[]): HTMLElement {
+    const engagement = selectedProducerEngagementFake();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ApiService, useValue: { getMentionCatalog: () => of({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [], teamsChannels: [] }) } },
+        { provide: TeamsDirectoryService, useValue: { getChannels: () => of([]) } },
+        { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
+        provideSelectedProducerEngagement(engagement),
+        SelectedCustomerContext,
+        providePermissions(permissionStub(granted)),
+      ],
+    });
+    const fixture = TestBed.createComponent(CustomerNotesComponent);
+    fixture.componentRef.setInput('customer', makeCustomer(100));
+    engagement.notes.set([makeNote({ id: 1, customerId: 100, content: 'Talked about corn pricing', createdAt: new Date('2026-01-03') })]);
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  const labels = (host: HTMLElement) => Array.from(host.querySelectorAll('button')).map(b => (b.textContent ?? '').replace(/\s+/g, ' ').trim());
+
+  it('offers adding, pinning, editing and deleting to a user who may write notes', () => {
+    const host = render(['notes:write']);
+
+    expect(host.querySelector('textarea')).not.toBeNull();
+    expect(labels(host)).toContain('Add Note');
+    expect(labels(host)).toContain('Pin');
+    expect(host.textContent).toContain('Talked about corn pricing');
+  });
+
+  it('shows a user who may only read notes the notes alone', () => {
+    const host = render([]);
+
+    expect(host.querySelector('textarea')).toBeNull();
+    expect(labels(host)).not.toContain('Add Note');
+    expect(labels(host)).not.toContain('Pin');
+    expect(host.textContent).toContain('Talked about corn pricing');
   });
 });

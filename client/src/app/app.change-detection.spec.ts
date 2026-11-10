@@ -52,7 +52,8 @@ function body(url: string): unknown {
     return {
       userId: 'CEgr', roles: [], modules: [], segments: [],
       permissions: ['planting-estimates:read', 'query-library:read', 'saved-lists:read:own', 'customers:read', 'contracts:read',
-        'tickets:read', 'bid-sheets:read', 'recap-groups:read', 'usage-reports:read'],
+        'tickets:read', 'bid-sheets:read', 'recap-groups:read', 'usage-reports:read',
+        'notes:read', 'notes:write', 'reminders:read:own', 'reminders:write:own'],
     };
   }
   if (url.includes('/me')) return { userId: 'CEgr', displayName: 'Caden', roles: [] };
@@ -99,6 +100,8 @@ describe('NG0103 probe', () => {
     const page = fixture.nativeElement as HTMLElement;
     expect(page.textContent).toContain('Open Contracts');
     expect(page.querySelector('app-contracts-table')).not.toBeNull();
+    // The right column comes from the modules too: the Engagement module's Notes card renders in the sidebar slot.
+    expect(page.querySelector('app-customer-notes')).not.toBeNull();
   }, 60000);
 
   for (const url of ['/', '/build-list', '/insights', '/dashboard', '/bid-sheet', '/daily-digest', '/usage-dashboard', '/whats-new']) {

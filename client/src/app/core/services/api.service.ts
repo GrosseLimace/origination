@@ -26,6 +26,7 @@ import {
   HarvestWindow,
   QueryLibraryItem,
   NoteMention,
+  GraphTeamsChannel,
   MentionCatalog,
   DpContract
 } from '@models';
@@ -377,9 +378,9 @@ export class ApiService {
   /** The Teams channels the signed-in user belongs to. The API reads these from Graph
    *  on-behalf-of the caller, so the browser never talks to Graph and never holds a Graph token.
    *  An empty list means consent has not been granted in this environment. */
-  getMyTeamsChannels(): Observable<import('@core/services/teams-directory.service').GraphTeamsChannel[]> {
+  getMyTeamsChannels(): Observable<GraphTeamsChannel[]> {
     return this.http
-      .get<import('@core/services/teams-directory.service').GraphTeamsChannel[]>(`${this.baseUrl}/teamschannels/mine`)
+      .get<GraphTeamsChannel[]>(`${this.baseUrl}/teamschannels/mine`)
       .pipe(catchError(e => this.handleError(e)));
   }
 

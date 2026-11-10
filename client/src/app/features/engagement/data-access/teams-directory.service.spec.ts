@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { firstValueFrom, Subject, throwError, of } from 'rxjs';
 import { ApiService } from '@core/services/api.service';
-import { GraphTeamsChannel, TeamsDirectoryService } from './teams-directory.service';
+import { TeamsDirectoryService } from './teams-directory.service';
+import type { GraphTeamsChannel } from '@models';
 
 /**
  * The @-mention picker's Teams channel list. Pins the two promises the picker relies on:

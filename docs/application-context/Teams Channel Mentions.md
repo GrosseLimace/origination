@@ -150,7 +150,7 @@ one does not exist, removing the "someone must click Get email address first" st
 - Data: `Infrastructure/Modules/Engagement/Entities/TeamsChannel.cs`, migration `AddTeamsChannelRegistry`
 - Graph on-behalf-of: `Api/Modules/Engagement/Services/TeamsDirectoryService.cs`, enabled in `AddSignIn` (`Api/Platform/Identity/IdentityServiceCollectionExtensions.cs`)
   (`EnableTokenAcquisitionToCallDownstreamApi` + `AddInMemoryTokenCaches`)
-- Client: `core/services/teams-directory.service.ts` (now just calls our API),
-  `features/customers/components/customer-notes/`
+- Client: `features/engagement/data-access/teams-directory.service.ts` (now just calls our API),
+  `features/engagement/components/customer-notes/`
 - Workflow: `infra/logic-apps/instant-share-note/` (`Case_teams-channel`, `Case_app-group`)
 - Risk record: `SECURITY-REVIEWS/ACCEPTED-RISKS.md` (**AR-07**, amended 2026-09-14)

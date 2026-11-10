@@ -17,7 +17,9 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { providePermissions } from '@testing/permission.stub';
 import { OutlookCalendarService } from '@core/services/outlook-calendar.service';
 import { environment } from '@env/environment';
-import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent } from '@shared/components/card/card.component';
+import { CustomerSlotComponent } from '@core/modules/customer-slot.component';
+import { ModuleManifest } from '@core/modules/module-manifest';
+import { APP_MODULES } from '@core/modules/module-registry';
 import type {
   Contract, Customer, Note, NoteLastContact, PlantingIntention, Reminder, ReminderDue, SavedList, StoredGrain,
 } from '@models';
@@ -115,7 +117,6 @@ class StubProfile {
 })
 class StubNotes {
   readonly ids = ids;
-  readonly customer = input<unknown>();
   // Read from the page, as the real card does: its notes and their state, and the linked producers.
   readonly engagement = inject(SelectedProducerEngagement);
   readonly notes = this.engagement.notes;
@@ -131,12 +132,20 @@ class StubNotes {
 })
 class StubReminders {
   readonly ids = ids;
-  readonly customer = input<unknown>();
   // Read from the page, as the real card does.
   private readonly engagement = inject(SelectedProducerEngagement);
   readonly reminders = this.engagement.reminders;
   readonly isLoading = this.engagement.isLoadingReminders;
 }
+
+/** Engagement's sidebar panels, as its manifest contributes them, with the stub cards for components. */
+const sidebarModules: ModuleManifest[] = [{
+  id: 'engagement',
+  customerPanels: [
+    { slot: 'sidebar', id: 'follow-ups', requires: [], order: 10, component: () => Promise.resolve(StubReminders) },
+    { slot: 'sidebar', id: 'notes', requires: [], order: 20, component: () => Promise.resolve(StubNotes) },
+  ],
+}];
 
 @Component({
   selector: 'app-calculator-launcher', standalone: true, changeDetection: ChangeDetectionStrategy.OnPush,
@@ -269,6 +278,8 @@ describe('HomeComponent (rendered)', () => {
         },
         { provide: UsageTrackingService, useValue: { trackProfileOpened: vi.fn() } },
         providePermissions(),
+        // The right column is the sidebar slot: Engagement's two cards, stubbed, contributed as the real module does.
+        { provide: APP_MODULES, useValue: sidebarModules },
         { provide: OutlookCalendarService, useValue: { addToOutlook: vi.fn(() => of(null)) } },
         { provide: MsalService, useValue: { instance: { getActiveAccount: () => null, getAllAccounts: () => [] } } },
         { provide: ActivatedRoute, useValue: { queryParams } },
@@ -277,8 +288,7 @@ describe('HomeComponent (rendered)', () => {
     });
     TestBed.overrideComponent(HomeComponent, {
       set: {
-        imports: [StubList, StubProfile, StubNotes, StubReminders, StubCalculator,
-          CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent],
+        imports: [StubList, StubProfile, StubCalculator, CustomerSlotComponent],
       },
     });
     fixture = TestBed.createComponent(root);
@@ -307,7 +317,7 @@ describe('HomeComponent (rendered)', () => {
     expect(text('list')).toContain('loading:false');
   });
 
-  it('opens a producer picked in the list, then fills in contracts, notes and "Last contacted" as each read lands', async () => {
+  it('opens a producer picked in the list, then fills in contracts and notes as each read lands', async () => {
     const contracts = new Subject<Contract[]>();
     const notes = new Subject<Note[]>();
     await render(a => {
@@ -334,7 +344,6 @@ describe('HomeComponent (rendered)', () => {
     await settle();
     expect(text('notes')).toContain('notes:5');
     expect(text('notes')).toContain('loading:false');
-    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Last contacted: Today');
   });
 
   it('shows a failed contract read as an error, and a successful retry replaces it', async () => {

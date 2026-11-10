@@ -6,7 +6,8 @@ import { CustomerNotesComponent } from './customer-notes.component';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { Customer, MentionCatalog, Note } from '@models';
-import { TeamsDirectoryService, GraphTeamsChannel } from '@core/services/teams-directory.service';
+import { TeamsDirectoryService } from '../../data-access/teams-directory.service';
+import type { GraphTeamsChannel } from '@models';
 import { SelectedProducerEngagementFake, provideSelectedProducerEngagement, selectedProducerEngagementFake } from '@testing/selected-producer-engagement.fake';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 

@@ -15,13 +15,11 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, ProducerDetails, DashboardPlantingEstimate, Commodity } from '@models';
 import { CustomerListComponent } from '../../components/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
-import { CustomerNotesComponent } from '../../components/customer-notes/customer-notes.component';
-import { CustomerRemindersComponent } from '../../components/customer-reminders/customer-reminders.component';
-import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent } from '@shared/components/card/card.component';
+import { CustomerSlotComponent } from '@core/modules/customer-slot.component';
 import { CalculatorLauncherComponent } from '@features/calculators';
 import { environment } from '@env/environment';
 import {
-  commodityCodesFrom, describeLastContacted, linkedGroupOf, mergeIncomingById, mergeYieldEstimates,
+  commodityCodesFrom, linkedGroupOf, mergeIncomingById, mergeYieldEstimates,
   yieldEstimateYears
 } from './home-derivations';
 import { HomeBackgroundFailures } from './home-background-failures';
@@ -44,12 +42,7 @@ import { SelectedProducerEngagement } from '@core/context/selected-producer-enga
   imports: [
     CustomerListComponent,
     CustomerProfileComponent,
-    CustomerNotesComponent,
-    CustomerRemindersComponent,
-    CardComponent,
-    CardContentComponent,
-    CardHeaderComponent,
-    CardTitleComponent,
+    CustomerSlotComponent,
     CalculatorLauncherComponent
   ],
   templateUrl: './home.component.html',
@@ -100,8 +93,6 @@ export class HomeComponent {
   readonly canEditTeamLists = this.lists.canEditTeamLists;
   /** Gates the floating calculator launcher (Profitability calc + future calculators). */
   readonly calculatorEnabled = environment.calculatorEnabled;
-  /** Gates the personal follow-up reminders card and the producer-list reminder badge. */
-  readonly remindersEnabled = this.reminders.remindersEnabled;
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
@@ -194,7 +185,6 @@ export class HomeComponent {
   readonly isMobile = signal(false);
   readonly loading = signal(false);
 
-  readonly lastContactedDate = computed(() => describeLastContacted(this.customerNotes()));
 
 
   private _pendingProducerDetails: ProducerDetails[] | null = null;

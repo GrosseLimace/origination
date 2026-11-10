@@ -31,3 +31,4 @@ export * from './tdisc.model';
 export * from './fd-cic.model';
 export * from './help.model';
 export * from './entitlements-catalog.model';
+export * from './teams-channel.model';

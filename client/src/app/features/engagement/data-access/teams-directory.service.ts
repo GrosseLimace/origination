@@ -3,17 +3,7 @@ import { Observable, of } from 'rxjs';
 import { catchError, shareReplay } from 'rxjs/operators';
 
 import { ApiService } from '@core/services/api.service';
-
-/** A Teams channel the signed-in user can post to. */
-export interface GraphTeamsChannel {
-  teamId: string;
-  teamName: string;
-  channelId: string;
-  displayName: string;
-  /** The channel's "send to channel" address. Needed only to register the channel the first time it
-   *  is picked; it is never stored on a note. */
-  channelEmail: string;
-}
+import { GraphTeamsChannel } from '@models';
 
 /**
  * The Teams channels the signed-in user belongs to.

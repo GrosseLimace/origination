@@ -1,7 +1,7 @@
 
     <div class="space-y-6">
-      <!-- Add Note Form -->
-      <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800">
+      <!-- Add Note Form (needs notes:write) -->
+      <div *appHasPermission="'notes:write'" class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800">
         @if (addDisabledReason()) {
           <p class="text-sm text-gray-500 dark:text-gray-400 italic text-center py-2">{{ addDisabledReason() }}</p>
         } @else {
@@ -143,8 +143,9 @@
             <div class="border rounded-lg p-[var(--space-fluid-card)] relative" [ngClass]="getNoteClass(note)">
               <!-- Top right actions -->
               <div class="absolute top-3 right-3 flex items-center gap-2">
-                <!-- Pin/Unpin button -->
+                <!-- Pin/Unpin button (needs notes:write) -->
                 <button
+                  *appHasPermission="'notes:write'"
                   (click)="togglePin(note)"
                   class="inline-flex items-center gap-1.5 text-xs cursor-pointer px-2 py-1 rounded-md transition-colors"
                   [ngClass]="note.isPinned ? 'text-scoular-yellow dark:text-amber-500 hover:bg-amber-100 dark:hover:bg-amber-900/30' : 'text-gray-400 hover:text-amber-500 hover:bg-gray-100 dark:hover:bg-gray-700'"
@@ -168,8 +169,8 @@
                   }
                 </button>
 
-                <!-- Three-dot menu button -->
-                <div class="relative">
+                <!-- Three-dot menu button: Edit and Delete (needs notes:write) -->
+                <div *appHasPermission="'notes:write'" class="relative">
                   <button
                     (click)="toggleMenu(note.id, $event)"
                     class="p-1.5 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"

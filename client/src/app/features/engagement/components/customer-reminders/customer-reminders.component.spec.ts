@@ -5,6 +5,8 @@ import { CustomerRemindersComponent } from './customer-reminders.component';
 import type { ReminderDraft } from '@models';
 import { Customer, Reminder } from '@models';
 import { SelectedProducerEngagementFake, provideSelectedProducerEngagement, selectedProducerEngagementFake } from '@testing/selected-producer-engagement.fake';
+import { PermissionId } from '@core/access/permission-ids.generated';
+import { permissionStub, providePermissions } from '@testing/permission.stub';
 
 // Covers the two things this card actually decides: how a due date is turned into the label and
 // colour a user reads, and how the local date + time they pick becomes the UTC instant that drives
@@ -428,5 +430,45 @@ describe('CustomerRemindersComponent', () => {
       expect(component.formOpen()).toBe(false);
       expect(component.formSubject()).toBe('');
     });
+  });
+});
+
+// Real template: adding, completing, editing, deleting and adding to Outlook need reminders:write:own.
+describe('CustomerRemindersComponent — write controls', () => {
+  function render(granted: PermissionId[]): HTMLElement {
+    const engagement = selectedProducerEngagementFake();
+    TestBed.configureTestingModule({ providers: [provideSelectedProducerEngagement(engagement), providePermissions(permissionStub(granted))] });
+    const fixture = TestBed.createComponent(CustomerRemindersComponent);
+    fixture.componentRef.setInput('customer', makeCustomer(100));
+    engagement.reminders.set([makeReminder({ outlookEventId: null })]);
+    // The first pass runs the card's per-producer reset, which collapses it; expand it after.
+    fixture.detectChanges();
+    fixture.componentInstance.collapsed.set(false);
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  const has = (host: HTMLElement, selector: string) => host.querySelector(selector) !== null;
+  const text = (host: HTMLElement) => (host.textContent ?? '').replace(/\s+/g, ' ');
+
+  it('offers adding, completing, editing, deleting and Add to Outlook to a user who may write follow-ups', () => {
+    const host = render(['reminders:write:own']);
+
+    expect(text(host)).toContain('Add Follow-Up');
+    expect(has(host, 'input[type=checkbox]')).toBe(true);
+    expect(has(host, '[aria-label="Edit follow-up"]')).toBe(true);
+    expect(has(host, '[aria-label="Delete follow-up"]')).toBe(true);
+    expect(text(host)).toContain('Add to Outlook');
+  });
+
+  it('shows a user who may only read follow-ups the follow-ups alone', () => {
+    const host = render([]);
+
+    expect(text(host)).toContain('Follow up with Smith Farms');
+    expect(text(host)).not.toContain('Add Follow-Up');
+    expect(has(host, 'input[type=checkbox]')).toBe(false);
+    expect(has(host, '[aria-label="Edit follow-up"]')).toBe(false);
+    expect(has(host, '[aria-label="Delete follow-up"]')).toBe(false);
+    expect(text(host)).not.toContain('Add to Outlook');
   });
 });

@@ -17,7 +17,7 @@ export function selectedProducerEngagementFake() {
     toggleNotePin: vi.fn(),
     editNote: vi.fn(),
     deleteNote: vi.fn(),
-    remindersEnabled: true,
+    remindersEnabled: true as boolean,
     reminders: signal<Reminder[]>([]),
     isLoadingReminders: signal(false),
     isSavingReminder: signal(false),

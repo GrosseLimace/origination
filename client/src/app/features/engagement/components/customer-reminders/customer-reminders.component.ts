@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { CardTitleComponent } from '@shared/components/card/card.component';
+import { HasPermissionDirective } from '@core/access/has-permission.directive';
 import { Customer, Reminder } from '@models';
 import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
 import { daysUntilDue, REMINDER_DONE_CLASS, REMINDER_DUE_CLASS, reminderDueTier } from '@shared/utils/reminder-due';
@@ -55,7 +56,7 @@ function joinTime(hour12: number, minute: number, meridiem: Meridiem): string {
 @Component({
   selector: 'app-customer-reminders',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent, CardTitleComponent],
+  imports: [CommonModule, FormsModule, ButtonComponent, CardTitleComponent, HasPermissionDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './customer-reminders.component.html'
 })

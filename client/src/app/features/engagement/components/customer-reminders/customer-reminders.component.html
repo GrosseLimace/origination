@@ -33,7 +33,7 @@
 
     <!-- Same variant and size as Add Note. The button never shrinks; the title truncates instead,
          so a narrow column can't push the button off the row. -->
-    <app-button variant="default" class="shrink-0" (onClick)="openAdd()">Add Follow-Up</app-button>
+    <app-button *appHasPermission="'reminders:write:own'" variant="default" class="shrink-0" (onClick)="openAdd()">Add Follow-Up</app-button>
   </div>
 
   @if (!collapsed()) {
@@ -211,6 +211,7 @@
         >
           <div class="flex items-start gap-2">
             <input
+              *appHasPermission="'reminders:write:own'"
               type="checkbox"
               [checked]="reminder.isCompleted"
               (change)="toggleComplete(reminder)"
@@ -242,6 +243,7 @@
                   <span class="text-gray-400 dark:text-gray-500">On your Outlook calendar</span>
                 } @else if (!reminder.isCompleted) {
                   <button
+                    *appHasPermission="'reminders:write:own'"
                     type="button"
                     (click)="addToOutlook(reminder)"
                     class="text-scoular-green-accessible dark:text-scoular-green hover:underline cursor-pointer"
@@ -254,7 +256,7 @@
               }
             </div>
 
-            <div class="flex shrink-0 items-center gap-1">
+            <div *appHasPermission="'reminders:write:own'" class="flex shrink-0 items-center gap-1">
               <button
                 type="button"
                 (click)="openEdit(reminder)"

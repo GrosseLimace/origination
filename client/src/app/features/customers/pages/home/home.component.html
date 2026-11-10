@@ -96,39 +96,13 @@
 
       <!-- Notes Column - Below profile until xl, then right sidebar, sticky on xl+ (38.7% on 2xl) -->
       @if (selectedCustomer(); as customer) {
-        <!-- space-y-3 matches the xl:gap-3 between this column and the profile column, so the gap
-             above Notes reads the same as the gap beside it. -->
-        <div class="xl:sticky xl:top-0 xl:self-start xl:max-h-full xl:overflow-auto xl:pr-1 xl:pb-4 space-y-3">
-          <!-- My follow-ups — the signed-in user's own reminders for this producer. Sits above
-               Notes: it is the short, actionable list, while Notes is the long history. -->
-          @if (remindersEnabled) {
-            <app-card>
-              <!-- Reads the follow-ups and their actions from the page's SelectedProducerEngagement. -->
-              <app-customer-reminders [customer]="customer"></app-customer-reminders>
-            </app-card>
-          }
-
-          <app-card>
-            <app-card-header>
-              <div class="flex items-center justify-between">
-                <app-card-title>Notes</app-card-title>
-                <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/>
-                    <line x1="16" x2="16" y1="2" y2="6"/>
-                    <line x1="8" x2="8" y1="2" y2="6"/>
-                    <line x1="3" x2="21" y1="10" y2="10"/>
-                  </svg>
-                  <span class="hidden sm:inline">Last contacted: {{ lastContactedDate() }}</span>
-                </div>
-              </div>
-            </app-card-header>
-            <app-card-content>
-              <!-- Reads the notes, their actions and the linked producers from the page (SelectedProducerEngagement,
-                   SelectedCustomerContext). -->
-              <app-customer-notes [customer]="customer"></app-customer-notes>
-            </app-card-content>
-          </app-card>
+        <!-- gap-3 matches the xl:gap-3 between this column and the profile column, so the gap above Notes reads the
+             same as the gap beside it. A flex gap rather than space-y: the panels sit inside the slot's element, which
+             takes no space (display: contents), so they are not the column's direct children. -->
+        <div class="xl:sticky xl:top-0 xl:self-start xl:max-h-full xl:overflow-auto xl:pr-1 xl:pb-4 flex flex-col gap-3">
+          <!-- The modules' panels for this producer: Engagement's My follow-ups (the short, actionable list) above
+               its Notes (the long history). -->
+          <app-customer-slot slot="sidebar" />
         </div>
       }
     </div>

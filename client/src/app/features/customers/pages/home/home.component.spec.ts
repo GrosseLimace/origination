@@ -25,6 +25,8 @@ import { CustomerStore } from '../../data-access/customer.store';
 import { CustomersApiService } from '../../data-access/customers-api.service';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
+// The Notes card's 'Last contacted' label, which the card works out from these same notes.
+import { describeLastContacted } from '@shared/utils/last-contacted';
 
 /**
  * Safety net for the producer page ahead of the OnPush conversion and decomposition. HomeComponent
@@ -512,13 +514,13 @@ describe('HomeComponent', () => {
           of(id === 1 ? [note(1, 1, new Date('2026-10-01T12:00:00Z'))] : id === 2 ? [note(2, 2, NOW)] : [])),
       });
 
-      expect(h.c.lastContactedDate()).toBe('Never');
+      expect(describeLastContacted(h.c.customerNotes())).toBe('Never');
       h.c.handleSelectCustomer(linkedA);
 
       expect(h.api.getNotesByCustomer).toHaveBeenCalledWith(1);
       expect(h.api.getNotesByCustomer).toHaveBeenCalledWith(2);
       expect(h.c.customerNotes().map(n => n.id)).toEqual([2, 1]); // newest first
-      expect(h.c.lastContactedDate()).toBe('Today');
+      expect(describeLastContacted(h.c.customerNotes())).toBe('Today');
       expect(h.c.isLoadingNotes()).toBe(false);
     });
 
@@ -1365,7 +1367,7 @@ describe('HomeComponent', () => {
       expect(engagement.notes()).toBe(h.c.customerNotes());
       expect(engagement.reminders().map(r => r.id)).toEqual([9]);
       expect(engagement.isLoadingNotes()).toBe(false);
-      expect(engagement.remindersEnabled).toBe(h.c.remindersEnabled);
+      expect(engagement.remindersEnabled).toBe(environment.remindersEnabled);
     });
 
     it('adding a note puts it in the panel and the badge feed, and clears the form', () => {
@@ -1377,7 +1379,7 @@ describe('HomeComponent', () => {
 
       expect(api.createNote).toHaveBeenCalledWith(1, 'called', 'TU1', []);
       expect(h.c.customerNotes().map(n => n.id)).toEqual([500, 1]);
-      expect(h.c.lastContactedDate()).toBe('Today');
+      expect(describeLastContacted(h.c.customerNotes())).toBe('Today');
       expect(h.c.noteLastContacts()).toEqual([{ customerId: 1, customerCode: undefined, lastNoteAt: NOW }]);
       expect(h.app.setNoteLastContacts).toHaveBeenLastCalledWith(h.c.noteLastContacts());
       expect(h.c.noteSaveSucceededCounter()).toBe(1);
@@ -1444,7 +1446,7 @@ describe('HomeComponent', () => {
       engagementOf(h).deleteNote(1);
 
       expect(h.c.customerNotes()).toEqual([]);
-      expect(h.c.lastContactedDate()).toBe('Never');
+      expect(describeLastContacted(h.c.customerNotes())).toBe('Never');
       expect(h.c.noteLastContacts()).toEqual([]);
       expect(h.app.notes().map(n => n.id)).toEqual([9]);
       expect(h.toast.success).toHaveBeenCalledWith('Note deleted');
