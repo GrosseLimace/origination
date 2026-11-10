@@ -8,6 +8,7 @@ import { CtrmSplit, Customer, FieldSeason, PlantingIntention } from '@models';
 import { ProgramRegistry } from './programs/program-registry';
 import { FieldSeasonDialogComponent } from './field-season-dialog.component';
 import { HasPermissionDirective } from '@core/access/has-permission.directive';
+import { PermissionService } from '@core/access/permission.service';
 
 /**
  * The split the add-field type-ahead text points at: its ID typed or picked ("TATOB43 · JARBOE WEST",
@@ -39,7 +40,8 @@ export function splitIdFromText(text: string): string | undefined {
  * only way field data ever changes an intention, and it goes through the normal Edit dialog.
  *
  * Each field shows a chip per sustainability program it takes part in; the programs themselves come
- * from the program registry, so nothing here is specific to 45Z.
+ * from the program registry, so nothing here is specific to 45Z. A user who may not change field plans sees the
+ * fields and their programs read-only.
  */
 @Component({
   selector: 'app-crop-fields-panel',
@@ -53,6 +55,9 @@ export class CropFieldsPanelComponent {
   private readonly registry = inject(ProgramRegistry);
   private readonly fdCic = inject(FdCicApiService);
   private readonly ctrmSplits = inject(CtrmSplitApiService);
+  private readonly permissions = inject(PermissionService);
+  /** Adding, changing and removing fields and their programs is for a user who may change field plans. */
+  readonly canEdit = computed(() => this.permissions.has('field-plans:write'));
 
   readonly intention = input.required<PlantingIntention>();
   readonly customer = input.required<Customer>();

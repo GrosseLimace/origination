@@ -101,11 +101,11 @@
   }
 </div>
 } @else if (documentsEnabled && p.key === fdCicKey) {
-<!-- No 45Z fields this year yet: the producer's signed attestation can still be uploaded -->
+<!-- No 45Z fields this year yet: the producer's signed attestation can still be uploaded, or viewed by a user who may not change field plans -->
 <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 px-4 py-2 text-sm">
   <span>
     <span class="font-semibold text-gray-900 dark:text-white">🌱 {{ p.shortLabel }} · {{ year() }}</span>
-    <span class="ml-2 text-xs text-gray-500 dark:text-gray-400">No 45Z fields yet. The producer's signed attestation can be uploaded now.</span>
+    <span class="ml-2 text-xs text-gray-500 dark:text-gray-400">No 45Z fields yet.<ng-container *appHasPermission="'field-plans:write'"> The producer's signed attestation can be uploaded now.</ng-container></span>
   </span>
   <button type="button" class="h-8 shrink-0 rounded-md px-3 text-xs border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:border-scoular-green-accessible"
           (click)="documentsOpen.set(true)" data-testid="open-45z-documents">📄 45Z documents</button>

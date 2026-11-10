@@ -3,7 +3,7 @@
   <app-dialog-header>
     <app-dialog-title>{{ draftField.name }} · {{ draftSeason.year }}</app-dialog-title>
     <app-dialog-description>
-      {{ draftSeason.cropLabel }} · Split {{ draftField.splitId }} · {{ draftField.county }} County, {{ draftField.state }} · Changes save as you go.
+      {{ draftSeason.cropLabel }} · Split {{ draftField.splitId }} · {{ draftField.county }} County, {{ draftField.state }} · {{ canEdit() ? 'Changes save as you go.' : 'View only.' }}
     </app-dialog-description>
   </app-dialog-header>
 
@@ -25,22 +25,22 @@
           <div class="mt-2 grid gap-3 text-sm sm:grid-cols-4">
             <div><div class="text-gray-500 dark:text-gray-400">CTRM split ID</div><div class="font-medium text-gray-900 dark:text-white">{{ draftField.splitId }}</div></div>
             <label class="block"><span class="text-gray-700 dark:text-gray-300">Field name</span>
-              <input class="ci-input" maxlength="255" [disabled]="seasonLocked()" [(ngModel)]="draftField.name" (change)="saveField()" /></label>
+              <input class="ci-input" maxlength="255" [disabled]="fieldReadOnly()" [(ngModel)]="draftField.name" (change)="saveField()" /></label>
           </div>
           <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">Entered by hand: the split ID is how this field's CTRM tickets are found, so check it against CTRM.</div>
         }
         <div class="mt-3 grid gap-3 sm:grid-cols-4">
           <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">State</span>
-            <select class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftField.state" (ngModelChange)="draftField.county = ''; saveField()">
+            <select class="ci-input" [disabled]="fieldReadOnly()" [(ngModel)]="draftField.state" (ngModelChange)="draftField.county = ''; saveField()">
               @for (st of states(); track st) { <option [value]="st">{{ st }}</option> }
             </select></label>
           <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">County</span>
-            <select class="ci-input" [class.ci-missing]="!draftField.county" [disabled]="seasonLocked()" [(ngModel)]="draftField.county" (ngModelChange)="saveField()">
+            <select class="ci-input" [class.ci-missing]="!draftField.county" [disabled]="fieldReadOnly()" [(ngModel)]="draftField.county" (ngModelChange)="saveField()">
               <option value="" disabled>County…</option>
               @for (c of countiesFor(draftField.state); track c) { <option [value]="c">{{ c }}</option> }
             </select></label>
           <label class="block text-sm"><span class="text-gray-700 dark:text-gray-300">{{ draftSeason.year }} acres</span>
-            <input type="number" min="0" class="ci-input" [disabled]="seasonLocked()" [(ngModel)]="draftSeason.acres" (ngModelChange)="saveSeason()" /></label>
+            <input type="number" min="0" class="ci-input" [disabled]="fieldReadOnly()" [(ngModel)]="draftSeason.acres" (ngModelChange)="saveSeason()" /></label>
         </div>
       </div>
 
@@ -58,9 +58,11 @@
               @if (p.record.status === 'Locked') { 🔒 } @else if (p.record.status === 'Draft') { <span class="text-amber-600">•</span> }
             </button>
           }
-          @for (d of addable(); track d.key) {
-            <button type="button" class="mb-1 rounded-md border border-dashed border-scoular-green-accessible/60 px-2.5 py-1 text-sm text-scoular-green-accessible dark:text-scoular-green bg-transparent hover:bg-scoular-green-accessible/5"
-                    [title]="d.description" (click)="addProgram(d.key)">+ {{ d.shortLabel }}</button>
+          @if (canEdit()) {
+            @for (d of addable(); track d.key) {
+              <button type="button" class="mb-1 rounded-md border border-dashed border-scoular-green-accessible/60 px-2.5 py-1 text-sm text-scoular-green-accessible dark:text-scoular-green bg-transparent hover:bg-scoular-green-accessible/5"
+                      [title]="d.description" (click)="addProgram(d.key)">+ {{ d.shortLabel }}</button>
+            }
           }
         </div>
 
@@ -68,7 +70,7 @@
           <div class="pt-4 space-y-4">
             <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
               <span class="text-gray-600 dark:text-gray-300">{{ a.def.label }}</span>
-              @if (a.record.status !== 'Locked') {
+              @if (a.record.status !== 'Locked' && canEdit()) {
                 <div class="flex flex-wrap items-center gap-3">
                   @if (copySources().length) {
                     <label class="text-xs text-gray-600 dark:text-gray-300">Copy from
@@ -136,10 +138,11 @@
                   }
                 } @else {
                   <span>Official {{ o.resultName }}: {{ officialStatus(a.record) }}</span>
-                  @if (canReview(a.record)) {
+                  <!-- The review ends in confirming the CI, so it opens only for a user who may change field plans. -->
+                  @if (canEdit() && canReview(a.record)) {
                     <button type="button" class="h-7 rounded-md px-2 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green border-0"
                             (click)="reviewRecordId.set(a.record.id)">Confirm CI Score</button>
-                  } @else {
+                  } @else if (canEdit()) {
                     <span>· Review opens once the field has an estimated CI.</span>
                   }
                 }
@@ -161,7 +164,9 @@
             @if (a.record.frozen; as fz) {
               <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 px-4 py-3 text-sm text-blue-900 dark:text-blue-200">
                 <span>✓ Confirmed with the producer ({{ fz.calculatorVersion }}, by {{ a.record.official?.documentedBy ?? fz.lockedBy }})@if (fz.score; as sc) {: {{ sc.value | number:'1.0-0' }} {{ sc.unit }}}.</span>
-                <button type="button" class="underline bg-transparent border-0 p-0" (click)="showReopen = true">Unlock to correct…</button>
+                @if (canEdit()) {
+                  <button type="button" class="underline bg-transparent border-0 p-0" (click)="showReopen = true">Unlock to correct…</button>
+                }
               </div>
             }
 
@@ -169,10 +174,12 @@
               <ng-container *ngComponentOutlet="a.def.intake; inputs: inputs" />
             }
           </div>
-        } @else if (addable().length) {
+        } @else if (addable().length && canEdit()) {
           <p class="pt-4 text-sm text-gray-600 dark:text-gray-300">
             Add a program to record this field's sustainability data. Its field details above are shared by every program.
           </p>
+        } @else if (addable().length) {
+          <p class="pt-4 text-sm text-gray-600 dark:text-gray-300">No sustainability programs on this field yet.</p>
         } @else {
           <p class="pt-4 text-sm text-gray-400 dark:text-gray-500">No sustainability programs apply to {{ draftSeason.cropLabel }}.</p>
         }

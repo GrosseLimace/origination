@@ -45,41 +45,39 @@ describe('splitIdFromText (a split ID typed by hand)', () => {
   });
 });
 
+/** The panel for a 250 ac Corn row with one 300 ac field, North, and one program it could join. */
+function renderPanel(access: PermissionStub) {
+  const season: FieldSeason = { id: 's1', fieldKey: 'f1', plantingIntentionId: 1, year: 2026, cropLabel: 'Corn', acres: 300 };
+  TestBed.configureTestingModule({
+    providers: [
+      providePermissions(access),
+      {
+        provide: FieldPlanStore,
+        useValue: {
+          isLoaded: () => true, loadFailed: () => false, seasonsForIntention: () => [season], hasLocked: () => false,
+          field: () => ({ name: 'North', splitId: 'TATOB02', county: 'Pratt', state: 'KS', splitPercent: 100 }),
+          forSeason: () => [], find: () => undefined, enrollmentIdOf: () => undefined,
+        },
+      },
+      { provide: ProgramRegistry, useValue: { eligible: () => [{ key: 'water', label: 'Water stewardship', description: '' }], get: () => undefined } },
+      { provide: FdCicApiService, useValue: {} },
+      { provide: CtrmSplitApiService, useValue: {} },
+    ],
+  });
+  const fixture = TestBed.createComponent(CropFieldsPanelComponent);
+  fixture.componentRef.setInput('intention', { id: 1, plantingYear: 2026, acres: 250 } as PlantingIntention);
+  fixture.componentRef.setInput('customer', { id: 42, scoularId: 'SAMPFRM', name: 'Sample Farms' } as Customer);
+  fixture.componentRef.setInput('cropLabel', 'Corn');
+  fixture.componentInstance.expanded.set(true);
+  fixture.detectChanges();
+  return fixture;
+}
+
 // "Update total" opens the intention's Edit dialog, so it shows only to a user who may change intentions.
 describe('CropFieldsPanelComponent — "Update total" when the fields add up to more than the row', () => {
-  let access: PermissionStub;
-
-  function render(granted: Parameters<typeof permissionStub>[0]) {
-    access = permissionStub(granted);
-    // One field of 300 ac under a 250 ac row.
-    const season: FieldSeason = { id: 's1', fieldKey: 'f1', plantingIntentionId: 1, year: 2026, cropLabel: 'Corn', acres: 300 };
-    TestBed.configureTestingModule({
-      providers: [
-        providePermissions(access),
-        {
-          provide: FieldPlanStore,
-          useValue: {
-            isLoaded: () => true, loadFailed: () => false, seasonsForIntention: () => [season], hasLocked: () => false,
-            field: () => ({ name: 'North', splitId: 'TATOB02', county: 'Pratt', state: 'KS', splitPercent: 100 }),
-            forSeason: () => [], find: () => undefined, enrollmentIdOf: () => undefined,
-          },
-        },
-        { provide: ProgramRegistry, useValue: { eligible: () => [], get: () => undefined } },
-        { provide: FdCicApiService, useValue: {} },
-        { provide: CtrmSplitApiService, useValue: {} },
-      ],
-    });
-    const fixture = TestBed.createComponent(CropFieldsPanelComponent);
-    fixture.componentRef.setInput('intention', { id: 1, plantingYear: 2026, acres: 250 } as PlantingIntention);
-    fixture.componentRef.setInput('customer', { id: 42, scoularId: 'SAMPFRM', name: 'Sample Farms' } as Customer);
-    fixture.componentRef.setInput('cropLabel', 'Corn');
-    fixture.componentInstance.expanded.set(true);
-    fixture.detectChanges();
-    return fixture;
-  }
-
   it('offers it only to a user who may change intentions', () => {
-    const fixture = render(['field-plans:read']);
+    const access = permissionStub(['field-plans:read']);
+    const fixture = renderPanel(access);
     const text = () => (fixture.nativeElement as HTMLElement).textContent ?? '';
     expect(text()).toContain('more than the 250 ac on this row');
     expect(text()).not.toContain('Update total to 300');
@@ -88,5 +86,34 @@ describe('CropFieldsPanelComponent — "Update total" when the fields add up to 
     fixture.detectChanges();
 
     expect(text()).toContain('Update total to 300');
+  });
+});
+
+// Adding, changing and removing fields and their programs needs field-plans:write; without it the panel is read-only.
+describe('CropFieldsPanelComponent — for a user who may not change field plans', () => {
+  it('shows the fields read-only, and the controls once the user may change field plans', async () => {
+    const access = permissionStub(['field-plans:read']);
+    const fixture = renderPanel(access);
+    const host = fixture.nativeElement as HTMLElement;
+    const acres = () => host.querySelector<HTMLInputElement>('input[aria-label="Acres"]')!;
+    const buttonText = () => Array.from(host.querySelectorAll('button')).map(b => (b.textContent ?? '').trim());
+    // ngModel applies [disabled] a tick later.
+    const settle = async () => { fixture.detectChanges(); await new Promise(r => setTimeout(r, 0)); fixture.detectChanges(); };
+    await settle();
+
+    expect(host.textContent).toContain('North');
+    expect(acres().disabled).toBe(true);
+    expect(buttonText()).not.toContain('+ Add field');
+    expect(buttonText()).not.toContain('Add program ▾');
+    expect(host.querySelector('[aria-label="Remove North"]')).toBeNull();
+    expect(host.textContent).toContain('None yet');
+
+    access.grant('field-plans:read', 'field-plans:write');
+    await settle();
+
+    expect(acres().disabled).toBe(false);
+    expect(buttonText()).toContain('+ Add field');
+    expect(buttonText()).toContain('Add program ▾');
+    expect(host.querySelector('[aria-label="Remove North"]')).not.toBeNull();
   });
 });

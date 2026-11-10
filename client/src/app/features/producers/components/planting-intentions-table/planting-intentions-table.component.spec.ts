@@ -68,7 +68,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
         { provide: ToastService, useValue: { error: () => {}, success: () => {} } },
         provideSelectedProducerProduction(production),
         { provide: SelectedCustomerContext, useValue: { customer } },
-        providePermissions(permissionStub(['planting-intentions:write', 'field-plans:read'])),
+        providePermissions(permissionStub(['planting-intentions:write', 'field-plans:read', 'carbon-intensity:read'])),
         {
           provide: TradeUnitContext,
           useValue: {
@@ -362,7 +362,7 @@ describe('PlantingIntentionsTableComponent — rendering', () => {
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
         provideSelectedProducerProduction(production),
         { provide: SelectedCustomerContext, useValue: { customer } },
-        providePermissions(permissionStub(['planting-intentions:write', 'field-plans:read'])),
+        providePermissions(permissionStub(['planting-intentions:write', 'field-plans:read', 'carbon-intensity:read'])),
         {
           provide: TradeUnitContext,
           useValue: {
@@ -577,12 +577,16 @@ describe('PlantingIntentionsTableComponent — permissions', () => {
     expect(host().textContent).toContain('Add Planting Intention');
   });
 
-  it('shows the field plan, and loads it, only for a user who may read field plans', () => {
-    render(['planting-intentions:write']);
+  it('shows the field plan, and loads it, only for a user who may read field plans and use the FD-CIC calculator', () => {
+    render(['planting-intentions:write', 'field-plans:read']);
+    expect(fieldPlanParts()).toBe(0);
+
+    access.grant('planting-intentions:write', 'carbon-intensity:read');
+    fixture.detectChanges();
     expect(fieldPlanParts()).toBe(0);
     expect(ensureLoaded).not.toHaveBeenCalled();
 
-    access.grant('planting-intentions:write', 'field-plans:read');
+    access.grant('planting-intentions:write', 'field-plans:read', 'carbon-intensity:read');
     fixture.detectChanges();
 
     expect(host().querySelectorAll('app-crop-fields-panel')).toHaveLength(2);

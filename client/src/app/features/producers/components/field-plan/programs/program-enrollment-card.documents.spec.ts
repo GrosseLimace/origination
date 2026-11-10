@@ -9,14 +9,18 @@ import { SUSTAINABILITY_PROGRAMS } from './program-registry';
 import { FieldPlanStore } from '../store/field-plan.store';
 import { FieldPlanDocumentsService } from '../store/field-plan-documents.service';
 import { ProgramEnrollmentCardComponent } from './program-enrollment-card.component';
+import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
 
 describe('ProgramEnrollmentCardComponent: 45Z documents', () => {
   const program = createFdCicProgram(fakeFdCicApi());
   let documents: { enabled: boolean; list: () => Promise<never[]> };
+  let access: PermissionStub;
 
   beforeEach(() => {
     documents = { enabled: true, list: () => Promise.resolve([]) };
+    access = permissionStub(['field-plans:write']);
     TestBed.configureTestingModule({ providers: [
+      providePermissions(access),
       { provide: SUSTAINABILITY_PROGRAMS, useValue: [program] },
       { provide: FdCicApiService, useValue: fakeFdCicApi() },
       { provide: TDiscApiService, useValue: fakeTDiscApi() },
@@ -42,6 +46,15 @@ describe('ProgramEnrollmentCardComponent: 45Z documents', () => {
     expect(el.textContent).toContain('No 45Z fields yet');
     button(el)!.click();
     expect(fixture.componentInstance.documentsOpen()).toBe(true);
+  });
+
+  it('should say an attestation can be uploaded only to a user who may change field plans, and still offer the documents', () => {
+    access.grant('field-plans:read');
+    const el = render().nativeElement as HTMLElement;
+
+    expect(el.textContent).toContain('No 45Z fields yet.');
+    expect(el.textContent).not.toContain('can be uploaded now');
+    expect(button(el)).not.toBeNull();
   });
 
   it('should show the documents button on the folded card once the producer has a field', async () => {

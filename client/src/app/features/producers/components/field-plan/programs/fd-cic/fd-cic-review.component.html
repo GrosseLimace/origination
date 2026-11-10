@@ -217,7 +217,7 @@
                   <span class="text-gray-600 dark:text-gray-300">Saving the {{ unsavedDocuments() }} to Doc Store…</span>
                 } @else {
                   <span class="text-amber-800 dark:text-amber-300">{{ unsavedDocuments() }} not saved to Doc Store{{ reportSaveError() ? ': ' + reportSaveError() : '.' }}</span>
-                  <button type="button" class="ml-2 underline text-scoular-green-accessible bg-transparent border-0 p-0" (click)="saveReport()">Save it now</button>
+                  <button *appHasPermission="'field-plans:write'" type="button" class="ml-2 underline text-scoular-green-accessible bg-transparent border-0 p-0" (click)="saveReport()">Save it now</button>
                 }
               </p>
             }
@@ -251,7 +251,7 @@
       <button type="button" class="h-9 rounded-md px-4 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-50 border-0"
               [disabled]="!canOpen(step() + 1)" (click)="next()">Next</button>
     } @else if (!confirmed()) {
-      <button type="button" class="h-9 rounded-md px-4 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-50 border-0"
+      <button *appHasPermission="'field-plans:write'" type="button" class="h-9 rounded-md px-4 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green disabled:opacity-50 border-0"
               [disabled]="!!blocker() || saving()" (click)="confirm()">{{ saving() ? 'Confirming…' : 'Confirm CI' }}</button>
     }
   </app-dialog-footer>

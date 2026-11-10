@@ -6,6 +6,7 @@ import { DialogComponent, DialogContentComponent, DialogDescriptionComponent, Di
 import { FieldPlanStore } from './store/field-plan.store';
 import { FdCicApiService } from '../../data-access/fd-cic-api.service';
 import { ToastService } from '@core/services/toast.service';
+import { PermissionService } from '@core/access/permission.service';
 import { FieldProgramRecord, FieldSeason, OFFICIAL_STATUS_TEXT, ProducerField } from '@models';
 import { ProgramRegistry } from './programs/program-registry';
 import { FD_CIC_PROGRAM_KEY } from './programs/fd-cic/fd-cic.program';
@@ -17,7 +18,8 @@ import { FeedstockReportService } from './programs/fd-cic/feedstock-report.servi
  * One field on one crop row: its CTRM split (ID, name, split %) and location, its acres this year, and the
  * sustainability programs it takes part in. Each program brings its own form (rendered from the
  * program registry) and shows the producer's enrollment ID for that program. A 45Z field is locked by
- * confirming it in the review after harvest. Edits save as they are made.
+ * confirming it in the review after harvest. Edits save as they are made. A user who may not change field plans
+ * sees it all read-only.
  */
 @Component({
   selector: 'app-field-season-dialog',
@@ -35,6 +37,9 @@ export class FieldSeasonDialogComponent {
   private readonly fdCic = inject(FdCicApiService);
   private readonly toast = inject(ToastService);
   private readonly reports = inject(FeedstockReportService);
+  private readonly permissions = inject(PermissionService);
+  /** Changing the field, its programs and their inputs is for a user who may change field plans. */
+  readonly canEdit = computed(() => this.permissions.has('field-plans:write'));
 
   readonly seasonId = input.required<string>();
   /** Opens straight onto this program, adding it to the field if it isn't there yet. */
@@ -78,11 +83,13 @@ export class FieldSeasonDialogComponent {
   });
   /** A locked program froze this season's acres and location, so they can't change under it. */
   readonly seasonLocked = computed(() => this.store.hasLocked(this.seasonId()));
+  /** The field's location and acres can't change: a locked program froze them, or the user may not change field plans. */
+  readonly fieldReadOnly = computed(() => this.seasonLocked() || !this.canEdit());
   readonly intakeInputs = computed(() => {
     const a = this.active();
     const s = this.season();
     const f = this.field();
-    return a && s && f ? { record: a.record, season: s, field: f, disabled: a.record.status === 'Locked' } : null;
+    return a && s && f ? { record: a.record, season: s, field: f, disabled: a.record.status === 'Locked' || !this.canEdit() } : null;
   });
 
   /** Editable copies of the generic parts; every change is written straight back. */
@@ -117,13 +124,13 @@ export class FieldSeasonDialogComponent {
   private _startApplied: string | null = null;
 
   saveSeason(): void {
-    if (this.draftSeason && !this.seasonLocked()) {
+    if (this.draftSeason && !this.fieldReadOnly()) {
       this.store.updateSeason(this.draftSeason);
     }
   }
 
   saveField(): void {
-    if (!this.draftField || this.seasonLocked()) return;
+    if (!this.draftField || this.fieldReadOnly()) return;
     // A share typed by hand must be a real share; the API refuses anything else.
     const share = this.draftField.splitPercent;
     if (!(share > 0 && share <= 100)) return;
@@ -140,6 +147,8 @@ export class FieldSeasonDialogComponent {
   }
 
   async addProgram(key: string): Promise<void> {
+    // Opening the dialog on a program the field hasn't got adds it, so the check is here as well as in the template.
+    if (!this.canEdit()) return;
     if (await this.store.addRecord(this.seasonId(), key)) this.activeKey.set(key);
   }
 

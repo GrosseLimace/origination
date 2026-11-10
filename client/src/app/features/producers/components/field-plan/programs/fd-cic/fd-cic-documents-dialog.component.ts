@@ -7,6 +7,7 @@ import { alreadyShown } from '@core/http/shown-errors';
 import { ToastService } from '@core/services/toast.service';
 import { FieldPlanDocument, FieldPlanDocumentStatus, FieldPlanDocumentType, FieldPlanUploadType } from '@models';
 import { FieldPlanDocumentsService } from '../../store/field-plan-documents.service';
+import { HasPermissionDirective } from '@core/access/has-permission.directive';
 import { parseCsv } from './csv-table';
 
 /**
@@ -46,7 +47,8 @@ const SELECT = 'h-7 rounded-md border border-gray-300 dark:border-gray-600 bg-wh
  *
  * "Current documents" is the crop year's current set. "Version history" is every year's overwritten documents
  * (a report or ledger replaced when its field's CI was confirmed again) and archived ones (set aside by an
- * originator, who can restore them). Nothing is ever deleted from Doc Store.
+ * originator, who can restore them). Nothing is ever deleted from Doc Store. Uploading, archiving and restoring are for
+ * a user who may change field plans; anyone who can see the field plan can view and download.
  *
  * View shows the document inside the dialog with the browser's own PDF viewer (as Contract Workspace does), with
  * Print and Download; a ledger is shown as a table. A browser set to download PDFs gets a plain message and
@@ -56,12 +58,12 @@ const SELECT = 'h-7 rounded-md border border-gray-300 dark:border-gray-600 bg-wh
   selector: 'app-fd-cic-documents-dialog',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, FormsModule, DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent],
+  imports: [DatePipe, FormsModule, DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent, HasPermissionDirective],
   template: `
     <app-dialog [isOpen]="true" (close)="close.emit()" size="xl" [scrollBody]="true">
       <app-dialog-header>
         <app-dialog-title>45Z documents · {{ producerName() }} · {{ year() }}</app-dialog-title>
-        <app-dialog-description>Kept in Doc Store under Sustainability-45z. Upload a PDF, PNG or JPEG, up to 10 MB.</app-dialog-description>
+        <app-dialog-description>Kept in Doc Store under Sustainability-45z.<ng-container *appHasPermission="'field-plans:write'"> Upload a PDF, PNG or JPEG, up to 10 MB.</ng-container></app-dialog-description>
       </app-dialog-header>
 
       <app-dialog-content>
@@ -120,7 +122,7 @@ const SELECT = 'h-7 rounded-md border border-gray-300 dark:border-gray-600 bg-wh
             <p class="text-amber-800 dark:text-amber-300" role="alert">{{ e }} <button type="button" class="underline bg-transparent border-0 p-0" (click)="load()">Try again</button></p>
           } @else if (tab() === 'current') {
             <!-- Upload: the producer's signed attestation (done outside the app) or another document -->
-            <form class="flex flex-wrap items-end gap-3 rounded-md border border-gray-200 dark:border-gray-700 p-3" (submit)="$event.preventDefault(); upload()">
+            <form *appHasPermission="'field-plans:write'" class="flex flex-wrap items-end gap-3 rounded-md border border-gray-200 dark:border-gray-700 p-3" (submit)="$event.preventDefault(); upload()">
               <label class="flex flex-col gap-1 text-xs text-gray-600 dark:text-gray-300">Type
                 <select class="h-9 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 text-sm"
                         [ngModel]="uploadType()" (ngModelChange)="uploadType.set($event)" name="uploadType">
@@ -179,7 +181,7 @@ const SELECT = 'h-7 rounded-md border border-gray-300 dark:border-gray-600 bg-wh
                           <span class="ml-auto flex gap-2">
                             @if (viewable(d)) { <button type="button" [class]="button" [disabled]="opening()" (click)="view(d)">View</button> }
                             <button type="button" [class]="button" [disabled]="opening()" (click)="download(d)">Download</button>
-                            <button type="button" [class]="button" [disabled]="busy()" (click)="startArchive(d)" [attr.data-testid]="'archive-' + d.id">Archive</button>
+                            <button *appHasPermission="'field-plans:write'" type="button" [class]="button" [disabled]="busy()" (click)="startArchive(d)" [attr.data-testid]="'archive-' + d.id">Archive</button>
                           </span>
                         </div>
                         @if (archiving() === d.id) {
@@ -253,7 +255,7 @@ const SELECT = 'h-7 rounded-md border border-gray-300 dark:border-gray-600 bg-wh
                     <span class="ml-auto flex gap-2">
                       @if (viewable(d)) { <button type="button" [class]="button" [disabled]="opening()" (click)="view(d)">View</button> }
                       <button type="button" [class]="button" [disabled]="opening()" (click)="download(d)">Download</button>
-                      @if (d.status === 'Archived') { <button type="button" [class]="button" [disabled]="busy()" (click)="restore(d)" [attr.data-testid]="'restore-' + d.id">Restore</button> }
+                      @if (d.status === 'Archived') { <button *appHasPermission="'field-plans:write'" type="button" [class]="button" [disabled]="busy()" (click)="restore(d)" [attr.data-testid]="'restore-' + d.id">Restore</button> }
                     </span>
                   </li>
                 }

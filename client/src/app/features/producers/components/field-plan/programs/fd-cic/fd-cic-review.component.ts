@@ -16,6 +16,7 @@ import { feedstockReport } from './feedstock-report';
 import { FeedstockReportService } from './feedstock-report.service';
 import { FieldPlanDocumentsService } from '../../store/field-plan-documents.service';
 import { ApiError } from '@core/errors/api-error';
+import { HasPermissionDirective } from '@core/access/has-permission.directive';
 import { ReviewTicketTableComponent } from './review/review-ticket-table.component';
 import { ReviewRecordkeepingComponent } from './review/review-recordkeeping.component';
 import { ReviewTDiscComponent } from './review/review-tdisc.component';
@@ -47,13 +48,14 @@ export const REVIEW_STEPS = [
  * rescores, locks, and keeps the confirmed CI with its bushels and tickets: the official result the Biofuel
  * Feedstock Report and the Mass Balance Ledger are built from.
  *
- * Each step's Next waits on that step's own check. A confirmed field opens on ⑤, every step read-only.
+ * Each step's Next waits on that step's own check. A confirmed field opens on ⑤, every step read-only. Confirming,
+ * and saving the documents to Doc Store, are for a user who may change field plans.
  */
 @Component({
   selector: 'app-fd-cic-review',
   standalone: true,
   imports: [DatePipe, DecimalPipe, FormsModule, DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent,
-    ReviewTicketTableComponent, ReviewRecordkeepingComponent, ReviewTDiscComponent],
+    ReviewTicketTableComponent, ReviewRecordkeepingComponent, ReviewTDiscComponent, HasPermissionDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: '../../field-plan.css',
   templateUrl: './fd-cic-review.component.html',

@@ -4,6 +4,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ApiError } from '@core/errors/api-error';
 import { markShown } from '@core/http/shown-errors';
 import { ToastService } from '@core/services/toast.service';
+import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
 import { FieldPlanDocument } from '@models';
 import { FieldPlanDocumentsService } from '../../store/field-plan-documents.service';
 import { FdCicDocumentsDialogComponent } from './fd-cic-documents-dialog.component';
@@ -36,6 +37,7 @@ describe('FdCicDocumentsDialogComponent', () => {
   let toast: { success: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> };
   let fixture: ComponentFixture<FdCicDocumentsDialogComponent>;
   let dialog: FdCicDocumentsDialogComponent;
+  let access: PermissionStub;
 
   beforeEach(async () => {
     service = {
@@ -43,7 +45,9 @@ describe('FdCicDocumentsDialogComponent', () => {
       list: vi.fn().mockResolvedValue([attestation, ...reports, ...ledgers, overwritten, archived2025, lastYearReport]),
     };
     toast = { success: vi.fn(), error: vi.fn() };
+    access = permissionStub(['field-plans:write']);
     TestBed.configureTestingModule({ providers: [
+      providePermissions(access),
       { provide: FieldPlanDocumentsService, useValue: service },
       { provide: ToastService, useValue: toast },
     ] });
@@ -155,6 +159,31 @@ describe('FdCicDocumentsDialogComponent', () => {
     expect(dialog.viewable(doc({ contentType: 'image/jpeg' }))).toBe(true);
     expect(dialog.viewable(doc({ contentType: 'text/csv' }))).toBe(true);
     expect(dialog.viewable(doc({ contentType: 'text/html' }))).toBe(false);
+  });
+
+  // Uploading, archiving and restoring change Doc Store, so they're for a user who may change field plans.
+  it('should let a user who may not change field plans view and download, but not upload, archive or restore', () => {
+    const has = (testId: string) => el().querySelector(`[data-testid="${testId}"]`) !== null;
+    access.grant('field-plans:read');
+    fixture.detectChanges();
+    expect(el().textContent).toContain('attestation.pdf');
+    expect(el().textContent).not.toContain('Upload a PDF');
+    expect(has('documents-file')).toBe(false);
+    expect(has('archive-a1')).toBe(false);
+
+    dialog.tab.set('history');
+    dialog.historyYear.set(2025);
+    fixture.detectChanges();
+    expect(el().textContent).toContain('attestation-2025.pdf');
+    expect(has('restore-a0')).toBe(false);
+
+    access.grant('field-plans:read', 'field-plans:write');
+    fixture.detectChanges();
+    expect(has('restore-a0')).toBe(true);
+    dialog.tab.set('current');
+    fixture.detectChanges();
+    expect(has('documents-file')).toBe(true);
+    expect(has('archive-a1')).toBe(true);
   });
 
   describe('Archive', () => {

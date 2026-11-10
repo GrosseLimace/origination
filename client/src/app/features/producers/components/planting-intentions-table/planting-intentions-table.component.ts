@@ -315,8 +315,12 @@ export class PlantingIntentionsTableComponent {
   // The row's acres stay the total; fields only break it down (FieldPlanStore).
   readonly fieldPlanningEnabled = environment.fieldPlanningEnabled;
   private readonly permissions = inject(PermissionService);
-  /** The field plan shows, and loads, only for a user who may read field plans. */
-  readonly showFieldPlan = computed(() => this.fieldPlanningEnabled && this.permissions.has('field-plans:read'));
+  /**
+   * The field plan shows, and loads, only for a user who may read field plans and use the FD-CIC calculator,
+   * which gives a field its state and county lists and every CI score.
+   */
+  readonly showFieldPlan = computed(() =>
+    this.fieldPlanningEnabled && this.permissions.hasAll(['field-plans:read', 'carbon-intensity:read']));
   private readonly fieldPlan = inject(FieldPlanStore);
   /** Brings the producer's fields and program data in when the producer is shown (once per producer). */
   private readonly _loadFieldPlan = effect(() => {

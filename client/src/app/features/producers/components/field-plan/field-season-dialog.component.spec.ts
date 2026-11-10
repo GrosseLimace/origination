@@ -4,6 +4,7 @@ import { Component, Type, input } from '@angular/core';
 import { FdCicApiService } from '../../data-access/fd-cic-api.service';
 import { TDiscApiService } from '../../data-access/tdisc-api.service';
 import { ToastService } from '@core/services/toast.service';
+import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
 import { FdCicData, FieldProgramRecord, FieldSeason, ProducerField } from '@models';
 import { ProgramIntake, SustainabilityProgramDef } from './programs/program-def';
 import { SUSTAINABILITY_PROGRAMS } from './programs/program-registry';
@@ -55,6 +56,7 @@ describe('FieldSeasonDialogComponent', () => {
   let backend: InMemoryFieldPlanBackend;
   let toast: ToastService;
   let reports: { download: ReturnType<typeof vi.fn> };
+  let access: PermissionStub;
   let field: ProducerField;
   let season: FieldSeason;
 
@@ -83,7 +85,9 @@ describe('FieldSeasonDialogComponent', () => {
 
   beforeEach(async () => {
     reports = { download: vi.fn().mockResolvedValue(undefined) };
+    access = permissionStub(['field-plans:write']);
     TestBed.configureTestingModule({ providers: [
+      providePermissions(access),
       { provide: SUSTAINABILITY_PROGRAMS, useValue: [FD_CIC_PROGRAM, WATER_PROGRAM] },
       { provide: FdCicApiService, useValue: fdCicApi() },
       { provide: TDiscApiService, useValue: fakeTDiscApi() },
@@ -318,6 +322,69 @@ describe('FieldSeasonDialogComponent', () => {
       expect(reopened.status).toBe('Ready');
       expect(reopened.reopened?.[0].reason).toBe('Wrong nitrogen rate');
       expect(dialog.seasonLocked()).toBe(false);
+    });
+  });
+
+  // Without field-plans:write the dialog shows the field, its programs and their inputs, and changes nothing.
+  describe('for a user who may not change field plans', () => {
+    beforeEach(() => access.grant('field-plans:read'));
+
+    /** ngModel applies [disabled] a tick later. */
+    const settle = async (fixture: ComponentFixture<FieldSeasonDialogComponent>) => {
+      fixture.detectChanges();
+      await new Promise(r => setTimeout(r, 0));
+      fixture.detectChanges();
+    };
+    /** The field's own boxes: its name (typed by hand here), state, county and this year's acres. */
+    const fieldBoxes = (fixture: ComponentFixture<FieldSeasonDialogComponent>) =>
+      Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('label'))
+        .filter(l => /^(Field name|State|County|2026 acres)/.test(l.textContent!.trim()))
+        .map(l => l.querySelector<HTMLInputElement | HTMLSelectElement>('input, select')!);
+    const controls = ['+ Water', 'Remove from this field', 'Confirm CI Score'];
+
+    it('should show the field and its 45Z inputs read-only, with nothing to add, remove or confirm', async () => {
+      score((await store.addRecord(season.id, FD_CIC_PROGRAM.key))!);
+      const fixture = open();
+      await settle(fixture);
+
+      expect(text(fixture)).toContain('View only.');
+      expect(fieldBoxes(fixture)).toHaveLength(4);
+      expect(fieldBoxes(fixture).every(box => box.disabled)).toBe(true);
+      expect(fixture.componentInstance.intakeInputs()?.disabled).toBe(true);
+      for (const control of controls) expect(text(fixture)).not.toContain(control);
+
+      access.grant('field-plans:read', 'field-plans:write');
+      await settle(fixture);
+
+      expect(text(fixture)).toContain('Changes save as you go.');
+      expect(fieldBoxes(fixture).some(box => box.disabled)).toBe(false);
+      expect(fixture.componentInstance.intakeInputs()?.disabled).toBe(false);
+      for (const control of controls) expect(text(fixture)).toContain(control);
+      await store.flush();
+    });
+
+    it('should show a confirmed field\'s review and report, but not offer to unlock it', async () => {
+      const added = (await store.addRecord(season.id, FD_CIC_PROGRAM.key))!;
+      score(added);
+      await confirm(added);
+      const fixture = open({ producer: { code: 'TATOBIN', name: 'Tatobin Farms' } });
+
+      expect(text(fixture)).toContain('View review');
+      expect(text(fixture)).toContain('Generate Biofuel Feedstock Report');
+      expect(text(fixture)).not.toContain('Unlock to correct');
+
+      access.grant('field-plans:read', 'field-plans:write');
+      fixture.detectChanges();
+
+      expect(text(fixture)).toContain('Unlock to correct');
+    });
+
+    it('should not add the program it was opened on', async () => {
+      const fixture = open({ startProgram: WATER_PROGRAM.key });
+      await settle(fixture);
+
+      expect(store.find(season.id, WATER_PROGRAM.key)).toBeUndefined();
+      expect(text(fixture)).toContain('No sustainability programs on this field yet.');
     });
   });
 });

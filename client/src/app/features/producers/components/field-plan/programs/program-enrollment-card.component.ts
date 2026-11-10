@@ -9,6 +9,7 @@ import { LadderRow, atOrBelowTarget, ciLadder } from './ci-ladder';
 import { downloadCsv } from '@shared/utils/csv';
 import { ledgerCsv, ledgerFileName } from './fd-cic/mass-balance-ledger';
 import { FdCicDocumentsDialogComponent } from './fd-cic/fd-cic-documents-dialog.component';
+import { HasPermissionDirective } from '@core/access/has-permission.directive';
 import { FD_CIC_PROGRAM_KEY } from './fd-cic/fd-cic.program';
 import { FieldPlanDocumentsService } from '../store/field-plan-documents.service';
 
@@ -49,7 +50,7 @@ interface CardField {
 @Component({
   selector: 'app-program-enrollment-card',
   standalone: true,
-  imports: [CommonModule, FormsModule, FdCicDocumentsDialogComponent],
+  imports: [CommonModule, FormsModule, FdCicDocumentsDialogComponent, HasPermissionDirective],
   styleUrl: '../field-plan.css',
   templateUrl: './program-enrollment-card.component.html',
 })

@@ -14,6 +14,7 @@ import { ticketMatchLabel } from './review/review-ticket-table.component';
 import { FeedstockReportService } from './feedstock-report.service';
 import { FieldPlanDocumentsService } from '../../store/field-plan-documents.service';
 import { ApiError } from '@core/errors/api-error';
+import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
 
 describe('yieldFromTickets (the review\'s suggested actual yield)', () => {
   it('should be the included bushels over the field\'s acres, to one decimal', () => {
@@ -35,6 +36,7 @@ describe('FdCicReviewComponent', () => {
   let review: FdCicReviewComponent;
   let fixture: ComponentFixture<FdCicReviewComponent>;
   let recordId: string;
+  let access: PermissionStub;
 
   /** Two weighed tickets and one with no bushel figure. */
   const tickets = (): FieldTickets => ({
@@ -51,7 +53,9 @@ describe('FdCicReviewComponent', () => {
   });
 
   beforeEach(async () => {
+    access = permissionStub(['field-plans:write']);
     TestBed.configureTestingModule({ providers: [
+      providePermissions(access),
       { provide: SUSTAINABILITY_PROGRAMS, useValue: [program] },
       { provide: FdCicApiService, useValue: api },
       { provide: TDiscApiService, useValue: fakeTDiscApi() },
@@ -267,6 +271,19 @@ describe('FdCicReviewComponent', () => {
     expect(noTill.estimateTillage()).toBe('NoTill');
     expect(noTill.tDiscResult()?.designation).toBe('RT');
   });
+  // Confirming changes the field plan, so it's offered only to a user who may change it.
+  it('should offer Confirm CI only to a user who may change field plans', () => {
+    review.step.set(review.lastStep);
+    fixture.detectChanges();
+    const confirmButton = () => Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('button')).find(b => b.textContent!.trim() === 'Confirm CI');
+    expect(confirmButton()).toBeDefined();
+
+    access.grant('field-plans:read');
+    fixture.detectChanges();
+
+    expect(confirmButton()).toBeUndefined();
+  });
+
 describe('saving the Biofuel Feedstock Report and Mass Balance Ledger to Doc Store', () => {
     const savedDoc = { id: 'doc-1', fileName: 'r.pdf', contentType: 'application/pdf', size: 10, uploadedAt: '2026-11-04T00:00:00Z', documentType: 'FeedstockReport' as const, status: 'Current' as const };
     const savedLedger = { ...savedDoc, id: 'ledger-1', fileName: 'l.csv', contentType: 'text/csv', documentType: 'MassBalanceLedger' as const };
@@ -324,6 +341,21 @@ describe('saving the Biofuel Feedstock Report and Mass Balance Ledger to Doc Sto
       expect(saveLedger).toHaveBeenCalledTimes(2);
       expect(review.confirmed()?.ledgerDocumentId).toBe('ledger-1');
       expect(review.reportSaveError()).toBeNull();
+    });
+
+    it('should offer "Save it now" after a failed save only to a user who may change field plans', async () => {
+      saveLedger.mockRejectedValueOnce(new ApiError({ status: 503, message: 'Doc Store is not answering.' }));
+      await review.confirm();
+      review.step.set(review.lastStep);
+      fixture.detectChanges();
+      const status = () => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="report-doc-store-status"]')!.textContent!;
+      expect(status()).toContain('Save it now');
+
+      access.grant('field-plans:read');
+      fixture.detectChanges();
+
+      expect(status()).toContain('Mass Balance Ledger not saved to Doc Store');
+      expect(status()).not.toContain('Save it now');
     });
 
     it('should not save the same confirmation twice', async () => {
