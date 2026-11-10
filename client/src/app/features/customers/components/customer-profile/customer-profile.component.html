@@ -418,9 +418,9 @@
                     <path d="M15.47 13.47 17 15l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L9 15l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
                     <path d="M19.47 9.47 21 11l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L13 11l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
                   </svg>
-                  @if (getEffectiveCommodities().length > 0) {
+                  @if (commodityCodes().length > 0) {
                     <div class="flex flex-wrap gap-1">
-                      @for (commodity of getEffectiveCommodities(); track $index) {
+                      @for (commodity of commodityCodes(); track $index) {
                         <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-scoular-yellow">{{ commodity }}</span>
                       }
                     </div>
@@ -620,24 +620,14 @@
               <!-- The projected-production vs. contracted breakdown that used to sit here now lives
                    in the Growth Opportunity panel under Producer Insights, so this tab stays focused
                    on entering acres. -->
-              <app-planting-intentions-table
-                [plantingIntentions]="visiblePlantingIntentions()"
-                [customer]="customer()"
-                [tradeUnits]="selectedTradeUnits()"
-                [customerCommodityCodes]="getEffectiveCommodities()"
-                [selectedYear]="selectedPlantingYear()"
-                [isLoading]="isLoadingPlanting()"
-                (yearSelect)="selectPlantingYear($event)"
-                (add)="onAddPlanting.emit($event)"
-                (edit)="onEditPlanting.emit($event)"
-                (delete)="onDeletePlanting.emit($event)">
-              </app-planting-intentions-table>
+              <!-- Reads the intentions, the year and its actions from this profile's SelectedProducerProduction. -->
+              <app-planting-intentions-table [customer]="customer()"></app-planting-intentions-table>
             }
             @case ('storage') {
-              <app-stored-grain-table [storedGrain]="storedGrain()" [customer]="customer()" [isLoading]="isLoadingStoredGrain()"></app-stored-grain-table>
+              <app-stored-grain-table [customer]="customer()"></app-stored-grain-table>
             }
             @case ('dpContracts') {
-              <app-dp-contracts-table [dpContracts]="dpContracts()" [customer]="customer()" [isLoading]="isLoadingDpContracts()"></app-dp-contracts-table>
+              <app-dp-contracts-table [customer]="customer()"></app-dp-contracts-table>
             }
             @default {
               <!-- A tab a module contributes: Open Contracts and Unapplied Tickets (Contracts). -->

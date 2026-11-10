@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, input, output, inject, DestroyRef, effect, signal } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, input, inject, DestroyRef, effect, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -19,6 +19,7 @@ import { ProgramEnrollmentCardComponent } from '../field-plan/programs/program-e
 import { ProgramRegistry } from '../field-plan/programs/program-registry';
 import { FieldPlanStore } from '../field-plan/store/field-plan.store';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { SelectedProducerProduction } from '@core/context/selected-producer-production';
 
 
 type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'tradeUnit';
@@ -65,17 +66,20 @@ export class PlantingIntentionsTableComponent {
   private readonly tradeUnitContext = inject(TradeUnitContext);
   private cdr = inject(ChangeDetectorRef);
 
-  public isLoading = input(false);
-  public plantingIntentions = input<PlantingIntention[]>([]);
+  /** The producer's planting intentions, year and actions, from the profile. */
+  private readonly production = inject(SelectedProducerProduction);
+
+  readonly isLoading = this.production.isLoadingPlanting;
+  readonly plantingIntentions = this.production.visiblePlantingIntentions;
   public customer = input.required<Customer>();
   /** The header's selected trade units — used only to PRESELECT when the producer is on several. */
-  public tradeUnits = input<string[]>([]);
-  public customerCommodityCodes = input<string[]>([]);
-  public selectedYear = input<number>(0);
-  public add = output<{crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
-  public edit = output<{intentionId: number, crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit?: string}>();
-  public delete = output<number>();
-  public yearSelect = output<number>();
+  readonly tradeUnits = this.production.tradeUnits;
+  readonly customerCommodityCodes = this.production.commodityCodes;
+  readonly selectedYear = this.production.selectedPlantingYear;
+  /** Picks the crop year the tab (and the producer panels) look at. */
+  yearSelect(year: number): void {
+    this.production.selectPlantingYear(year);
+  }
 
   // ── Trade unit the row belongs to ─────────────────────────────────────────
   // A producer on several trade units plants different acres for each, and the dashboard sums
@@ -686,7 +690,7 @@ export class PlantingIntentionsTableComponent {
     );
 
     if (existing) {
-      this.edit.emit({
+      this.production.editPlantingIntention({
         intentionId: existing.id,
         crop: existing.crop,
         category,
@@ -696,7 +700,7 @@ export class PlantingIntentionsTableComponent {
         plantingYear: existing.plantingYear
       });
     } else {
-      this.add.emit({ crop, category, type, description, acres, plantingYear: year, tradeUnit });
+      this.production.addPlantingIntention({ crop, category, type, description, acres, plantingYear: year, tradeUnit });
     }
   }
 
@@ -780,7 +784,7 @@ export class PlantingIntentionsTableComponent {
     const year = this._parseIntInput(this.editForm.plantingYear);
     const type = this.editForm.type || undefined;
 
-    this.edit.emit({
+    this.production.editPlantingIntention({
       intentionId: this.selectedIntention.id,
       crop: this.editForm.crop,
       category: this.editForm.category || undefined,
@@ -805,7 +809,7 @@ export class PlantingIntentionsTableComponent {
 
   confirmDelete(): void {
     if (!this.selectedIntention) return;
-    this.delete.emit(this.selectedIntention.id);
+    this.production.deletePlantingIntention(this.selectedIntention.id);
     this.closeDeleteConfirm();
     this.closeEditDialog();
   }

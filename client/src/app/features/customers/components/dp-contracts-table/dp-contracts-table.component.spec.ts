@@ -4,6 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { DpContractsTableComponent } from './dp-contracts-table.component';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, DpContract } from '@models';
+import { SelectedProducerProductionFake, provideSelectedProducerProduction, selectedProducerProductionFake } from '@testing/selected-producer-production.fake';
 
 function makeCustomer(over: Partial<Customer> = {}): Customer {
   return {
@@ -74,11 +75,15 @@ describe('DpContractsTableComponent', () => {
   let ref: ComponentRef<DpContractsTableComponent>;
   /** Needed to flush the auto-expand effect — computeds are sync, effects are not. */
   let fixture: ComponentFixture<DpContractsTableComponent>;
+  /** The profile's SelectedProducerProduction, where the table reads the DP contracts. */
+  let production: SelectedProducerProductionFake;
 
   beforeEach(() => {
+    production = selectedProducerProductionFake();
     TestBed.configureTestingModule({
       providers: [
         { provide: UsageTrackingService, useValue: { trackDpContractsDropdownOpen: () => {} } },
+        provideSelectedProducerProduction(production),
       ],
     });
     // happy-dom + JIT can't fetch an external templateUrl, so strip the template.
@@ -92,7 +97,7 @@ describe('DpContractsTableComponent', () => {
   });
 
   it('groups by crop by default and sums bushels', () => {
-    ref.setInput('dpContracts', [
+    production.dpContracts.set([
       makeDelivery('a', { crop: 'YC', bushels: 1000 }),
       makeDelivery('b', { crop: 'YC', bushels: 500 }),
       makeDelivery('c', { crop: 'SOY', bushels: 200 }),
@@ -106,7 +111,7 @@ describe('DpContractsTableComponent', () => {
 
   it('nests contracts under the crop group, with tickets under each contract', () => {
     // The real prod shape: 4 corn tickets on one contract, 2 soybean tickets on another.
-    ref.setInput('dpContracts', [
+    production.dpContracts.set([
       makeDelivery('c1', { crop: 'YC', contractNumber: 'PCPL84649', bushels: 100, receivableAmount: 10 }),
       makeDelivery('c2', { crop: 'YC', contractNumber: 'PCPL84649', bushels: 200, receivableAmount: 20 }),
       makeDelivery('s1', { crop: 'YSB', contractNumber: 'PCPL83903', bushels: 300, receivableAmount: 30 }),
@@ -124,7 +129,7 @@ describe('DpContractsTableComponent', () => {
   });
 
   it('splits a crop across several contracts and totals each separately', () => {
-    ref.setInput('dpContracts', [
+    production.dpContracts.set([
       makeDelivery('a', { crop: 'YC', contractNumber: 'PCPL111', bushels: 100, receivableAmount: 10 }),
       makeDelivery('b', { crop: 'YC', contractNumber: 'PCPL222', bushels: 400, receivableAmount: 40 }),
     ]);
@@ -137,7 +142,7 @@ describe('DpContractsTableComponent', () => {
   });
 
   it('auto-expands a lone contract so the extra level costs no click', () => {
-    ref.setInput('dpContracts', [
+    production.dpContracts.set([
       makeDelivery('a', { crop: 'YC', contractNumber: 'PCPL84649' }),
       makeDelivery('b', { crop: 'YC', contractNumber: 'PCPL84649' }),
     ]);
@@ -149,7 +154,7 @@ describe('DpContractsTableComponent', () => {
   });
 
   it('leaves multiple contracts collapsed so they can be compared', () => {
-    ref.setInput('dpContracts', [
+    production.dpContracts.set([
       makeDelivery('a', { crop: 'YC', contractNumber: 'PCPL111' }),
       makeDelivery('b', { crop: 'YC', contractNumber: 'PCPL222' }),
     ]);
@@ -161,7 +166,7 @@ describe('DpContractsTableComponent', () => {
   });
 
   it('orders contracts oldest-first by their Since date', () => {
-    ref.setInput('dpContracts', [
+    production.dpContracts.set([
       makeDelivery('mid', { crop: 'YC', contractNumber: 'PCPL222', chargedFromDate: new Date('2025-06-01') }),
       makeDelivery('new', { crop: 'YC', contractNumber: 'PCPL333', chargedFromDate: new Date('2026-01-15') }),
       makeDelivery('old', { crop: 'YC', contractNumber: 'PCPL111', chargedFromDate: new Date('2024-11-20') }),
@@ -173,7 +178,7 @@ describe('DpContractsTableComponent', () => {
 
   it('orders by date, not by contract number', () => {
     // A high-numbered contract that started earlier must still lead.
-    ref.setInput('dpContracts', [
+    production.dpContracts.set([
       makeDelivery('a', { crop: 'YC', contractNumber: 'PCPL111', chargedFromDate: new Date('2026-05-01') }),
       makeDelivery('b', { crop: 'YC', contractNumber: 'PCPL999', chargedFromDate: new Date('2025-01-01') }),
     ]);
@@ -183,7 +188,7 @@ describe('DpContractsTableComponent', () => {
 
   it('falls back to contract number when Since dates tie', () => {
     const same = new Date('2025-08-20');
-    ref.setInput('dpContracts', [
+    production.dpContracts.set([
       makeDelivery('b', { crop: 'YC', contractNumber: 'PCPL222', chargedFromDate: same }),
       makeDelivery('a', { crop: 'YC', contractNumber: 'PCPL111', chargedFromDate: same }),
     ]);
@@ -192,7 +197,7 @@ describe('DpContractsTableComponent', () => {
   });
 
   it('uses a contract\'s EARLIEST ticket date as its Since date', () => {
-    ref.setInput('dpContracts', [
+    production.dpContracts.set([
       makeDp({ id: 'x1', ticketKey: 'x1', contractNumber: 'PCPL111', chargedFromDate: new Date('2026-03-01') }),
       makeDp({ id: 'x2', ticketKey: 'x2', contractNumber: 'PCPL111', chargedFromDate: new Date('2025-09-09') }),
     ]);
@@ -201,13 +206,13 @@ describe('DpContractsTableComponent', () => {
   });
 
   it('labels a row with no contract number rather than dropping it', () => {
-    ref.setInput('dpContracts', [makeDelivery('a', { contractNumber: '' })]);
+    production.dpContracts.set([makeDelivery('a', { contractNumber: '' })]);
 
     expect(component.groups()[0].contracts[0].contractNumber).toBe('No contract');
   });
 
   it('drops a contract entirely when the search filters out all of its tickets', () => {
-    ref.setInput('dpContracts', [
+    production.dpContracts.set([
       makeDelivery('a', { crop: 'YC', contractNumber: 'PCPL111', ticketNumber: '100' }),
       makeDelivery('b', { crop: 'YC', contractNumber: 'PCPL222', ticketNumber: '200' }),
     ]);
@@ -222,7 +227,7 @@ describe('DpContractsTableComponent', () => {
   it('counts one delivery\'s charge rows once for bushels but sums their charges', () => {
     // Straight from prod: ticket 370145 appears twice in one run — a flat initial charge and an
     // accruing regular storage rate — BOTH carrying quantity 812.50 BU for the same grain.
-    ref.setInput('dpContracts', [
+    production.dpContracts.set([
       makeDp({ id: 'H|370145||1|1340|2', ticketKey: 'H|370145||1|1340', status: '2', bushels: 812.5, receivableAmount: 243.75 }),
       makeDp({ id: 'H|370145||1|1340|S', ticketKey: 'H|370145||1|1340', status: 'S', bushels: 812.5, receivableAmount: 170.66 }),
     ]);
@@ -238,7 +243,7 @@ describe('DpContractsTableComponent', () => {
   it('excludes unconvertible rows from the bushel total and counts them instead', () => {
     // The rule: a null bushels means "we could not convert" — it must never be treated as the raw
     // quantity, and the group must disclose that its total is incomplete.
-    ref.setInput('dpContracts', [
+    production.dpContracts.set([
       makeDelivery('a', { crop: 'YC', bushels: 1000 }),
       makeDelivery('b', { crop: 'YC', bushels: null, quantity: 99_999, quantityUom: 'XX' }),
     ]);
@@ -253,7 +258,7 @@ describe('DpContractsTableComponent', () => {
   it('groups strictly by commodity — there is no location dimension', () => {
     // vw_GNTA70D1 has no elevator/facility code, so the only location signal was the trade unit the
     // user already selected. Rows differing in nothing but trade unit stay in ONE commodity group.
-    ref.setInput('dpContracts', [
+    production.dpContracts.set([
       makeDelivery('a', { crop: 'YC', tradeUnitCode: '1085' }),
       makeDelivery('b', { crop: 'YC', tradeUnitCode: '2115' }),
     ]);
@@ -267,7 +272,7 @@ describe('DpContractsTableComponent', () => {
 
   describe('search', () => {
     beforeEach(() => {
-      ref.setInput('dpContracts', [
+      production.dpContracts.set([
         makeDelivery('a', { crop: 'YC', contractNumber: 'PCPL84649', ticketNumber: '370285', chargedFromDate: new Date('2025-08-20') }),
         makeDelivery('b', { crop: 'YSB', contractNumber: 'PCPL83903', ticketNumber: '250057', chargedFromDate: new Date('2025-08-05') }),
       ]);
@@ -307,7 +312,7 @@ describe('DpContractsTableComponent', () => {
       // Dates must be built the way the API sends them — "2025-08-20T00:00:00", no offset, which JS
       // parses as LOCAL midnight. A date-only string ("2025-08-20") parses as UTC instead and shifts
       // a day back in any negative-offset timezone.
-      ref.setInput('dpContracts', [
+      production.dpContracts.set([
         makeDelivery('a', { crop: 'YC', chargedFromDate: new Date('2025-08-20T00:00:00') }),
       ]);
 
@@ -336,7 +341,7 @@ describe('DpContractsTableComponent', () => {
     });
 
     it('keeps contract ordering oldest-first within a search', () => {
-      ref.setInput('dpContracts', [
+      production.dpContracts.set([
         makeDelivery('n', { crop: 'YC', contractNumber: 'PCPL222', ticketNumber: '11', chargedFromDate: new Date('2026-02-01') }),
         makeDelivery('o', { crop: 'YC', contractNumber: 'PCPL111', ticketNumber: '12', chargedFromDate: new Date('2025-02-01') }),
       ]);
@@ -347,7 +352,7 @@ describe('DpContractsTableComponent', () => {
   });
 
   it('filters by ticket number and contract number', () => {
-    ref.setInput('dpContracts', [
+    production.dpContracts.set([
       makeDelivery('a', { ticketNumber: '100', contractNumber: 'PW 111' }),
       makeDelivery('b', { ticketNumber: '200', contractNumber: 'PW 222' }),
     ]);
@@ -360,7 +365,7 @@ describe('DpContractsTableComponent', () => {
   });
 
   it('rebuilds group totals from the matched rows when searching', () => {
-    ref.setInput('dpContracts', [
+    production.dpContracts.set([
       makeDelivery('a', { ticketNumber: '100', bushels: 1000 }),
       makeDelivery('b', { ticketNumber: '200', bushels: 500 }),
     ]);

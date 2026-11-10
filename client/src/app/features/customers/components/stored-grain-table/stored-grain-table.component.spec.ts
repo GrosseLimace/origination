@@ -4,6 +4,7 @@ import { ComponentRef } from '@angular/core';
 import { StoredGrainTableComponent } from './stored-grain-table.component';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, StoredGrain } from '@models';
+import { SelectedProducerProductionFake, provideSelectedProducerProduction, selectedProducerProductionFake } from '@testing/selected-producer-production.fake';
 
 // Behaviour safety net for the Storage tab: the loading / empty states, grouping receipts by
 // crop / location / both (with the "No location" fallback), the per-group header totals
@@ -14,7 +15,8 @@ import { Customer, StoredGrain } from '@models';
 // signal inputs and the rendered DOM — the component is already OnPush, so every interaction here
 // goes through a real DOM event exactly as a user's would; nothing calls a method directly.
 //
-// The component is purely input-driven: no ApiService. UsageTrackingService only records group opens.
+// The receipts and the loading flag come from the profile's SelectedProducerProduction, a fake here; no ApiService.
+// UsageTrackingService only records group opens.
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -61,9 +63,13 @@ describe('StoredGrainTableComponent', () => {
   let ref: ComponentRef<StoredGrainTableComponent>;
   let trackStorageDropdownOpen: ReturnType<typeof vi.fn>;
   let scrollIntoView: MockInstance<Element['scrollIntoView']>;
+  let production: SelectedProducerProductionFake;
 
+  /** Sets what the profile provides (the receipts, the loading flag) and the customer input. */
   function setInputs(inputs: { storedGrain?: StoredGrain[]; isLoading?: boolean; customer?: Customer }): void {
-    for (const [name, value] of Object.entries(inputs)) ref.setInput(name, value);
+    if (inputs.storedGrain !== undefined) production.storedGrain.set(inputs.storedGrain);
+    if (inputs.isLoading !== undefined) production.isLoadingStoredGrain.set(inputs.isLoading);
+    if (inputs.customer !== undefined) ref.setInput('customer', inputs.customer);
     fixture.detectChanges();
   }
 
@@ -113,9 +119,10 @@ describe('StoredGrainTableComponent', () => {
     vi.setSystemTime(day('2026-10-13'));
     scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => undefined);
     trackStorageDropdownOpen = vi.fn();
+    production = selectedProducerProductionFake();
     await TestBed.configureTestingModule({
       imports: [StoredGrainTableComponent],
-      providers: [{ provide: UsageTrackingService, useValue: { trackStorageDropdownOpen } }],
+      providers: [{ provide: UsageTrackingService, useValue: { trackStorageDropdownOpen } }, provideSelectedProducerProduction(production)],
     }).compileComponents();
     fixture = TestBed.createComponent(StoredGrainTableComponent);
     ref = fixture.componentRef;

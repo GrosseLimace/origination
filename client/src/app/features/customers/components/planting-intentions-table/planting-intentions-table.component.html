@@ -36,7 +36,7 @@
           @for (intention of sortedIntentions; track intention.id; let i = $index) {
             <!-- Year Separator -->
             @if (shouldShowYearSeparator(i, intention)) {
-              <div class="flex items-center gap-2 py-2 cursor-pointer group" (click)="yearSelect.emit(intention.plantingYear)">
+              <div class="flex items-center gap-2 py-2 cursor-pointer group" (click)="yearSelect(intention.plantingYear)">
                 <div class="h-px flex-1" [class]="selectedYear() === intention.plantingYear ? 'bg-scoular-green-accessible dark:bg-scoular-green' : 'bg-gray-300 dark:bg-gray-600'"></div>
                 <span class="text-sm font-semibold px-2 py-0.5 rounded-md transition-colors"
                   [class]="selectedYear() === intention.plantingYear
@@ -193,7 +193,7 @@
                 @if (shouldShowYearSeparator(i, intention)) {
                   <app-table-row>
                     <app-table-cell [colspan]="5" [class]="selectedYear() === intention.plantingYear ? 'bg-scoular-green-accessible/5 dark:bg-scoular-green/10' : 'bg-gray-50 dark:bg-gray-800/50'">
-                      <div class="py-2 px-3 flex items-center gap-2 cursor-pointer group" (click)="yearSelect.emit(intention.plantingYear)">
+                      <div class="py-2 px-3 flex items-center gap-2 cursor-pointer group" (click)="yearSelect(intention.plantingYear)">
                         <div class="h-px flex-1" [class]="selectedYear() === intention.plantingYear ? 'bg-scoular-green-accessible dark:bg-scoular-green' : 'bg-gray-300 dark:bg-gray-600'"></div>
                         <span class="text-sm font-semibold px-2.5 py-0.5 rounded-md transition-colors"
                           [class]="selectedYear() === intention.plantingYear

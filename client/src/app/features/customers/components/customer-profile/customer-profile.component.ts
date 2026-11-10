@@ -1,4 +1,4 @@
-import { Component, input, output, inject, effect, computed, linkedSignal, ChangeDetectionStrategy, ViewChild, ElementRef, signal, DestroyRef, HostListener, Injector, Signal, runInInjectionContext, untracked } from '@angular/core';
+import { Component, forwardRef, input, output, inject, effect, computed, linkedSignal, ChangeDetectionStrategy, ViewChild, ElementRef, signal, DestroyRef, HostListener, Injector, Signal, runInInjectionContext, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { ApiService } from '@core/services/api.service';
@@ -14,7 +14,7 @@ import { EditCustomerDialogComponent } from '../edit-customer-dialog/edit-custom
 import { CustomerPrintReportComponent } from '../customer-print-report/customer-print-report.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, DpContract, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList, ProducerContactItem, GrainOnFarmItem } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, PlantingIntentionDraft, PlantingIntentionEdit, StoredGrain, DpContract, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList, ProducerContactItem, GrainOnFarmItem } from '@models';
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
 import { formatLastBid, grainOnFarmTitle, indexCommoditiesByCode } from '@shared/utils/grain-on-farm';
 import { dpContractCount } from '@shared/utils/dp-aggregate';
@@ -24,6 +24,7 @@ import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl, googleM
 import { binSiteHasCoordinates } from '@shared/utils/coordinates';
 import { buildProductionCoverage } from '@shared/utils/production-coverage';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
+import { SelectedProducerProduction } from '@core/context/selected-producer-production';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { CustomerTab } from '@core/modules/module-manifest';
 import { ModuleRegistry } from '@core/modules/module-registry';
@@ -59,9 +60,12 @@ interface ProfileTab {
     EditCustomerDialogComponent,
     CustomerPrintReportComponent
   ],
-  templateUrl: './customer-profile.component.html'
+  templateUrl: './customer-profile.component.html',
+  // What it shows of the producer's production (planting intentions and the year being looked at, stored grain, DP
+  // contracts) is SelectedProducerProduction for the tabs and panels rendered inside it.
+  providers: [{ provide: SelectedProducerProduction, useExisting: forwardRef(() => CustomerProfileComponent) }],
 })
-export class CustomerProfileComponent {
+export class CustomerProfileComponent implements SelectedProducerProduction {
   private readonly appState = inject(AppStateService);
   private readonly apiService = inject(ApiService);
   private readonly destroyRef = inject(DestroyRef);
@@ -219,8 +223,8 @@ export class CustomerProfileComponent {
   public allCustomerStoredGrain = input<StoredGrain[]>([]);
   public allCustomerDpContracts = input<DpContract[]>([]);
 
-  public onAddPlanting = output<{crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
-  public onEditPlanting = output<{intentionId: number, crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit?: string}>();
+  public onAddPlanting = output<PlantingIntentionDraft>();
+  public onEditPlanting = output<PlantingIntentionEdit>();
   public onDeletePlanting = output<number>();
   /** True when the contracts table wants the page at full width (columns expanded on the
    *  contracts tab) so the host page can drop the Notes sidebar below the profile. */
@@ -473,16 +477,6 @@ export class CustomerProfileComponent {
       }
     });
 
-    effect(() => {
-      // Rebuild effective commodities from tickets + user-added
-      const tickets = this.tickets();
-      const customer = this.customer();
-      const ticketCommodities = [...new Set(
-        tickets.map(t => t.productCode || '').filter(Boolean)
-      )];
-      const userCommodities = customer?.commodities || [];
-      this._effectiveCommodities = [...new Set([...ticketCommodities, ...userCommodities])].sort();
-    });
   }
 
   selectTab(tabId: string): void {
@@ -593,7 +587,6 @@ export class CustomerProfileComponent {
 
   /** The module tab being shown, if the shown tab is one. */
   readonly shownContribution = computed(() => this.tabs().find(tab => tab.id === this.shownTab())?.contribution ?? null);
-  private _effectiveCommodities: string[] = [];
 
   toggleProducerInsights(): void {
     this.showProducerInsights.update(v => !v);
@@ -774,8 +767,31 @@ export class CustomerProfileComponent {
     return false;
   }
 
-  getEffectiveCommodities(): string[] {
-    return this._effectiveCommodities;
+  // ── SelectedProducerProduction ───────────────────────────────────────────────
+
+  /** Commodity codes the producer deals in: their tickets' and those on their profile. */
+  readonly commodityCodes = computed(() => {
+    const ticketCommodities = [...new Set(this.tickets().map(t => t.productCode || '').filter(Boolean))];
+    const userCommodities = this.customer()?.commodities || [];
+    return [...new Set([...ticketCommodities, ...userCommodities])].sort();
+  });
+
+  /** The crop years offered, as the year picker shows them. */
+  readonly plantingYears = computed(() => this.availablePlantingYears);
+
+  /** The trade units the user is working in. */
+  readonly tradeUnits = this.selectedTradeUnits;
+
+  addPlantingIntention(intention: PlantingIntentionDraft): void {
+    this.onAddPlanting.emit(intention);
+  }
+
+  editPlantingIntention(edit: PlantingIntentionEdit): void {
+    this.onEditPlanting.emit(edit);
+  }
+
+  deletePlantingIntention(intentionId: number): void {
+    this.onDeletePlanting.emit(intentionId);
   }
 
   private _escapeHtml(str: string): string {

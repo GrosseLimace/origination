@@ -6,6 +6,7 @@ import { Customer, StoredGrain } from '@models';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
 import { compareNumericStrings } from '@shared/utils/ticket-sort';
+import { SelectedProducerProduction } from '@core/context/selected-producer-production';
 
 export type StorageGroupMode = 'both' | 'crop' | 'location';
 
@@ -28,8 +29,10 @@ export interface CommodityGroup {
 })
 export class StoredGrainTableComponent {
   private readonly usageTracking = inject(UsageTrackingService);
-  public isLoading = input(false);
-  public storedGrain = input<StoredGrain[]>([]);
+  /** The producer's stored grain, from the profile. */
+  private readonly production = inject(SelectedProducerProduction);
+  readonly isLoading = this.production.isLoadingStoredGrain;
+  readonly storedGrain = this.production.storedGrain;
   public customer = input.required<Customer>();
 
   searchQuery = signal('');

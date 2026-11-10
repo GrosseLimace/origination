@@ -15,3 +15,26 @@ export interface PlantingIntention {
   modifiedAt?: string;
   modifiedBy?: string;
 }
+
+/** A planting intention as the user entered it in the Planting tab's add form. */
+export interface PlantingIntentionDraft {
+  crop: string;
+  category?: string;
+  type?: string;
+  description?: string;
+  acres: number;
+  plantingYear: number;
+  tradeUnit: string;
+}
+
+/** A change the user made to an existing planting intention in the Planting tab. */
+export interface PlantingIntentionEdit {
+  intentionId: number;
+  crop: string;
+  category?: string;
+  type?: string;
+  description?: string;
+  acres: number;
+  plantingYear: number;
+  tradeUnit?: string;
+}

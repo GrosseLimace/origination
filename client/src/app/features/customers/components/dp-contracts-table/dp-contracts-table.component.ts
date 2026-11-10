@@ -7,6 +7,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
 import { compareNumericStrings } from '@shared/utils/ticket-sort';
 import { dpDeliveryCount, dpTotalBushels, dpUnconvertedCount, dpTotalCharges } from '@shared/utils/dp-aggregate';
+import { SelectedProducerProduction } from '@core/context/selected-producer-production';
 
 /** Totals shared by both accordion levels. Bushels are per-delivery; charges are per-row. */
 interface DpTotals {
@@ -68,8 +69,10 @@ export interface DpContractGroup extends DpTotals {
 })
 export class DpContractsTableComponent {
   private readonly usageTracking = inject(UsageTrackingService);
-  public isLoading = input(false);
-  public dpContracts = input<DpContract[]>([]);
+  /** The producer's DP contracts, from the profile. */
+  private readonly production = inject(SelectedProducerProduction);
+  readonly isLoading = this.production.isLoadingDpContracts;
+  readonly dpContracts = this.production.dpContracts;
   public customer = input.required<Customer>();
 
   searchQuery = signal('');

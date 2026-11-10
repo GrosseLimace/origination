@@ -8,6 +8,10 @@ import { ToastService } from '@core/services/toast.service';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { Commodity, Customer, PlantingIntention } from '@models';
 import { CustomersApiService } from '../../data-access/customers-api.service';
+import { SelectedProducerProductionFake, provideSelectedProducerProduction, selectedProducerProductionFake } from '@testing/selected-producer-production.fake';
+
+// The intentions, the crop year, the trade units the user works in and the add / edit / delete actions all come from
+// the profile's SelectedProducerProduction, a fake here.
 
 // Which trade unit a planting intention is recorded for. A test producer is on Pratt (2190) and
 // Tribune (2210); the form offers THAT PRODUCER's trade units, auto-fills when there is only one
@@ -37,9 +41,11 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
   let tradeUnitCalls: unknown[][];
   // When set, the trade-units request never answers, as when it is queued behind slow CTRM reads.
   let tradeUnitsNeverAnswer: boolean;
+  let production: SelectedProducerProductionFake;
   const inScopeTradeUnitCodes = signal<readonly string[]>(['2190']);
 
   beforeEach(() => {
+    production = selectedProducerProductionFake();
     memberships = [];
     tradeUnitCalls = [];
     tradeUnitsNeverAnswer = false;
@@ -55,6 +61,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
           },
         },
         { provide: ToastService, useValue: { error: () => {}, success: () => {} } },
+        provideSelectedProducerProduction(production),
         {
           provide: TradeUnitContext,
           useValue: {
@@ -105,7 +112,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
 
   it('offers the PRODUCER\'s trade units, not the header selection', () => {
     memberships = [member('2210'), member('2190'), member('9999', false)];
-    ref.setInput('tradeUnits', ['2080']);
+    production.tradeUnits.set(['2080']);
 
     component.openAddDialog();
 
@@ -114,7 +121,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
 
   it('auto-fills when the producer is on exactly one trade unit', () => {
     memberships = [member('2210')];
-    ref.setInput('tradeUnits', []);
+    production.tradeUnits.set([]);
 
     component.openAddDialog();
 
@@ -123,7 +130,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
 
   it('preselects the one of the producer\'s trade units that is selected in the header', () => {
     memberships = [member('2190'), member('2210')];
-    ref.setInput('tradeUnits', ['2210']);
+    production.tradeUnits.set(['2210']);
 
     component.openAddDialog();
 
@@ -133,18 +140,18 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
   it('forces a choice when the header selects none or several of the producer\'s trade units', () => {
     memberships = [member('2190'), member('2210')];
 
-    ref.setInput('tradeUnits', []);
+    production.tradeUnits.set([]);
     component.openAddDialog();
     expect(component.addForm.tradeUnit).toBe('');
 
-    ref.setInput('tradeUnits', ['2190', '2210']);
+    production.tradeUnits.set(['2190', '2210']);
     component.openAddDialog();
     expect(component.addForm.tradeUnit).toBe('');
   });
 
   it('is not saveable until a trade unit is chosen', () => {
     memberships = [member('2190'), member('2210')];
-    ref.setInput('tradeUnits', []);
+    production.tradeUnits.set([]);
     component.openAddDialog();
     component.addForm.crop = 'YSB';
     component.addForm.acres = '100';
@@ -157,7 +164,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
   it('falls back to the user\'s in-scope trade units for a producer with no assignment yet', () => {
     memberships = [];
     inScopeTradeUnitCodes.set(['2190']);
-    ref.setInput('tradeUnits', ['2190']);
+    production.tradeUnits.set(['2190']);
 
     component.openAddDialog();
 
@@ -185,7 +192,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
     // the customer, the picker must be usable even if that request never comes back.
     tradeUnitsNeverAnswer = true;
     ref.setInput('customer', makeCustomer({ activeTradeUnits: ['2210', '2190'] }));
-    ref.setInput('tradeUnits', ['2210']);
+    production.tradeUnits.set(['2210']);
 
     component.openAddDialog();
 
@@ -224,11 +231,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
 
   it('adds a second row instead of merging when only the trade unit differs', () => {
     memberships = [member('2190'), member('2210')];
-    ref.setInput('plantingIntentions', [makeIntention({ id: 1, tradeUnit: '2190', acres: 390 })]);
-    const added: { tradeUnit: string; acres: number }[] = [];
-    const edited: { intentionId: number; acres: number }[] = [];
-    component.add.subscribe(e => added.push(e));
-    component.edit.subscribe(e => edited.push(e));
+    production.visiblePlantingIntentions.set([makeIntention({ id: 1, tradeUnit: '2190', acres: 390 })]);
 
     component.openAddDialog();
     component.addForm.crop = 'YSB';
@@ -237,17 +240,13 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
     component.addForm.tradeUnit = '2210';
     component.submitAdd();
 
-    expect(edited).toEqual([]);
-    expect(added).toEqual([expect.objectContaining({ tradeUnit: '2210', acres: 100 })]);
+    expect(production.editPlantingIntention).not.toHaveBeenCalled();
+    expect(production.addPlantingIntention.mock.calls).toEqual([[expect.objectContaining({ tradeUnit: '2210', acres: 100 })]]);
   });
 
   it('still accumulates acres onto the existing row for the same crop, year AND trade unit', () => {
     memberships = [member('2190'), member('2210')];
-    ref.setInput('plantingIntentions', [makeIntention({ id: 1, tradeUnit: '2190', acres: 390 })]);
-    const added: unknown[] = [];
-    const edited: { intentionId: number; acres: number }[] = [];
-    component.add.subscribe(e => added.push(e));
-    component.edit.subscribe(e => edited.push(e));
+    production.visiblePlantingIntentions.set([makeIntention({ id: 1, tradeUnit: '2190', acres: 390 })]);
 
     component.openAddDialog();
     component.addForm.crop = 'YSB';
@@ -256,8 +255,8 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
     component.addForm.tradeUnit = '2190';
     component.submitAdd();
 
-    expect(added).toEqual([]);
-    expect(edited).toEqual([expect.objectContaining({ intentionId: 1, acres: 400 })]);
+    expect(production.addPlantingIntention).not.toHaveBeenCalled();
+    expect(production.editPlantingIntention.mock.calls).toEqual([[expect.objectContaining({ intentionId: 1, acres: 400 })]]);
   });
 
   // ── Edit dialog ───────────────────────────────────────────────────────────
@@ -265,27 +264,26 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
   it('sends the trade unit on edit only when it was changed', () => {
     memberships = [member('2190'), member('2210')];
     const row = makeIntention({ id: 7, tradeUnit: '2190', acres: 390 });
-    const edited: { tradeUnit?: string; acres: number }[] = [];
-    component.edit.subscribe(e => edited.push(e));
+    const lastEdit = (): unknown => production.editPlantingIntention.mock.lastCall?.[0];
 
     // Acres-only edit → trade unit not sent (server leaves it untouched).
     component.openEditDialog(row);
     component.editForm.acres = '400';
     component.submitEdit();
-    expect(edited.at(-1)).toEqual(expect.objectContaining({ acres: 400, tradeUnit: undefined }));
+    expect(lastEdit()).toEqual(expect.objectContaining({ acres: 400, tradeUnit: undefined }));
 
     // Move the row to Tribune → trade unit sent.
     component.openEditDialog(row);
     component.editForm.tradeUnit = '2210';
     expect(component.hasEditFormChanged()).toBe(true);
     component.submitEdit();
-    expect(edited.at(-1)).toEqual(expect.objectContaining({ tradeUnit: '2210' }));
+    expect(lastEdit()).toEqual(expect.objectContaining({ tradeUnit: '2210' }));
   });
 
   // ── Row list ──────────────────────────────────────────────────────────────
 
   it('sorts rows by trade unit (the column that replaced Created On)', () => {
-    ref.setInput('plantingIntentions', [
+    production.visiblePlantingIntentions.set([
       makeIntention({ id: 1, tradeUnit: '2210', crop: 'YSB' }),
       makeIntention({ id: 2, tradeUnit: '2190', crop: 'YC' }),
     ]);
@@ -318,6 +316,7 @@ describe('PlantingIntentionsTableComponent — rendering', () => {
   let tradeUnits$: Subject<Membership[]>;
   let commodities$: Subject<Commodity[]>;
   let plantingCommodities$: Subject<Commodity[]>;
+  let production: SelectedProducerProductionFake;
 
   const SOY_ORGANIC: Commodity = { id: 1, code: 'YSBO', name: 'Organic Soybeans', category: 'Soybeans', plantingCategory: 'Organic Soybeans', isActive: true };
   const CORN: Commodity = { id: 2, code: 'YC', name: 'Yellow Corn', category: 'Corn', isActive: true };
@@ -340,6 +339,7 @@ describe('PlantingIntentionsTableComponent — rendering', () => {
     tradeUnits$ = new Subject<Membership[]>();
     commodities$ = new Subject<Commodity[]>();
     plantingCommodities$ = new Subject<Commodity[]>();
+    production = selectedProducerProductionFake();
     await TestBed.configureTestingModule({
       imports: [PlantingIntentionsTableComponent],
       providers: [
@@ -353,6 +353,7 @@ describe('PlantingIntentionsTableComponent — rendering', () => {
           },
         },
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
+        provideSelectedProducerProduction(production),
         {
           provide: TradeUnitContext,
           useValue: {
@@ -366,7 +367,7 @@ describe('PlantingIntentionsTableComponent — rendering', () => {
     fixture = TestBed.createComponent(PlantingIntentionsTableComponent);
     component = fixture.componentInstance;
     fixture.componentRef.setInput('customer', makeCustomer());
-    fixture.componentRef.setInput('plantingIntentions', [makeIntention({ id: 1, crop: 'YSBO', category: 'Soybeans' })]);
+    production.visiblePlantingIntentions.set([makeIntention({ id: 1, crop: 'YSBO', category: 'Soybeans' })]);
     fixture.detectChanges();
   });
 
@@ -385,7 +386,7 @@ describe('PlantingIntentionsTableComponent — rendering', () => {
   });
 
   it('swaps "Loading trade units..." for the producer\'s trade units, preselecting the header\'s, when they arrive after the dialog opened', async () => {
-    fixture.componentRef.setInput('tradeUnits', ['2210']);
+    production.tradeUnits.set(['2210']);
     host().querySelector<HTMLButtonElement>('app-table-head button')!.click();
     fixture.detectChanges();
     expect(text()).toContain('Loading trade units...');
@@ -433,6 +434,33 @@ describe('PlantingIntentionsTableComponent — rendering', () => {
     fixture.detectChanges();
 
     expect(suggestions()).toEqual([]);
+  });
+
+  // ── The crop year and delete go to the profile ────────────────────────────
+
+  it('asks the profile for a crop year when its divider is clicked, and highlights the year the profile has', () => {
+    const divider = (): HTMLElement =>
+      Array.from(host().querySelectorAll<HTMLElement>('div.cursor-pointer.group')).find(d => (d.textContent ?? '').includes('2026 Crop Year'))!;
+    const highlighted = (): boolean => divider().querySelector('span')!.classList.contains('bg-scoular-green-accessible');
+    expect(highlighted()).toBe(false);
+
+    divider().click();
+    expect(production.selectPlantingYear).toHaveBeenCalledWith(2026);
+
+    production.selectedPlantingYear.set(2026);
+    fixture.detectChanges();
+    expect(highlighted()).toBe(true);
+  });
+
+  it('asks the profile to delete the row when the delete is confirmed', () => {
+    component.openEditDialog(makeIntention({ id: 1 }));
+    component.openDeleteConfirm();
+    fixture.detectChanges();
+
+    const deleteButtons = Array.from(host().querySelectorAll('button')).filter(b => (b.textContent ?? '').trim() === 'Delete');
+    deleteButtons.at(-1)!.click();
+
+    expect(production.deletePlantingIntention).toHaveBeenCalledWith(1);
   });
 
   // ── Escape and the delete prompt ──────────────────────────────────────────
