@@ -2,13 +2,11 @@ import { Component, forwardRef, input, output, inject, effect, computed, ChangeD
 import { CommonModule } from '@angular/common';
 import { ThemeService } from '@core/services/theme.service';
 import { EditCustomerDialogComponent } from '../edit-customer-dialog/edit-customer-dialog.component';
-import { CustomerPrintReportComponent } from '../customer-print-report/customer-print-report.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, Contract, Ticket, PlantingIntention, PlantingIntentionDraft, PlantingIntentionEdit, StoredGrain, DpContract, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, SavedList } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, PlantingIntentionDraft, PlantingIntentionEdit, StoredGrain, DpContract, DashboardPlantingEstimate, SavedList } from '@models';
 import { formatPhoneDisplay } from '@shared/utils/phone';
 import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl } from '@shared/utils/address';
-import { buildProductionCoverage } from '@shared/utils/production-coverage';
 import { SelectedProducerProduction } from '@core/context/selected-producer-production';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { CustomerTab } from '@core/modules/module-manifest';
@@ -37,8 +35,7 @@ interface ProfileTab {
     CommonModule,
     CustomerContributionComponent,
     CustomerSlotComponent,
-    EditCustomerDialogComponent,
-    CustomerPrintReportComponent
+    EditCustomerDialogComponent
   ],
   templateUrl: './customer-profile.component.html',
   // What it shows of the producer's production (planting intentions and the year being looked at, stored grain, DP
@@ -58,13 +55,10 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
   public isSavingTradeUnits = input(false);
   public contracts = input<Contract[]>([]);
   public tickets = input<Ticket[]>([]);
-  public pricingLines = input<ContractPricingLine[]>([]);
   public plantingIntentions = input<PlantingIntention[]>([]);
   public storedGrain = input<StoredGrain[]>([]);
   public dpContracts = input<DpContract[]>([]);
-  public notes = input<Note[]>([]);
   public yieldEstimates = input<DashboardPlantingEstimate[]>([]);
-  public commodities = input<Commodity[]>([]);
   public isLoadingEstimates = input(false);
 
   public isLoadingPlanting = input(false);
@@ -116,7 +110,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
   activeTab = signal('contracts');
   showESignRecipients = signal(false);
   showEditDialog = signal(false);
-  showPrintReport = signal(false);
   showAddToListMenu = signal(false); // "Add to List" header dropdown open state
   /** Which tab the Add-to-List dropdown is showing: the user's own lists or (managers) team lists. */
   addToListTab = signal<'saved' | 'team'>('saved');
@@ -286,19 +279,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
     }, 0);
   }
 
-  // Projected production vs. contracted volume, per commodity. The arithmetic lives in a shared
-  // pure util so it can be unit-tested and so the other places that recompute it can converge on
-  // one implementation. Still a computed(), so it re-derives whenever any input signal changes and
-  // OnPush re-renders on its own.
-  readonly contractMetrics = computed(() => buildProductionCoverage({
-    intentions: this.plantingIntentions(),
-    contracts: this.contracts(),
-    commodities: this.commodities(),
-    yieldEstimates: this.yieldEstimates(),
-    harvestWindows: this.appState.harvestWindows(),
-    year: this.selectedPlantingYear(),
-  }));
-
   /** How many crop years the profile surfaces. Producers accumulate seasons indefinitely, but only
    *  the current and prior one are actionable, so older years are hidden rather than paged. */
   private static readonly MaxPlantingYears = 2;
@@ -400,11 +380,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
     this.selectedPlantingYear.set(year);
   }
 
-  /** Feeds the printed summary boxes below. (contractYear / totalProjectedYield /
-   *  marketSharePercentage were dropped when the coverage breakdown moved to Growth Opportunity —
-   *  that panel reads the same computed directly.) */
-  get totalContracted(): number { return this.contractMetrics().totalContracted; }
-
   /** Splits ScoularView recipients string into individual entries.
    *  Handles commas inside names (e.g., "Ade, Clay 785-555-1234") by only splitting
    *  on commas that separate complete name+phone pairs. */
@@ -441,8 +416,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
     return raw ? this.parseRecipients(raw) : [];
   });
 
-  get bushelsAvailable(): number { return this.contractMetrics().bushelsAvailable; }
-
   // ── SelectedProducerProduction ───────────────────────────────────────────────
 
   /** Commodity codes the producer deals in: their tickets' and those on their profile. */
@@ -470,162 +443,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
     this.onDeletePlanting.emit(intentionId);
   }
 
-  private _escapeHtml(str: string): string {
-    return str
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
-  /** Opens a print dialog with formatted customer information */
-  printCustomerInfo(): void {
-    const activeContracts = this.contracts().filter(c => c.status === 'Active' || c.status === 'Pending');
-
-    const printContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Customer Info - ${this._escapeHtml(this.customer().name)}</title>
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: Arial, sans-serif; padding: 40px; color: #000; }
-          h1 { font-size: 24px; margin-bottom: 8px; color: #000; }
-          h2 { font-size: 18px; margin-top: 24px; margin-bottom: 12px; border-bottom: 2px solid #000; padding-bottom: 4px; color: #000; }
-          h3 { font-size: 14px; margin-top: 16px; margin-bottom: 8px; color: #000; }
-          .header { margin-bottom: 24px; }
-          .farm-name { color: #000; font-size: 14px; margin-bottom: 4px; }
-          .print-date { color: #000; font-size: 12px; }
-          .section { margin-bottom: 20px; }
-          .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-          .info-item { margin-bottom: 8px; }
-          .label { font-weight: bold; color: #000; font-size: 12px; text-transform: uppercase; }
-          .value { font-size: 14px; margin-top: 2px; color: #000; }
-          .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 12px; }
-          .summary-box { border: 1px solid #000; border-radius: 4px; padding: 12px; text-align: center; }
-          .summary-value { font-size: 20px; font-weight: bold; color: #000; }
-          .summary-label { font-size: 12px; color: #000; margin-top: 4px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
-          th { background: #fff; text-align: left; padding: 10px 8px; font-weight: 600; border-bottom: 2px solid #000; color: #000; }
-          td { padding: 10px 8px; border-bottom: 1px solid #000; color: #000; }
-          .status { font-size: 12px; font-weight: 500; color: #000; }
-          .text-right { text-align: right; }
-          @media print {
-            body { padding: 20px; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>${this._escapeHtml(this.customer().name)}</h1>
-          <div class="farm-name">${this._escapeHtml(this.customer().farm ?? '')}</div>
-          <div class="print-date">Printed: ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</div>
-        </div>
-
-        <h2>Customer Information</h2>
-        <div class="grid">
-          <div>
-            <h3>Contact</h3>
-            <div class="info-item">
-              <div class="label">Location</div>
-              <div class="value">${this._escapeHtml(this.getFormattedLocation())}</div>
-            </div>
-            ${this.getCustomerPhone() ? `
-            <div class="info-item">
-              <div class="label">Phone</div>
-              <div class="value">${this._escapeHtml(this.getFormattedPhone())}</div>
-            </div>
-            ` : ''}
-            ${this.getCustomerEmail() ? `
-            <div class="info-item">
-              <div class="label">Email</div>
-              <div class="value">${this._escapeHtml(this.getCustomerEmail() ?? '')}</div>
-            </div>
-            ` : ''}
-          </div>
-          <div>
-            <h3>Farm Details</h3>
-            <div class="info-item">
-              <div class="label">Total Acres</div>
-              <div class="value">${(this.customer().totalAcres || 0).toLocaleString()} acres</div>
-            </div>
-            <div class="info-item">
-              <div class="label">eSign Status</div>
-              <div class="value">${this.customer().eSignEnabled ? 'Enrolled' : 'Not Enrolled'}</div>
-            </div>
-            ${this.customer().guild ? `
-            <div class="info-item">
-              <div class="label">Guild</div>
-              <div class="value">${this._escapeHtml(this.customer().guild ?? '')}</div>
-            </div>
-            ` : ''}
-          </div>
-        </div>
-
-        <h2>Contract Summary</h2>
-        <div class="summary-grid">
-          <div class="summary-box">
-            <div class="summary-value">${this.totalContracted.toLocaleString()}</div>
-            <div class="summary-label">Total Contracted Bushels</div>
-          </div>
-          <div class="summary-box">
-            <div class="summary-value">${this.bushelsAvailable.toLocaleString()}</div>
-            <div class="summary-label">Available Bushels</div>
-          </div>
-        </div>
-
-        <h2>Active Contracts</h2>
-        <div class="section">
-          ${activeContracts.length > 0 ? `
-          <table>
-            <thead>
-              <tr>
-                <th>Contract #</th>
-                <th>Crop</th>
-                <th class="text-right">Quantity</th>
-                <th class="text-right">Price</th>
-                <th>Delivery Period</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${activeContracts.map(contract => `
-              <tr>
-                <td>${this._escapeHtml(contract.contractNumber)}</td>
-                <td>${this._escapeHtml(contract.commodityDescription || contract.commodityCode || '')}</td>
-                <td class="text-right">${contract.quantity.toLocaleString()} bu</td>
-                <td class="text-right">$${contract.price.toFixed(2)}</td>
-                <td>${this._escapeHtml(this._formatDeliveryPeriod(contract.deliveryStart, contract.deliveryEnd))}</td>
-                <td><span class="status">${this._escapeHtml(contract.status ?? '')}</span></td>
-              </tr>
-              `).join('')}
-            </tbody>
-          </table>
-          ` : '<p>No active contracts</p>'}
-        </div>
-      </body>
-      </html>
-    `;
-
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(printContent);
-      printWindow.document.close();
-      printWindow.onload = () => {
-        printWindow.print();
-      };
-    }
-  }
-
-  /** Formats delivery period for print display */
-  private _formatDeliveryPeriod(start: Date, end: Date): string {
-    const startDate = new Date(start);
-    const endDate = new Date(end);
-    const startMonth = startDate.toLocaleDateString('en-US', { month: 'short' });
-    const endMonth = endDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-    return `${startMonth} - ${endMonth}`;
-  }
-
   /** Displayed producer address. Extended fields win over Merchandising and the ZIP is included,
    *  so the text matches the address the producer map actually pins. */
   getContactAddress(): string {
@@ -635,17 +452,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
   /** Google Maps deep link for the displayed address, or null when there is too little to search on. */
   getMapsUrl(): string | null {
     return googleMapsSearchUrl(resolveCustomerAddress(this.customer()));
-  }
-
-  getFormattedLocation(): string {
-    const c = this.customer();
-    if (!c.location && !c.stateProvince) {
-      return '';
-    }
-    if (c.location && c.stateProvince) {
-      return `${c.location}, ${c.stateProvince}`;
-    }
-    return c.location || c.stateProvince || '';
   }
 
   getCustomerPhone(): string {

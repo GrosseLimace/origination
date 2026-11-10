@@ -6,9 +6,13 @@ import { CustomerPrintReportComponent } from './customer-print-report.component'
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { Commodity, CommodityConversion, Contract, ContractPricingLine, Customer, PlantingIntention, StoredGrain, Ticket } from '@models';
+import { PermissionId } from '@core/access/permission-ids.generated';
+import { SelectedProducerActivityFake, provideSelectedProducerActivity, selectedProducerActivityFake } from '@testing/selected-producer-activity.fake';
+import { SelectedProducerProductionFake, provideSelectedProducerProduction, selectedProducerProductionFake } from '@testing/selected-producer-production.fake';
+import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
 
-// Behaviour safety net for the Producer Summary Report dialog ahead of its OnPush conversion. Pins,
-// through the signal inputs, the sidebar checkboxes and the rendered preview:
+// Behaviour safety net for the Producer Summary Report dialog. Pins, through its customer and the shared data it
+// reads, the sidebar checkboxes and the rendered preview:
 //   - the banner (contact fallbacks, originator defaults from MSAL) and the KPI tiles (bushel-only
 //     Total Contracted, per-tile toggles);
 //   - which sections default on when the dialog opens (only those with data), and that reopening
@@ -21,10 +25,11 @@ import { Commodity, CommodityConversion, Contract, ContractPricingLine, Customer
 //     wheat-only protein column;
 //   - planting intentions by planting category with the crop-year picker;
 //   - grain in storage and bin-site groupings;
-//   - printReport(): the escaped HTML handed to the print window, and the pop-up-blocked toast.
+//   - printReport(): the escaped HTML handed to the print window, and the pop-up-blocked toast;
+//   - what the user may read: a section or figure they can't is left out of the sidebar, preview and page.
 //
 // The real template renders (dialog, button and all). AppStateService is the real one; MSAL and
-// ToastService are stubbed. Shared utils (contract-delivery, production-coverage, planting-category,
+// ToastService are stubbed, and the producer's activity, production and the user's permissions are fakes. Shared utils (contract-delivery, production-coverage, planting-category,
 // grain-on-farm) run for real.
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -91,6 +96,9 @@ function makeCommodity(over: Partial<Commodity> = {}): Commodity {
   return { id: 1, code: 'YC', name: 'Yellow Corn', category: 'Corn', isActive: true, ...over };
 }
 
+/** Every read the report's sections and summary figures make. */
+const EVERY_READ: PermissionId[] = ['contracts:read', 'tickets:read', 'planting-intentions:read', 'stored-grain:read', 'producer-details:read'];
+
 // ── Harness ───────────────────────────────────────────────────────────────────
 
 describe('CustomerPrintReportComponent', () => {
@@ -99,6 +107,9 @@ describe('CustomerPrintReportComponent', () => {
   let ref: ComponentRef<CustomerPrintReportComponent>;
   let appState: AppStateService;
   let toast: { success: ReturnType<typeof vi.fn>; warning: ReturnType<typeof vi.fn> };
+  let activity: SelectedProducerActivityFake;
+  let production: SelectedProducerProductionFake;
+  let access: PermissionStub;
 
   const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
   /** The report preview pane (left), as opposed to the settings sidebar (right). */
@@ -221,16 +232,31 @@ describe('CustomerPrintReportComponent', () => {
       .find(d => squash(d.childNodes[0]?.textContent) === title)?.parentElement ?? undefined;
   }
 
-  /** Builds the component with its data inputs, then opens the dialog (the defaults effect fires on open). */
-  function open(inputs: {
-    customer?: Customer; contracts?: Contract[]; tickets?: Ticket[]; plantingIntentions?: PlantingIntention[];
-    storedGrain?: StoredGrain[]; commodities?: Commodity[]; pricingLines?: ContractPricingLine[];
-  } = {}): void {
+  /** What the report reads besides its customer: the producer's activity and production, and the commodities. */
+  interface Data {
+    contracts: Contract[]; tickets: Ticket[]; pricingLines: ContractPricingLine[];
+    plantingIntentions: PlantingIntention[]; storedGrain: StoredGrain[]; commodities: Commodity[];
+  }
+  /** Sets one source of the report's data, as the page would when it loads. */
+  function set<K extends keyof Data>(name: K, value: Data[K]): void {
+    switch (name) {
+      case 'contracts': activity.contracts.set(value as Contract[]); break;
+      case 'tickets': activity.tickets.set(value as Ticket[]); break;
+      case 'pricingLines': activity.pricingLines.set(value as ContractPricingLine[]); break;
+      case 'plantingIntentions': production.plantingIntentions.set(value as PlantingIntention[]); break;
+      case 'storedGrain': production.storedGrain.set(value as StoredGrain[]); break;
+      case 'commodities': appState.setCommodities(value as Commodity[]); break;
+    }
+  }
+
+  /** Builds the component for a customer with the given data, then opens the dialog (the defaults effect fires on open). */
+  function open(inputs: { customer?: Customer } & Partial<Data> = {}): void {
+    const { customer, ...data } = inputs;
+    for (const [name, value] of Object.entries(data)) set(name as keyof Data, value as Data[keyof Data]);
     fixture = TestBed.createComponent(CustomerPrintReportComponent);
     component = fixture.componentInstance;
     ref = fixture.componentRef;
-    ref.setInput('customer', inputs.customer ?? makeCustomer());
-    for (const [name, value] of Object.entries(inputs)) if (name !== 'customer') ref.setInput(name, value);
+    ref.setInput('customer', customer ?? makeCustomer());
     ref.setInput('isOpen', true);
     fixture.detectChanges();
   }
@@ -240,10 +266,16 @@ describe('CustomerPrintReportComponent', () => {
     vi.setSystemTime(NOW);
     localStorage.clear();
     toast = { success: vi.fn(), warning: vi.fn() };
+    activity = selectedProducerActivityFake();
+    production = selectedProducerProductionFake();
+    access = permissionStub(EVERY_READ);
     await TestBed.configureTestingModule({
       imports: [CustomerPrintReportComponent],
       providers: [
         { provide: ToastService, useValue: toast },
+        provideSelectedProducerActivity(activity),
+        provideSelectedProducerProduction(production),
+        providePermissions(access),
         {
           provide: MsalService,
           // A bare UPN prefix — the dialog completes it to an @scoular.com address.
@@ -406,11 +438,11 @@ describe('CustomerPrintReportComponent', () => {
     open({ customer: makeCustomer({ totalAcres: 0 }) });     // nothing loaded yet
     expect(sectionTitles()).toEqual([]);
 
-    ref.setInput('contracts', [makeContract()]);
-    ref.setInput('pricingLines', [makeLine()]);
-    ref.setInput('tickets', [makeTicket()]);
-    ref.setInput('plantingIntentions', [makeIntention({ id: 1, plantingYear: 2026 }), makeIntention({ id: 2, plantingYear: 2025 })]);
-    ref.setInput('storedGrain', [makeStoredGrain()]);
+    set('contracts', [makeContract()]);
+    set('pricingLines', [makeLine()]);
+    set('tickets', [makeTicket()]);
+    set('plantingIntentions', [makeIntention({ id: 1, plantingYear: 2026 }), makeIntention({ id: 2, plantingYear: 2025 })]);
+    set('storedGrain', [makeStoredGrain()]);
     ref.setInput('customer', makeCustomer({ totalAcres: 800, binSites: [{ siteKey: 's1', name: 'North bins' }] }));
     fixture.detectChanges();
 
@@ -430,10 +462,10 @@ describe('CustomerPrintReportComponent', () => {
     click(sidebar().querySelector('button[aria-label="Choose crop years"]'));
     setChecked(/^2025$/, false);                  // narrowed to one season
 
-    ref.setInput('contracts', [makeContract({ id: 1 }), makeContract({ id: 2, sourceContractId: 'PCW200' })]);
-    ref.setInput('storedGrain', [makeStoredGrain()]);
-    ref.setInput('tickets', [makeTicket()]);      // untouched: still follows the data
-    ref.setInput('plantingIntentions', [
+    set('contracts', [makeContract({ id: 1 }), makeContract({ id: 2, sourceContractId: 'PCW200' })]);
+    set('storedGrain', [makeStoredGrain()]);
+    set('tickets', [makeTicket()]);      // untouched: still follows the data
+    set('plantingIntentions', [
       makeIntention({ id: 1, plantingYear: 2026 }), makeIntention({ id: 2, plantingYear: 2025 }), makeIntention({ id: 3, plantingYear: 2024 }),
     ]);
     fixture.detectChanges();
@@ -586,7 +618,7 @@ describe('CustomerPrintReportComponent', () => {
     expect(builds).toBe(1);
 
     // New tickets, same conversions: the lookup is reused.
-    ref.setInput('tickets', [makeTicket({ id: 3, productCode: 'YC', appliedDockQuantity: 112000, date: '2026-09-02' })]);
+    set('tickets', [makeTicket({ id: 3, productCode: 'YC', appliedDockQuantity: 112000, date: '2026-09-02' })]);
     fixture.detectChanges();
     expect(sectionRows('Unapplied Tickets').map(r => r[2])).toEqual(['2,000 bu']);
     expect(builds).toBe(1);
@@ -611,7 +643,7 @@ describe('CustomerPrintReportComponent', () => {
       ['YC', '2', '3,000 bu', 'Sep 2, 2026', '15.0%', '57.0', '—'],            // zero moisture ignored
     ]);
 
-    ref.setInput('tickets', [makeTicket({ productCode: 'YC' })]);
+    set('tickets', [makeTicket({ productCode: 'YC' })]);
     fixture.detectChanges();
     expect(section('Unapplied Tickets').querySelectorAll('th')).toHaveLength(6);   // no wheat → no protein column
   });
@@ -780,5 +812,70 @@ describe('CustomerPrintReportComponent', () => {
 
     click(Array.from(host().querySelectorAll('app-button button')).find(b => squash(b.textContent) === 'Cancel'));
     expect(closed).toBe(1);
+  });
+
+  // ── What the user may read ────────────────────────────────────────────────
+
+  describe('what the user may read', () => {
+    const EVERY_SECTION = ['Executive Summary', 'Contracts', 'Unapplied Tickets', 'Planting Intentions', 'Grain in Storage', 'Bin Sites & Grain on Farm'];
+    const EVERY_FIGURE = ['Total Acres', 'Total Contracted'];
+
+    /** Opens the report on a producer with something in every section. */
+    function openWithEverything(): void {
+      open({
+        customer: makeCustomer({ totalAcres: 800, binSites: [{ siteKey: 's1', name: 'North bins' }] }),
+        contracts: [makeContract()],
+        pricingLines: [makeLine()],
+        tickets: [makeTicket()],
+        plantingIntentions: [makeIntention()],
+        storedGrain: [makeStoredGrain()],
+      });
+    }
+    const hasCheckbox = (label: RegExp): boolean =>
+      Array.from(sidebar().querySelectorAll('label')).some(l => label.test(squash(l.textContent)));
+    const sidebarHeadings = (): string[] => Array.from(sidebar().querySelectorAll('h4')).map(h => squash(h.textContent));
+    const printedSectionTitles = (doc: Document): string[] =>
+      Array.from(doc.querySelectorAll<HTMLElement>('.section-title')).map(d => squash(d.childNodes[0]?.textContent));
+    const printedFigures = (doc: Document): string[] =>
+      Array.from(doc.querySelectorAll('.kpi-box')).map(box => squash(box.children[0]?.textContent));
+
+    it.each([
+      { without: 'contracts:read', checkboxes: [/^Total Contracted$/, /^Contracts \(/, /^Pricing Lines \(/], sections: ['Contracts'], figures: ['Total Contracted'] },
+      { without: 'tickets:read', checkboxes: [/^Unapplied Tickets \(/], sections: ['Unapplied Tickets'], figures: [] },
+      { without: 'planting-intentions:read', checkboxes: [/^Planting Intentions \(/], sections: ['Planting Intentions'], figures: [] },
+      { without: 'stored-grain:read', checkboxes: [/^Grain in Storage \(/], sections: ['Grain in Storage'], figures: [] },
+      { without: 'producer-details:read', checkboxes: [/^Total Acres$/, /^Bin Sites/], sections: ['Bin Sites & Grain on Farm'], figures: ['Total Acres'] },
+    ])('without $without, leaves out what needs it: its checkboxes, the preview and the printed page', ({ without, checkboxes, sections, figures }) => {
+      access.grant(...EVERY_READ.filter(p => p !== without));
+      openWithEverything();
+
+      for (const label of checkboxes) expect(hasCheckbox(label)).toBe(false);
+      expect(sectionTitles()).toEqual(EVERY_SECTION.filter(title => !sections.includes(title)));
+      expect(kpiTiles().map(tile => tile[0])).toEqual(EVERY_FIGURE.filter(figure => !figures.includes(figure)));
+
+      const doc = printed();
+      expect(printedSectionTitles(doc)).toEqual(EVERY_SECTION.filter(title => !sections.includes(title)));
+      expect(printedFigures(doc)).toEqual(EVERY_FIGURE.filter(figure => !figures.includes(figure)));
+    });
+
+    it('with every read, offers every section and figure', () => {
+      openWithEverything();
+
+      for (const label of [/^Total Acres$/, /^Total Contracted$/, /^Contracts \(/, /^Unapplied Tickets \(/, /^Planting Intentions \(/, /^Grain in Storage \(/, /^Bin Sites/, /^Pricing Lines \(/]) {
+        expect(hasCheckbox(label)).toBe(true);
+      }
+      expect(sectionTitles()).toEqual(EVERY_SECTION);
+      expect(printedSectionTitles(printed())).toEqual(EVERY_SECTION);
+    });
+
+    it('with none of them, is the customer and the originator alone, with no section to choose', () => {
+      access.grant();
+      openWithEverything();
+
+      expect(sidebarHeadings()).toEqual(['Originator']);
+      expect(bannerName()).toEqual(['Sample Farms', 'Sample Farm Co']);
+      expect(sectionTitles()).toEqual([]);
+      expect(printedSectionTitles(printed())).toEqual([]);
+    });
   });
 });

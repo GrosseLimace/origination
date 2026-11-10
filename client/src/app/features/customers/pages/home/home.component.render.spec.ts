@@ -72,13 +72,10 @@ class StubProfile {
   readonly selectedTradeUnits = input<unknown>();
   readonly contracts = input<Contract[]>([]);
   readonly tickets = input<{ id: number }[]>([]);
-  readonly pricingLines = input<unknown>();
   readonly plantingIntentions = input<PlantingIntention[]>([]);
   readonly storedGrain = input<StoredGrain[]>([]);
   readonly dpContracts = input<unknown>();
-  readonly notes = input<unknown>();
   readonly yieldEstimates = input<unknown[]>([]);
-  readonly commodities = input<unknown>();
   readonly isLoadingEstimates = input<unknown>();
   // Read from the page's SelectedProducerActivity, as the real profile and its tables do.
   readonly activity = inject(SelectedProducerActivity);

@@ -22,6 +22,7 @@ import { ProducerInsightsComponent } from './components/producer-insights/produc
 import { ContractPacingCardComponent } from './components/contract-pacing-card/contract-pacing-card.component';
 import { GrowthOpportunityComponent } from './components/growth-opportunity/growth-opportunity.component';
 import { ActivitySummaryComponent } from './components/activity-summary/activity-summary.component';
+import { PrintReportButtonComponent } from './components/customer-print-report/print-report-button.component';
 
 describe('Producers preload: the Planting Dashboard summary', () => {
   const summary: DashboardSummary = { estimates: [], marketShares: [], actualHarvest: [] };
@@ -197,5 +198,23 @@ describe("Producers module: the producer's performance on the profile", () => {
       ProducerInsightsToggleComponent, ContractPaceComponent, ProducerInsightsComponent, ContractPacingCardComponent,
       GrowthOpportunityComponent, ActivitySummaryComponent,
     ]);
+  });
+});
+
+describe("Producers module: Print on the profile", () => {
+  const panel = () => producersModule.customerPanels!.find(p => p.id === 'print-report')!;
+
+  it("adds Print to the header's buttons, before Edit, for producers only", () => {
+    expect([panel().slot, panel().order]).toEqual(['toolbar', 90]);
+    expect(panel().segments).toEqual(['Producer']);
+  });
+
+  // The report's header needs only the customer; each section checks its own read.
+  it('asks for no permission of its own', () => {
+    expect(panel().requires).toEqual([]);
+  });
+
+  it('loads as its button', async () => {
+    expect(await panel().component()).toBe(PrintReportButtonComponent);
   });
 });

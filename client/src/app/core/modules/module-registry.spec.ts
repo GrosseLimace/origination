@@ -18,14 +18,11 @@ const modules: ModuleManifest[] = [
       { slot: 'details', id: 'farm-details', requires: ['producer-details:read'], order: 30, component },
       { slot: 'badges', id: 'organic', requires: ['producer-details:read'], order: 20, component },
     ],
-    customerEditSections: [{ id: 'farm', requires: ['producer-details:write'], label: 'Farm', order: 20, component }],
-    customerPrintSections: [{ id: 'planting', requires: ['planting-intentions:read'], label: 'Planting', order: 30, component }],
   },
   {
     id: 'contracts',
     customerTabs: [{ id: 'contracts', requires: ['contracts:read'], label: 'Open Contracts', shortLabel: 'Cont', order: 10, component }],
     customerPanels: [{ slot: 'badges', id: 'esign', requires: [], order: 10, component }],
-    customerPrintSections: [{ id: 'contracts', requires: ['contracts:read'], label: 'Contracts', order: 20, component }],
   },
 ];
 
@@ -38,7 +35,7 @@ const ids = (contributions: { id: string }[]) => contributions.map(contribution 
 
 describe("ModuleRegistry: the customer screen's contributions", () => {
   const everything = permissionStub([
-    'stored-grain:read', 'planting-intentions:read', 'producer-details:read', 'producer-details:write', 'contracts:read',
+    'stored-grain:read', 'planting-intentions:read', 'producer-details:read', 'contracts:read',
   ]);
 
   it('collects the tabs from every module, in order', () => {
@@ -53,13 +50,6 @@ describe("ModuleRegistry: the customer screen's contributions", () => {
     expect(modulesRegistry.customerPanels('sidebar')).toEqual([]);
   });
 
-  it('collects the edit and print sections, in order', () => {
-    const modulesRegistry = registry(everything);
-
-    expect(ids(modulesRegistry.customerEditSections())).toEqual(['farm']);
-    expect(ids(modulesRegistry.customerPrintSections())).toEqual(['contracts', 'planting']);
-  });
-
   it('leaves out what the user lacks the permissions for, and adds it once they hold them', () => {
     const access = permissionStub(['contracts:read']);
     const modulesRegistry = registry(access);
@@ -67,7 +57,6 @@ describe("ModuleRegistry: the customer screen's contributions", () => {
     expect(ids(modulesRegistry.customerTabs())).toEqual(['contracts']);
     // Needing no permission, eSign shows to everyone.
     expect(ids(modulesRegistry.customerPanels('badges'))).toEqual(['esign']);
-    expect(modulesRegistry.customerEditSections()).toEqual([]);
 
     access.grant('contracts:read', 'planting-intentions:read', 'producer-details:read');
 

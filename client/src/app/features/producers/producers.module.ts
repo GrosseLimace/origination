@@ -162,6 +162,16 @@ export const producersModule: ModuleManifest = {
       order: 40,
       component: () => import('./components/activity-summary/activity-summary.component').then(m => m.ActivitySummaryComponent),
     },
+    {
+      // Print, and the Producer Summary Report it opens. The report needs only the customer; each of its sections and
+      // summary figures shows only to a user who may read it, so it asks for no permission of its own.
+      slot: 'toolbar',
+      id: 'print-report',
+      requires: [],
+      segments: ['Producer'],
+      order: 90,
+      component: () => import('./components/customer-print-report/print-report-button.component').then(m => m.PrintReportButtonComponent),
+    },
   ],
   // A producer's own production. Each reads it from the profile's SelectedProducerProduction.
   customerTabs: [

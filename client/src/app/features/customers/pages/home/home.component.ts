@@ -12,7 +12,7 @@ import { CustomersApiService } from '../../data-access/customers-api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, ProducerDetails, DashboardPlantingEstimate, Commodity } from '@models';
+import { Customer, ProducerDetails, DashboardPlantingEstimate } from '@models';
 import { CustomerListComponent } from '../../components/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
 import { CustomerSlotComponent } from '@core/modules/customer-slot.component';
@@ -178,7 +178,6 @@ export class HomeComponent {
   readonly allCustomerPlantingIntentions = this.planting.allCustomerPlantingIntentions;
 
   readonly yieldEstimates = signal<DashboardPlantingEstimate[]>([]);
-  readonly commodities = signal<Commodity[]>([]);
   readonly isLoadingYieldData = signal(false);
   readonly isLoadingPlanting = signal(true);
 
@@ -321,7 +320,7 @@ export class HomeComponent {
         // these are not stored in appState so they must be reloaded.
         this.planting.loadWithoutCache(stateSelectedCustomer.id);
       }
-      // Reload yield estimates and commodities — not stored in appState so
+      // Reload yield estimates — not stored in appState so
       // they are lost on navigation away and must be re-fetched on return.
       this._loadYieldData();
     }
@@ -504,13 +503,11 @@ export class HomeComponent {
     const key = [...this.selectedTradeUnits()].sort().join(',');
     if (!key) {
       this.yieldEstimates.set([]);
-      this.commodities.set([]);
       return;
     }
 
     this.isLoadingYieldData.set(true);
-    let pending = 2;
-    const done = () => { if (--pending === 0) this.isLoadingYieldData.set(false); };
+    const done = () => this.isLoadingYieldData.set(false);
 
     // Gather all unique planting years from intentions + contracts so we fetch
     // yield estimates for every year the user might select.
@@ -525,11 +522,6 @@ export class HomeComponent {
         this.yieldEstimates.set(mergeYieldEstimates(results));
         done();
       },
-      error: () => done()
-    });
-
-    this.apiService.getCommodities().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (data) => { this.commodities.set(data); done(); },
       error: () => done()
     });
   }

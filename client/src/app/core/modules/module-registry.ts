@@ -26,10 +26,6 @@ export class ModuleRegistry {
 
   /** The customer profile's tabs. */
   readonly customerTabs = computed(() => this.permitted(module => module.customerTabs));
-  /** The Edit Customer dialog's sections. */
-  readonly customerEditSections = computed(() => this.permitted(module => module.customerEditSections));
-  /** The customer print report's sections. */
-  readonly customerPrintSections = computed(() => this.permitted(module => module.customerPrintSections));
   private readonly panels = computed(() => this.permitted(module => module.customerPanels));
 
   /** The panels in one slot of the customer screen. */

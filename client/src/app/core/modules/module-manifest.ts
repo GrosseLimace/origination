@@ -35,12 +35,6 @@ export interface ModuleManifest {
   /** The module's panels on the customer screen, each in one slot. */
   customerPanels?: readonly CustomerPanel[];
 
-  /** The module's sections of the Edit Customer dialog. */
-  customerEditSections?: readonly CustomerSection[];
-
-  /** The module's sections of the customer print report. */
-  customerPrintSections?: readonly CustomerSection[];
-
   /**
    * Loads what the module wants ready before its screens open, for a new trade-unit selection. Called in an
    * injection context on every non-empty selection; the next selection cancels it, so it returns the work as an
@@ -100,12 +94,14 @@ export interface CustomerContribution {
 
 /**
  * The places on the customer screen a panel can go. On the profile: `badges` beside the name, and `badge-panels` under
- * it for what a badge opens; `actions` in the button row; `details` in the details row, and inside its Contact column
- * `contacts` above the customer's address and `locations` below its phone and email; `summary` between the header and
- * the tabs. On the home page: `sidebar`, the right column, and `floating`, the launcher over the page.
+ * it for what a badge opens; `actions` in the row under the name, beside the linked-producer picker; `toolbar`, the
+ * header's buttons at its top right; `details` in the details row, and inside its Contact column `contacts` above the
+ * customer's address and `locations` below its phone and email; `summary` between the header and the tabs. On the home
+ * page: `sidebar`, the right column, and `floating`, the launcher over the page.
  */
 export type CustomerSlot =
-  | 'badges' | 'badge-panels' | 'actions' | 'details' | 'contacts' | 'locations' | 'summary' | 'sidebar' | 'floating';
+  | 'badges' | 'badge-panels' | 'actions' | 'toolbar' | 'details' | 'contacts' | 'locations' | 'summary' | 'sidebar'
+  | 'floating';
 
 /** A panel on the customer screen. */
 export interface CustomerPanel extends CustomerContribution {
@@ -119,9 +115,4 @@ export interface CustomerTab extends CustomerContribution {
   shortLabel: string;
   /** The count beside the label, or null for none. Called once, in an injection context, when the tab first shows. */
   badge?: () => Signal<number | null>;
-}
-
-/** A section of the Edit Customer dialog or the customer print report. */
-export interface CustomerSection extends CustomerContribution {
-  label: string;
 }

@@ -179,19 +179,8 @@
                   </div>
                 }
               </div>
-              <button
-                type="button"
-                class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors"
-                (click)="showPrintReport.set(true)"
-                title="Print"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="6 9 6 2 18 2 18 9"/>
-                  <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-                  <rect width="12" height="8" x="6" y="14"/>
-                </svg>
-                <span class="hidden sm:inline">Print</span>
-              </button>
+              <!-- The modules' buttons (Producers: Print), between Add to List and Edit. -->
+              <app-customer-slot slot="toolbar" />
               <button
                 type="button"
                 class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors"
@@ -320,19 +309,3 @@
       (close)="closeEditDialog()"
       (save)="handleSaveCustomer($event)">
     </app-edit-customer-dialog>
-
-    <!-- Print Report Dialog -->
-    <app-customer-print-report
-      [isOpen]="showPrintReport()"
-      [customer]="customer()"
-      [contracts]="contracts()"
-      [tickets]="tickets()"
-      [pricingLines]="pricingLines()"
-      [plantingIntentions]="plantingIntentions()"
-      [storedGrain]="storedGrain()"
-      [notes]="notes()"
-      [commodities]="commodities()"
-      [yieldEstimates]="yieldEstimates()"
-      [linkedCustomers]="linkedCustomers()"
-      (close)="showPrintReport.set(false)">
-    </app-customer-print-report>

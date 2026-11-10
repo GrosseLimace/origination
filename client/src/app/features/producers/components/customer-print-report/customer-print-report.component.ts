@@ -6,14 +6,16 @@ import { ToastService } from '@core/services/toast.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
-import { Customer, Contract, ContractPricingLine, PlantingIntention, StoredGrain, Note, Commodity, DashboardPlantingEstimate, Ticket } from '@models';
+import { Customer, Contract, ContractPricingLine, PlantingIntention, Ticket } from '@models';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
 import { contractPricingInfo, ContractPricingInfo } from '@shared/utils/contract-pricing-status';
-import { buildLbsPerBushelMap, findYieldEstimate, sumInBushels } from '@shared/utils/production-coverage';
-import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
+import { buildLbsPerBushelMap, sumInBushels } from '@shared/utils/production-coverage';
+import { plantingCategory } from '@shared/utils/planting-category';
 import { binSiteGrainBreakdown, formatLastBid, grainOnFarmColorKey, indexCommoditiesByCode } from '@shared/utils/grain-on-farm';
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
-import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { PermissionService } from '@core/access/permission.service';
+import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
+import { SelectedProducerProduction } from '@core/context/selected-producer-production';
 
 
 /** The report's include toggles whose default depends on the data. */
@@ -31,6 +33,12 @@ interface TicketCommoditySummary {
   isWheat: boolean;
 }
 
+/**
+ * The Producer Summary Report: a preview with the sections to include beside it, and Print, which writes the same
+ * report to a print window. Opened by Producers' Print button in the profile header, for the producer on screen. It
+ * reads their contracts, tickets and pricing lines from SelectedProducerActivity, and their planting intentions and
+ * stored grain from the profile's SelectedProducerProduction.
+ */
 @Component({
   selector: 'app-customer-print-report',
   standalone: true,
@@ -48,33 +56,52 @@ interface TicketCommoditySummary {
   ],
   // The printed HTML formats pricing lines with the same pipes the preview template uses.
   providers: [CurrencyPipe, DatePipe],
+  // The dialog is a fixed overlay, so its element takes no space in the header's button row while it's closed.
+  host: { class: 'contents' },
   templateUrl: './customer-print-report.component.html'
 })
 export class CustomerPrintReportComponent {
   private readonly msalService = inject(MsalService);
   private readonly toastService = inject(ToastService);
   private readonly appState = inject(AppStateService);
-  private readonly tradeUnitContext = inject(TradeUnitContext);
+  private readonly permissions = inject(PermissionService);
   private readonly currencyPipe = inject(CurrencyPipe);
   private readonly datePipe = inject(DatePipe);
+  private readonly activity = inject(SelectedProducerActivity);
+  private readonly production = inject(SelectedProducerProduction);
 
-  readonly noTradeUnit = computed(() => this.tradeUnitContext.selectedTradeUnits().length === 0);
-
-  // Inputs
+  /** Opened by the Print button, for the customer on screen. */
   public isOpen = input(false);
   public customer = input.required<Customer>();
-  public contracts = input<Contract[]>([]);
-  public tickets = input<Ticket[]>([]);
-  public plantingIntentions = input<PlantingIntention[]>([]);
-  public storedGrain = input<StoredGrain[]>([]);
-  public notes = input<Note[]>([]);
-  public commodities = input<Commodity[]>([]);
-  public yieldEstimates = input<DashboardPlantingEstimate[]>([]);
-  public pricingLines = input<ContractPricingLine[]>([]);
-  public linkedCustomers = input<Customer[]>([]);
-
-  // Output
   public close = output<void>();
+
+  // The producer's data, as the rest of the customer screen reads it.
+  readonly contracts = this.activity.contracts;
+  readonly tickets = this.activity.tickets;
+  readonly pricingLines = this.activity.pricingLines;
+  /** Every crop year's intentions; the sidebar picks the years the report includes. */
+  readonly plantingIntentions = this.production.plantingIntentions;
+  readonly storedGrain = this.production.storedGrain;
+  readonly commodities = this.appState.commodities;
+
+  /**
+   * The sections and summary figures the user may read. One they can't is left out: no checkbox, nothing in the
+   * preview or on the printed page. The header and footer need only the customer.
+   */
+  readonly readable = computed<Record<SectionKey, boolean>>(() => {
+    const contracts = this.permissions.has('contracts:read');
+    const producerDetails = this.permissions.has('producer-details:read');
+    return {
+      totalAcres: producerDetails,
+      totalContracted: contracts,
+      contracts,
+      pricingLines: contracts,
+      tickets: this.permissions.has('tickets:read'),
+      planting: this.permissions.has('planting-intentions:read'),
+      storage: this.permissions.has('stored-grain:read'),
+      binSites: producerDetails,
+    };
+  });
 
   // Section toggles — initialized in the effect when dialog opens
   showTotalAcres = signal(true);
@@ -115,17 +142,21 @@ export class CustomerPrintReportComponent {
    *  but a choice the user made is never overridden. Cleared on every open. */
   private readonly _touched = new Set<SectionKey | 'plantingYears'>();
 
-  /** Each section's default: on when it has something to show. */
-  private readonly _sectionDefaults = computed<Record<SectionKey, boolean>>(() => ({
-    totalAcres: (this.customer().totalAcres ?? 0) > 0,
-    totalContracted: this.totalContracted() > 0,
-    contracts: this.contracts().filter(c => !c.closedDate).length > 0,
-    tickets: this.tickets().filter(t => !t.isApplied).length > 0,
-    planting: this.plantingIntentions().length > 0,
-    storage: this.storedGrain().length > 0,
-    binSites: this.binSiteGroups().length > 0,
-    pricingLines: this.visiblePricingLines().length > 0,
-  }));
+  /** Each section's default: on when it has something to show and the user may read it. With no checkbox, a section
+   *  the user may not read stays at this default, off. */
+  private readonly _sectionDefaults = computed<Record<SectionKey, boolean>>(() => {
+    const readable = this.readable();
+    return {
+      totalAcres: readable.totalAcres && (this.customer().totalAcres ?? 0) > 0,
+      totalContracted: readable.totalContracted && this.totalContracted() > 0,
+      contracts: readable.contracts && this.contracts().filter(c => !c.closedDate).length > 0,
+      tickets: readable.tickets && this.tickets().filter(t => !t.isApplied).length > 0,
+      planting: readable.planting && this.plantingIntentions().length > 0,
+      storage: readable.storage && this.storedGrain().length > 0,
+      binSites: readable.binSites && this.binSiteGroups().length > 0,
+      pricingLines: readable.pricingLines && this.visiblePricingLines().length > 0,
+    };
+  });
 
   constructor() {
     effect(() => {
@@ -226,9 +257,6 @@ export class CustomerPrintReportComponent {
       })
   );
 
-  /** Backwards-compatible alias — legacy name kept so older refs resolve. */
-  readonly activeContracts = this.openContracts;
-
   /** Contracts grouped by commodity for print display. Mirrors the contracts table:
    *  bucket by commodityCode so same-code variants stay together (fall back to
    *  description/group/'Other'), order the groups alphabetically by that key, and
@@ -319,26 +347,6 @@ export class CustomerPrintReportComponent {
     return sumInBushels(this.openContracts(), new Map()).excludedContracts;
   });
 
-  readonly totalStored = computed(() =>
-    this.storedGrain().reduce((sum, g) => sum + (g.quantity ?? 0), 0)
-  );
-
-  readonly projectedProductionBu = computed(() => {
-    const intentions = this.includedPlantingIntentions();
-    const commodities = this.commodities();
-    const yieldEstimates = this.yieldEstimates();
-    if (intentions.length === 0) return 0;
-    return intentions.reduce((sum, pi) => {
-      const commodity = commodities.find(c => c.code === pi.crop);
-      const category = plantingCategory(pi, commodity);
-      // Each intention is projected with ITS OWN season's estimate. Previously this matched on crop
-      // name alone, so a year with no season target silently borrowed another year's bu/ac — the
-      // printed sheet then showed a projection the Growth Opportunity panel refuses to make.
-      const est = findYieldEstimate(yieldEstimates, pi.type, category, pi.plantingYear);
-      return sum + (pi.acres ?? 0) * (est ?? 0);
-    }, 0);
-  });
-
   readonly kpis = computed(() => {
     const items: { label: string; value: string; sub: string }[] = [];
     if (this.showTotalAcres()) {
@@ -355,52 +363,6 @@ export class CustomerPrintReportComponent {
       items.push({ label: 'Total Contracted', value: contracted > 0 ? this.formatBu(contracted) : '0 bu', sub });
     }
     return items;
-  });
-
-  readonly cropBreakdown = computed(() => {
-    const intentions = this.includedPlantingIntentions();
-    const contracts = this.openContracts().filter(c => this.getCalculatedStatus(c) !== 'Cancelled');
-    const commodities = this.commodities();
-    const yieldEstimates = this.yieldEstimates();
-    const cropMap = new Map<string, { acres: number; projected: number; contracted: number }>();
-
-    for (const pi of intentions) {
-      const commodity = commodities.find(c => c.code === pi.crop);
-      // Group and label by the same planting category the dashboard uses, so "Organic Soybeans"
-      // gets its own line here instead of folding into "Soybeans".
-      const category = plantingCategory(pi, commodity);
-      const displayName = category || 'Unknown';
-      const entry = cropMap.get(displayName) ?? { acres: 0, projected: 0, contracted: 0 };
-      entry.acres += pi.acres ?? 0;
-      // Same rule as above: an intention only projects off its own season's estimate.
-      const est = findYieldEstimate(yieldEstimates, pi.type, category, pi.plantingYear);
-      entry.projected += (pi.acres ?? 0) * (est ?? 0);
-      cropMap.set(displayName, entry);
-    }
-    // Contracts group under the same planting label as the intentions they cover, so an organic
-    // contract lands on the "Organic Soybeans" line rather than "Soybeans".
-    const codeToName = new Map<string, string>();
-    for (const cm of commodities) {
-      codeToName.set(cm.code, commodityPlantingCategory(cm) || cm.name || cm.code);
-    }
-    for (const c of contracts) {
-      const displayName = codeToName.get(c.commodityCode || '') || c.commodityDescription || c.commodityCode || 'Unknown';
-      const entry = cropMap.get(displayName) ?? { acres: 0, projected: 0, contracted: 0 };
-      entry.contracted += c.quantity ?? 0;
-      cropMap.set(displayName, entry);
-    }
-    return [...cropMap.entries()]
-      .map(([crop, data]) => ({ crop, ...data }))
-      .sort((a, b) => b.contracted - a.contracted);
-  });
-
-  readonly cropTotals = computed(() => {
-    const rows = this.cropBreakdown();
-    return {
-      acres: rows.reduce((s, r) => s + r.acres, 0),
-      projected: rows.reduce((s, r) => s + r.projected, 0),
-      contracted: rows.reduce((s, r) => s + r.contracted, 0)
-    };
   });
 
   readonly storageGroups = computed(() => {
@@ -436,13 +398,6 @@ export class CustomerPrintReportComponent {
     const name = this._commodityByCode().get((code || '').trim().toLowerCase())?.name;
     return this.commodityBandColor(group !== (code || '').trim() ? group : (name || group));
   }
-
-  readonly reportNotes = computed(() => {
-    const allNotes = this.notes();
-    const pinned = allNotes.filter(n => n.isPinned).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    const unpinned = allNotes.filter(n => !n.isPinned).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    return [...pinned, ...unpinned].slice(0, 10);
-  });
 
   readonly today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
@@ -517,14 +472,6 @@ export class CustomerPrintReportComponent {
     // openBalanceQuantity is already in the contract's unit.
     const s = getContractDeliveryStats(contract);
     return { delivered: s.delivered, remaining: s.remaining, progressPercent: s.progressPercent };
-  }
-
-  getDeliveredBu(ct: Contract): number {
-    return this.getDeliveryStats(ct).delivered;
-  }
-
-  getDeliveryPct(ct: Contract): number {
-    return Math.round(this.getDeliveryStats(ct).progressPercent);
   }
 
   getCalculatedStatus(contract: Contract): string {
@@ -605,15 +552,6 @@ export class CustomerPrintReportComponent {
   });
 
   readonly anyTicketWheat = computed(() => this.ticketsByCommodity().some(g => g.isWheat || g.avgProtein != null));
-
-  /** Projected bushels for one intention row. Returns 0 when its season has no yield estimate —
-   *  the estimate is never taken from a different year (see findYieldEstimate). */
-  getPlantingYield(pi: PlantingIntention): number {
-    const commodity = this.commodities().find(c => c.code === pi.crop);
-    const category = plantingCategory(pi, commodity);
-    const est = findYieldEstimate(this.yieldEstimates(), pi.type, category, pi.plantingYear);
-    return Math.round((pi.acres ?? 0) * (est ?? 0));
-  }
 
   formatDeliveryPeriod(start?: Date | string, end?: Date | string): string {
     if (!start && !end) return '—';
