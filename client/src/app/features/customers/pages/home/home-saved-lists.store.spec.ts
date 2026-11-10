@@ -59,6 +59,7 @@ describe('HomeSavedListsStore', () => {
       setNotes: vi.fn((v: Note[]) => { notes.set(v); notesLoaded.set(true); }),
       setQueryLibrary: vi.fn((v: QueryLibraryItem[]) => queryLibrary.set(v)),
       setSavedLists: vi.fn(),
+      savedListsLoadFailed: signal(false),
       setSavedListsLoadFailed: vi.fn(),
     };
     nlq = {
@@ -91,6 +92,18 @@ describe('HomeSavedListsStore', () => {
     page = TestBed.inject(HomePageState);
     page.customers.set([customer(1), customer(2), customer(3)]);
     page.selectedTradeUnits.set(['TU1']);
+  });
+
+  // Lists' Add to List reads the store as the page's SavedListMembership.
+  describe('as the SavedListMembership', () => {
+    it('offers the own lists sharing a selected trade unit', () => {
+      store.savedLists.set([list(1, { tradeUnits: 'TU9' }), list(2, { tradeUnits: 'TU1,TU9' })]);
+      expect(store.ownLists().map(l => l.id)).toEqual([2]);
+    });
+
+    it("says the own lists failed to load with the flag Build a List reads too", () => {
+      expect(store.ownListsLoadFailed).toBe(appState['savedListsLoadFailed']);
+    });
   });
 
   describe('enrichSavedLists', () => {
@@ -167,7 +180,7 @@ describe('HomeSavedListsStore', () => {
       page.selectedTradeUnits.set([]);
       store.loadTeamLists();
       expect(api.getTeamSavedLists).not.toHaveBeenCalled();
-      expect(store.teamListsForSelectedCustomer()).toEqual([]);
+      expect(store.teamLists()).toEqual([]);
     });
 
     it('are fetched for the selected trade units and resolved with the team permissions; a failure keeps the prior set', () => {
@@ -176,7 +189,7 @@ describe('HomeSavedListsStore', () => {
       api.getTeamSavedLists.mockReturnValue(of([list(40)]));
       store.loadTeamLists();
       expect(api.getTeamSavedLists).toHaveBeenCalledWith('TU1,TU2');
-      expect(store.teamListsForSelectedCustomer()[0].customerIds).toEqual([1, 2]);
+      expect(store.teamLists()[0].customerIds).toEqual([1, 2]);
 
       api.getTeamSavedLists.mockReturnValue(throwError(() => new Error('500')));
       store.loadTeamLists();
@@ -194,14 +207,14 @@ describe('HomeSavedListsStore', () => {
     });
   });
 
-  describe('saveMembership', () => {
+  describe('save', () => {
     it('reverts own and team lists together when any save fails', () => {
       page.selectedCustomer.set(customer(3));
       store.savedLists.set([list(7)]);
       store.teamSavedLists.set([list(40)]);
       api.updateSavedList.mockReturnValue(throwError(() => new Error('500')));
 
-      store.saveMembership([{ listId: 7, add: true }, { listId: 40, add: true }]);
+      store.save([{ listId: 7, add: true }, { listId: 40, add: true }]);
 
       expect(store.savedLists()[0].includedCustomerIds).toBeUndefined();
       expect(store.teamSavedLists()[0].includedCustomerIds).toBeUndefined();

@@ -33,4 +33,16 @@ export const listsModule: ModuleManifest = {
       menu: 'main',
     },
   ],
+  customerPanels: [
+    {
+      // Add to List, first of the profile header's buttons: puts the customer on the user's own saved lists or takes
+      // them off. Its Team Lists tab, for teammates' lists, needs saved-lists:read:team and :write:team as well. For
+      // every customer: a saved list is a list of customers.
+      slot: 'toolbar',
+      id: 'add-to-list',
+      requires: ['saved-lists:read:own', 'saved-lists:write:own'],
+      order: 10,
+      component: () => import('./components/add-to-list/add-to-list.component').then(m => m.AddToListComponent),
+    },
+  ],
 };

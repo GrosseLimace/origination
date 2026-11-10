@@ -35,6 +35,7 @@ import { CUSTOMER_SCREEN_SOURCE, SelectedCustomerContext } from '@core/context/s
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
 import { ProducerEdit, ProducerEditing } from '@core/context/producer-editing';
+import { SavedListMembership } from '@core/context/saved-list-membership';
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -56,6 +57,8 @@ import { ProducerEdit, ProducerEditing } from '@core/context/producer-editing';
     { provide: CUSTOMER_SCREEN_SOURCE, useFactory: homeScreenSource },
     // The Edit Producer Details dialog saves through the page, which keeps its lists up to date as the save goes.
     { provide: ProducerEditing, useExisting: forwardRef(() => HomeComponent) },
+    // Add to List offers the saved lists the page has resolved, and saves through it.
+    { provide: SavedListMembership, useExisting: HomeSavedListsStore },
   ],
   // The template reads only signals, computeds, getLinkedGroup() (which reads signals) and two
   // constant flags, and every async writer (API callbacks, effects, the resize listener, the
@@ -89,8 +92,6 @@ export class HomeComponent implements ProducerEditing {
   /** The selected producer's contracts, tickets, pricing, stored grain and DP (see HomeProducerActivityStore). */
   private readonly activity = inject(HomeProducerActivityStore);
 
-  /** Enables the "Team Lists" tab in the Add-to-List dropdown (see HomeSavedListsStore). */
-  readonly canEditTeamLists = this.lists.canEditTeamLists;
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
@@ -129,9 +130,6 @@ export class HomeComponent implements ProducerEditing {
   readonly pendingPlantingYear = this.page.pendingPlantingYear;
   readonly pendingTicketCrop = this.page.pendingTicketCrop;
   readonly selectedTradeUnits = this.page.selectedTradeUnits;
-  /** The own and team lists the selected producer can be quick-added to from the profile header. */
-  readonly savedListsForSelectedCustomer = this.lists.savedListsForSelectedCustomer;
-  readonly teamListsForSelectedCustomer = this.lists.teamListsForSelectedCustomer;
   /** The selected producer's contracts, tickets, pricing lines, stored grain and DP contracts, with their loading and
    *  error state (see HomeProducerActivityStore). */
   readonly customerContracts = this.activity.customerContracts;
@@ -247,7 +245,7 @@ export class HomeComponent implements ProducerEditing {
     // (Re)load the team lists whenever the permissions load or the TU selection changes. Guarded
     // inside loadTeamLists, so a user without the team permissions or an empty selection clears the set.
     effect(() => {
-      this.canEditTeamLists();
+      this.lists.canEditTeamLists();
       this.selectedTradeUnits();
       untracked(() => this.lists.loadTeamLists());
     });
@@ -532,12 +530,6 @@ export class HomeComponent implements ProducerEditing {
       },
       error: () => done()
     });
-  }
-
-  /** Applies the profile header's staged Add-to-List changes for the selected producer
-   *  (see HomeSavedListsStore.saveMembership). */
-  handleSaveSavedListMembership(changes: { listId: number; add: boolean }[]): void {
-    this.lists.saveMembership(changes);
   }
 
   handleClearSelection(): void {

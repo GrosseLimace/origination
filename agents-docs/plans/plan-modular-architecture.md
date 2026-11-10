@@ -654,7 +654,7 @@ These are the slots the customer screen needs to host everything it shows today.
 - **The Edit Producer Details dialog and the Producer Summary Report each move whole into Producers,** rather than being put together from module sections. Both are producer screens today, and a trader customer's edit or report would likely ask for different things.
   - Each part inside shows only to a user with its permission. The report's sections and summary figures need their reads. Edit itself needs `producer-details:read` and `producer-details:write`, which Farm & Crops and Link Producers need, because its save always writes the producer's details; a user who could change only trade units would be refused on every save. Inside, Trade Units also needs `customers:write`, and moving planting intentions needs `planting-intentions:write`.
   - The dialog saves through `ProducerEditing` in `core/context`, which the home page provides, until the page's lists move into stores later in this phase.
-  - Print and Edit are Producers panels in a new `toolbar` slot, the header's buttons, beside Add to List.
+  - Print and Edit are Producers panels in a new `toolbar` slot, the header's buttons. Add to List joined them there in step 8b as a Lists panel, first in the row, rather than going to `actions` as the slot inventory above has it. It applies to every customer, since a saved list is a list of customers, and reaches the home page's lists and save through `SavedListMembership` in `core/context`.
   - The manifest's `customerEditSections` and `customerPrintSections` are dropped.
 - **Phase 5 gives trader customers their own edit dialog,** shown for the `Commercial` segment, and their own report if one is wanted.
 - **Contacts are the overlap.** Both edit dialogs need them, and today they save with the producer's details under `producer-details:write`. In Phase 5 they get their own save and permission in Customers, and the contacts editor becomes one component both dialogs use. The Trade Units editor can be shared the same way if traders need it.
@@ -1059,6 +1059,43 @@ Where it differs from the row above:
 - **One visible change:** the mobile menu now lists the module links in the desktop order.
 - **Deferred to Phase 4:** the `modules[]` preload gate, the customer-screen slot types, and the remaining model and util moves (§5.2, §5.5).
 - **Checked locally:** the app was run on 2026-11-09 and the header, mobile and profile menus work. The click through each module that the Phase 2 note asks for is still to do.
+
+**Phase 4 is in progress** on `feature_ModularArchitecture-Phase4`, cut from `feature_ModularArchitecture`, in reviewed steps. Step 11 turns this list into the phase's record, like Phase 2's and Phase 3's above.
+
+Done, in 18 commits (2026-11-09 to 2026-11-10):
+1. The customer-screen slot types in the manifest (`2dbec000`).
+2. Module stores cleared on sign-out and idle timeout again (`a31f1483`). Customers' own store, API client and preload (`e8c357f9`).
+3. The selected producer's activity moved out of the home page (`dbca0d0f`) and read through `SelectedProducerActivity` (`437956e7`). The contracts and tickets tables became the Contracts module's profile tabs (`8e24bb19`).
+4. The notes and follow-ups cards read `SelectedProducerEngagement` (`717d917c`) and became the Engagement module's sidebar panels (`1a2361d4`).
+5. The planting, storage and DP tables read `SelectedProducerProduction` (`40fb13e6`) and became the Producers module's profile tabs (`11c2a8e8`). Planting's add and edit (`9ec0971c`) and the field plan (`b7598008`) are gated by permission.
+6. The profile header's producer details (`42cfa900`) and the producer's performance panels (`9c316abc`) became Producers panels.
+7. Print with the Producer Summary Report (`e2d2f5e9`), and Edit with the Edit Producer Details dialog (`c6fe0dcd`), moved whole into Producers. See "Decided in Phase 4" in §5.2.
+8. The calculator launcher moved into the home page's `floating` slot (`2d69f12c`). Add to List became a Lists panel in the `toolbar` slot, before Print, needing `saved-lists:read:own` and `saved-lists:write:own`. It reads the lists, whether they failed to load, and the save from `SavedListMembership`, which the home page's `HomeSavedListsStore` implements, and the profile dropped the dropdown, its staging logic, three inputs and an output. 8c is in step 10.
+
+Left:
+- **9. The `Customer` → `ProducerProfile` split.**
+  - `CustomerResponse` sheds `TotalAcres`, `FarmIds`, `LinkedProducerIds` and `Farm`, and the Producers module serves them in a `ProducerProfileResponse` (§4.5). It is a wire change, so the backend and the SPA change in the same step.
+  - Decide then whether the customer search's `ProducerDetails`/`ProducerContact` join, the one known Customers → Producers dependency, is replaced now or in Phase 5 (§4.4).
+- **10. Clean-up.**
+  - The `modules[]` preload gate, with a rule for Calculators, Help and What's New, which own no permissions (§5.2).
+  - The home page's trade-unit pools (contracts, tickets, planting intentions, stored grain, DP contracts) move into module stores. `DataPreloadService` moves to `core/context`, and the home page's yield-estimate loading possibly to Producers.
+  - What is left of `ApiService` and `AppStateService` splits by module, and `outlook-calendar.service.ts` moves to Engagement.
+  - The producer utils in `shared/utils` and the producer models move to `features/producers`. The other module models (`bid-sheet`, `barchart`, `usage-dashboard`, `whats-new`, `help`, `query-library`, `refine-filters`) move to their modules (§5.5).
+  - **8c, the NLQ engine and saved lists, comes last** (decided 2026-11-10).
+    - `core/services/nlq-filter.service.ts` moves to Lists.
+    - The customer list's saved-list dropdown becomes a Lists contribution to a new filter slot in the customer list.
+    - `HomeSavedListsStore` becomes a Lists store that reads the pools from their modules. Done before the pools move, it would need another temporary service carrying all five.
+- **11. Close-out.**
+  - This list becomes the phase's record, and the docs follow.
+  - The app is run and each module clicked through, as the Phase 2 and Phase 3 notes ask.
+  - Phase 4 merges back into `feature_ModularArchitecture`, which goes to `main` once it has been tested.
+
+Notes for whoever picks it up:
+- **Each step runs these before it is staged:** `npx ng lint`, `npx tsc -p tsconfig.app.json --noEmit`, `npx ng build` and `npx vitest run`.
+- **The spec type-check (`npx tsc -p tsconfig.spec.json --noEmit`) has 96 known errors.** A step must not add one.
+- **Each new piece of wiring is checked by removing it** and confirming its spec fails.
+- **`app.change-detection.spec.ts` renders the whole app and waits on timers.** It can fail under the full suite's load while passing on its own. A wait on something lazily loaded should poll for it, not sleep for a fixed time.
+- **On Windows a watcher can briefly lock a source file.** A script that rewrites source files, such as a mutation check, must retry its writes and confirm the restore landed.
 
 **This plan builds on `main` only.** It doesn't wait for or plan around other branches, the mobile app's included. That work gets redone on the new structure once this lands.
 

@@ -1,9 +1,8 @@
-import { Component, forwardRef, input, output, inject, effect, computed, ChangeDetectionStrategy, ViewChild, ElementRef, signal, HostListener, Injector, Signal, runInInjectionContext, untracked } from '@angular/core';
+import { Component, forwardRef, input, output, inject, effect, computed, ChangeDetectionStrategy, ViewChild, ElementRef, signal, Injector, Signal, runInInjectionContext, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ThemeService } from '@core/services/theme.service';
-import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, Contract, Ticket, PlantingIntention, PlantingIntentionDraft, PlantingIntentionEdit, StoredGrain, DpContract, DashboardPlantingEstimate, SavedList } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, PlantingIntentionDraft, PlantingIntentionEdit, StoredGrain, DpContract, DashboardPlantingEstimate } from '@models';
 import { formatPhoneDisplay } from '@shared/utils/phone';
 import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl } from '@shared/utils/address';
 import { SelectedProducerProduction } from '@core/context/selected-producer-production';
@@ -41,10 +40,6 @@ interface ProfileTab {
   providers: [{ provide: SelectedProducerProduction, useExisting: forwardRef(() => CustomerProfileComponent) }],
 })
 export class CustomerProfileComponent implements SelectedProducerProduction {
-  private readonly appState = inject(AppStateService);
-  /** The saved lists failed to load, so an empty Add to List menu does not mean none match. */
-  readonly savedListsLoadFailed = this.appState.savedListsLoadFailed;
-
   public customer = input.required<Customer>();
 
   public selectedTradeUnits = input<string[]>([]);
@@ -66,15 +61,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
   /** True when the contracts table wants the page at full width (columns expanded on the
    *  contracts tab) so the host page can drop the Notes sidebar below the profile. */
   public onContractsWideChange = output<boolean>();
-  /** The user's own saved lists (enriched) the current producer can be quick-added to. Saved lists
-   *  are originator-owned, so every list is offered regardless of the trade-unit selection. */
-  public savedListsForCustomer = input<SavedList[]>([]);
-  /** Team lists (all lists tied to the TU, any creator) for the Add-to-List Team tab. */
-  public teamListsForCustomer = input<SavedList[]>([]);
-  /** True when the user may add producers to teammates' lists: gates the Add-to-List "Team Lists" tab. */
-  public canEditTeamLists = input(false);
-  /** Save staged saved-list membership changes for the current producer; the host persists them. */
-  public onSaveSavedListMembership = output<{ listId: number; add: boolean }[]>();
   public linkedCustomers = input<Customer[]>([]);
   public onSelectLinkedCustomer = output<number>();
   public openTab = input<string | null>(null);
@@ -100,88 +86,9 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
   // Local state - signals
   activeTab = signal('contracts');
   showESignRecipients = signal(false);
-  showAddToListMenu = signal(false); // "Add to List" header dropdown open state
-  /** Which tab the Add-to-List dropdown is showing: the user's own lists or (managers) team lists. */
-  addToListTab = signal<'saved' | 'team'>('saved');
-  /** Staged desired membership while the menu is open (listId -> member?). Applied on Save,
-   *  discarded on Cancel. Initialized from current membership each time the menu opens. */
-  stagedMembership = signal<Map<number, boolean>>(new Map());
-
-  /** Lists shown in the dropdown for the active tab. */
-  readonly activeAddToLists = computed<SavedList[]>(() =>
-    this.addToListTab() === 'team' ? this.teamListsForCustomer() : this.savedListsForCustomer());
-
-  /** All lists the menu can stage changes against — own, plus team lists when allowed. Used when seeding the
-   *  staged map and computing the save diff so toggles persist across tab switches. */
-  private allAddToLists(): SavedList[] {
-    return this.canEditTeamLists()
-      ? [...this.savedListsForCustomer(), ...this.teamListsForCustomer()]
-      : this.savedListsForCustomer();
-  }
   selectedPlantingYear = signal(0); // 0 = auto (newest)
   private _yearUserSelected = false; // true only when user explicitly clicks a year tab
 
-  /** Whether the current producer is currently (persisted) a member of the given saved list.
-   *  Excluded wins, then a manual include, then the enriched query-derived membership (covers
-   *  lists whose NLQ query matched no patterns and therefore have no cached customerIds). */
-  isInList(list: SavedList): boolean {
-    const id = this.customer().id;
-    if (list.excludedCustomerIds?.includes(id)) return false;
-    if (list.includedCustomerIds?.includes(id)) return true;
-    return (list.customerIds ?? []).includes(id);
-  }
-
-  /** The staged (checkbox) membership for a list — staged value if set, else current membership. */
-  isStagedMember(list: SavedList): boolean {
-    const staged = this.stagedMembership().get(list.id);
-    return staged ?? this.isInList(list);
-  }
-
-  /** Open the menu, seeding staged state from current membership; or cancel-close it. */
-  toggleAddToListMenu(): void {
-    if (this.showAddToListMenu()) { this.cancelAddToList(); return; }
-    const seed = new Map<number, boolean>();
-    for (const l of this.allAddToLists()) seed.set(l.id, this.isInList(l));
-    this.stagedMembership.set(seed);
-    this.addToListTab.set('saved');
-    this.showAddToListMenu.set(true);
-  }
-
-  /** Toggle a single list's staged checkbox (no persistence until Save). */
-  toggleStaged(list: SavedList): void {
-    const next = new Map(this.stagedMembership());
-    next.set(list.id, !this.isStagedMember(list));
-    this.stagedMembership.set(next);
-  }
-
-  /** True when any staged value differs from current membership (enables the Save button).
-   *  Spans both own and team lists so a staged change on either tab counts. */
-  hasStagedChanges(): boolean {
-    return this.allAddToLists().some(l => this.isStagedMember(l) !== this.isInList(l));
-  }
-
-  /** Apply staged changes across both tabs: emit the diff for the host to persist, then close. */
-  saveAddToList(): void {
-    const changes = this.allAddToLists()
-      .filter(l => this.isStagedMember(l) !== this.isInList(l))
-      .map(l => ({ listId: l.id, add: this.isStagedMember(l) }));
-    if (changes.length > 0) this.onSaveSavedListMembership.emit(changes);
-    this.cancelAddToList();
-  }
-
-  /** Close the menu and discard staged changes. */
-  cancelAddToList(): void {
-    this.showAddToListMenu.set(false);
-    this.addToListTab.set('saved');
-    this.stagedMembership.set(new Map());
-  }
-
-  /** Close (discard) on any outside click or Escape (the dropdown container stops propagation). */
-  @HostListener('document:click')
-  onDocumentClick(): void { if (this.showAddToListMenu()) this.cancelAddToList(); }
-
-  @HostListener('document:keydown.escape')
-  onEscape(): void { if (this.showAddToListMenu()) this.cancelAddToList(); }
   private readonly registry = inject(ModuleRegistry);
   private readonly context = inject(SelectedCustomerContext);
   private readonly injector = inject(Injector);
@@ -227,7 +134,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
       // If we arrived with an explicit openPlantingYear (e.g. from the dashboard), keep it.
       const _customer = this.customer();
       this.showESignRecipients.set(false);
-      this.cancelAddToList();
       const pendingYear = this.openPlantingYear();
       if (pendingYear && pendingYear > 0) {
         this._yearUserSelected = true;

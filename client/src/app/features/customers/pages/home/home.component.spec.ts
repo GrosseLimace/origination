@@ -20,12 +20,14 @@ import {
 } from '@models';
 
 import { HomeComponent } from './home.component';
+import { HomeSavedListsStore } from './home-saved-lists.store';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { CustomerStore } from '../../data-access/customer.store';
 import { CustomersApiService } from '../../data-access/customers-api.service';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
 import { ProducerEditing } from '@core/context/producer-editing';
+import { SavedListMembership } from '@core/context/saved-list-membership';
 // The Notes card's 'Last contacted' label, which the card works out from these same notes.
 import { describeLastContacted } from '@shared/utils/last-contacted';
 
@@ -370,6 +372,11 @@ function activityOf(h: Harness): SelectedProducerActivity {
 /** The page's SelectedProducerEngagement: what the Notes and My follow-ups cards read and act through. */
 function engagementOf(h: Harness): SelectedProducerEngagement {
   return h.fixture.debugElement.injector.get(SelectedProducerEngagement);
+}
+
+/** The page's SavedListMembership: the lists Add to List offers, and its save. */
+function membershipOf(h: Harness): SavedListMembership {
+  return h.fixture.debugElement.injector.get(SavedListMembership);
 }
 
 function callsFor(fn: ReturnType<typeof vi.fn>, id: number): number {
@@ -728,14 +735,14 @@ describe('HomeComponent', () => {
         ])),
       });
 
-      expect(h.c.savedListsForSelectedCustomer().map(l => l.id)).toEqual([3, 1]);
+      expect(membershipOf(h).ownLists().map(l => l.id)).toEqual([3, 1]);
     });
 
     it('adding the selected producer to a list updates it optimistically and persists it', () => {
       const h = setup({ arrange: api => api.getSavedLists.mockReturnValue(of([savedList(7, { excludedCustomerIds: [1] })])) });
       h.c.handleSelectCustomer(A);
 
-      h.c.handleSaveSavedListMembership([{ listId: 7, add: true }]);
+      membershipOf(h).save([{ listId: 7, add: true }]);
 
       expect(h.c.savedLists()[0].includedCustomerIds).toEqual([1]);
       expect(h.c.savedLists()[0].excludedCustomerIds).toEqual([]);
@@ -750,7 +757,7 @@ describe('HomeComponent', () => {
       h.api.updateSavedList.mockReturnValue(throwError(() => httpError(500)));
       h.c.handleSelectCustomer(A);
 
-      h.c.handleSaveSavedListMembership([{ listId: 7, add: true }]);
+      membershipOf(h).save([{ listId: 7, add: true }]);
 
       expect(h.c.savedLists()[0].includedCustomerIds).toBeUndefined();
       expect(h.app.savedLists()[0].includedCustomerIds).toBeUndefined();
@@ -761,12 +768,20 @@ describe('HomeComponent', () => {
       const team = [savedList(40, { createdBy: 'Someone Else' })];
       const nonManager = setup({ arrange: api => api.getTeamSavedLists.mockReturnValue(of(team)) });
       expect(nonManager.api.getTeamSavedLists).not.toHaveBeenCalled();
-      expect(nonManager.c.teamListsForSelectedCustomer()).toEqual([]);
+      expect(membershipOf(nonManager).teamLists()).toEqual([]);
       TestBed.resetTestingModule();
 
       const manager = setup({ teamLists: true, arrange: api => api.getTeamSavedLists.mockReturnValue(of(team)) });
       expect(manager.api.getTeamSavedLists).toHaveBeenCalledWith('TU1');
-      expect(manager.c.teamListsForSelectedCustomer().map(l => l.id)).toEqual([40]);
+      expect(membershipOf(manager).teamLists().map(l => l.id)).toEqual([40]);
+    });
+
+    // Add to List is Lists'; it offers the lists the page resolved, and saves through the page, as SavedListMembership.
+    it('is what Add to List reads and saves through: the page\'s saved lists, and their failed load', () => {
+      const h = setup({ arrange: api => api.getSavedLists.mockReturnValue(throwError(() => httpError(500))) });
+
+      expect(membershipOf(h)).toBe(h.fixture.debugElement.injector.get(HomeSavedListsStore));
+      expect(membershipOf(h).ownListsLoadFailed()).toBe(true);
     });
   });
 
@@ -1252,12 +1267,12 @@ describe('HomeComponent', () => {
         },
       });
       h.c.handleSelectCustomer(C);
-      h.c.handleSaveSavedListMembership([{ listId: 7, add: false }]);
+      membershipOf(h).save([{ listId: 7, add: false }]);
       expect(h.c.savedLists()[0].includedCustomerIds).toEqual([]);
       expect(h.c.savedLists()[0].excludedCustomerIds).toEqual([]);
 
       h.c.handleSelectCustomer(A);
-      h.c.handleSaveSavedListMembership([{ listId: 8, add: false }]);
+      membershipOf(h).save([{ listId: 8, add: false }]);
       expect(h.c.savedLists()[1].excludedCustomerIds).toEqual([1]);
       expect(h.c.savedLists()[1].customerIds).toEqual([2]);
     });
@@ -1266,7 +1281,7 @@ describe('HomeComponent', () => {
       const h = setup({ arrange: api => api.getSavedLists.mockReturnValue(of([savedList(7), savedList(8)])) });
       h.c.handleSelectCustomer(A);
 
-      h.c.handleSaveSavedListMembership([{ listId: 7, add: true }, { listId: 8, add: true }, { listId: 99, add: true }]);
+      membershipOf(h).save([{ listId: 7, add: true }, { listId: 8, add: true }, { listId: 99, add: true }]);
 
       expect(h.api.updateSavedList).toHaveBeenCalledTimes(2);
       expect(h.toast.success).toHaveBeenCalledWith('2 saved lists updated');
@@ -1284,7 +1299,7 @@ describe('HomeComponent', () => {
       h.c.handleSelectCustomer(A);
       h.app.setSavedLists.mockClear();
 
-      h.c.handleSaveSavedListMembership([{ listId: 40, add: true }]);
+      membershipOf(h).save([{ listId: 40, add: true }]);
 
       expect(h.c.teamSavedLists()[0].includedCustomerIds).toEqual([1]);
       expect(h.api.updateSavedList).toHaveBeenCalledWith(40, expect.objectContaining({ includedCustomerIds: [1] }));
@@ -1293,9 +1308,9 @@ describe('HomeComponent', () => {
 
     it('does nothing without a selected producer or without changes', () => {
       const h = setup({ arrange: api => api.getSavedLists.mockReturnValue(of([savedList(7)])) });
-      h.c.handleSaveSavedListMembership([{ listId: 7, add: true }]);
+      membershipOf(h).save([{ listId: 7, add: true }]);
       h.c.handleSelectCustomer(A);
-      h.c.handleSaveSavedListMembership([]);
+      membershipOf(h).save([]);
       expect(h.api.updateSavedList).not.toHaveBeenCalled();
     });
 

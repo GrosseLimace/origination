@@ -8,6 +8,7 @@ import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { PermissionService } from '@core/access/permission.service';
+import { SavedListMembership, SavedListMembershipChange } from '@core/context/saved-list-membership';
 import type { SavedList } from '@models';
 import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
 import { HomeBackgroundFailures } from './home-background-failures';
@@ -16,15 +17,16 @@ import { HomePageState } from './home-page.state';
 /**
  * Saved lists on the producer page: the user's own lists and (for a manager) the team's lists tied
  * to the selected trade units, each resolved locally into the producers it holds, and the profile
- * header's Add-to-List membership save. Provided by HomeComponent, which exposes these signals and
- * calls in when the data the lists resolve against arrives.
+ * header's Add-to-List membership save. Provided by HomeComponent, which calls in when the data the
+ * lists resolve against arrives, and provides it as the SavedListMembership that the Lists module's
+ * Add to List reads.
  *
  * A list stores an NLQ query, refinement filters and manual include/exclude overrides; which
  * producers it holds is computed here from the page's loaded data (enrichSavedLists) and cached on
  * the list as customerIds.
  */
 @Injectable()
-export class HomeSavedListsStore {
+export class HomeSavedListsStore implements SavedListMembership {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
   private readonly msalService = inject(MsalService);
@@ -51,12 +53,14 @@ export class HomeSavedListsStore {
   /** Saved lists sharing at least one trade unit with the current selection — the lists a producer
    *  can be quick-added to from the profile header. Reads the enriched savedLists() so the
    *  Add-to-List checkboxes stay reactive after a toggle. */
-  readonly savedListsForSelectedCustomer = computed<SavedList[]>(() =>
+  readonly ownLists = computed<SavedList[]>(() =>
     filterSavedListsByTradeUnitOverlap(this.savedLists(), this.page.selectedTradeUnits()));
   /** Manager-only team lists the producer can be quick-added to. Already TU-scoped (overlap) by the
    *  server; enriched locally so the checkboxes reflect query-derived membership too. */
-  readonly teamListsForSelectedCustomer = computed<SavedList[]>(() =>
+  readonly teamLists = computed<SavedList[]>(() =>
     this.page.selectedTradeUnits().length === 0 ? [] : this.teamSavedLists());
+  /** The user's own lists failed to load. Kept in AppStateService, which Build a List reads too. */
+  readonly ownListsLoadFailed = this.appState.savedListsLoadFailed;
 
   /** Loads the user's own lists (and, once, the query library their categories resolve against),
    *  then resolves them. */
@@ -218,7 +222,7 @@ export class HomeSavedListsStore {
    * via a full PUT (updateSavedList blanks omitted fields, so every field is sent). One success
    * notification when all succeed; reverts everything on any error.
    */
-  saveMembership(changes: { listId: number; add: boolean }[]): void {
+  save(changes: readonly SavedListMembershipChange[]): void {
     const customer = this.page.selectedCustomer();
     if (!customer || changes.length === 0) return;
     const cid = customer.id;

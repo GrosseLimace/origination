@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, Type, computed, inject, input, outp
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
+import { SavedListMembership } from '@core/context/saved-list-membership';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, Params, Router } from '@angular/router';
@@ -63,7 +64,7 @@ class StubList {
 
 @Component({
   selector: 'app-customer-profile', standalone: true, changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<div data-testid="profile">name:{{ customer().name }}|contracts:{{ ids(contracts()) }}|tickets:{{ ids(tickets()) }}|planting:{{ ids(plantingIntentions()) }}|grain:{{ ids(storedGrain()) }}|loadingContracts:{{ isLoadingContracts() }}|contractsError:{{ contractsLoadError() }}|linked:{{ ids(linkedCustomers()) }}|lists:{{ ids(savedListsForCustomer()) }}|openContract:{{ openContractId() }}|estimates:{{ yieldEstimates().length }}</div>`,
+  template: `<div data-testid="profile">name:{{ customer().name }}|contracts:{{ ids(contracts()) }}|tickets:{{ ids(tickets()) }}|planting:{{ ids(plantingIntentions()) }}|grain:{{ ids(storedGrain()) }}|loadingContracts:{{ isLoadingContracts() }}|contractsError:{{ contractsLoadError() }}|linked:{{ ids(linkedCustomers()) }}|lists:{{ ids(savedLists.ownLists()) }}|openContract:{{ openContractId() }}|estimates:{{ yieldEstimates().length }}</div>`,
 })
 class StubProfile {
   readonly ids = ids;
@@ -91,18 +92,16 @@ class StubProfile {
   // The deep-linked contract reaches the screen's pieces through SelectedCustomerContext, as the contracts tab reads it.
   private readonly screen = inject(SelectedCustomerContext);
   readonly openContractId = computed(() => this.screen.link().contractId ?? null);
+  // The lists Add to List offers reach it through SavedListMembership, which the page provides.
+  readonly savedLists = inject(SavedListMembership);
   readonly openTab = input<unknown>();
   readonly openTicketCrop = input<unknown>();
   readonly openPlantingYear = input<unknown>();
-  readonly savedListsForCustomer = input<SavedList[]>([]);
-  readonly teamListsForCustomer = input<unknown>();
-  readonly canEditTeamLists = input<unknown>();
   readonly onAddPlanting = output<unknown>();
   readonly onEditPlanting = output<unknown>();
   readonly onDeletePlanting = output<number>();
   readonly onSelectLinkedCustomer = output<number>();
   readonly onContractsWideChange = output<boolean>();
-  readonly onSaveSavedListMembership = output<{ listId: number; add: boolean }[]>();
 }
 
 @Component({

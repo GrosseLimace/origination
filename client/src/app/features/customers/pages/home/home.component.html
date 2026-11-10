@@ -60,11 +60,7 @@
             (onSelectLinkedCustomer)="handleSelectLinkedCustomer($event)"
             [openTab]="pendingTab()"
             [openPlantingYear]="pendingPlantingYear()"
-            [savedListsForCustomer]="savedListsForSelectedCustomer()"
-            [teamListsForCustomer]="teamListsForSelectedCustomer()"
-            [canEditTeamLists]="canEditTeamLists()"
-            (onContractsWideChange)="contractsWide.set($event)"
-            (onSaveSavedListMembership)="handleSaveSavedListMembership($event)">
+            (onContractsWideChange)="contractsWide.set($event)">
           </app-customer-profile>
         } @else {
           <!-- Empty state — shown on desktop when no customer is selected -->
