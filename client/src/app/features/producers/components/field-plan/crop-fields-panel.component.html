@@ -98,7 +98,8 @@
     @if (remaining() < 0) {
       <div class="rounded-md bg-amber-50 dark:bg-amber-900/30 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
         Fields add up to {{ inFields() | number }} ac, {{ -remaining() | number }} more than the {{ intention().acres | number }} ac on this row.
-        <button type="button" class="ml-1 font-medium underline bg-transparent border-0 p-0 text-inherit" (click)="updateTotal.emit(inFields())">
+        <!-- Opens the intention's Edit dialog, so only for a user who may change intentions. -->
+        <button *appHasPermission="'planting-intentions:write'" type="button" class="ml-1 font-medium underline bg-transparent border-0 p-0 text-inherit" (click)="updateTotal.emit(inFields())">
           Update total to {{ inFields() | number }}
         </button>
       </div>

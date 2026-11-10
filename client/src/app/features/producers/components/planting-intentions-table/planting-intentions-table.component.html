@@ -1,7 +1,7 @@
 
 @if (customer(); as producer) {
     <div class="w-full">
-      @if (fieldPlanningEnabled) {
+      @if (showFieldPlan()) {
         <!-- Per-program summary for the plan year: the producer's fields, CI ladder and ledger -->
         @for (program of programs; track program.key) {
           <app-program-enrollment-card class="block [&:not(:empty)]:mb-3" [programKey]="program.key" [customerId]="producer.id" [year]="fieldPlanYear"
@@ -22,7 +22,7 @@
             </svg>
             <p class="mt-2">No planting intentions recorded for this producer</p>
           </div>
-          <div class="flex justify-center">
+          <div class="flex justify-center" *appHasPermission="'planting-intentions:write'">
             <app-button variant="default" (onClick)="openAddDialog()">
               <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -56,7 +56,7 @@
                 <div class="flex-1">
                   <div class="font-medium text-gray-900 dark:text-white">{{ rowCropLabel(intention) }}</div>
                 </div>
-                <button
+                <button *appHasPermission="'planting-intentions:write'"
                   type="button"
                   class="h-10 w-10 inline-flex items-center justify-center text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green bg-transparent border-0 p-0"
                   (click)="openEditDialog(intention)"
@@ -81,7 +81,7 @@
                   <div class="text-sm text-gray-900 dark:text-white">{{ intention.tradeUnit || '—' }}</div>
                 </div>
               </div>
-              @if (fieldPlanningEnabled) {
+              @if (showFieldPlan()) {
                 <div class="mt-3 -mx-1 border-t border-gray-100 dark:border-gray-700 pt-2">
                   <app-crop-fields-panel [intention]="intention" [customer]="producer" [cropLabel]="rowCropLabel(intention)" (updateTotal)="updateTotalFromFields(intention, $event)" (expandedChange)="setActiveCrop(intention.id, $event)" />
                 </div>
@@ -178,7 +178,7 @@
                 </app-table-head>
                 <app-table-head class="w-[22%]">
                   <div class="flex justify-center">
-                    <button type="button" (click)="openAddDialog()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green transition-colors">
+                    <button *appHasPermission="'planting-intentions:write'" type="button" (click)="openAddDialog()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green transition-colors">
                       <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
                       </svg>
@@ -209,7 +209,7 @@
                 }
 
                 <!-- Data Row (with 45Z on, it shares its bottom border with the 45Z line below) -->
-                <app-table-row [class]="fieldPlanningEnabled ? '!border-b-0 ' + (activeIntentionId() === intention.id ? '!bg-scoular-green-accessible/5 dark:!bg-scoular-green/10' : 'even:!bg-transparent') : ''">
+                <app-table-row [class]="showFieldPlan() ? '!border-b-0 ' + (activeIntentionId() === intention.id ? '!bg-scoular-green-accessible/5 dark:!bg-scoular-green/10' : 'even:!bg-transparent') : ''">
                   <app-table-cell class="text-center">{{ rowCropLabel(intention) }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.acres | number }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.plantingYear }}</app-table-cell>
@@ -222,7 +222,7 @@
                   </app-table-cell>
                   <app-table-cell class="w-[22%]">
                     <div class="flex justify-center">
-                      <button
+                      <button *appHasPermission="'planting-intentions:write'"
                         type="button"
                         class="h-7 w-7 inline-flex items-center justify-center text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green bg-transparent border-0 p-0"
                         (click)="openEditDialog(intention)"
@@ -236,7 +236,7 @@
                 </app-table-row>
                 <!-- Fields line: indented under the crop with a left rule, no divider above, so it reads as
                      part of the row it belongs to rather than a row of its own. Expands to the field list. -->
-                @if (fieldPlanningEnabled) {
+                @if (showFieldPlan()) {
                   <app-table-row [class]="activeIntentionId() === intention.id ? '!bg-scoular-green-accessible/5 dark:!bg-scoular-green/10' : 'even:!bg-transparent'">
                     <app-table-cell [colspan]="5" tdClass="!pt-0 !pb-3 !pl-10 !whitespace-normal">
                       <div class="border-l-2 pl-2 border-scoular-green-accessible/50 dark:border-scoular-green/50">

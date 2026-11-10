@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, inject, DestroyRef, effect, signal } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, computed, inject, DestroyRef, effect, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -19,6 +19,8 @@ import { ProgramEnrollmentCardComponent } from '../field-plan/programs/program-e
 import { ProgramRegistry } from '../field-plan/programs/program-registry';
 import { FieldPlanStore } from '../field-plan/store/field-plan.store';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { HasPermissionDirective } from '@core/access/has-permission.directive';
+import { PermissionService } from '@core/access/permission.service';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { SelectedProducerProduction } from '@core/context/selected-producer-production';
 
@@ -50,12 +52,13 @@ type PlantingRow = PlantingIntention;
     DialogFooterComponent,
     InputComponent,
     CropFieldsPanelComponent,
-    ProgramEnrollmentCardComponent
+    ProgramEnrollmentCardComponent,
+    HasPermissionDirective
   ],
   templateUrl: './planting-intentions-table.component.html',
   // State written outside a template event is a signal: the API responses (trade units, both
   // commodity lists), the suggestion lists' close timers, and the dialog flags (the parent opens the
-  // Add dialog through @ViewChild). The response that fills addForm.tradeUnit marks the view. The
+  // Add dialog by calling openAddDialog()). The response that fills addForm.tradeUnit marks the view. The
   // remaining plain fields (forms, crop search, sort, selected row) change only from template events.
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -311,11 +314,14 @@ export class PlantingIntentionsTableComponent {
   // ── Fields under each crop row + sustainability programs (prototype, behind fieldPlanningEnabled) ──
   // The row's acres stay the total; fields only break it down (FieldPlanStore).
   readonly fieldPlanningEnabled = environment.fieldPlanningEnabled;
+  private readonly permissions = inject(PermissionService);
+  /** The field plan shows, and loads, only for a user who may read field plans. */
+  readonly showFieldPlan = computed(() => this.fieldPlanningEnabled && this.permissions.has('field-plans:read'));
   private readonly fieldPlan = inject(FieldPlanStore);
   /** Brings the producer's fields and program data in when the producer is shown (once per producer). */
   private readonly _loadFieldPlan = effect(() => {
     const customerId = this.customer()?.id;
-    if (this.fieldPlanningEnabled && customerId != null) this.fieldPlan.ensureLoaded(customerId);
+    if (this.showFieldPlan() && customerId != null) this.fieldPlan.ensureLoaded(customerId);
   });
   /** One summary card per program; each shows only once the producer has a field in it. */
   readonly programs = inject(ProgramRegistry).all.filter(p => !!p.enrollment);

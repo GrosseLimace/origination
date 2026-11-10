@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { CtrmSplit } from '@models';
-import { splitFromText, splitIdFromText } from './crop-fields-panel.component';
+import { TestBed } from '@angular/core/testing';
+import { CtrmSplit, Customer, FieldSeason, PlantingIntention } from '@models';
+import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
+import { CtrmSplitApiService } from '../../data-access/ctrm-split-api.service';
+import { FdCicApiService } from '../../data-access/fd-cic-api.service';
+import { CropFieldsPanelComponent, splitFromText, splitIdFromText } from './crop-fields-panel.component';
+import { ProgramRegistry } from './programs/program-registry';
+import { FieldPlanStore } from './store/field-plan.store';
 
 const split = (splitId: string, fieldName: string): CtrmSplit => ({
   splitId, fieldName, primaryCustomerId: 'TATOBIN', name: `TATOBIN - ${fieldName}`, splitPercent: 100, effectiveDate: '2018-10-01', expired: false, kind: 'Field',
@@ -36,5 +42,51 @@ describe('splitIdFromText (a split ID typed by hand)', () => {
     expect(splitIdFromText('TATOB430')).toBeUndefined();
     expect(splitIdFromText('TA-TOB')).toBeUndefined();
     expect(splitIdFromText('  ')).toBeUndefined();
+  });
+});
+
+// "Update total" opens the intention's Edit dialog, so it shows only to a user who may change intentions.
+describe('CropFieldsPanelComponent — "Update total" when the fields add up to more than the row', () => {
+  let access: PermissionStub;
+
+  function render(granted: Parameters<typeof permissionStub>[0]) {
+    access = permissionStub(granted);
+    // One field of 300 ac under a 250 ac row.
+    const season: FieldSeason = { id: 's1', fieldKey: 'f1', plantingIntentionId: 1, year: 2026, cropLabel: 'Corn', acres: 300 };
+    TestBed.configureTestingModule({
+      providers: [
+        providePermissions(access),
+        {
+          provide: FieldPlanStore,
+          useValue: {
+            isLoaded: () => true, loadFailed: () => false, seasonsForIntention: () => [season], hasLocked: () => false,
+            field: () => ({ name: 'North', splitId: 'TATOB02', county: 'Pratt', state: 'KS', splitPercent: 100 }),
+            forSeason: () => [], find: () => undefined, enrollmentIdOf: () => undefined,
+          },
+        },
+        { provide: ProgramRegistry, useValue: { eligible: () => [], get: () => undefined } },
+        { provide: FdCicApiService, useValue: {} },
+        { provide: CtrmSplitApiService, useValue: {} },
+      ],
+    });
+    const fixture = TestBed.createComponent(CropFieldsPanelComponent);
+    fixture.componentRef.setInput('intention', { id: 1, plantingYear: 2026, acres: 250 } as PlantingIntention);
+    fixture.componentRef.setInput('customer', { id: 42, scoularId: 'SAMPFRM', name: 'Sample Farms' } as Customer);
+    fixture.componentRef.setInput('cropLabel', 'Corn');
+    fixture.componentInstance.expanded.set(true);
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  it('offers it only to a user who may change intentions', () => {
+    const fixture = render(['field-plans:read']);
+    const text = () => (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text()).toContain('more than the 250 ac on this row');
+    expect(text()).not.toContain('Update total to 300');
+
+    access.grant('field-plans:read', 'planting-intentions:write');
+    fixture.detectChanges();
+
+    expect(text()).toContain('Update total to 300');
   });
 });

@@ -7,6 +7,7 @@ import { CtrmSplitApiService } from '../../data-access/ctrm-split-api.service';
 import { CtrmSplit, Customer, FieldSeason, PlantingIntention } from '@models';
 import { ProgramRegistry } from './programs/program-registry';
 import { FieldSeasonDialogComponent } from './field-season-dialog.component';
+import { HasPermissionDirective } from '@core/access/has-permission.directive';
 
 /**
  * The split the add-field type-ahead text points at: its ID typed or picked ("TATOB43 · JARBOE WEST",
@@ -43,7 +44,7 @@ export function splitIdFromText(text: string): string | undefined {
 @Component({
   selector: 'app-crop-fields-panel',
   standalone: true,
-  imports: [CommonModule, FormsModule, FieldSeasonDialogComponent],
+  imports: [CommonModule, FormsModule, FieldSeasonDialogComponent, HasPermissionDirective],
   templateUrl: './crop-fields-panel.component.html',
   styleUrl: './field-plan.css',
 })

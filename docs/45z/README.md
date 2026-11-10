@@ -110,6 +110,7 @@ The proposed tables, rules and endpoints are written up for approval in
   - `FieldProgramRecord.Official` (JSON, nullable): the official result, kept apart from the estimate (see
     [Estimate vs confirmed (official) CI](#estimate-vs-confirmed-official-ci)). It may become its own table once its shape is known.
 - Access is the same as planting intentions: `field-plans:read` to see a producer's field plan and `field-plans:write` to change it, on any producer (accepted risks AR-01 to AR-03). The FD-CIC calculator needs `carbon-intensity:read`.
+  - In the app, the Planting tab shows and loads the field plan only for a user with `field-plans:read`, and "Update total" needs `planting-intentions:write`, since it opens the intention's Edit dialog. The field plan's own controls aren't hidden from a user without `field-plans:write` yet; the API refuses their changes.
 - The server owns these rules:
   - a split is one producer's field (a split another producer holds is refused);
   - locking the harvest estimate, which rescores with `FdCicService` rather than trusting the client's number.

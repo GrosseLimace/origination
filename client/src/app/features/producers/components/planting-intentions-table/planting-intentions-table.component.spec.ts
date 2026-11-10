@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { NEVER, of, Subject } from 'rxjs';
@@ -7,6 +7,8 @@ import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
+import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
+import { FieldPlanStore } from '../field-plan/store/field-plan.store';
 import { Commodity, Customer, PlantingIntention } from '@models';
 import { CustomersApiService } from '@features/customers';
 import { SelectedProducerProductionFake, provideSelectedProducerProduction, selectedProducerProductionFake } from '@testing/selected-producer-production.fake';
@@ -66,6 +68,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
         { provide: ToastService, useValue: { error: () => {}, success: () => {} } },
         provideSelectedProducerProduction(production),
         { provide: SelectedCustomerContext, useValue: { customer } },
+        providePermissions(permissionStub(['planting-intentions:write', 'field-plans:read'])),
         {
           provide: TradeUnitContext,
           useValue: {
@@ -309,7 +312,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
 
 // The same component through its REAL template. Everything above drives the class with the template
 // blanked, which cannot show whether a change reaches the screen. These tests cover each way the view
-// changes without a template event of its own: the parent opening the Add dialog through @ViewChild,
+// changes without a template event of its own: a caller opening the Add dialog with openAddDialog(),
 // the producer's trade units and the commodity lists answering after the dialog or table rendered,
 // and the crop suggestions closing on a timer after the search box loses focus.
 describe('PlantingIntentionsTableComponent — rendering', () => {
@@ -359,6 +362,7 @@ describe('PlantingIntentionsTableComponent — rendering', () => {
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
         provideSelectedProducerProduction(production),
         { provide: SelectedCustomerContext, useValue: { customer } },
+        providePermissions(permissionStub(['planting-intentions:write', 'field-plans:read'])),
         {
           provide: TradeUnitContext,
           useValue: {
@@ -380,7 +384,7 @@ describe('PlantingIntentionsTableComponent — rendering', () => {
   });
 
   it('opens the Add dialog when the parent calls openAddDialog()', () => {
-    // customer-profile's own "Add" button calls this through @ViewChild: no event in THIS view.
+    // Called from outside this view: no event in THIS view.
     expect(openDialogTitles()).toEqual([]);
 
     component.openAddDialog();
@@ -506,5 +510,82 @@ describe('PlantingIntentionsTableComponent — rendering', () => {
 
     expect(component.showDeleteConfirm()).toBe(false);
     expect(text()).not.toContain('Delete Planting Intention?');
+  });
+});
+
+// What the user may do: adding and editing intentions needs planting-intentions:write, and the field plan shows and
+// loads only for a user who may read field plans. Rendered through the real template.
+describe('PlantingIntentionsTableComponent — permissions', () => {
+  let fixture: ComponentFixture<PlantingIntentionsTableComponent>;
+  let access: PermissionStub;
+  let production: SelectedProducerProductionFake;
+  let ensureLoaded: ReturnType<typeof vi.spyOn>;
+
+  const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
+  const buttonsLabelled = (label: string): HTMLButtonElement[] =>
+    Array.from(host().querySelectorAll<HTMLButtonElement>('button')).filter(b => (b.textContent ?? '').trim() === label);
+  /** The pencil that opens a row's Edit dialog: one per row in the mobile cards and one in the desktop table. */
+  const editButtons = (): Element[] => Array.from(host().querySelectorAll('button path[d^="M15.232"]'));
+  const fieldPlanParts = (): number => host().querySelectorAll('app-crop-fields-panel, app-program-enrollment-card').length;
+
+  function render(granted: Parameters<typeof permissionStub>[0], intentions = [makeIntention({ id: 1 })]): void {
+    access = permissionStub(granted);
+    production = selectedProducerProductionFake();
+    production.visiblePlantingIntentions.set(intentions);
+    ensureLoaded = vi.spyOn(FieldPlanStore.prototype, 'ensureLoaded').mockImplementation(() => undefined);
+    TestBed.configureTestingModule({
+      imports: [PlantingIntentionsTableComponent],
+      providers: [
+        { provide: CustomersApiService, useExisting: ApiService },
+        { provide: ApiService, useValue: { getCommodities: () => of([]), getPlantingCommodities: () => of([]), getCustomerTradeUnits: () => of([]) } },
+        { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
+        {
+          provide: TradeUnitContext,
+          useValue: { inScopeTradeUnitCodes: signal<readonly string[]>([]), inScopeGroupNames: signal<readonly string[]>([]), tradeUnitDescriptions: signal(new Map()) },
+        },
+        provideSelectedProducerProduction(production),
+        { provide: SelectedCustomerContext, useValue: { customer: signal<Customer | null>(makeCustomer()) } },
+        providePermissions(access),
+      ],
+    });
+    fixture = TestBed.createComponent(PlantingIntentionsTableComponent);
+    fixture.detectChanges();
+  }
+
+  afterEach(() => ensureLoaded.mockRestore());
+
+  it('hides Add and every row\'s edit from a user who may not change intentions, and shows them once they may', () => {
+    render(['field-plans:read']);
+    expect(buttonsLabelled('Add Intention')).toHaveLength(0);
+    expect(editButtons()).toHaveLength(0);
+
+    access.grant('planting-intentions:write', 'field-plans:read');
+    fixture.detectChanges();
+
+    expect(buttonsLabelled('Add Intention')).toHaveLength(1);
+    expect(editButtons()).toHaveLength(2);
+  });
+
+  it('offers "Add Planting Intention" on an empty tab only to a user who may change intentions', () => {
+    render([], []);
+    expect(host().textContent).toContain('No planting intentions recorded for this producer');
+    expect(host().textContent).not.toContain('Add Planting Intention');
+
+    access.grant('planting-intentions:write');
+    fixture.detectChanges();
+
+    expect(host().textContent).toContain('Add Planting Intention');
+  });
+
+  it('shows the field plan, and loads it, only for a user who may read field plans', () => {
+    render(['planting-intentions:write']);
+    expect(fieldPlanParts()).toBe(0);
+    expect(ensureLoaded).not.toHaveBeenCalled();
+
+    access.grant('planting-intentions:write', 'field-plans:read');
+    fixture.detectChanges();
+
+    expect(host().querySelectorAll('app-crop-fields-panel')).toHaveLength(2);
+    expect(ensureLoaded).toHaveBeenCalledWith(42);
   });
 });
