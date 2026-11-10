@@ -99,11 +99,13 @@ export interface CustomerContribution {
 }
 
 /**
- * The places on the customer screen a panel can go. On the profile: `badges` beside the name, `actions` in the button
- * row, `details` in the details row, `summary` between the header and the tabs. On the home page: `sidebar`, the right
- * column, and `floating`, the launcher over the page.
+ * The places on the customer screen a panel can go. On the profile: `badges` beside the name, and `badge-panels` under
+ * it for what a badge opens; `actions` in the button row; `details` in the details row, and inside its Contact column
+ * `contacts` above the customer's address and `locations` below its phone and email; `summary` between the header and
+ * the tabs. On the home page: `sidebar`, the right column, and `floating`, the launcher over the page.
  */
-export type CustomerSlot = 'badges' | 'actions' | 'details' | 'summary' | 'sidebar' | 'floating';
+export type CustomerSlot =
+  | 'badges' | 'badge-panels' | 'actions' | 'details' | 'contacts' | 'locations' | 'summary' | 'sidebar' | 'floating';
 
 /** A panel on the customer screen. */
 export interface CustomerPanel extends CustomerContribution {

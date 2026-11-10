@@ -1,4 +1,4 @@
-import { Component, forwardRef, input, output, inject, effect, computed, linkedSignal, ChangeDetectionStrategy, ViewChild, ElementRef, signal, DestroyRef, HostListener, Injector, Signal, runInInjectionContext, untracked } from '@angular/core';
+import { Component, forwardRef, input, output, inject, effect, computed, ChangeDetectionStrategy, ViewChild, ElementRef, signal, DestroyRef, HostListener, Injector, Signal, runInInjectionContext, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { ApiService } from '@core/services/api.service';
@@ -11,13 +11,9 @@ import { EditCustomerDialogComponent } from '../edit-customer-dialog/edit-custom
 import { CustomerPrintReportComponent } from '../customer-print-report/customer-print-report.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, Contract, Ticket, PlantingIntention, PlantingIntentionDraft, PlantingIntentionEdit, StoredGrain, DpContract, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList, ProducerContactItem, GrainOnFarmItem } from '@models';
-import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
-import { formatLastBid, grainOnFarmTitle, indexCommoditiesByCode } from '@shared/utils/grain-on-farm';
-import { isOrganicSectionVisible } from '@shared/utils/organic-visibility';
+import { Customer, Contract, Ticket, PlantingIntention, PlantingIntentionDraft, PlantingIntentionEdit, StoredGrain, DpContract, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList } from '@models';
 import { formatPhoneDisplay } from '@shared/utils/phone';
-import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl, googleMapsCoordinatesUrl } from '@shared/utils/address';
-import { binSiteHasCoordinates } from '@shared/utils/coordinates';
+import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl } from '@shared/utils/address';
 import { buildProductionCoverage } from '@shared/utils/production-coverage';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { SelectedProducerProduction } from '@core/context/selected-producer-production';
@@ -25,6 +21,7 @@ import { SelectedCustomerContext } from '@core/context/selected-customer-context
 import { CustomerTab } from '@core/modules/module-manifest';
 import { ModuleRegistry } from '@core/modules/module-registry';
 import { CustomerContributionComponent } from '@core/modules/customer-contribution.component';
+import { CustomerSlotComponent } from '@core/modules/customer-slot.component';
 
 /** One tab in the producer profile's tab strip, with its count badge. */
 interface ProfileTab {
@@ -46,6 +43,7 @@ interface ProfileTab {
   imports: [
     CommonModule,
     CustomerContributionComponent,
+    CustomerSlotComponent,
     ProducerInsightsComponent,
     ContractPacingCardComponent,
     GrowthOpportunityComponent,
@@ -83,107 +81,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
   public customer = input.required<Customer>();
   public allCustomers = input<Customer[]>([]);
 
-  // ── Grain on Farm (per-commodity total + sold + target) ──────────────────────
-  /** Grain-on-farm rows with a positive total or sold, a target or last bid, or a grade entered —
-   *  grouped by bin site in the sites' order (rows not tied to a site last), total desc within a site. */
-  readonly grainOnFarmRows = computed(() => {
-    const siteOrder = new Map((this.customer().binSites ?? []).map((b, i) => [b.siteKey, i]));
-    const orderOf = (key: string | null | undefined) => (key ? siteOrder.get(key) : undefined) ?? Number.MAX_SAFE_INTEGER;
-    return (this.customer().grainOnFarm ?? [])
-      .filter(g => (g.bushelsOnHand ?? 0) > 0 || (g.bushelsSold ?? 0) > 0 || g.targetBushels != null || g.lastBid != null || !!(g.grade ?? '').trim())
-      .sort((a, b) => orderOf(a.binSiteKey) - orderOf(b.binSiteKey) || (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0));
-  });
-  /** The rows grouped by bin site for the table: one group per site in site order, then the rows not
-   *  tied to a site. The label is the site name; the unlinked group is labelled only when sites are
-   *  present too, so a producer with no linked grain shows a plain table as before. */
-  readonly grainOnFarmGroups = computed(() => {
-    const groups: { key: string | null; label: string; rows: GrainOnFarmItem[] }[] = [];
-    for (const g of this.grainOnFarmRows()) {
-      const key = g.binSiteKey ?? null;
-      let group = groups.find(x => x.key === key);
-      if (!group) {
-        group = { key, label: key ? (g.binSiteName?.trim() || 'Bin site') : '', rows: [] };
-        groups.push(group);
-      }
-      group.rows.push(g);
-    }
-    const unlinked = groups.find(x => x.key === null);
-    if (unlinked && groups.length > 1) unlinked.label = 'Not tied to a bin site';
-    return groups;
-  });
-  /** With grain at more than one bin site, each site is a closed line ("North Bins · 2 crops · 35,000 bu")
-   *  until the user opens it (user 2026-10-12: a producer with many bins showed too much at once). With one
-   *  site — or no sites — the table shows open, as before. */
-  readonly grainGroupsCollapsible = computed(() => this.grainOnFarmGroups().length > 1);
-  /** Open site groups, by index into grainOnFarmGroups (site order). All closed again when the producer changes. */
-  readonly openGrainGroups = linkedSignal<number, ReadonlySet<number>>({ source: () => this.customer().id, computation: () => new Set() });
-  isGrainGroupOpen(index: number): boolean {
-    return !this.grainGroupsCollapsible() || this.openGrainGroups().has(index);
-  }
-  toggleGrainGroup(index: number): void {
-    this.openGrainGroups.update(open => {
-      const next = new Set(open);
-      if (!next.delete(index)) next.add(index);
-      return next;
-    });
-  }
-  /** The crop column headings show once there is a row to label. */
-  readonly anyGrainGroupOpen = computed(() => !this.grainGroupsCollapsible() || this.openGrainGroups().size > 0);
-  /** A closed site's line: "2 crops · 35,000 bu". */
-  grainGroupSummary(rows: readonly GrainOnFarmItem[]): string {
-    const bushels = rows.reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0);
-    return `${rows.length} crop${rows.length === 1 ? '' : 's'} · ${bushels.toLocaleString('en-US')} bu`;
-  }
-  /** Total bushels currently on the farm (sum of per-commodity on-hand). */
-  readonly grainOnFarmTotal = computed(() =>
-    (this.customer().grainOnFarm ?? []).reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0));
-  // The two dropdowns remember an explicit close in localStorage (same pattern and reasons as
-  // ActivitySummaryComponent: the profile is torn down between producers, and someone who closed a
-  // section expects it to stay closed after a reload). Open by default.
-  private static readonly GRAIN_COLLAPSED_KEY = 'origination.profile.grainOnFarm.collapsed';
-  private static readonly BIN_SITES_COLLAPSED_KEY = 'origination.profile.binSites.collapsed';
-
-  private static readCollapsed(key: string): boolean {
-    try {
-      return localStorage.getItem(key) === 'true';
-    } catch {
-      return false;
-    }
-  }
-
-  private static writeCollapsed(key: string, collapsed: boolean): void {
-    try {
-      localStorage.setItem(key, collapsed ? 'true' : 'false');
-    } catch {
-      // Private browsing / storage disabled — the toggle still works for this session.
-    }
-  }
-
-  /** Whether the grain-on-farm breakdown is expanded in the profile header. Open by default and left however
-   *  the user set it — across producers and reloads, like the Activity Summary (user 2026-10-12); only an
-   *  explicit close is remembered. */
-  showGrainOnFarm = signal(!CustomerProfileComponent.readCollapsed(CustomerProfileComponent.GRAIN_COLLAPSED_KEY));
-  /** The breakdown is on screen: expanded and something to show. The template also widens the grid
-   *  for it (Contact spans both rows while the table spans Farm Details + Harvest Contract Pace). */
-  readonly grainOnFarmOpen = computed(() => this.showGrainOnFarm() && this.grainOnFarmRows().length > 0);
-  /** Expand/collapse the breakdown — only when there's something to show. (Editing the values
-   *  lives in the Edit Producer dialog; this is a read-only summary.) */
-  toggleGrainOnFarm(): void {
-    if (this.grainOnFarmRows().length === 0) return;
-    this.showGrainOnFarm.update(v => !v);
-    CustomerProfileComponent.writeCollapsed(CustomerProfileComponent.GRAIN_COLLAPSED_KEY, !this.showGrainOnFarm());
-  }
-
-  // Rows hold a commodity code (or a legacy crop-group name); hover on the Crop cell shows the
-  // commodity name. Lazy computeds, so reading the `commodities` input declared further down is safe.
-  private readonly _grainLookup = computed(() => buildCropGroupLookup(this.commodities()));
-  private readonly _grainByCode = computed(() => indexCommoditiesByCode(this.commodities()));
-  /** Hover text for a grain-on-farm crop: the commodity name, or the legacy-row note. */
-  grainChipTitle(value: string): string {
-    return grainOnFarmTitle(value, this._grainByCode(), this._grainLookup());
-  }
-  /** Last Bid as typed: no "$", no padded decimals. */
-  readonly formatLastBid = formatLastBid;
   public selectedTradeUnits = input<string[]>([]);
   /** The page's trade-unit save for this producer is still running; the edit dialog keeps Save off meanwhile. */
   public isSavingTradeUnits = input(false);
@@ -254,43 +151,10 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
     this.usageTracking.trackMapClick(this.customer().id.toString());
   }
 
-  trackBinSiteMapClick(): void {
-    this.usageTracking.trackBinSiteMapClick(this.customer().id.toString());
-  }
-
-  /** Bin sites as rows of the compact table under the "Bin Sites (N)" toggle in Contact, in saved order, every
-   *  cell already formatted ("50,000", or "—" when empty). The coordinates aren't a column: the pin
-   *  opens them in Google Maps at full precision — or there's no pin when the site has none. */
-  readonly binSiteRows = computed(() => {
-    const bushels = (v: number | null | undefined) => (v == null ? '—' : v.toLocaleString('en-US'));
-    return (this.customer().binSites ?? []).map(site => ({
-      name: site.name?.trim() || 'Bin site',
-      capacity: bushels(site.capacity),
-      url: binSiteHasCoordinates(site) ? googleMapsCoordinatesUrl(site.latitude, site.longitude) : null,
-    }));
-  });
-
-  /** A producer with exactly one bin site: that site, shown on its own line in Contact (name · capacity ·
-   *  map pin) instead of a "Bin Sites (1)" toggle (user 2026-10-12). Null with none or several. */
-  readonly singleBinSite = computed(() => {
-    const rows = this.binSiteRows();
-    return rows.length === 1 ? rows[0] : null;
-  });
-
-  /** With two or more bin sites, the "▸ Bin Sites (N)" table — open by default and left however the user
-   *  set it, across producers and reloads (user 2026-10-12); only an explicit close is remembered. */
-  readonly binSitesExpanded = signal(!CustomerProfileComponent.readCollapsed(CustomerProfileComponent.BIN_SITES_COLLAPSED_KEY));
-
-  toggleBinSites(): void {
-    this.binSitesExpanded.update(open => !open);
-    CustomerProfileComponent.writeCollapsed(CustomerProfileComponent.BIN_SITES_COLLAPSED_KEY, !this.binSitesExpanded());
-  }
-
   // Local state - signals
   activeTab = signal('contracts');
   showProducerInsights = signal(false);
   showESignRecipients = signal(false);
-  showOrganicDetail = signal(false);
   showEditDialog = signal(false);
   showPrintReport = signal(false);
   showAddToListMenu = signal(false); // "Add to List" header dropdown open state
@@ -420,7 +284,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
       // If we arrived with an explicit openPlantingYear (e.g. from the dashboard), keep it.
       const _customer = this.customer();
       this.showESignRecipients.set(false);
-      this.showOrganicDetail.set(false);
       this.cancelAddToList();
       const pendingYear = this.openPlantingYear();
       if (pendingYear && pendingYear > 0) {
@@ -609,21 +472,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
    *  marketSharePercentage were dropped when the coverage breakdown moved to Growth Opportunity —
    *  that panel reads the same computed directly.) */
   get totalContracted(): number { return this.contractMetrics().totalContracted; }
-
-  /** Whether the organic badge shows for this producer. Two producer-level conditions OR'd —
-   *  the CTRM organic industry code, or a real NOP id on file. See @shared/utils/organic-visibility
-   *  for why both are needed when they overlap almost completely. */
-  readonly showOrganicBadge = computed(() => isOrganicSectionVisible({
-    industryCode2: this.customer()?.industryCode2,
-    nopId: this.customer()?.nopId,
-  }));
-
-  /** True while either expandable header panel is open. Drives the spacing on the farm line below
-   *  them — before the organic panel existed that binding keyed on eSign alone, which would have
-   *  left the farm name jammed against an open organic panel. */
-  readonly anyHeaderPanelOpen = computed(() =>
-    (this.customer()?.eSignEnabled === true && this.showESignRecipients()) || this.showOrganicDetail()
-  );
 
   /** Splits ScoularView recipients string into individual entries.
    *  Handles commas inside names (e.g., "Ade, Clay 785-555-1234") by only splitting
@@ -926,21 +774,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
   getMapsUrl(): string | null {
     return googleMapsSearchUrl(resolveCustomerAddress(this.customer()));
   }
-
-  /** User-entered contacts, primary first then saved order. Older cached customers without a
-   *  contacts array fall back to a synthesized row from the legacy primary fields. A computed, so the
-   *  copy-and-sort runs once per customer rather than on every change-detection pass of the template. */
-  readonly sortedContacts = computed<ProducerContactItem[]>(() => {
-    const c = this.customer();
-    if (c.contacts && c.contacts.length > 0) {
-      return [...c.contacts].sort((a, b) =>
-        (b.isPrimary ? 1 : 0) - (a.isPrimary ? 1 : 0) || (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-    }
-    if (c.primaryContact || c.primaryPhone) {
-      return [{ name: c.primaryContact || 'Primary Contact', phone: c.primaryPhone, isPrimary: true }];
-    }
-    return [];
-  });
 
   getFormattedLocation(): string {
     const c = this.customer();

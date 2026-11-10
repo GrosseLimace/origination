@@ -11,6 +11,11 @@ import { newestSeasonIntentionCount, preloadDashboardSummary, producersModule } 
 import { PlantingIntentionsTableComponent } from './components/planting-intentions-table/planting-intentions-table.component';
 import { StoredGrainTableComponent } from './components/stored-grain-table/stored-grain-table.component';
 import { DpContractsTableComponent } from './components/dp-contracts-table/dp-contracts-table.component';
+import { OrganicBadgeComponent } from './components/organic/organic-badge.component';
+import { OrganicPanelComponent } from './components/organic/organic-panel.component';
+import { ProducerContactsComponent } from './components/producer-contacts/producer-contacts.component';
+import { BinSitesComponent } from './components/bin-sites/bin-sites.component';
+import { FarmDetailsComponent } from './components/farm-details/farm-details.component';
 
 describe('Producers preload: the Planting Dashboard summary', () => {
   const summary: DashboardSummary = { estimates: [], marketShares: [], actualHarvest: [] };
@@ -122,5 +127,30 @@ describe("Producers module: the customer profile's tabs", () => {
     expect(await tab('planting').component()).toBe(PlantingIntentionsTableComponent);
     expect(await tab('storage').component()).toBe(StoredGrainTableComponent);
     expect(await tab('dpContracts').component()).toBe(DpContractsTableComponent);
+  });
+});
+
+describe("Producers module: the customer profile's header panels", () => {
+  const panels = () => producersModule.customerPanels!;
+
+  it('adds the Organic badge and its panel, the contacts, the bin sites and Farm Details, for producers only', () => {
+    expect(panels().map(p => [p.slot, p.id, p.order])).toEqual([
+      ['badges', 'organic-badge', 30],
+      ['badge-panels', 'organic-panel', 20],
+      ['contacts', 'contacts', 10],
+      ['locations', 'bin-sites', 10],
+      ['details', 'farm-details', 20],
+    ]);
+    for (const p of panels()) expect(p.segments).toEqual(['Producer']);
+  });
+
+  it("asks for the producer's saved details, which each of them reads", () => {
+    for (const p of panels()) expect(p.requires).toEqual(['producer-details:read']);
+  });
+
+  it('loads each panel as its component', async () => {
+    expect(await Promise.all(panels().map(p => p.component()))).toEqual([
+      OrganicBadgeComponent, OrganicPanelComponent, ProducerContactsComponent, BinSitesComponent, FarmDetailsComponent,
+    ]);
   });
 });

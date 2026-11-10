@@ -323,276 +323,17 @@ describe('CustomerProfileComponent — address map link', () => {
 // Covers the bin-site mini-table at the bottom of the Contact column: formatted cells (dashes when
 // empty), the exact-point map link only when a site has coordinates, and that the
 // table starts collapsed and re-collapses per producer.
-describe('CustomerProfileComponent — bin site table', () => {
-  let component: CustomerProfileComponent;
-  let ref: ComponentRef<CustomerProfileComponent>;
-  let tracking: { trackBinSiteMapClick: ReturnType<typeof vi.fn> };
-
-  beforeEach(() => {
-    localStorage.clear();
-    tracking = { trackBinSiteMapClick: vi.fn() };
-    TestBed.configureTestingModule({
-      providers: [
-        { provide: ApiService, useValue: {} },
-        { provide: ThemeService, useValue: {} },
-        provideSelectedProducerActivity(),
-        SelectedCustomerContext,
-        providePermissions(),
-        { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {}, ...tracking } },
-      ],
-    });
-    TestBed.overrideComponent(CustomerProfileComponent, {
-      set: { template: '', templateUrl: undefined, imports: [] },
-    });
-    const fixture = TestBed.createComponent(CustomerProfileComponent);
-    component = fixture.componentInstance;
-    ref = fixture.componentRef;
-  });
-
-  it('builds one table row per site, in saved order, with every cell formatted', () => {
-    ref.setInput('customer', makeCustomer({
-      binSites: [
-        { name: 'Anderson Site', latitude: 39.115876, longitude: -95.143955, capacity: 50000, sortOrder: 0 },
-        { name: 'North Quarter', latitude: 40.5, longitude: -96, capacity: 30000, sortOrder: 1 },
-      ],
-    }));
-
-    const [first, second] = component.binSiteRows();
-    expect(first).toMatchObject({ name: 'Anderson Site', capacity: '50,000' });
-    expect(second).toMatchObject({ name: 'North Quarter', capacity: '30,000' });
-  });
-
-  it('links each site with coordinates to its exact point in Google Maps', () => {
-    ref.setInput('customer', makeCustomer({
-      binSites: [{ name: 'Anderson Site', latitude: 41.39034548435109, longitude: -95.00754031349179 }],
-    }));
-
-    expect(component.binSiteRows()[0].url)
-      .toBe('https://www.google.com/maps/search/?api=1&query=41.39034548435109%2C-95.00754031349179');
-  });
-
-
-  it('gives a site without coordinates no map link', () => {
-    ref.setInput('customer', makeCustomer({ binSites: [{ name: 'Home place', capacity: 20000 }] }));
-
-    const [row] = component.binSiteRows();
-    expect(row.url).toBeNull();
-    expect(row.name).toBe('Home place');
-  });
-
-  it('has no rows when the producer has no bin sites', () => {
-    ref.setInput('customer', makeCustomer());
-
-    expect(component.binSiteRows()).toEqual([]);
-  });
-
-  it('shows a single site on its own line, with no "Bin Sites (1)" toggle', () => {
-    ref.setInput('customer', makeCustomer({ binSites: [{ name: 'Only one', latitude: 39.1, longitude: -95.1, capacity: 50000 }] }));
-
-    expect(component.singleBinSite()).toMatchObject({ name: 'Only one', capacity: '50,000' });
-    expect(component.singleBinSite()?.url).toContain('39.1');
-  });
-
-  it('two or more sites sit behind the toggle, which starts open, and toggles closed', () => {
-    ref.setInput('customer', makeCustomer({ binSites: [{ name: 'A' }, { name: 'B' }] }));
-
-    expect(component.singleBinSite()).toBeNull();
-    expect(component.binSitesExpanded()).toBe(true);
-    component.toggleBinSites();
-    expect(component.binSitesExpanded()).toBe(false);
-  });
-
-  // Like the Activity Summary: open until the user closes it, and a close sticks across producers
-  // and reloads (the profile is rebuilt between producers, so a new instance stands in for both).
-  it('remembers an explicit close of Bin Sites and of Grain on Farm, and an explicit reopen', () => {
-    ref.setInput('customer', makeCustomer({
-      binSites: [{ name: 'A' }, { name: 'B' }],
-      grainOnFarm: [{ commodityCode: 'YC', bushelsOnHand: 100 }],
-    }));
-    expect(component.showGrainOnFarm()).toBe(true);
-    component.toggleBinSites();
-    component.toggleGrainOnFarm();
-
-    const again = TestBed.createComponent(CustomerProfileComponent).componentInstance;
-    expect([again.binSitesExpanded(), again.showGrainOnFarm()]).toEqual([false, false]);
-
-    component.toggleBinSites();
-    component.toggleGrainOnFarm();
-    const third = TestBed.createComponent(CustomerProfileComponent).componentInstance;
-    expect([third.binSitesExpanded(), third.showGrainOnFarm()]).toEqual([true, true]);
-  });
-
-  it('tracks a map click under its own subfeature', () => {
-    ref.setInput('customer', makeCustomer({ id: 42 }));
-
-    component.trackBinSiteMapClick();
-
-    expect(tracking.trackBinSiteMapClick).toHaveBeenCalledWith('42');
-  });
-
-  it('lists grain on farm grouped by bin site, in site order, rows without a site last', () => {
-    ref.setInput('customer', makeCustomer({
-      binSites: [{ siteKey: 'north', name: 'North Bins' }, { siteKey: 'home', name: 'Home Place' }],
-      grainOnFarm: [
-        { binSiteKey: null, commodityCode: 'WH', bushelsOnHand: 90000 },
-        { binSiteKey: 'home', binSiteName: 'Home Place', commodityCode: 'YC', bushelsOnHand: 5000 },
-        { binSiteKey: 'north', binSiteName: 'North Bins', commodityCode: 'SB', bushelsOnHand: 1000 },
-        { binSiteKey: 'north', binSiteName: 'North Bins', commodityCode: 'YC', bushelsOnHand: 30000 },
-      ],
-    }));
-
-    expect(component.grainOnFarmRows().map(g => `${g.binSiteName ?? '—'} ${g.commodityCode}`))
-      .toEqual(['North Bins YC', 'North Bins SB', 'Home Place YC', '— WH']);
-    // The headline total still adds up every row, at every site.
-    expect(component.grainOnFarmTotal()).toBe(126000);
-  });
-
-  it('groups the table by site name, labelling rows without a site only when sites are present too', () => {
-    ref.setInput('customer', makeCustomer({
-      binSites: [{ siteKey: 'north', name: 'North Quarter Home Place Bins by the Creek' }],
-      grainOnFarm: [
-        { binSiteKey: 'north', binSiteName: 'North Quarter Home Place Bins by the Creek', commodityCode: 'YC', bushelsOnHand: 30000 },
-        { binSiteKey: null, commodityCode: 'WH', bushelsOnHand: 100 },
-      ],
-    }));
-    expect(component.grainOnFarmGroups().map(g => [g.label, g.rows.map(r => r.commodityCode)]))
-      .toEqual([['North Quarter Home Place Bins by the Creek', ['YC']], ['Not tied to a bin site', ['WH']]]);
-
-    ref.setInput('customer', makeCustomer({ grainOnFarm: [{ commodityCode: 'WH', bushelsOnHand: 100 }] }));
-    expect(component.grainOnFarmGroups().map(g => g.label)).toEqual(['']);
-  });
-
-  it('with grain at more than one site, every site starts closed and opens on its own', () => {
-    const twoSites = (id: number) => makeCustomer({
-      id,
-      binSites: [{ siteKey: 'north', name: 'North Bins' }, { siteKey: 'home', name: 'Home Place' }],
-      grainOnFarm: [
-        { binSiteKey: 'north', binSiteName: 'North Bins', commodityCode: 'YC', bushelsOnHand: 30000 },
-        { binSiteKey: 'north', binSiteName: 'North Bins', commodityCode: 'SB', bushelsOnHand: 5000 },
-        { binSiteKey: 'home', binSiteName: 'Home Place', commodityCode: 'YC', bushelsOnHand: 1000 },
-      ],
-    });
-    ref.setInput('customer', twoSites(1));
-
-    expect(component.grainGroupsCollapsible()).toBe(true);
-    expect([component.isGrainGroupOpen(0), component.isGrainGroupOpen(1)]).toEqual([false, false]);
-    expect(component.anyGrainGroupOpen()).toBe(false);
-    expect(component.grainGroupSummary(component.grainOnFarmGroups()[0].rows)).toBe('2 crops · 35,000 bu');
-
-    component.toggleGrainGroup(1);
-    expect([component.isGrainGroupOpen(0), component.isGrainGroupOpen(1)]).toEqual([false, true]);
-    expect(component.anyGrainGroupOpen()).toBe(true);
-
-    // Another producer starts closed again.
-    ref.setInput('customer', twoSites(2));
-    expect(component.isGrainGroupOpen(1)).toBe(false);
-  });
-
-  it('with grain at one site (or none), the table shows open as before', () => {
-    ref.setInput('customer', makeCustomer({
-      binSites: [{ siteKey: 'north', name: 'North Bins' }, { siteKey: 'home', name: 'Home Place' }],
-      grainOnFarm: [{ binSiteKey: 'north', binSiteName: 'North Bins', commodityCode: 'YC', bushelsOnHand: 30000 }],
-    }));
-    expect(component.grainGroupsCollapsible()).toBe(false);
-    expect(component.isGrainGroupOpen(0)).toBe(true);
-    expect(component.anyGrainGroupOpen()).toBe(true);
-  });
-});
-
-// Covers the organic producer badge: which producers get it, and the header-panel spacing computed
-// it introduced. The gate itself is unit-tested in @shared/utils/organic-visibility.spec.ts — these
-// assert the component wires the producer's own fields into it and nothing else.
-describe('CustomerProfileComponent — organic producer badge', () => {
-  let component: CustomerProfileComponent;
-  let ref: ComponentRef<CustomerProfileComponent>;
-
-  beforeEach(() => {
-    TestBed.configureTestingModule({
-      providers: [
-        { provide: ApiService, useValue: {} },
-        { provide: ThemeService, useValue: {} },
-        provideSelectedProducerActivity(),
-        SelectedCustomerContext,
-        providePermissions(),
-        { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {} } },
-      ],
-    });
-    TestBed.overrideComponent(CustomerProfileComponent, {
-      set: { template: '', templateUrl: undefined, imports: [] },
-    });
-    const fixture = TestBed.createComponent(CustomerProfileComponent);
-    component = fixture.componentInstance;
-    ref = fixture.componentRef;
-  });
-
-  it('shows the badge on the organic industry code alone', () => {
-    ref.setInput('customer', makeCustomer({ industryCode2: 'OR' }));
-    expect(component.showOrganicBadge()).toBe(true);
-  });
-
-  it('shows the badge on a real NOP id alone — the five producers coded CV or DA', () => {
-    ref.setInput('customer', makeCustomer({ industryCode2: 'CV', nopId: '1234567890' }));
-    expect(component.showOrganicBadge()).toBe(true);
-  });
-
-  it('hides the badge for a conventional producer', () => {
-    ref.setInput('customer', makeCustomer({ industryCode2: 'CV' }));
-    expect(component.showOrganicBadge()).toBe(false);
-  });
-
-  it('hides the badge when the producer carries neither signal', () => {
-    ref.setInput('customer', makeCustomer());
-    expect(component.showOrganicBadge()).toBe(false);
-  });
-
-  it('opens and closes the detail panel independently of the badge', () => {
-    ref.setInput('customer', makeCustomer({ industryCode2: 'OR' }));
-    expect(component.showOrganicDetail()).toBe(false);
-
-    component.showOrganicDetail.set(true);
-    expect(component.showOrganicBadge()).toBe(true);
-    expect(component.anyHeaderPanelOpen()).toBe(true);
-  });
-
-  it('reports no header panel open when both are closed', () => {
-    ref.setInput('customer', makeCustomer({ industryCode2: 'OR', eSignEnabled: true }));
-    expect(component.anyHeaderPanelOpen()).toBe(false);
-  });
-
-  it('still reports the eSign panel — the spacing binding was eSign-only before the organic panel', () => {
-    ref.setInput('customer', makeCustomer({ eSignEnabled: true }));
-    component.showESignRecipients.set(true);
-    expect(component.anyHeaderPanelOpen()).toBe(true);
-  });
-
-  it('does not treat an open eSign panel as open when the producer has no eSign', () => {
-    ref.setInput('customer', makeCustomer({ eSignEnabled: false }));
-    component.showESignRecipients.set(true);
-    expect(component.anyHeaderPanelOpen()).toBe(false);
-  });
-});
-
-// The Contact column and the eSign recipients panel, rendered through the REAL template. The child
+// The header's slots and the eSign recipients panel, rendered through the REAL template. The child
 // components are dropped (NO_ERRORS_SCHEMA) because only this component's own markup is under test.
-// Both lists are derived from the customer input; these pin what they show, that the derivation
+// The recipients are derived from the customer input; these pin what they show, that the derivation
 // runs once per customer rather than on every change-detection pass, and that it follows the input.
-describe('CustomerProfileComponent — contacts and ScoularView recipients (rendered)', () => {
+describe('CustomerProfileComponent — header slots and ScoularView recipients (rendered)', () => {
   let fixture: ComponentFixture<CustomerProfileComponent>;
   let component: CustomerProfileComponent;
   let ref: ComponentRef<CustomerProfileComponent>;
 
   const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const squash = (s: string | null | undefined): string => (s ?? '').replace(/\s+/g, ' ').trim();
-
-  /** One entry per rendered contact row: its name, and whether it carries the primary star. */
-  const contactRows = (): { name: string; primary: boolean }[] => {
-    const heading = Array.from(host().querySelectorAll('h3')).find(h => h.textContent?.trim() === 'Contact and Locations');
-    const rows = Array.from(heading?.nextElementSibling?.querySelectorAll(':scope > div.flex-wrap') ?? []);
-    return rows.map(r => ({
-      name: squash(r.querySelector('span')?.textContent),
-      primary: r.querySelector('svg[aria-label="Primary contact"]') !== null,
-    }));
-  };
 
   const recipientChips = (): string[] => {
     const label = Array.from(host().querySelectorAll('p')).find(p => p.textContent?.trim() === 'ScoularView Recipients');
@@ -605,16 +346,6 @@ describe('CustomerProfileComponent — contacts and ScoularView recipients (rend
     fixture.debugElement.injector.get(ChangeDetectorRef).markForCheck();
     fixture.detectChanges();
   };
-
-  /** A copy of `items` that counts how many times it is iterated — the sort copies it with a spread. */
-  function countingIterations<T>(items: T[]): { list: T[]; count: () => number } {
-    let n = 0;
-    const list = [...items];
-    Object.defineProperty(list, Symbol.iterator, {
-      value: function (this: T[]) { n++; return Array.prototype[Symbol.iterator].call(this); },
-    });
-    return { list, count: () => n };
-  }
 
   beforeEach(() => {
     localStorage.clear();
@@ -636,62 +367,31 @@ describe('CustomerProfileComponent — contacts and ScoularView recipients (rend
     ref = fixture.componentRef;
   });
 
-  it('lists contacts primary first, then in saved order', () => {
-    ref.setInput('customer', makeCustomer({
-      contacts: [
-        { name: 'Cara', sortOrder: 2 },
-        { name: 'Abe', sortOrder: 1 },
-        { name: 'Pat', sortOrder: 3, isPrimary: true },
-        { name: 'Dee' },                                   // no sortOrder sorts as 0
-      ],
-    }));
+  // Producers fills them: the Organic badge and its panel, the contacts, the bin sites and Farm Details.
+  it("hosts the modules' header panels where the producer's details sat", () => {
+    ref.setInput('customer', makeCustomer({ eSignEnabled: true, phone: '4025550100', email: 'office@farm.com' }));
     fixture.detectChanges();
+    const slot = (name: string) => host().querySelector(`app-customer-slot[slot="${name}"]`)!;
+    const heading = (title: string) => Array.from(host().querySelectorAll('h3')).find(h => h.textContent?.trim() === title)!;
+    const contactColumn = heading('Contact and Locations').nextElementSibling!;
 
-    expect(contactRows()).toEqual([
-      { name: 'Pat', primary: true },
-      { name: 'Dee', primary: false },
-      { name: 'Abe', primary: false },
-      { name: 'Cara', primary: false },
-    ]);
+    expect(squash(slot('badges').parentElement!.textContent)).toContain('eSign');
+    expect(slot('badge-panels')).not.toBeNull();
+    expect(contactColumn.firstElementChild).toBe(slot('contacts'));
+    expect(contactColumn.lastElementChild).toBe(slot('locations'));
+    expect(squash(contactColumn.textContent)).toContain('office@farm.com');
+    expect(slot('details').nextElementSibling).toBe(heading('Harvest Contract Pace').parentElement);
   });
 
-  it('falls back to one starred row from the legacy primary fields, and to none', () => {
-    ref.setInput('customer', makeCustomer({ primaryContact: 'Old Pat', primaryPhone: '(402) 555-0100' }));
+  it('marks the open eSign panel as a header panel, which the farm line below takes more room from', () => {
+    ref.setInput('customer', makeCustomer({ eSignEnabled: true, scoularViewRecipients: 'Al 402-555-0001' }));
     fixture.detectChanges();
-    expect(contactRows()).toEqual([{ name: 'Old Pat', primary: true }]);
-
-    ref.setInput('customer', makeCustomer({ primaryPhone: '(402) 555-0100' }));
+    component.showESignRecipients.set(true);
     fixture.detectChanges();
-    expect(contactRows()).toEqual([{ name: 'Primary Contact', primary: true }]);
 
-    ref.setInput('customer', makeCustomer());
-    fixture.detectChanges();
-    expect(contactRows()).toEqual([]);
-  });
-
-  it('sorts the contacts once per customer, not on every change-detection pass', () => {
-    const contacts = countingIterations([{ name: 'B', sortOrder: 2 }, { name: 'A', sortOrder: 1 }]);
-    ref.setInput('customer', makeCustomer({ contacts: contacts.list }));
-    fixture.detectChanges();
-    const afterFirstRender = contacts.count();
-
-    rerender();
-    rerender();
-    rerender();
-
-    expect(afterFirstRender).toBe(1);
-    expect(contacts.count()).toBe(1);
-    expect(contactRows().map(r => r.name)).toEqual(['A', 'B']);
-  });
-
-  it('re-sorts when the customer input changes', () => {
-    ref.setInput('customer', makeCustomer({ contacts: [{ name: 'B', sortOrder: 2 }, { name: 'A', sortOrder: 1 }] }));
-    fixture.detectChanges();
-    expect(contactRows().map(r => r.name)).toEqual(['A', 'B']);
-
-    ref.setInput('customer', makeCustomer({ contacts: [{ name: 'Y', sortOrder: 1 }, { name: 'Z', sortOrder: 0, isPrimary: true }] }));
-    fixture.detectChanges();
-    expect(contactRows()).toEqual([{ name: 'Z', primary: true }, { name: 'Y', primary: false }]);
+    const farmLine = Array.from(host().querySelectorAll('p')).find(p => p.textContent?.trim() === 'Test Farm LLC')!;
+    expect(squash(host().querySelector('.header-panel')?.textContent)).toContain('ScoularView Recipients');
+    expect(farmLine.className).toContain('group-has-[.header-panel]/name:mt-3');
   });
 
   it('splits the ScoularView recipients on the commas between complete entries', () => {

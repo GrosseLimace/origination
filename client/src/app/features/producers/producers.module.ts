@@ -67,6 +67,51 @@ export const producersModule: ModuleManifest = {
     },
   ],
   preload: preloadDashboardSummary,
+  // The profile header's producer details, all from the producer's saved details (ProducerDetails).
+  customerPanels: [
+    {
+      slot: 'badges',
+      id: 'organic-badge',
+      requires: ['producer-details:read'],
+      segments: ['Producer'],
+      order: 30,
+      component: () => import('./components/organic/organic-badge.component').then(m => m.OrganicBadgeComponent),
+    },
+    {
+      // What the Organic badge opens: the producer's NOP ID.
+      slot: 'badge-panels',
+      id: 'organic-panel',
+      requires: ['producer-details:read'],
+      segments: ['Producer'],
+      order: 20,
+      component: () => import('./components/organic/organic-panel.component').then(m => m.OrganicPanelComponent),
+    },
+    {
+      slot: 'contacts',
+      id: 'contacts',
+      requires: ['producer-details:read'],
+      segments: ['Producer'],
+      order: 10,
+      component: () => import('./components/producer-contacts/producer-contacts.component').then(m => m.ProducerContactsComponent),
+    },
+    {
+      slot: 'locations',
+      id: 'bin-sites',
+      requires: ['producer-details:read'],
+      segments: ['Producer'],
+      order: 10,
+      component: () => import('./components/bin-sites/bin-sites.component').then(m => m.BinSitesComponent),
+    },
+    {
+      // Acres, commodities and the grain on the farm, with its Grain on Farm table.
+      slot: 'details',
+      id: 'farm-details',
+      requires: ['producer-details:read'],
+      segments: ['Producer'],
+      order: 20,
+      component: () => import('./components/farm-details/farm-details.component').then(m => m.FarmDetailsComponent),
+    },
+  ],
   // A producer's own production. Each reads it from the profile's SelectedProducerProduction.
   customerTabs: [
     {
