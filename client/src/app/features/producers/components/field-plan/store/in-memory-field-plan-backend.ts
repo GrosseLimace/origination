@@ -6,7 +6,7 @@ import { CROP_GROUP_BY_TOKEN } from '../../../../../shared/utils/crop-group-matc
 import { FD_CIC_PROGRAM_KEY } from '../programs/fd-cic/fd-cic.program';
 import { TILLAGE_LABELS } from '../programs/fd-cic/fd-cic.data';
 import { TDISC_TILLAGE, passesProblem, rateTDisc, supportedTillage, tDiscNeeded } from '../programs/fd-cic/fd-cic-tdisc';
-import { TDiscApiService } from '@core/services/tdisc-api.service';
+import { TDiscApiService } from '../../../data-access/tdisc-api.service';
 import { MsalService } from '@azure/msal-angular';
 
 /** The server's crop groups (FieldPlanCropGroups.Codes); CROP_GROUP_BY_TOKEN also knows crops it doesn't. */

@@ -1,5 +1,5 @@
 import { CoverCrop, FdCicCrop, FdCicData, FdCicScoreRequest, FdCicScoreState, FieldSeason, ProducerField, Tillage } from '@models';
-import { FdCicApiService } from '@core/services/fd-cic-api.service';
+import { FdCicApiService } from '../../../../data-access/fd-cic-api.service';
 
 /** The workbook's own labels, which the API's tables are keyed by. */
 export const TILLAGE_LABELS: Record<Tillage, string> = {

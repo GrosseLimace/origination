@@ -2,7 +2,7 @@ import { Component, computed, effect, inject, input, linkedSignal } from '@angul
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CoverCrop, FdCicComponentPart, FdCicData, FieldProgramRecord, FieldSeason, ManureApplication, ManureForm, ManureType, ProducerField, Tillage } from '@models';
-import { FdCicApiService } from '@core/services/fd-cic-api.service';
+import { FdCicApiService } from '../../../../data-access/fd-cic-api.service';
 import { CiPreviewPanelComponent } from '../../ci-preview-panel.component';
 import { ProgramIntake } from '../program-def';
 import { FieldPlanStore } from '../../store/field-plan.store';

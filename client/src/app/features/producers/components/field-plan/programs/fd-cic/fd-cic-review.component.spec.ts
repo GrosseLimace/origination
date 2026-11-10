@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { FdCicApiService } from '@core/services/fd-cic-api.service';
-import { TDiscApiService } from '@core/services/tdisc-api.service';
+import { FdCicApiService } from '../../../../data-access/fd-cic-api.service';
+import { TDiscApiService } from '../../../../data-access/tdisc-api.service';
 import { FdCicData, FieldTickets, TDiscPass } from '@models';
 import { fakeTDiscApi } from './fd-cic-tdisc.testing';
 import { SUSTAINABILITY_PROGRAMS } from '../program-registry';

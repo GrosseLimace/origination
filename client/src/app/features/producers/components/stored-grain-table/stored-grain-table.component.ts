@@ -1,8 +1,8 @@
-import { Component, input, computed, signal, effect, ChangeDetectionStrategy, inject } from '@angular/core';
+import { Component, computed, signal, effect, ChangeDetectionStrategy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
-import { Customer, StoredGrain } from '@models';
+import { StoredGrain } from '@models';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
 import { compareNumericStrings } from '@shared/utils/ticket-sort';
@@ -33,7 +33,6 @@ export class StoredGrainTableComponent {
   private readonly production = inject(SelectedProducerProduction);
   readonly isLoading = this.production.isLoadingStoredGrain;
   readonly storedGrain = this.production.storedGrain;
-  public customer = input.required<Customer>();
 
   searchQuery = signal('');
   expandedCommodities = signal(new Set<string>());

@@ -45,7 +45,7 @@ Stacked in this order inside `@if (showProducerInsights())`:
 **Planting tab — Trade Unit field.** Each planting intention belongs to one trade unit, because a
 producer on several trade units plants different acres for each and the Planting Intentions
 dashboard sums acres by that field. The Add and Edit dialogs
-(`planting-intentions-table/`) offer the *producer's own* active trade units (fetched on open from
+(`features/producers/components/planting-intentions-table/`) offer the *producer's own* active trade units (fetched on open from
 `GET /api/customers/{id}/trade-units`, with descriptions from `TradeUnitContext.tradeUnitDescriptions`).
 One trade unit → shown read-only; several → the originator must pick, preselected when exactly one
 of them is selected in the header. Same crop, year and type for two trade units are two rows, not
@@ -129,7 +129,7 @@ When the trade-unit selector changes, the home component fires a parallel batch 
 | Customer profile sub-component | `client/src/app/features/customers/components/customer-profile/customer-profile.component.ts` |
 | Customer list sub-component | `client/src/app/features/customers/components/customer-list/customer-list.component.ts` |
 | Notes and My follow-ups cards (right column) | The Engagement module's sidebar panels: `features/engagement/components/notes-panel/` and `follow-ups-panel/` (contributed in `engagement.module.ts`), framing `customer-notes/` and `customer-reminders/`. The home page's right column is `<app-customer-slot slot="sidebar">`. The cards read the producer's notes, follow-ups and actions from the page's `SelectedProducerEngagement` (`pages/home/home-engagement.ts`, over the page's notes and reminders stores), and show adding and changing them only to a user holding `notes:write` / `reminders:write:own` |
-| Per-tab tables | Open Contracts and Unapplied Tickets are the Contracts module's tabs: `features/contracts/components/contracts-table/`, `tickets-table/` (contributed in `contracts.module.ts`). The profile's own: `planting-intentions-table/`, `stored-grain-table/`, `dp-contracts-table/`, which read the producer's intentions, crop year, stored grain and DP contracts from the profile as `SelectedProducerProduction` (see [`Shared Infrastructure.md`](./Shared%20Infrastructure.md)) |
+| Per-tab tables | Open Contracts and Unapplied Tickets are the Contracts module's tabs: `features/contracts/components/contracts-table/`, `tickets-table/` (contributed in `contracts.module.ts`). Planting, Storage and DP Contracts are the Producers module's tabs: `features/producers/components/planting-intentions-table/` (with the field plan in `field-plan/`), `stored-grain-table/`, `dp-contracts-table/` (contributed in `producers.module.ts`). They read the producer's intentions, crop year, stored grain and DP contracts from the profile as `SelectedProducerProduction` (see [`Shared Infrastructure.md`](./Shared%20Infrastructure.md)) |
 | Producer Insights panels | `client/src/app/features/customers/components/producer-insights/`, `contract-pacing-card/`, `growth-opportunity/` |
 | Production coverage math | `client/src/app/shared/utils/production-coverage.ts` (+ `.spec.ts`) |
 | Customer map (shown on Build a List, so it belongs to Lists) | `client/src/app/features/lists/components/map/customer-map.component.ts` |

@@ -3,9 +3,6 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { ApiService } from '@core/services/api.service';
 import { ThemeService } from '@core/services/theme.service';
-import { PlantingIntentionsTableComponent } from '../planting-intentions-table/planting-intentions-table.component';
-import { StoredGrainTableComponent } from '../stored-grain-table/stored-grain-table.component';
-import { DpContractsTableComponent } from '../dp-contracts-table/dp-contracts-table.component';
 import { ProducerInsightsComponent } from '../producer-insights/producer-insights.component';
 import { ContractPacingCardComponent } from '../contract-pacing-card/contract-pacing-card.component';
 import { GrowthOpportunityComponent } from '../growth-opportunity/growth-opportunity.component';
@@ -17,7 +14,6 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket, PlantingIntention, PlantingIntentionDraft, PlantingIntentionEdit, StoredGrain, DpContract, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList, ProducerContactItem, GrainOnFarmItem } from '@models';
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
 import { formatLastBid, grainOnFarmTitle, indexCommoditiesByCode } from '@shared/utils/grain-on-farm';
-import { dpContractCount } from '@shared/utils/dp-aggregate';
 import { isOrganicSectionVisible } from '@shared/utils/organic-visibility';
 import { formatPhoneDisplay } from '@shared/utils/phone';
 import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl, googleMapsCoordinatesUrl } from '@shared/utils/address';
@@ -37,10 +33,10 @@ interface ProfileTab {
   shortLabel: string;
   /** The count beside the label, or null for none. */
   count: number | null;
-  /** Position in the strip, lowest first; the profile's own tabs interleave with the modules'. */
+  /** Position in the strip, lowest first. */
   order: number;
-  /** The module tab this is, for a tab a module contributes; absent for the profile's own. */
-  contribution?: CustomerTab;
+  /** The module tab this is. */
+  contribution: CustomerTab;
 }
 
 @Component({
@@ -50,9 +46,6 @@ interface ProfileTab {
   imports: [
     CommonModule,
     CustomerContributionComponent,
-    PlantingIntentionsTableComponent,
-    StoredGrainTableComponent,
-    DpContractsTableComponent,
     ProducerInsightsComponent,
     ContractPacingCardComponent,
     GrowthOpportunityComponent,
@@ -244,7 +237,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
   public openTab = input<string | null>(null);
   public openPlantingYear = input<number | null>(null);
 
-  @ViewChild(PlantingIntentionsTableComponent) private plantingTable?: PlantingIntentionsTableComponent;
   @ViewChild('tabsSection') private tabsSectionRef?: ElementRef<HTMLElement>;
 
   private readonly themeService = inject(ThemeService);
@@ -529,14 +521,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
     )].sort((a, b) => b - a).slice(0, CustomerProfileComponent.MaxPlantingYears);
   });
 
-  /** Number of intentions in the most recent season the producer has planted — what the Planting
-   *  tab badge counts. */
-  readonly newestSeasonIntentionCount = computed(() => {
-    const newest = this.plantingYearOptions()[0];
-    if (!newest) return this.plantingIntentions().length;
-    return this.plantingIntentions().filter(pi => pi.plantingYear === newest).length;
-  });
-
   /** Planting intentions scoped to the years the profile shows, so the table and the Growth
    *  Opportunity picker agree on which seasons exist. */
   readonly visiblePlantingIntentions = computed(() => {
@@ -544,17 +528,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
     if (years.size === 0) return this.plantingIntentions();
     return this.plantingIntentions().filter(pi => years.has(pi.plantingYear));
   });
-
-  /** The profile's own tabs. Order values leave room for the modules' tabs (Open Contracts 10, Unapplied Tickets 20). */
-  private readonly ownTabs = computed<ProfileTab[]>(() => [
-    // Newest season only, not every year on record — the tab badge should answer "how many
-    // crops are planned for the season I'm looking at", not "how many rows exist in total".
-    { id: 'planting', label: 'Planting', shortLabel: 'Plan', count: this.newestSeasonIntentionCount(), order: 30 },
-    { id: 'storage', label: 'Storage', shortLabel: 'Stor', count: new Set(this.storedGrain().map(g => g.crop || 'Unknown')).size, order: 40 },
-    // Badge is distinct CONTRACTS, not commodities (which Storage uses) and not charge rows.
-    // A producer with 8 contracts across 2 commodities reads as 8.
-    { id: 'dpContracts', label: 'DP Contracts', shortLabel: 'DP', count: dpContractCount(this.dpContracts()), order: 50 },
-  ]);
 
   /** Each module tab's count, created once, in the profile's injection context. */
   private readonly tabBadges = new Map<CustomerTab, Signal<number | null>>();
@@ -569,13 +542,10 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
     return badge;
   }
 
-  /** The tab strip: the profile's own tabs and the modules' tabs the user may see for this customer, in order. */
-  readonly tabs = computed<ProfileTab[]>(() => [
-    ...this.registry.customerTabs()
-      .filter(tab => this.context.appliesTo(tab))
-      .map(tab => ({ id: tab.id, label: tab.label, shortLabel: tab.shortLabel, count: this.badgeOf(tab)?.() ?? null, order: tab.order, contribution: tab })),
-    ...this.ownTabs(),
-  ].sort((a, b) => a.order - b.order));
+  /** The tab strip: the modules' tabs the user may see for this customer, in order. */
+  readonly tabs = computed<ProfileTab[]>(() => this.registry.customerTabs()
+    .filter(tab => this.context.appliesTo(tab))
+    .map(tab => ({ id: tab.id, label: tab.label, shortLabel: tab.shortLabel, count: this.badgeOf(tab)?.() ?? null, order: tab.order, contribution: tab })));
 
   /** The tab shown: the one picked, or the first when the picked one isn't in the strip (its module's tab isn't
    *  shown to this user or for this customer). */
@@ -585,7 +555,7 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
     return tabs.some(tab => tab.id === picked) ? picked : (tabs[0]?.id ?? null);
   });
 
-  /** The module tab being shown, if the shown tab is one. */
+  /** The tab being shown, or null when the strip is empty. */
   readonly shownContribution = computed(() => this.tabs().find(tab => tab.id === this.shownTab())?.contribution ?? null);
 
   toggleProducerInsights(): void {
@@ -598,10 +568,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
 
   closeEditDialog(): void {
     this.showEditDialog.set(false);
-  }
-
-  openAddPlanting(): void {
-    this.plantingTable?.openAddDialog();
   }
 
   handleSaveCustomer(data: { customerId: number; acres: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { siteKey: string; name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { binSiteKey?: string; commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[] }): void {

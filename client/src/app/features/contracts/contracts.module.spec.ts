@@ -9,7 +9,7 @@ import { TicketsTableComponent } from './components/tickets-table/tickets-table.
 const tab = (id: string) => contractsModule.customerTabs!.find(t => t.id === id)!;
 
 describe("Contracts module: the customer profile's tabs", () => {
-  it('contributes Open Contracts and, for producers, Unapplied Tickets, ahead of the profile\'s own tabs', () => {
+  it('contributes Open Contracts and, for producers, Unapplied Tickets, as the first tabs', () => {
     expect(contractsModule.customerTabs!.map(t => [t.id, t.label, t.shortLabel, t.order])).toEqual([
       ['contracts', 'Open Contracts', 'Cont', 10],
       ['tickets', 'Unapplied Tickets', 'Tick', 20],

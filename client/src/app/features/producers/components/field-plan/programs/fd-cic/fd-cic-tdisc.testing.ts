@@ -1,5 +1,5 @@
 import { TDiscOptions } from '@models';
-import type { TDiscApiService } from '@core/services/tdisc-api.service';
+import type { TDiscApiService } from '../../../../data-access/tdisc-api.service';
 
 /**
  * A slice of USDA T-DISC v1.1.1 for tests: the implements the specs use, with the pack's own mixing efficiency

@@ -1,26 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ComponentRef } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { DpContractsTableComponent } from './dp-contracts-table.component';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, DpContract } from '@models';
+import { DpContract } from '@models';
 import { SelectedProducerProductionFake, provideSelectedProducerProduction, selectedProducerProductionFake } from '@testing/selected-producer-production.fake';
-
-function makeCustomer(over: Partial<Customer> = {}): Customer {
-  return {
-    id: 1,
-    name: 'Test Producer',
-    farm: 'Test Farm',
-    location: 'Adrian, MO',
-    phone: '',
-    email: '',
-    totalAcres: 0,
-    linkedProducerIds: [],
-    eSignEnabled: false,
-    achEnabled: false,
-    ...over,
-  } as Customer;
-}
 
 function makeDp(over: Partial<DpContract> = {}): DpContract {
   return {
@@ -72,7 +55,6 @@ function makeDelivery(key: string, over: Partial<DpContract> = {}): DpContract {
 
 describe('DpContractsTableComponent', () => {
   let component: DpContractsTableComponent;
-  let ref: ComponentRef<DpContractsTableComponent>;
   /** Needed to flush the auto-expand effect — computeds are sync, effects are not. */
   let fixture: ComponentFixture<DpContractsTableComponent>;
   /** The profile's SelectedProducerProduction, where the table reads the DP contracts. */
@@ -92,8 +74,6 @@ describe('DpContractsTableComponent', () => {
     });
     fixture = TestBed.createComponent(DpContractsTableComponent);
     component = fixture.componentInstance;
-    ref = fixture.componentRef;
-    ref.setInput('customer', makeCustomer());
   });
 
   it('groups by crop by default and sums bushels', () => {

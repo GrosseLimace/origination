@@ -107,7 +107,7 @@ load), which would otherwise render as `1/1/01`.
 | DTO / mapper | `Modules/Producers/Models/Responses/DpContractResponse.cs`, `Modules/Producers/Mappings/DpContractMappings.cs` |
 | Controller | `api/GrainOriginatorPortal.Api/Modules/Producers/Controllers/DpContractsController.cs` (`dp-contracts:read`) |
 | Client model | `client/src/app/models/dp-contract.model.ts` |
-| Tab component | `client/src/app/features/customers/components/dp-contracts-table/` |
+| Tab component | `client/src/app/features/producers/components/dp-contracts-table/`, contributed as the DP Contracts tab in `producers.module.ts` |
 | Tests | `api/.../Services/DpContractTests.cs`, `client/.../dp-contracts-table.component.spec.ts` |
 
 ## Endpoints

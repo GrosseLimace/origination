@@ -2,9 +2,9 @@ import { ChangeDetectionStrategy, Component, ElementRef, OnInit, computed, effec
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DialogComponent, DialogContentComponent, DialogDescriptionComponent, DialogFooterComponent, DialogHeaderComponent, DialogTitleComponent } from '@shared/components/dialog/dialog.component';
-import { FdCicApiService } from '@core/services/fd-cic-api.service';
+import { FdCicApiService } from '../../../../data-access/fd-cic-api.service';
 import { ToastService } from '@core/services/toast.service';
-import { TDiscApiService } from '@core/services/tdisc-api.service';
+import { TDiscApiService } from '../../../../data-access/tdisc-api.service';
 import { FdCicData, FieldTicket, FieldTickets, TDiscPass, TDiscResult, Tillage } from '@models';
 import { downloadCsv } from '@shared/utils/csv';
 import { FieldPlanStore } from '../../store/field-plan.store';

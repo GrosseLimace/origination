@@ -1,5 +1,5 @@
 import { FdCicScore, FdCicScoreRequest, FdCicScoreState } from '@models';
-import { FdCicApiService } from '@core/services/fd-cic-api.service';
+import { FdCicApiService } from '../../../../data-access/fd-cic-api.service';
 
 /**
  * A stand-in for the API calculator in specs: answers at once with a made-up but predictable score

@@ -1,9 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ComponentRef } from '@angular/core';
 import { StoredGrainTableComponent } from './stored-grain-table.component';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, StoredGrain } from '@models';
+import { StoredGrain } from '@models';
 import { SelectedProducerProductionFake, provideSelectedProducerProduction, selectedProducerProductionFake } from '@testing/selected-producer-production.fake';
 
 // Behaviour safety net for the Storage tab: the loading / empty states, grouping receipts by
@@ -22,13 +21,6 @@ import { SelectedProducerProductionFake, provideSelectedProducerProduction, sele
 
 /** Noon local time so no date can straddle midnight in any timezone. */
 const day = (iso: string): Date => new Date(`${iso}T12:00:00`);
-
-function makeCustomer(over: Partial<Customer> = {}): Customer {
-  return {
-    id: 42, scoularId: 'SAMPFRM', name: 'Sample Farms', farm: 'Sample Farms', location: 'Pratt, KS',
-    phone: '', email: '', totalAcres: 0, linkedProducerIds: [], eSignEnabled: false, achEnabled: false, ...over,
-  };
-}
 
 /** A 1,000 BU corn warehouse receipt at the Pratt facility that has accrued $50.00 of storage. */
 function makeGrain(over: Partial<StoredGrain> = {}): StoredGrain {
@@ -60,16 +52,14 @@ function makeGrain(over: Partial<StoredGrain> = {}): StoredGrain {
 
 describe('StoredGrainTableComponent', () => {
   let fixture: ComponentFixture<StoredGrainTableComponent>;
-  let ref: ComponentRef<StoredGrainTableComponent>;
   let trackStorageDropdownOpen: ReturnType<typeof vi.fn>;
   let scrollIntoView: MockInstance<Element['scrollIntoView']>;
   let production: SelectedProducerProductionFake;
 
-  /** Sets what the profile provides (the receipts, the loading flag) and the customer input. */
-  function setInputs(inputs: { storedGrain?: StoredGrain[]; isLoading?: boolean; customer?: Customer }): void {
+  /** Sets what the profile provides: the receipts and the loading flag. */
+  function setInputs(inputs: { storedGrain?: StoredGrain[]; isLoading?: boolean }): void {
     if (inputs.storedGrain !== undefined) production.storedGrain.set(inputs.storedGrain);
     if (inputs.isLoading !== undefined) production.isLoadingStoredGrain.set(inputs.isLoading);
-    if (inputs.customer !== undefined) ref.setInput('customer', inputs.customer);
     fixture.detectChanges();
   }
 
@@ -125,8 +115,6 @@ describe('StoredGrainTableComponent', () => {
       providers: [{ provide: UsageTrackingService, useValue: { trackStorageDropdownOpen } }, provideSelectedProducerProduction(production)],
     }).compileComponents();
     fixture = TestBed.createComponent(StoredGrainTableComponent);
-    ref = fixture.componentRef;
-    ref.setInput('customer', makeCustomer());
   });
 
   afterEach(() => {
@@ -377,7 +365,7 @@ describe('StoredGrainTableComponent', () => {
       typeSearch('canola');
       expect(groups()).toHaveLength(0);
 
-      setInputs({ customer: makeCustomer({ id: 43 }), storedGrain: [makeGrain({ receiptNumber: '9' })] });
+      setInputs({ storedGrain: [makeGrain({ receiptNumber: '9' })] });
 
       expect(text()).not.toContain('No storage matches');
       expect(host().querySelector('button[title="Clear search"]')).toBeNull();

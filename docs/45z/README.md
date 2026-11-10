@@ -79,7 +79,7 @@ keep their version either way.
 ## Where field-plan data is kept
 
 The client keeps fields, field seasons and program records in `FieldPlanStore`
-(`client/src/app/features/customers/components/field-plan/store/`). It loads one producer at a time and
+(`client/src/app/features/producers/components/field-plan/store/`). It loads one producer at a time and
 saves through `FIELD_PLAN_BACKEND`. That interface is the shape of the field-plan API: each method names its
 endpoint.
 

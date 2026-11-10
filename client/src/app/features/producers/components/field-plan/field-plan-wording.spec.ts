@@ -10,7 +10,7 @@ import { join } from 'node:path';
  * blunt, but it fails loudly when the wording drifts back, which is the regression that matters.
  */
 describe('field plan wording: estimates until confirmed, never final', () => {
-  const dir = join(process.cwd(), 'src', 'app', 'features', 'customers', 'components', 'field-plan');
+  const dir = join(process.cwd(), 'src', 'app', 'features', 'producers', 'components', 'field-plan');
   const files = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((e: { name: string; isDirectory(): boolean }) =>
     e.isDirectory() ? files(join(d, e.name)) : /\.(html|ts)$/.test(e.name) && !e.name.endsWith('.spec.ts') ? [join(d, e.name)] : []);
   const sources = files(dir).map(f => ({ f, text: readFileSync(f, 'utf8') }));

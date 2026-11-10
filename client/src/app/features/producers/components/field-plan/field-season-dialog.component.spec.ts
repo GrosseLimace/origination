@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Component, Type, input } from '@angular/core';
-import { FdCicApiService } from '@core/services/fd-cic-api.service';
-import { TDiscApiService } from '@core/services/tdisc-api.service';
+import { FdCicApiService } from '../../data-access/fd-cic-api.service';
+import { TDiscApiService } from '../../data-access/tdisc-api.service';
 import { ToastService } from '@core/services/toast.service';
 import { FdCicData, FieldProgramRecord, FieldSeason, ProducerField } from '@models';
 import { ProgramIntake, SustainabilityProgramDef } from './programs/program-def';

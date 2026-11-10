@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, input, inject, DestroyRef, effect, signal } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, inject, DestroyRef, effect, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -6,10 +6,10 @@ import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowCompo
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
 import { InputComponent } from '@shared/components/input/input.component';
-import { Customer, PlantingIntention, Commodity } from '@models';
+import { PlantingIntention, Commodity } from '@models';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
-import { CustomersApiService } from '../../data-access/customers-api.service';
+import { CustomersApiService } from '@features/customers';
 import { ToastService } from '@core/services/toast.service';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
@@ -19,6 +19,7 @@ import { ProgramEnrollmentCardComponent } from '../field-plan/programs/program-e
 import { ProgramRegistry } from '../field-plan/programs/program-registry';
 import { FieldPlanStore } from '../field-plan/store/field-plan.store';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { SelectedProducerProduction } from '@core/context/selected-producer-production';
 
 
@@ -71,7 +72,8 @@ export class PlantingIntentionsTableComponent {
 
   readonly isLoading = this.production.isLoadingPlanting;
   readonly plantingIntentions = this.production.visiblePlantingIntentions;
-  public customer = input.required<Customer>();
+  /** The producer the screen shows. The tab shows only while there is one. */
+  readonly customer = inject(SelectedCustomerContext).customer;
   /** The header's selected trade units — used only to PRESELECT when the producer is on several. */
   readonly tradeUnits = this.production.tradeUnits;
   readonly customerCommodityCodes = this.production.commodityCodes;
@@ -132,7 +134,9 @@ export class PlantingIntentionsTableComponent {
   }
 
   private _loadProducerTradeUnits(): void {
-    const customerId = this.customer().id;
+    const customer = this.customer();
+    if (!customer) return;
+    const customerId = customer.id;
     if (this._producerTradeUnitsForCustomerId !== customerId) {
       this.producerTradeUnits.set([]);
       this._producerTradeUnitsForCustomerId = customerId;
@@ -141,7 +145,7 @@ export class PlantingIntentionsTableComponent {
     // is what made this dialog slow: when CTRM is slow, the browser's few connections to the API are
     // all held by contract and ticket reads, and this small call queued behind them for 30s or more.
     // The request still runs, quietly, to pick up a membership changed since the list loaded.
-    const known = (this.customer().activeTradeUnits ?? []).map(t => t.trim()).filter(Boolean);
+    const known = (customer.activeTradeUnits ?? []).map(t => t.trim()).filter(Boolean);
     if (this.producerTradeUnits().length === 0 && known.length > 0) {
       this.producerTradeUnits.set([...known].sort());
       if (this.showAddDialog() && this.addForm.tradeUnit === '') {
@@ -310,7 +314,8 @@ export class PlantingIntentionsTableComponent {
   private readonly fieldPlan = inject(FieldPlanStore);
   /** Brings the producer's fields and program data in when the producer is shown (once per producer). */
   private readonly _loadFieldPlan = effect(() => {
-    if (this.fieldPlanningEnabled) this.fieldPlan.ensureLoaded(this.customer().id);
+    const customerId = this.customer()?.id;
+    if (this.fieldPlanningEnabled && customerId != null) this.fieldPlan.ensureLoaded(customerId);
   });
   /** One summary card per program; each shows only once the producer has a field in it. */
   readonly programs = inject(ProgramRegistry).all.filter(p => !!p.enrollment);
@@ -633,7 +638,7 @@ export class PlantingIntentionsTableComponent {
       acres: '',
       plantingYear: currentYear.toString(),
       // From the cached producer list when we have it; otherwise filled in when the load completes.
-      tradeUnit: this.producerTradeUnits().length > 0 && this._producerTradeUnitsForCustomerId === this.customer().id
+      tradeUnit: this.producerTradeUnits().length > 0 && this._producerTradeUnitsForCustomerId === this.customer()?.id
         ? this.defaultTradeUnit(this.tradeUnitOptions)
         : ''
     };

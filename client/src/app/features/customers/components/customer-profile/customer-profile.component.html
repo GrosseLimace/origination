@@ -615,26 +615,10 @@
 
         <!-- Tab Content -->
         <div class="pb-8">
-          @switch (shownTab()) {
-            @case ('planting') {
-              <!-- The projected-production vs. contracted breakdown that used to sit here now lives
-                   in the Growth Opportunity panel under Producer Insights, so this tab stays focused
-                   on entering acres. -->
-              <!-- Reads the intentions, the year and its actions from this profile's SelectedProducerProduction. -->
-              <app-planting-intentions-table [customer]="customer()"></app-planting-intentions-table>
-            }
-            @case ('storage') {
-              <app-stored-grain-table [customer]="customer()"></app-stored-grain-table>
-            }
-            @case ('dpContracts') {
-              <app-dp-contracts-table [customer]="customer()"></app-dp-contracts-table>
-            }
-            @default {
-              <!-- A tab a module contributes: Open Contracts and Unapplied Tickets (Contracts). -->
-              @if (shownContribution(); as tab) {
-                <app-customer-contribution [contribution]="tab" />
-              }
-            }
+          <!-- Every tab is a module's: Open Contracts and Unapplied Tickets (Contracts); Planting, Storage and DP
+               Contracts (Producers), which read the producer's production from this profile. -->
+          @if (shownContribution(); as tab) {
+            <app-customer-contribution [contribution]="tab" />
           }
         </div>
       </div>

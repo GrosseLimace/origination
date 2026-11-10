@@ -47,13 +47,19 @@ function body(url: string): unknown {
       ctrmContractNumber: n === 1 ? 'PYC' + id + '1' : null, organizationCode: '1084', appliedNetQuantity: 1000 }));
   }
   if (url.includes('conversions')) return [{ commodityCode: 'YC', lbsPerUnit: 56 }];
+  if (url.includes('plantingintentions/customer/')) {
+    const id = Number(url.split('customer/')[1].split(/[?/]/)[0]);
+    return [{ id: id * 1000 + 1, customerId: id, customerName: 'P' + id, customerCode: 'C' + id, tradeUnit: '1084', plantingYear: 2026,
+      crop: 'YC', category: 'Corn', acres: 250, createdAt: '2026-01-01', createdBy: 'x' }];
+  }
   // Every read the pages below need, so each one renders instead of being sent home.
   if (url.includes('/me/permissions')) {
     return {
       userId: 'CEgr', roles: [], modules: [], segments: [],
       permissions: ['planting-estimates:read', 'query-library:read', 'saved-lists:read:own', 'customers:read', 'contracts:read',
         'tickets:read', 'bid-sheets:read', 'recap-groups:read', 'usage-reports:read',
-        'notes:read', 'notes:write', 'reminders:read:own', 'reminders:write:own'],
+        'notes:read', 'notes:write', 'reminders:read:own', 'reminders:write:own',
+        'planting-intentions:read', 'stored-grain:read', 'dp-contracts:read'],
     };
   }
   if (url.includes('/me')) return { userId: 'CEgr', displayName: 'Caden', roles: [] };
@@ -102,6 +108,17 @@ describe('NG0103 probe', () => {
     expect(page.querySelector('app-contracts-table')).not.toBeNull();
     // The right column comes from the modules too: the Engagement module's Notes card renders in the sidebar slot.
     expect(page.querySelector('app-customer-notes')).not.toBeNull();
+    // The Producers module's tabs follow the Contracts ones. Its Planting tab loads in the profile and reads the
+    // producer's intentions from it.
+    const tabLabel = (b: HTMLButtonElement) => (b.textContent ?? '').trim().split(' (')[0];
+    const tabButtons = () => Array.from(page.querySelectorAll<HTMLButtonElement>('button'))
+      .filter(b => ['Open Contracts', 'Unapplied Tickets', 'Planting', 'Storage', 'DP Contracts'].includes(tabLabel(b)));
+    expect(tabButtons().map(tabLabel)).toEqual(['Open Contracts', 'Unapplied Tickets', 'Planting', 'Storage', 'DP Contracts']);
+    const errorsBefore = errors.length;
+    tabButtons().find(b => tabLabel(b) === 'Planting')!.click();
+    await settle(fixture, 2500);
+    expect(page.querySelector('app-planting-intentions-table')?.textContent).toContain('250');
+    expect(errors.slice(errorsBefore).map(e => String((e as Error)?.message ?? e).slice(0, 160))).toEqual([]);
   }, 60000);
 
   for (const url of ['/', '/build-list', '/insights', '/dashboard', '/bid-sheet', '/daily-digest', '/usage-dashboard', '/whats-new']) {

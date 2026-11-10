@@ -16,7 +16,7 @@ import { CustomerProfileComponent } from './customer-profile.component';
 const producer = { id: 1, scoularId: 'CUST1', name: 'Test Farm', farm: '', location: '', phone: '', email: '', totalAcres: 0, linkedProducerIds: [], eSignEnabled: false, achEnabled: false } as Customer;
 const component = () => Promise.resolve(class {});
 
-/** A module contributing two tabs around the profile's own Planting (30), Storage (40) and DP (50). */
+/** A module contributing three tabs, listed out of order. */
 const contracts: CustomerTab = { id: 'contracts', requires: ['contracts:read'], label: 'Open Contracts', shortLabel: 'Cont', order: 10, badge: () => signal(3), component };
 const tickets: CustomerTab = { id: 'tickets', requires: ['tickets:read'], segments: ['Producer'], label: 'Unapplied Tickets', shortLabel: 'Tick', order: 20, component };
 const extra: CustomerTab = { id: 'extra', requires: [], label: 'Extra', shortLabel: 'Ext', order: 35, component };
@@ -56,14 +56,13 @@ describe("CustomerProfileComponent: the tab strip, with the modules' tabs", () =
     link.set({});
   });
 
-  it("puts the modules' tabs and its own in one strip, in order, with their counts", () => {
+  it("puts the modules' tabs in one strip, in order, with their counts", () => {
     create();
 
-    expect(profile.tabs().map(tab => tab.id)).toEqual(['contracts', 'tickets', 'planting', 'extra', 'storage', 'dpContracts']);
+    expect(profile.tabs().map(tab => tab.id)).toEqual(['contracts', 'tickets', 'extra']);
     expect(profile.tabs().find(tab => tab.id === 'contracts')?.count).toBe(3);
-    // A module tab without a badge shows no count; the profile's own always count.
+    // A tab without a badge shows no count.
     expect(profile.tabs().find(tab => tab.id === 'tickets')?.count).toBeNull();
-    expect(profile.tabs().find(tab => tab.id === 'storage')?.count).toBe(0);
   });
 
   it("leaves out a module's tab the user lacks the permissions for, and adds it once they hold them", () => {
@@ -94,7 +93,7 @@ describe("CustomerProfileComponent: the tab strip, with the modules' tabs", () =
     expect(profile.shownTab()).toBe('contracts');
   });
 
-  it("shows a module tab from its contribution, and the profile's own tabs from its template", () => {
+  it('shows the picked tab from its contribution', () => {
     create();
 
     expect(profile.shownContribution()).toBe(contracts);
@@ -102,14 +101,13 @@ describe("CustomerProfileComponent: the tab strip, with the modules' tabs", () =
     profile.selectTab('extra');
     expect(profile.shownContribution()).toBe(extra);
 
-    profile.selectTab('planting');
-    expect(profile.shownTab()).toBe('planting');
-    expect(profile.shownContribution()).toBeNull();
+    profile.selectTab('tickets');
+    expect(profile.shownContribution()).toBe(tickets);
   });
 
   it('opens Open Contracts for a deep link to a contract', () => {
     create();
-    profile.selectTab('planting');
+    profile.selectTab('extra');
     fixture.detectChanges();
 
     link.set({ contractId: 55 });

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
-import { FdCicApiService } from '@core/services/fd-cic-api.service';
-import { TDiscApiService } from '@core/services/tdisc-api.service';
+import { FdCicApiService } from '../../../data-access/fd-cic-api.service';
+import { TDiscApiService } from '../../../data-access/tdisc-api.service';
 import { fakeTDiscApi } from './fd-cic/fd-cic-tdisc.testing';
 import { fakeFdCicApi } from './fd-cic/fd-cic.testing';
 import { createFdCicProgram } from './fd-cic/fd-cic.program';

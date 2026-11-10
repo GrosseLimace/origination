@@ -2,8 +2,8 @@ import { Component, ElementRef, computed, inject, input, output, signal, viewChi
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { FieldPlanStore } from './store/field-plan.store';
-import { FdCicApiService } from '@core/services/fd-cic-api.service';
-import { CtrmSplitApiService } from '@core/services/ctrm-split-api.service';
+import { FdCicApiService } from '../../data-access/fd-cic-api.service';
+import { CtrmSplitApiService } from '../../data-access/ctrm-split-api.service';
 import { CtrmSplit, Customer, FieldSeason, PlantingIntention } from '@models';
 import { ProgramRegistry } from './programs/program-registry';
 import { FieldSeasonDialogComponent } from './field-season-dialog.component';

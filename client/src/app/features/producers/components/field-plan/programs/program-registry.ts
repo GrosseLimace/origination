@@ -1,6 +1,6 @@
 import { Injectable, InjectionToken, inject } from '@angular/core';
 import { SustainabilityProgramDef } from './program-def';
-import { FdCicApiService } from '@core/services/fd-cic-api.service';
+import { FdCicApiService } from '../../../data-access/fd-cic-api.service';
 import { createFdCicProgram } from './fd-cic/fd-cic.program';
 
 /**

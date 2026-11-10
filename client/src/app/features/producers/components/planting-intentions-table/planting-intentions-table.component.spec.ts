@@ -1,17 +1,18 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ComponentRef, signal } from '@angular/core';
+import { signal } from '@angular/core';
 import { NEVER, of, Subject } from 'rxjs';
 import { PlantingIntentionsTableComponent } from './planting-intentions-table.component';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { Commodity, Customer, PlantingIntention } from '@models';
-import { CustomersApiService } from '../../data-access/customers-api.service';
+import { CustomersApiService } from '@features/customers';
 import { SelectedProducerProductionFake, provideSelectedProducerProduction, selectedProducerProductionFake } from '@testing/selected-producer-production.fake';
 
 // The intentions, the crop year, the trade units the user works in and the add / edit / delete actions all come from
-// the profile's SelectedProducerProduction, a fake here.
+// the profile's SelectedProducerProduction, a fake here; the producer comes from the customer screen's context.
 
 // Which trade unit a planting intention is recorded for. A test producer is on Pratt (2190) and
 // Tribune (2210); the form offers THAT PRODUCER's trade units, auto-fills when there is only one
@@ -36,7 +37,8 @@ const member = (tradeUnit: string, isActive = true): Membership => ({ tradeUnit,
 
 describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
   let component: PlantingIntentionsTableComponent;
-  let ref: ComponentRef<PlantingIntentionsTableComponent>;
+  /** The producer the customer screen shows. */
+  const customer = signal<Customer | null>(null);
   let memberships: Membership[];
   let tradeUnitCalls: unknown[][];
   // When set, the trade-units request never answers, as when it is queued behind slow CTRM reads.
@@ -46,6 +48,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
 
   beforeEach(() => {
     production = selectedProducerProductionFake();
+    customer.set(makeCustomer());
     memberships = [];
     tradeUnitCalls = [];
     tradeUnitsNeverAnswer = false;
@@ -62,6 +65,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
         },
         { provide: ToastService, useValue: { error: () => {}, success: () => {} } },
         provideSelectedProducerProduction(production),
+        { provide: SelectedCustomerContext, useValue: { customer } },
         {
           provide: TradeUnitContext,
           useValue: {
@@ -79,8 +83,6 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
     });
     const fixture = TestBed.createComponent(PlantingIntentionsTableComponent);
     component = fixture.componentInstance;
-    ref = fixture.componentRef;
-    ref.setInput('customer', makeCustomer());
   });
 
   // ── Escape in the crop search boxes ───────────────────────────────────────
@@ -191,7 +193,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
     // The 30s-plus wait in QA: the request queued behind slow CTRM reads. With the codes already on
     // the customer, the picker must be usable even if that request never comes back.
     tradeUnitsNeverAnswer = true;
-    ref.setInput('customer', makeCustomer({ activeTradeUnits: ['2210', '2190'] }));
+    customer.set(makeCustomer({ activeTradeUnits: ['2210', '2190'] }));
     production.tradeUnits.set(['2210']);
 
     component.openAddDialog();
@@ -204,7 +206,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
   it('still refreshes from the server behind the list it already showed', () => {
     // A membership can change after the customer list loaded; the answer, when it lands, wins.
     memberships = [member('2190')];
-    ref.setInput('customer', makeCustomer({ activeTradeUnits: ['2190', '2210'] }));
+    customer.set(makeCustomer({ activeTradeUnits: ['2190', '2210'] }));
 
     component.openAddDialog();
 
@@ -317,6 +319,7 @@ describe('PlantingIntentionsTableComponent — rendering', () => {
   let commodities$: Subject<Commodity[]>;
   let plantingCommodities$: Subject<Commodity[]>;
   let production: SelectedProducerProductionFake;
+  const customer = signal<Customer | null>(null);
 
   const SOY_ORGANIC: Commodity = { id: 1, code: 'YSBO', name: 'Organic Soybeans', category: 'Soybeans', plantingCategory: 'Organic Soybeans', isActive: true };
   const CORN: Commodity = { id: 2, code: 'YC', name: 'Yellow Corn', category: 'Corn', isActive: true };
@@ -340,6 +343,7 @@ describe('PlantingIntentionsTableComponent — rendering', () => {
     commodities$ = new Subject<Commodity[]>();
     plantingCommodities$ = new Subject<Commodity[]>();
     production = selectedProducerProductionFake();
+    customer.set(makeCustomer());
     await TestBed.configureTestingModule({
       imports: [PlantingIntentionsTableComponent],
       providers: [
@@ -354,6 +358,7 @@ describe('PlantingIntentionsTableComponent — rendering', () => {
         },
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
         provideSelectedProducerProduction(production),
+        { provide: SelectedCustomerContext, useValue: { customer } },
         {
           provide: TradeUnitContext,
           useValue: {
@@ -366,7 +371,6 @@ describe('PlantingIntentionsTableComponent — rendering', () => {
     }).compileComponents();
     fixture = TestBed.createComponent(PlantingIntentionsTableComponent);
     component = fixture.componentInstance;
-    fixture.componentRef.setInput('customer', makeCustomer());
     production.visiblePlantingIntentions.set([makeIntention({ id: 1, crop: 'YSBO', category: 'Soybeans' })]);
     fixture.detectChanges();
   });
@@ -434,6 +438,16 @@ describe('PlantingIntentionsTableComponent — rendering', () => {
     fixture.detectChanges();
 
     expect(suggestions()).toEqual([]);
+  });
+
+  it('names the producer the customer screen shows, and renders nothing without one', () => {
+    component.openAddDialog();
+    fixture.detectChanges();
+    expect(text()).toContain('Record a new planting intention for Sample Farms');
+
+    customer.set(null);
+    fixture.detectChanges();
+    expect(text().trim()).toBe('');
   });
 
   // ── The crop year and delete go to the profile ────────────────────────────

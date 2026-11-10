@@ -1,6 +1,6 @@
 import { FdCicData, FdCicScore, FieldProgramRecord, FieldSeason, ProducerField, ProgramScore } from '@models';
-import { FdCicApiService } from '@core/services/fd-cic-api.service';
-import { practicesToCopy } from '@shared/utils/ci-copy-forward';
+import { FdCicApiService } from '../../../../data-access/fd-cic-api.service';
+import { practicesToCopy } from '../../../../utils/ci-copy-forward';
 import { environment } from '@env/environment';
 import { FieldResult, SustainabilityProgramDef } from '../program-def';
 import { FdCicIntakeComponent } from './fd-cic-intake.component';
