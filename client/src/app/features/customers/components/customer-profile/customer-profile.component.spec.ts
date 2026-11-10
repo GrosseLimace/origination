@@ -2,13 +2,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ChangeDetectorRef, ComponentRef, NO_ERRORS_SCHEMA } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { of } from 'rxjs';
 import { CustomerProfileComponent } from './customer-profile.component';
 import { ApiService } from '@core/services/api.service';
 import { ThemeService } from '@core/services/theme.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { AppStateService } from '@core/services/app-state.service';
-import { Contract, Customer, DpContract, HarvestWindow, PlantingIntention, SavedList, StoredGrain, Ticket } from '@models';
+import { Contract, Customer, DpContract, PlantingIntention, SavedList, StoredGrain, Ticket } from '@models';
 import { provideSelectedProducerActivity } from '@testing/selected-producer-activity.fake';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { SelectedProducerProduction } from '@core/context/selected-producer-production';
@@ -351,7 +350,7 @@ describe('CustomerProfileComponent — header slots and ScoularView recipients (
     localStorage.clear();
     TestBed.configureTestingModule({
       providers: [
-        { provide: ApiService, useValue: { getHistoricalContractsForPacing: () => of([]) } },
+        { provide: ApiService, useValue: {} },
         { provide: ThemeService, useValue: {} },
         provideSelectedProducerActivity(),
         SelectedCustomerContext,
@@ -367,8 +366,9 @@ describe('CustomerProfileComponent — header slots and ScoularView recipients (
     ref = fixture.componentRef;
   });
 
-  // Producers fills them: the Organic badge and its panel, the contacts, the bin sites and Farm Details.
-  it("hosts the modules' header panels where the producer's details sat", () => {
+  // Producers fills them: the Organic badge and its panel, the Insights button, the contacts, the bin sites, Farm
+  // Details, Harvest Contract Pace, and the Insights panels and Activity Summary.
+  it("hosts the modules' panels where the producer's details and summaries sat", () => {
     ref.setInput('customer', makeCustomer({ eSignEnabled: true, phone: '4025550100', email: 'office@farm.com' }));
     fixture.detectChanges();
     const slot = (name: string) => host().querySelector(`app-customer-slot[slot="${name}"]`)!;
@@ -380,7 +380,15 @@ describe('CustomerProfileComponent — header slots and ScoularView recipients (
     expect(contactColumn.firstElementChild).toBe(slot('contacts'));
     expect(contactColumn.lastElementChild).toBe(slot('locations'));
     expect(squash(contactColumn.textContent)).toContain('office@farm.com');
-    expect(slot('details').nextElementSibling).toBe(heading('Harvest Contract Pace').parentElement);
+    // The details row: Contact and Locations, then the modules' details.
+    expect(slot('details').previousElementSibling).toBe(contactColumn.parentElement);
+    expect(slot('details').nextElementSibling).toBeNull();
+    // The actions sit in the row under the name, before the linked-producer picker.
+    expect(slot('actions').parentElement!.classList).toContain('flex-wrap');
+    // The summary sits between the header card and the tabs, in a column spaced by its gap.
+    expect(slot('summary').parentElement!.className).toContain('gap-8');
+    expect(squash(slot('summary').previousElementSibling!.textContent)).toContain('Contact and Locations');
+    expect(slot('summary').nextElementSibling!.querySelector('.rounded-full')).not.toBeNull();
   });
 
   it('marks the open eSign panel as a header panel, which the farm line below takes more room from', () => {
@@ -443,7 +451,7 @@ describe('CustomerProfileComponent — failed background loads (rendered)', () =
     localStorage.clear();
     TestBed.configureTestingModule({
       providers: [
-        { provide: ApiService, useValue: { getHistoricalContractsForPacing: () => of([]) } },
+        { provide: ApiService, useValue: {} },
         { provide: ThemeService, useValue: {} },
         provideSelectedProducerActivity(),
         SelectedCustomerContext,
@@ -459,35 +467,6 @@ describe('CustomerProfileComponent — failed background loads (rendered)', () =
     component = fixture.componentInstance;
     ref = fixture.componentRef;
     ref.setInput('customer', makeCustomer({ id: 42 }));
-  });
-
-  describe('Harvest Contract Pace', () => {
-    it('says the harvest windows could not be loaded instead of "No contract data available"', () => {
-      state.setHarvestWindowsLoadFailed(true);
-      fixture.detectChanges();
-
-      expect(text()).toContain("Harvest windows couldn't be loaded — pace cannot be shown.");
-      expect(text()).not.toContain('No contract data available.');
-    });
-
-    it('still says "No contract data available" when nothing failed', () => {
-      fixture.detectChanges();
-
-      expect(text()).toContain('No contract data available.');
-      expect(text()).not.toContain("Harvest windows couldn't be loaded");
-    });
-
-    it('shows the pace as normal once harvest windows are present, whatever the flag says', () => {
-      state.setHarvestWindowsLoadFailed(true);
-      state.setHarvestWindows([{ id: 1, commodity: 'CORN', deliveryStartMonth: 1, deliveryStartDay: 1, deliveryEndMonth: 12, deliveryEndDay: 31 } as HarvestWindow]);
-      const year = new Date().getFullYear();
-      ref.setInput('contracts', [{ id: 7, commodityGroup: 'CORN', quantity: 1000, deliveryStart: `${year}-06-01`, deliveryEnd: `${year}-06-30` } as Contract]);
-      fixture.detectChanges();
-
-      expect(text()).not.toContain("Harvest windows couldn't be loaded");
-      expect(text()).not.toContain('No contract data available.');
-      expect(text()).toContain(`${year - 1} vs ${year}`);
-    });
   });
 
   describe('Add to List menu', () => {

@@ -1,8 +1,11 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ThemeService } from '@core/services/theme.service';
 import { AppStateService } from '@core/services/app-state.service';
-import { Commodity, Contract, Customer, DashboardPlantingEstimate, Note, PlantingIntention } from '@models';
+import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
+import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
+import { SelectedProducerProduction } from '@core/context/selected-producer-production';
+import { ProducerInsightsPanels } from '../producer-insights/producer-insights-panels.state';
 import { buildProductionCoverage } from '@shared/utils/production-coverage';
 
 /**
@@ -13,35 +16,43 @@ import { buildProductionCoverage } from '@shared/utils/production-coverage';
  * sentence and both of its interesting branches were gated behind `const totalProjected = 0`, so the
  * market-share and revenue-opportunity lines could never render. It also accepted a
  * `plantingIntentions` input it never read — this component now actually uses it.
+ *
+ * Under the profile header while the Producer Insights panels are open. Its element takes no space, so the panel is
+ * the profile's own item, and nothing is there while the panels are closed.
  */
 @Component({
   selector: 'app-growth-opportunity',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule],
-  host: { class: 'block' },
+  host: { class: 'contents' },
   templateUrl: './growth-opportunity.component.html'
 })
 export class GrowthOpportunityComponent {
-  public customer = input.required<Customer>();
-  public contracts = input<Contract[]>([]);
-  public plantingIntentions = input<PlantingIntention[]>([]);
-  public notes = input<Note[]>([]);
-  public commodities = input<Commodity[]>([]);
-  public yieldEstimates = input<DashboardPlantingEstimate[]>([]);
-  /** Planting year the profile is scoped to; 0 means all years. */
-  public plantingYear = input<number>(0);
-  /** Every year this producer has planting intentions or contracts for, newest first. */
-  public availableYears = input<number[]>([]);
-  /** True while the yield estimates are still loading, so we don't flash "no estimate set". */
-  public isLoadingEstimates = input<boolean>(false);
-
-  /** Emitted when the user picks a season here. The profile owns the selection, so changing it in
-   *  this panel also moves the Planting tab — one year, one answer, wherever you look at it. */
-  public yearSelect = output<number>();
-
   private readonly themeService = inject(ThemeService);
   private readonly appState = inject(AppStateService);
+  private readonly production = inject(SelectedProducerProduction);
+
+  /** Shown while the Producer Insights panels are open. */
+  readonly open = inject(ProducerInsightsPanels).open;
+  readonly contracts = inject(SelectedProducerActivity).contracts;
+  /** The producer's intentions in the years the profile shows. */
+  readonly plantingIntentions = this.production.visiblePlantingIntentions;
+  readonly notes = inject(SelectedProducerEngagement).notes;
+  readonly commodities = this.appState.commodities;
+  readonly yieldEstimates = this.production.yieldEstimates;
+  /** Planting year the profile is scoped to; 0 means all years. */
+  readonly plantingYear = this.production.selectedPlantingYear;
+  /** Every year this producer has planting intentions or contracts for, newest first. */
+  readonly availableYears = this.production.plantingYears;
+  /** True while the yield estimates are still loading, so we don't flash "no estimate set". */
+  readonly isLoadingEstimates = this.production.isLoadingEstimates;
+
+  /** Picks a season. The profile owns the selection, so changing it in this panel also moves the
+   *  Planting tab — one year, one answer, wherever you look at it. */
+  selectYear(year: number): void {
+    this.production.selectPlantingYear(year);
+  }
 
   /** Projected production vs. contracted, per commodity. Shared with the print report via the
    *  profile, and unit-tested in production-coverage.spec.ts. */

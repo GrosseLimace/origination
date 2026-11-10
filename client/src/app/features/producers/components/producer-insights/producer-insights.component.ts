@@ -1,33 +1,51 @@
-import { ChangeDetectionStrategy, Component, inject, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ThemeService } from '@core/services/theme.service';
 import { AppStateService } from '@core/services/app-state.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain } from '@models';
+import { Contract } from '@models';
+import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
+import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
+import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
+import { ContractPacingHistoryStore } from '../../data-access/contract-pacing-history.store';
+import { ProducerInsightsPanels } from './producer-insights-panels.state';
 import { buildLbsPerBushelMap, sumInBushels } from '@shared/utils/production-coverage';
 
+/**
+ * Producer Insights, under the profile header while the Producer Insights panels are open: the producer's eSign and
+ * payment, and this year's contracted bushels, average contract and interactions. Its element takes no space, so the
+ * card is the profile's own item, and nothing is there while the panels are closed.
+ */
 @Component({
   selector: 'app-producer-insights',
   standalone: true,
   imports: [CommonModule],
-  host: { class: 'block' },
+  host: { class: 'contents' },
   templateUrl: './producer-insights.component.html',
-  // Every getter the template reads is computed from signals: the inputs, the theme's isDarkMode and
+  // Every getter the template reads is computed from signals: the producer's data, the theme's isDarkMode and
   // the app state's commodityConversions. Reading them during render tracks them, so a theme switch
-  // or late-arriving conversion factors re-render the card without an input change.
+  // or late-arriving conversion factors re-render the card.
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ProducerInsightsComponent {
-  public customer = input.required<Customer>();
-  public contracts = input<Contract[]>([]);
-  /** Historical closed contracts from base.Contract, supplied by parent (fetched once, shared with pacing card). */
-  public historicalContracts = input<Contract[]>([]);
-  public tickets = input<Ticket[]>([]);
-  public plantingIntentions = input<PlantingIntention[]>([]);
-  public notes = input<Note[]>([]);
-  public storedGrain = input<StoredGrain[]>([]);
+  /** Shown while the Producer Insights panels are open. */
+  readonly open = inject(ProducerInsightsPanels).open;
+  readonly customer = inject(SelectedCustomerContext).customer;
+  private readonly customerId = computed(() => this.customer()?.id ?? null);
+  readonly contracts = inject(SelectedProducerActivity).contracts;
+  private readonly pacing = inject(ContractPacingHistoryStore);
+  /** The producer's closed contracts, read once for every pacing figure on the profile. */
+  readonly historicalContracts = this.pacing.contractsFor(this.customerId);
+  readonly notes = inject(SelectedProducerEngagement).notes;
 
   private themeService = inject(ThemeService);
   private readonly appState = inject(AppStateService);
+
+  constructor() {
+    effect(() => {
+      const id = this.customerId();
+      untracked(() => this.pacing.load(id));
+    });
+  }
 
   get isDarkMode(): boolean {
     return this.themeService.isDarkMode();
@@ -109,7 +127,7 @@ export class ProducerInsightsComponent {
 
   // ─── Stats ────────────────────────────────────────────────────────────────
 
-  /** Open + historical merged (deduped by id). Historical comes from base.Contract via parent. */
+  /** Open + historical merged (deduped by id). Historical comes from base.Contract. */
   private get allContracts(): Contract[] {
     const open = this.contracts();
     const hist = this.historicalContracts();

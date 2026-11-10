@@ -121,16 +121,6 @@ export class ApiService {
     );
   }
 
-  /** Fetches closed historical contracts for Contract Pacing year-over-year comparison. */
-  getHistoricalContractsForPacing(customerId: number): Observable<Contract[]> {
-    return this._dedupe(`contracts-pacing:${customerId}`,
-      // Rethrows rather than swallowing: on the CTRM path an empty list is indistinguishable from a
-      // failed read, and the pacing card would silently show no history.
-      this.http.get<Contract[]>(`${this.baseUrl}/contracts/pacing/${customerId}`)
-        .pipe(catchError(e => this.handleError(e)))
-    );
-  }
-
   /** Fetches ALL purchase contracts (open + closed) from base.Contract for a specific crop year, scoped to the given trade units. Used by the Planting Intentions Dashboard's Harvest & Contracts tab. */
   getContractsByCropYear(cropYear: number, tradeUnits?: string[]): Observable<Contract[]> {
     let params = new HttpParams();

@@ -1,21 +1,14 @@
-import { Component, forwardRef, input, output, inject, effect, computed, ChangeDetectionStrategy, ViewChild, ElementRef, signal, DestroyRef, HostListener, Injector, Signal, runInInjectionContext, untracked } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, forwardRef, input, output, inject, effect, computed, ChangeDetectionStrategy, ViewChild, ElementRef, signal, HostListener, Injector, Signal, runInInjectionContext, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ApiService } from '@core/services/api.service';
 import { ThemeService } from '@core/services/theme.service';
-import { ProducerInsightsComponent } from '../producer-insights/producer-insights.component';
-import { ContractPacingCardComponent } from '../contract-pacing-card/contract-pacing-card.component';
-import { GrowthOpportunityComponent } from '../growth-opportunity/growth-opportunity.component';
-import { ActivitySummaryComponent } from '../activity-summary/activity-summary.component';
 import { EditCustomerDialogComponent } from '../edit-customer-dialog/edit-customer-dialog.component';
 import { CustomerPrintReportComponent } from '../customer-print-report/customer-print-report.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, Contract, Ticket, PlantingIntention, PlantingIntentionDraft, PlantingIntentionEdit, StoredGrain, DpContract, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, PlantingIntentionDraft, PlantingIntentionEdit, StoredGrain, DpContract, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, SavedList } from '@models';
 import { formatPhoneDisplay } from '@shared/utils/phone';
 import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl } from '@shared/utils/address';
 import { buildProductionCoverage } from '@shared/utils/production-coverage';
-import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { SelectedProducerProduction } from '@core/context/selected-producer-production';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { CustomerTab } from '@core/modules/module-manifest';
@@ -44,10 +37,6 @@ interface ProfileTab {
     CommonModule,
     CustomerContributionComponent,
     CustomerSlotComponent,
-    ProducerInsightsComponent,
-    ContractPacingCardComponent,
-    GrowthOpportunityComponent,
-    ActivitySummaryComponent,
     EditCustomerDialogComponent,
     CustomerPrintReportComponent
   ],
@@ -58,25 +47,8 @@ interface ProfileTab {
 })
 export class CustomerProfileComponent implements SelectedProducerProduction {
   private readonly appState = inject(AppStateService);
-  private readonly apiService = inject(ApiService);
-  private readonly destroyRef = inject(DestroyRef);
-  /** Harvest windows from app state — exposed for pacing card template binding. */
-  readonly harvestWindows = this.appState.harvestWindows;
-
-  /** The harvest windows failed to load. Pace is measured inside them, so with none the card would
-   *  say "No contract data available" about a producer who may well have contracts. */
-  readonly harvestWindowsUnavailable = computed(() =>
-    this.appState.harvestWindowsLoadFailed() && this.harvestWindows().length === 0);
-
   /** The saved lists failed to load, so an empty Add to List menu does not mean none match. */
   readonly savedListsLoadFailed = this.appState.savedListsLoadFailed;
-
-  /**
-   * Historical closed contracts from base.Contract for this customer.
-   * Fetched ONCE per customer (api.service dedupes anyway) and shared across
-   * the pacing card and producer-insights so we don't hit the endpoint twice.
-   */
-  readonly historicalContracts = signal<Contract[]>([]);
 
   public customer = input.required<Customer>();
   public allCustomers = input<Customer[]>([]);
@@ -95,23 +67,12 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
   public commodities = input<Commodity[]>([]);
   public isLoadingEstimates = input(false);
 
-  /** True when this producer's prior-year pacing history could not be read. Forwarded to the pacing
-   *  card so it can say the comparison is incomplete instead of showing it as flat. */
-  readonly historicalContractsFailed = signal(false);
-
-  /** Non-null when the producer's contract read FAILED rather than returning nothing. The contracts and tickets
-   *  tables read their data and failures from the page's SelectedProducerActivity themselves. */
-  readonly contractsLoadError = inject(SelectedProducerActivity).contractsLoadError;
   public isLoadingPlanting = input(false);
   public isLoadingStoredGrain = input(false);
   public isLoadingDpContracts = input(false);
 
-  // Unfiltered data for Activity Summary
+  /** The producer's contracts for the Edit Producer dialog, which offers their commodities. */
   public allCustomerContracts = input<Contract[]>([]);
-  public allCustomerTickets = input<Ticket[]>([]);
-  public allCustomerPlantingIntentions = input<PlantingIntention[]>([]);
-  public allCustomerStoredGrain = input<StoredGrain[]>([]);
-  public allCustomerDpContracts = input<DpContract[]>([]);
 
   public onAddPlanting = output<PlantingIntentionDraft>();
   public onEditPlanting = output<PlantingIntentionEdit>();
@@ -153,7 +114,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
 
   // Local state - signals
   activeTab = signal('contracts');
-  showProducerInsights = signal(false);
   showESignRecipients = signal(false);
   showEditDialog = signal(false);
   showPrintReport = signal(false);
@@ -295,30 +255,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
       }
     });
 
-    // Fetch historical closed contracts (base.Contract) once per customer.
-    // Shared with both contract-pacing-card and producer-insights via inputs so the
-    // endpoint is only hit once. ApiService also dedupes by `contracts-pacing:{id}` key.
-    effect(() => {
-      const id = this.customer()?.id;
-
-      // Cleared as the fetch is kicked, so a previous producer's failure never shows against this one.
-      this.historicalContractsFailed.set(false);
-
-      if (id == null) { this.historicalContracts.set([]); return; }
-      this.apiService.getHistoricalContractsForPacing(id)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe({
-          next: contracts => { this.historicalContracts.set(contracts); this.historicalContractsFailed.set(false); },
-          error: () => {
-            // Producer-scoped, so it stays local: the trade-unit-wide flag drives Build-a-List's banner
-            // and this read says nothing about that list. Cleared to [] rather than left stale so the
-            // pacing card cannot present another producer's history as this one's.
-            this.historicalContracts.set([]);
-            this.historicalContractsFailed.set(true);
-          }
-        });
-    });
-
     // Effect: auto-select the newest planting year when data changes.
     // Kept as an effect (not computed) because it writes to selectedPlantingYear.
     effect(() => {
@@ -421,10 +357,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
   /** The tab being shown, or null when the strip is empty. */
   readonly shownContribution = computed(() => this.tabs().find(tab => tab.id === this.shownTab())?.contribution ?? null);
 
-  toggleProducerInsights(): void {
-    this.showProducerInsights.update(v => !v);
-  }
-
   openEditDialog(): void {
     this.showEditDialog.set(true);
   }
@@ -510,76 +442,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
   });
 
   get bushelsAvailable(): number { return this.contractMetrics().bushelsAvailable; }
-
-  /**
-   * Harvest-window-based pacing direction summary for the top-of-profile pace card.
-   * Mirrors the per-commodity logic in contract-pacing-card: for each active harvest window,
-   * sum bushels whose delivery period overlaps the window in this year vs last year.
-   * Returns 'down' if ANY commodity is down, 'up' if at least one has data and none are down,
-   * 'flat' if there's commodity data but no movement, 'none' if no data to evaluate.
-   */
-  readonly harvestPacingSummary = computed<{ direction: 'up' | 'down' | 'flat' | 'none'; year: number }>(() => {
-    const contracts = this.contracts();
-    const windows = this.harvestWindows().filter(hw => hw.isActive !== false);
-    const year = new Date().getFullYear();
-    if (contracts.length === 0 || windows.length === 0) return { direction: 'none', year };
-
-    let anyDown = false;
-    let anyData = false;
-    let anyMovement = false;
-    for (const hw of windows) {
-      let thisYear = 0;
-      let lastYear = 0;
-      for (const c of contracts) {
-        if (!this._contractMatchesPacingCommodity(c, hw.commodity)) continue;
-        if (this._contractOverlapsHarvestWindow(c, hw, year)) thisYear += c.quantity;
-        if (this._contractOverlapsHarvestWindow(c, hw, year - 1)) lastYear += c.quantity;
-      }
-      if (thisYear === 0 && lastYear === 0) continue;
-      anyData = true;
-      if (thisYear < lastYear) { anyDown = true; anyMovement = true; }
-      else if (thisYear > lastYear) { anyMovement = true; }
-    }
-    if (!anyData) return { direction: 'none', year };
-    if (anyDown) return { direction: 'down', year };
-    return { direction: anyMovement ? 'up' : 'flat', year };
-  });
-
-  /** Arrow glyph for the harvest pacing card. */
-  get harvestPacingArrow(): string {
-    const d = this.harvestPacingSummary().direction;
-    return d === 'up' ? '▲' : d === 'down' ? '▼' : '—';
-  }
-
-  /** Box classes for the Harvest Contract Pace card based on commodity-level direction. */
-  get harvestPacingBoxClass(): string {
-    const d = this.harvestPacingSummary().direction;
-    if (d === 'up') return 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800 text-green-700 dark:text-green-400';
-    if (d === 'down') return 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400';
-    return 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400';
-  }
-
-  private _contractOverlapsHarvestWindow(c: Contract, hw: HarvestWindow, cropYear: number): boolean {
-    if (!c.deliveryStart && !c.deliveryEnd) return false;
-    const windowStart = new Date(cropYear, hw.deliveryStartMonth - 1, hw.deliveryStartDay);
-    const windowEnd = new Date(cropYear, hw.deliveryEndMonth - 1, hw.deliveryEndDay);
-    windowEnd.setHours(23, 59, 59, 999);
-    const delStart = c.deliveryStart ? new Date(c.deliveryStart) : new Date(c.deliveryEnd!);
-    const delEnd = c.deliveryEnd ? new Date(c.deliveryEnd) : new Date(c.deliveryStart!);
-    return delStart <= windowEnd && delEnd >= windowStart;
-  }
-
-  private _contractMatchesPacingCommodity(c: Contract, hwCommodity: string): boolean {
-    const target = hwCommodity.trim().toUpperCase();
-    if (!target) return false;
-    const group = (c.commodityGroup || '').trim().toUpperCase();
-    if (group && group === target) return true;
-    const desc = (c.commodityDescription || '').trim().toUpperCase();
-    if (desc && desc.includes(target)) return true;
-    const code = (c.commodityCode || '').trim().toUpperCase();
-    if (code && code.includes(target)) return true;
-    return false;
-  }
 
   // ── SelectedProducerProduction ───────────────────────────────────────────────
 

@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
-import { of } from 'rxjs';
 import { Customer } from '@models';
 import { ApiService } from '@core/services/api.service';
 import { ThemeService } from '@core/services/theme.service';
@@ -33,7 +32,7 @@ describe("CustomerProfileComponent: the tab strip, with the modules' tabs", () =
     access = permissionStub(granted);
     TestBed.configureTestingModule({
       providers: [
-        { provide: ApiService, useValue: { getHistoricalContractsForPacing: () => of([]) } },
+        { provide: ApiService, useValue: {} },
         { provide: ThemeService, useValue: { isDarkMode: () => false } },
         { provide: UsageTrackingService, useValue: { trackPlantingTabClick: () => {}, trackStorageDropdownOpen: () => {}, trackDpContractsDropdownOpen: () => {} } },
         { provide: APP_MODULES, useValue: modules },

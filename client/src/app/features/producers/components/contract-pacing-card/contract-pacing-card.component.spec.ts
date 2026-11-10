@@ -1,20 +1,21 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ComponentRef, signal } from '@angular/core';
+import { signal } from '@angular/core';
 import { of, Subject, throwError } from 'rxjs';
 import { ContractPacingCardComponent } from './contract-pacing-card.component';
 import { ThemeService } from '@core/services/theme.service';
-import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
-import { Contract, HarvestWindow } from '@models';
+import { Contract, Customer, HarvestWindow } from '@models';
+import { ContractPacingApiService } from '../../data-access/contract-pacing-api.service';
+import { ProducerInsightsPanels } from '../producer-insights/producer-insights-panels.state';
+import { CustomerScreenSources, customerScreenSources } from '@testing/customer-screen-sources';
 
 // Behaviour safety net for the Harvest Contract Pace card: which contracts land in this year's vs
 // last year's harvest window (commodity matching by group / description / code, inclusive date
 // overlap), the per-commodity rows and their sort, the up / down / flat arrows, the open +
-// historical merge (deduped by id), the self-fetch fallback when the parent supplies no history, and
-// the "Unavailable" note when either side failed to read prior-year history. Everything is driven
-// through the signal inputs and asserted on the rendered DOM, so the card can move to OnPush
-// without this file changing.
+// historical merge (deduped by id), reading the producer's history, and the "Unavailable" note when
+// it could not be read. Everything is driven through the selected producer's data, the app state's
+// harvest windows and a stubbed pacing API, and asserted on the rendered DOM.
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -61,15 +62,15 @@ const WHEAT = makeWindow({ id: 3, commodity: 'Wheat', deliveryStartMonth: 6, del
 
 describe('ContractPacingCardComponent', () => {
   let fixture: ComponentFixture<ContractPacingCardComponent>;
-  let ref: ComponentRef<ContractPacingCardComponent>;
+  let sources: CustomerScreenSources;
   let getHistoricalContractsForPacing: ReturnType<typeof vi.fn>;
   const isDarkMode = signal(false);
 
-  function setInputs(inputs: {
-    contracts?: Contract[]; harvestWindows?: HarvestWindow[]; customerId?: number | null;
-    historicalContracts?: Contract[]; parentHistoryLoadFailed?: boolean;
-  }): void {
-    for (const [name, value] of Object.entries(inputs)) ref.setInput(name, value);
+  /** Sets what the card reads: the producer (by id), their open contracts and the harvest windows. */
+  function setInputs(inputs: { contracts?: Contract[]; harvestWindows?: HarvestWindow[]; customerId?: number | null }): void {
+    if (inputs.customerId !== undefined) sources.customer.set(inputs.customerId == null ? null : { id: inputs.customerId, name: 'Sample Farms' } as Customer);
+    if (inputs.contracts) sources.activity.contracts.set(inputs.contracts);
+    if (inputs.harvestWindows) TestBed.inject(AppStateService).setHarvestWindows(inputs.harvestWindows);
     fixture.detectChanges();
   }
 
@@ -114,15 +115,17 @@ describe('ContractPacingCardComponent', () => {
     vi.setSystemTime(NOW);
     getHistoricalContractsForPacing = vi.fn(() => of<Contract[]>([]));
     isDarkMode.set(false);
+    sources = customerScreenSources();
     await TestBed.configureTestingModule({
       imports: [ContractPacingCardComponent],
       providers: [
+        ...sources.providers,
         { provide: ThemeService, useValue: { isDarkMode } },
-        { provide: ApiService, useValue: { getHistoricalContractsForPacing } },
+        { provide: ContractPacingApiService, useValue: { historicalContracts: getHistoricalContractsForPacing } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(ContractPacingCardComponent);
-    ref = fixture.componentRef;
+    TestBed.inject(ProducerInsightsPanels).open.set(true);
   });
 
   afterEach(() => {
@@ -279,24 +282,21 @@ describe('ContractPacingCardComponent', () => {
 
   // ── Historical contracts ──────────────────────────────────────────────────
 
-  it('merges parent-supplied historical contracts into last year, deduped by id, and does not self-fetch', () => {
+  it("merges the producer's history into last year, deduped by id against the open contracts and itself", () => {
     const lastOctober = { deliveryStart: on(LAST_YEAR, 10, 1), deliveryEnd: on(LAST_YEAR, 10, 31) };
-    setInputs({
-      customerId: 42,
-      harvestWindows: [CORN],
-      contracts: [makeContract({ id: 1, quantity: 10000 })],
-      historicalContracts: [
-        makeContract({ id: 1, quantity: 10000 }),                // same id as an open contract → not double-counted
-        makeContract({ id: 50, quantity: 8000, ...lastOctober }),
-        makeContract({ id: 50, quantity: 8000, ...lastOctober }), // duplicated within the history itself
-      ],
-    });
+    getHistoricalContractsForPacing.mockReturnValue(of([
+      makeContract({ id: 1, quantity: 10000 }),                // same id as an open contract → not double-counted
+      makeContract({ id: 50, quantity: 8000, ...lastOctober }),
+      makeContract({ id: 50, quantity: 8000, ...lastOctober }), // duplicated within the history itself
+    ]));
 
-    expect(getHistoricalContractsForPacing).not.toHaveBeenCalled();
+    setInputs({ customerId: 42, harvestWindows: [CORN], contracts: [makeContract({ id: 1, quantity: 10000 })] });
+    fixture.detectChanges();
+
     expect(rows().map(r => [r.lastYear, r.thisYear])).toEqual([['8,000', '10,000']]);
   });
 
-  it('self-fetches the producer\'s history when the parent supplies none, and merges it into the comparison', () => {
+  it("reads the producer's history and merges it into the comparison", () => {
     getHistoricalContractsForPacing.mockReturnValue(of([
       makeContract({ id: 70, quantity: 15000, deliveryStart: on(LAST_YEAR, 9, 1), deliveryEnd: on(LAST_YEAR, 11, 30) }),
     ]));
@@ -308,14 +308,14 @@ describe('ContractPacingCardComponent', () => {
     expect(rows().map(r => [r.lastYear, r.thisYear, r.arrow])).toEqual([['15,000', '10,000', '▼']]);
   });
 
-  it('does not self-fetch without a customer id', () => {
+  it('reads no history without a producer', () => {
     setInputs({ customerId: null, harvestWindows: [CORN], contracts: [makeContract()] });
 
     expect(getHistoricalContractsForPacing).not.toHaveBeenCalled();
     expect(statCards()[0].value).toBe('—');
   });
 
-  it('labels last year "Unavailable" when the self-fetch fails, instead of an em-dash that reads as zero', () => {
+  it('labels last year "Unavailable" when the history read fails, instead of an em-dash that reads as zero', () => {
     getHistoricalContractsForPacing.mockReturnValue(throwError(() => new Error('CTRM down')));
 
     setInputs({ customerId: 42, harvestWindows: [CORN], contracts: [makeContract({ quantity: 10000 })] });
@@ -327,21 +327,7 @@ describe('ContractPacingCardComponent', () => {
     ]);
   });
 
-  it('labels last year "Unavailable" while the parent reports its own history read failed', () => {
-    setInputs({
-      harvestWindows: [CORN],
-      contracts: [makeContract({ quantity: 10000 })],
-      historicalContracts: [makeContract({ id: 9, quantity: 1, deliveryStart: on(LAST_YEAR, 10, 1), deliveryEnd: on(LAST_YEAR, 10, 2) })],
-      parentHistoryLoadFailed: true,
-    });
-
-    expect(statCards()[0].value).toBe('Unavailable');
-
-    setInputs({ parentHistoryLoadFailed: false });
-    expect(statCards()[0].value).toBe('1');
-  });
-
-  it('recomputes when the contracts input changes', () => {
+  it("recomputes when the producer's contracts change", () => {
     setInputs({ harvestWindows: [CORN], contracts: [makeContract({ id: 1, quantity: 1000 })] });
     expect(statCards()[1].value).toBe('1,000');
 
@@ -354,7 +340,7 @@ describe('ContractPacingCardComponent', () => {
   // The real history read is an HTTP call, so its result (or failure) lands after the card has
   // rendered. The `of()` / `throwError()` tests above resolve synchronously and cannot see that.
 
-  it('folds in a self-fetched history that arrives after the card has rendered', () => {
+  it('folds in a history that arrives after the card has rendered', () => {
     const history$ = new Subject<Contract[]>();
     getHistoricalContractsForPacing.mockReturnValue(history$);
     setInputs({ customerId: 42, harvestWindows: [CORN], contracts: [makeContract({ id: 1, quantity: 10000 })] });
@@ -367,7 +353,7 @@ describe('ContractPacingCardComponent', () => {
     expect(rows().map(r => [r.lastYear, r.thisYear, r.arrow])).toEqual([['15,000', '10,000', '▼']]);
   });
 
-  it('labels last year "Unavailable" when a pending self-fetch fails after the card has rendered', () => {
+  it('labels last year "Unavailable" when a pending history read fails after the card has rendered', () => {
     const history$ = new Subject<Contract[]>();
     getHistoricalContractsForPacing.mockReturnValue(history$);
     setInputs({ customerId: 42, harvestWindows: [CORN], contracts: [makeContract({ quantity: 10000 })] });
@@ -377,6 +363,12 @@ describe('ContractPacingCardComponent', () => {
     fixture.detectChanges();
 
     expect(statCards()[0].value).toBe('Unavailable');
+  });
+
+  it('shows nothing while the Producer Insights panels are closed', () => {
+    TestBed.inject(ProducerInsightsPanels).open.set(false);
+    setInputs({ harvestWindows: [CORN], contracts: [makeContract()] });
+    expect(host().textContent?.trim()).toBe('');
   });
 
   it('restyles the card when the theme switches to dark', () => {

@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ComponentRef, signal } from '@angular/core';
+import { signal } from '@angular/core';
 import { ProducerInsightsComponent } from './producer-insights.component';
+import { ProducerInsightsPanels } from './producer-insights-panels.state';
+import { CustomerScreenSources, customerScreenSources } from '@testing/customer-screen-sources';
+import { ContractPacingHistoryFake, contractPacingHistoryFake, provideContractPacingHistory } from '../../data-access/contract-pacing-history.store.testing';
 import { ThemeService } from '@core/services/theme.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { CommodityConversion, Contract, Customer, Note } from '@models';
@@ -10,8 +13,8 @@ import { CommodityConversion, Contract, Customer, Note } from '@models';
 // producer name in the subtitle, and the three stat cards — Total Volume (bushels contracted on
 // contracts delivering in the CURRENT calendar year, open + historical deduped by id, with tonnage
 // converted through the GNP024 lb/bu factors and inconvertible units left out), Avg Contract, and
-// Engagement (notes logged). The card reads everything through getters over signal inputs, so these
-// tests drive the inputs and read the rendered DOM — they must keep passing after an OnPush switch.
+// Engagement (notes logged). The card reads everything through getters over signals (the selected
+// producer's data and pacing history), so these tests drive those and read the rendered DOM.
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -52,14 +55,18 @@ function makeNote(over: Partial<Note> = {}): Note {
 
 describe('ProducerInsightsComponent', () => {
   let fixture: ComponentFixture<ProducerInsightsComponent>;
-  let ref: ComponentRef<ProducerInsightsComponent>;
+  let sources: CustomerScreenSources;
+  let pacing: ContractPacingHistoryFake;
   const commodityConversions = signal<CommodityConversion[]>([]);
   const isDarkMode = signal(false);
 
   function setInputs(inputs: {
     customer?: Customer; contracts?: Contract[]; historicalContracts?: Contract[]; notes?: Note[];
   }): void {
-    for (const [name, value] of Object.entries(inputs)) ref.setInput(name, value);
+    if (inputs.customer) sources.customer.set(inputs.customer);
+    if (inputs.contracts) sources.activity.contracts.set(inputs.contracts);
+    if (inputs.historicalContracts) pacing.contracts.set(inputs.historicalContracts);
+    if (inputs.notes) sources.engagement.notes.set(inputs.notes);
     fixture.detectChanges();
   }
 
@@ -82,20 +89,41 @@ describe('ProducerInsightsComponent', () => {
     vi.setSystemTime(NOW);
     commodityConversions.set([]);
     isDarkMode.set(false);
+    sources = customerScreenSources();
+    pacing = contractPacingHistoryFake();
     await TestBed.configureTestingModule({
       imports: [ProducerInsightsComponent],
       providers: [
+        ...sources.providers,
+        provideContractPacingHistory(pacing),
         { provide: ThemeService, useValue: { isDarkMode } },
         { provide: AppStateService, useValue: { commodityConversions, commodityConversionsLoadFailed: signal(false) } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(ProducerInsightsComponent);
-    ref = fixture.componentRef;
-    ref.setInput('customer', makeCustomer());
+    sources.customer.set(makeCustomer());
+    TestBed.inject(ProducerInsightsPanels).open.set(true);
   });
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  // ── Open and closed, and the history it reads ─────────────────────────────
+
+  it('shows nothing while the Producer Insights panels are closed', () => {
+    TestBed.inject(ProducerInsightsPanels).open.set(false);
+    setInputs({ contracts: [makeContract()] });
+    expect(host().textContent?.trim()).toBe('');
+
+    TestBed.inject(ProducerInsightsPanels).open.set(true);
+    fixture.detectChanges();
+    expect(textOf(host().querySelector('p'))).toContain('Sample Farms');
+  });
+
+  it("asks for the producer's pacing history, which every pacing figure shares", () => {
+    fixture.detectChanges();
+    expect(pacing.load).toHaveBeenLastCalledWith(42);
   });
 
   // ── Header pills + subtitle ───────────────────────────────────────────────
@@ -283,23 +311,30 @@ describe('ProducerInsightsComponent', () => {
 describe('ProducerInsightsComponent — bushel conversions failed to load', () => {
   let fixture: ComponentFixture<ProducerInsightsComponent>;
   let state: AppStateService;
+  let sources: CustomerScreenSources;
 
   const text = (): string => ((fixture.nativeElement as HTMLElement).textContent ?? '').replace(/\s+/g, ' ').trim();
   const tons = makeContract({ id: 2, contractNumber: '200', commodityCode: 'SB', unit: 'ST', quantity: 30 });
 
   function render(contracts: Contract[]): void {
     fixture = TestBed.createComponent(ProducerInsightsComponent);
-    fixture.componentRef.setInput('customer', makeCustomer());
-    fixture.componentRef.setInput('contracts', contracts);
+    sources.customer.set(makeCustomer());
+    sources.activity.contracts.set(contracts);
+    TestBed.inject(ProducerInsightsPanels).open.set(true);
     fixture.detectChanges();
   }
 
   beforeEach(async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(NOW);
+    sources = customerScreenSources();
     await TestBed.configureTestingModule({
       imports: [ProducerInsightsComponent],
-      providers: [{ provide: ThemeService, useValue: { isDarkMode: signal(false) } }],
+      providers: [
+        ...sources.providers,
+        provideContractPacingHistory(contractPacingHistoryFake()),
+        { provide: ThemeService, useValue: { isDarkMode: signal(false) } },
+      ],
     }).compileComponents();
     state = TestBed.inject(AppStateService);
   });

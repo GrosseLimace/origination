@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ComponentRef, signal } from '@angular/core';
+import { Provider, signal } from '@angular/core';
 import { ActivitySummaryComponent } from './activity-summary.component';
+import { CustomerScreenSources, customerScreenSources } from '@testing/customer-screen-sources';
+import { ContractPacingHistoryFake, contractPacingHistoryFake, provideContractPacingHistory } from '../../data-access/contract-pacing-history.store.testing';
 import { AppStateService } from '@core/services/app-state.service';
 import { CommodityConversion, Contract, Customer, Ticket } from '@models';
 
@@ -16,12 +18,24 @@ function makeCustomer(id: number): Customer {
   return { id, name: 'Test Farm' } as Customer;
 }
 
-function createComponent(): { component: ActivitySummaryComponent; ref: ComponentRef<ActivitySummaryComponent> } {
+/** The selected producer's data the summary reads, made fresh for each test module. */
+let sources: CustomerScreenSources;
+
+/** The producer's pacing history, made fresh for each test module; empty to start with. */
+let pacing: ContractPacingHistoryFake;
+
+/** Providers for what the summary reads: the producer's data and their pacing history. */
+function panelProviders(): Provider[] {
+  sources = customerScreenSources();
+  pacing = contractPacingHistoryFake();
+  return [...sources.providers, provideContractPacingHistory(pacing)];
+}
+
+function createComponent(): { component: ActivitySummaryComponent } {
   const fixture = TestBed.createComponent(ActivitySummaryComponent);
-  const ref = fixture.componentRef;
-  ref.setInput('customer', makeCustomer(1));
+  sources.customer.set(makeCustomer(1));
   fixture.detectChanges();
-  return { component: fixture.componentInstance, ref };
+  return { component: fixture.componentInstance };
 }
 
 describe('ActivitySummaryComponent — collapsible', () => {
@@ -29,7 +43,7 @@ describe('ActivitySummaryComponent — collapsible', () => {
     localStorage.removeItem(KEY);
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      providers: [{ provide: AppStateService, useValue: { harvestWindows: () => [], commodityConversions: () => [] } }],
+      providers: [...panelProviders(), { provide: AppStateService, useValue: { harvestWindows: () => [], commodityConversions: () => [] } }],
     });
     // happy-dom + JIT can't fetch templateUrl; the toggle logic is class-level.
     TestBed.overrideComponent(ActivitySummaryComponent, {
@@ -60,7 +74,7 @@ describe('ActivitySummaryComponent — collapsible', () => {
     // Selecting another producer rebuilds the profile, so a fresh instance is constructed.
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      providers: [{ provide: AppStateService, useValue: { harvestWindows: () => [], commodityConversions: () => [] } }],
+      providers: [...panelProviders(), { provide: AppStateService, useValue: { harvestWindows: () => [], commodityConversions: () => [] } }],
     });
     TestBed.overrideComponent(ActivitySummaryComponent, {
       set: { template: '', templateUrl: undefined, imports: [] },
@@ -105,8 +119,8 @@ describe('ActivitySummaryComponent — unapplied ticket bushels', () => {
 
   function render(tickets: Ticket[]): void {
     fixture = TestBed.createComponent(ActivitySummaryComponent);
-    fixture.componentRef.setInput('customer', makeCustomer(1));
-    fixture.componentRef.setInput('tickets', tickets);
+    sources.customer.set(makeCustomer(1));
+    sources.activity.tickets.set(tickets);
     fixture.detectChanges();
   }
 
@@ -115,7 +129,7 @@ describe('ActivitySummaryComponent — unapplied ticket bushels', () => {
     conversions.set([]);
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      providers: [{ provide: AppStateService, useValue: {
+      providers: [...panelProviders(), { provide: AppStateService, useValue: {
         harvestWindows: signal([]), commodityConversions: conversions,
         harvestWindowsLoadFailed: signal(false), commodityConversionsLoadFailed: signal(false),
       } }],
@@ -166,7 +180,7 @@ describe('ActivitySummaryComponent — unapplied ticket bushels', () => {
     ]);
     expect(summary()).toContain('2 unapplied tickets (3,000 bushels)');
 
-    fixture.componentRef.setInput('tickets', [ticket({ id: 3, productCode: 'YC', appliedDockQuantity: 168000 })]);
+    sources.activity.tickets.set([ticket({ id: 3, productCode: 'YC', appliedDockQuantity: 168000 })]);
     fixture.detectChanges();
 
     expect(summary()).toContain('1 unapplied ticket (3,000 bushels)');
@@ -189,15 +203,15 @@ describe('ActivitySummaryComponent — failed background loads', () => {
 
   function render(contracts: Contract[]): void {
     fixture = TestBed.createComponent(ActivitySummaryComponent);
-    fixture.componentRef.setInput('customer', makeCustomer(1));
-    fixture.componentRef.setInput('contracts', contracts);
+    sources.customer.set(makeCustomer(1));
+    sources.activity.contracts.set(contracts);
     fixture.detectChanges();
   }
 
   beforeEach(() => {
     localStorage.removeItem(KEY);
     TestBed.resetTestingModule();
-    TestBed.configureTestingModule({});
+    TestBed.configureTestingModule({ providers: panelProviders() });
     state = TestBed.inject(AppStateService);
   });
 
@@ -216,6 +230,15 @@ describe('ActivitySummaryComponent — failed background loads', () => {
 
       expect(text()).not.toContain("Harvest contract pace couldn't be shown");
       expect(text()).toContain('On the contract side, they currently have 1 contract totaling 5,000 bushels.');
+    });
+
+    it('says so for a producer whose only contracts to pace are in their history', () => {
+      state.setHarvestWindowsLoadFailed(true);
+      pacing.contracts.set([contract({ id: 9, closedDate: new Date('2025-01-01T12:00:00') })]);
+      render([]);
+
+      expect(pacing.load).toHaveBeenLastCalledWith(1);
+      expect(text()).toContain(note);
     });
 
     it('adds nothing for a producer with no contracts to pace', () => {

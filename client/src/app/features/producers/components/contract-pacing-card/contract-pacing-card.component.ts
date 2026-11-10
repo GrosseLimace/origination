@@ -1,9 +1,11 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ThemeService } from '@core/services/theme.service';
-import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
+import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
+import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
+import { ContractPacingHistoryStore } from '../../data-access/contract-pacing-history.store';
+import { ProducerInsightsPanels } from '../producer-insights/producer-insights-panels.state';
 import { Contract, HarvestWindow } from '@models';
 
 type PacingDirection = 'up' | 'down' | 'flat';
@@ -17,90 +19,57 @@ interface CommodityPacingRow {
   windowLabel: string;
 }
 
+/**
+ * The Contract Pacing card, under the profile header while the Producer Insights panels are open: bushels contracted
+ * for delivery in each harvest window this year against last, by commodity. Its element takes no space, so the card is
+ * the profile's own item, and nothing is there while the panels are closed.
+ */
 @Component({
   selector: 'app-contract-pacing-card',
   standalone: true,
   imports: [CommonModule],
-  host: { class: 'block' },
+  host: { class: 'contents' },
   templateUrl: './contract-pacing-card.component.html',
-  // The template reads inputs, signals, computeds, and style getters over the theme's isDarkMode
-  // signal. The self-fetch's subscribe callbacks write signals, so a history that arrives (or fails)
-  // after the first render still marks the view.
+  // The template reads signals, computeds, and style getters over the theme's isDarkMode signal. The
+  // history arrives (or fails) as a signal, so it marks the view after the first render.
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ContractPacingCardComponent {
-  // Open contracts from parent (pre-filtered to !closedDate)
-  public contracts = input<Contract[]>([]);
-  // Harvest windows from app state (drives the delivery-window filter)
-  public harvestWindows = input<HarvestWindow[]>([]);
-  // Customer id — used to fetch historical closed contracts when the parent doesn't supply them
-  public customerId = input<number | null>(null);
-  /**
-   * Optional: historical closed contracts supplied by parent (single fetch shared
-   * across pacing card + producer insights). When provided (length > 0 OR explicitly
-   * set), the card skips its own fetch.
-   */
-  public historicalContracts = input<Contract[]>([]);
-
   private readonly themeService = inject(ThemeService);
-  private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
+  private readonly pacing = inject(ContractPacingHistoryStore);
+
+  /** Shown while the Producer Insights panels are open. */
+  readonly open = inject(ProducerInsightsPanels).open;
+  private readonly customer = inject(SelectedCustomerContext).customer;
+  private readonly customerId = computed(() => this.customer()?.id ?? null);
+  /** The producer's open contracts. */
+  readonly contracts = inject(SelectedProducerActivity).contracts;
+  /** The harvest windows the figures are measured in. */
+  readonly harvestWindows = this.appState.harvestWindows;
+  /** The producer's closed contracts, read once for every pacing figure on the profile. */
+  readonly historicalContracts = this.pacing.contractsFor(this.customerId);
 
   /** True when this producer's prior-year history could not be read, so the year-over-year comparison
    *  is understated rather than genuinely flat. Producer-scoped: never the trade-unit-wide flag. */
-  readonly historyLoadFailed = signal(false);
-
-  /** Set by the parent when IT was the one that failed to read the history. The card self-fetches only
-   *  when the parent supplies nothing, so the failure can originate on either side. */
-  public parentHistoryLoadFailed = input(false);
-
-  /** Either source failing means the comparison is understated. */
-  readonly historyUnavailable = computed(() => this.historyLoadFailed() || this.parentHistoryLoadFailed());
+  readonly historyUnavailable = this.pacing.failedFor(this.customerId);
 
   /** The harvest windows failed to load. Every figure here is measured inside them, so without them
    *  both years read "—" — as if the producer had contracted nothing. */
   readonly harvestWindowsUnavailable = computed(() =>
     this.appState.harvestWindowsLoadFailed() && this.harvestWindows().length === 0);
-  private readonly destroyRef = inject(DestroyRef);
-
-  /** Closed historical contracts — supplied by parent OR self-fetched if parent doesn't pass them. */
-  private readonly _selfFetchedHistorical = signal<Contract[]>([]);
 
   constructor() {
-    // Self-fetch only when the parent did NOT supply historical contracts (length 0 AND customerId set).
-    // The parent (customer-profile) typically owns the fetch and shares the result with both
-    // this card and producer-insights, so this fallback is for standalone usage.
     effect(() => {
       const id = this.customerId();
-      const parentSupplied = this.historicalContracts();
-
-      // Reset where the fetch STARTS, not just when one succeeds: otherwise switching from a producer
-      // whose history failed to one still loading shows the previous producer's failure for a beat.
-      this.historyLoadFailed.set(false);
-
-      if (id == null || parentSupplied.length > 0) {
-        this._selfFetchedHistorical.set([]);
-        return;
-      }
-      this.apiService.getHistoricalContractsForPacing(id)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe({
-          next: contracts => { this._selfFetchedHistorical.set(contracts); this.historyLoadFailed.set(false); },
-          // LOCAL, not the trade-unit-wide flag: this is one producer's prior-year history. Flagging it
-          // globally would put "contract data could not be loaded" on Build-a-List while its own list was
-          // fine. Pacing compares this year against last, so a miss understates the comparison rather
-          // than emptying the card - hence a note on the card, not a blocking error.
-          error: () => this.historyLoadFailed.set(true)
-        });
+      untracked(() => this.pacing.load(id));
     });
   }
 
   /** Open + historical merged for pacing calculations. */
   private readonly allContracts = computed<Contract[]>(() => {
     const open = this.contracts() || [];
-    const historical = this.historicalContracts().length > 0
-      ? this.historicalContracts()
-      : this._selfFetchedHistorical();
+    const historical = this.historicalContracts();
     const seen = new Set<number>(open.map(c => c.id));
     const merged = [...open];
     for (const h of historical) {

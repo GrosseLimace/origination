@@ -16,6 +16,12 @@ import { OrganicPanelComponent } from './components/organic/organic-panel.compon
 import { ProducerContactsComponent } from './components/producer-contacts/producer-contacts.component';
 import { BinSitesComponent } from './components/bin-sites/bin-sites.component';
 import { FarmDetailsComponent } from './components/farm-details/farm-details.component';
+import { ProducerInsightsToggleComponent } from './components/producer-insights/producer-insights-toggle.component';
+import { ContractPaceComponent } from './components/contract-pace/contract-pace.component';
+import { ProducerInsightsComponent } from './components/producer-insights/producer-insights.component';
+import { ContractPacingCardComponent } from './components/contract-pacing-card/contract-pacing-card.component';
+import { GrowthOpportunityComponent } from './components/growth-opportunity/growth-opportunity.component';
+import { ActivitySummaryComponent } from './components/activity-summary/activity-summary.component';
 
 describe('Producers preload: the Planting Dashboard summary', () => {
   const summary: DashboardSummary = { estimates: [], marketShares: [], actualHarvest: [] };
@@ -131,7 +137,8 @@ describe("Producers module: the customer profile's tabs", () => {
 });
 
 describe("Producers module: the customer profile's header panels", () => {
-  const panels = () => producersModule.customerPanels!;
+  const headerIds = ['organic-badge', 'organic-panel', 'contacts', 'bin-sites', 'farm-details'];
+  const panels = () => producersModule.customerPanels!.filter(p => headerIds.includes(p.id));
 
   it('adds the Organic badge and its panel, the contacts, the bin sites and Farm Details, for producers only', () => {
     expect(panels().map(p => [p.slot, p.id, p.order])).toEqual([
@@ -151,6 +158,44 @@ describe("Producers module: the customer profile's header panels", () => {
   it('loads each panel as its component', async () => {
     expect(await Promise.all(panels().map(p => p.component()))).toEqual([
       OrganicBadgeComponent, OrganicPanelComponent, ProducerContactsComponent, BinSitesComponent, FarmDetailsComponent,
+    ]);
+  });
+});
+
+describe("Producers module: the producer's performance on the profile", () => {
+  const ids = ['insights-toggle', 'contract-pace', 'producer-insights', 'contract-pacing', 'growth-opportunity', 'activity-summary'];
+  const panels = () => producersModule.customerPanels!.filter(p => ids.includes(p.id));
+  const panel = (id: string) => panels().find(p => p.id === id)!;
+
+  it('adds the Insights button, Harvest Contract Pace after Farm Details, and the Insights panels above Activity Summary, for producers only', () => {
+    expect(panels().map(p => [p.slot, p.id, p.order])).toEqual([
+      ['actions', 'insights-toggle', 10],
+      ['details', 'contract-pace', 30],
+      ['summary', 'producer-insights', 10],
+      ['summary', 'contract-pacing', 20],
+      ['summary', 'growth-opportunity', 30],
+      ['summary', 'activity-summary', 40],
+    ]);
+    for (const p of panels()) expect(p.segments).toEqual(['Producer']);
+  });
+
+  it('asks for every read each one makes', () => {
+    expect(panel('contract-pace').requires).toEqual(['contracts:read', 'contract-pacing:read']);
+    expect(panel('producer-insights').requires).toEqual(['contracts:read', 'contract-pacing:read', 'notes:read']);
+    expect(panel('contract-pacing').requires).toEqual(['contracts:read', 'contract-pacing:read']);
+    expect(panel('growth-opportunity').requires).toEqual(['contracts:read', 'planting-intentions:read', 'notes:read', 'planting-estimates:read']);
+    expect(panel('activity-summary').requires).toEqual(['contracts:read', 'tickets:read', 'contract-pacing:read', 'planting-intentions:read', 'stored-grain:read', 'notes:read']);
+  });
+
+  // A button that opens panels the user can't see would open an empty space.
+  it('shows the Insights button only to a user who can see at least the Contract Pacing card', () => {
+    expect(panel('insights-toggle').requires).toEqual(panel('contract-pacing').requires);
+  });
+
+  it('loads each one as its component', async () => {
+    expect(await Promise.all(panels().map(p => p.component()))).toEqual([
+      ProducerInsightsToggleComponent, ContractPaceComponent, ProducerInsightsComponent, ContractPacingCardComponent,
+      GrowthOpportunityComponent, ActivitySummaryComponent,
     ]);
   });
 });

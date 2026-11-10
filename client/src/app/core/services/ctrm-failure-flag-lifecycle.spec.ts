@@ -121,10 +121,11 @@ describe('CTRM failure flags — lifecycle', () => {
    * own crop-year read failing says nothing about that list, so those must stay local.
    */
   describe('producer-scoped and dashboard-scoped failures stay out of the shared flag', () => {
-    it('the pacing card flags locally', () => {
-      const text = src('features', 'customers', 'components', 'contract-pacing-card', 'contract-pacing-card.component.ts');
+    it('the pacing history flags locally', () => {
+      // Every pacing figure on the profile reads the producer's history through this one store.
+      const text = src('features', 'producers', 'data-access', 'contract-pacing-history.store.ts');
 
-      expect(text).toMatch(/historyLoadFailed\.set\(true\)/);
+      expect(text).toMatch(/failed: true/);
       expect(text).not.toMatch(/setContractsLoadFailed\(true\)/);
     });
 
@@ -135,12 +136,6 @@ describe('CTRM failure flags — lifecycle', () => {
       expect(text).not.toMatch(/setContractsLoadFailed\(true\)/);
     });
 
-    it('the profile pacing read flags locally', () => {
-      const text = src('features', 'customers', 'components', 'customer-profile', 'customer-profile.component.ts');
-
-      expect(text).toMatch(/historicalContractsFailed\.set\(true\)/);
-      expect(text).not.toMatch(/setContractsLoadFailed\(true\)/);
-    });
   });
 
   /**

@@ -1,15 +1,24 @@
-import { Component, input, effect, inject, signal, computed, ChangeDetectionStrategy } from '@angular/core';
+import { Component, effect, inject, signal, computed, untracked, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, HarvestWindow } from '@models';
+import { Contract, Customer, HarvestWindow, Ticket } from '@models';
 import { AppStateService } from '@core/services/app-state.service';
+import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
+import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
+import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
+import { SelectedProducerProduction } from '@core/context/selected-producer-production';
+import { ContractPacingHistoryStore } from '../../data-access/contract-pacing-history.store';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
 import { buildLbsPerBushelMap, quantityInBushels, sumInBushels } from '@shared/utils/production-coverage';
 import { parseServerTime } from '@shared/utils/server-time';
 
+/**
+ * Activity Summary, always under the profile header: a paragraph on the producer's contracts, harvest pace, planting,
+ * storage, deliveries and engagement, with what to do next.
+ */
 @Component({
   selector: 'app-activity-summary',
   standalone: true,
-  // Inputs and signals only. summaryText is a signal written by the effect below; it was a plain
+  // Signals only. summaryText is a signal written by the effect below; it was a plain
   // field marked with markForCheck() inside that effect, and marking the view dirty from an effect
   // that runs during its own refresh made change detection loop (NG0103) when a producer was picked.
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -25,19 +34,25 @@ export class ActivitySummaryComponent {
   private readonly _conversionMap = computed(() =>
     new Map(this.appState.commodityConversions().map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit])));
 
-  public customer = input.required<Customer>();
-  public contracts = input<Contract[]>([]);
-  public tickets = input<Ticket[]>([]);
-  public plantingIntentions = input<PlantingIntention[]>([]);
-  public notes = input<Note[]>([]);
-  public storedGrain = input<StoredGrain[]>([]);
-  /** Transitively-linked producers, resolved by home.getLinkedGroup() (BFS over forward + reverse
-   *  edges across both the TU-scoped customers signal and the cross-TU cache). */
-  public linkedCustomers = input<Customer[]>([]);
-  /** Closed historical contracts — needed for the harvest-pace year-over-year comparison.
-   *  customer-profile already maintains this signal and shares it with the contract-pacing
-   *  card; we receive it here as input to avoid a duplicate API fetch. */
-  public historicalContracts = input<Contract[]>([]);
+  private readonly context = inject(SelectedCustomerContext);
+  private readonly activity = inject(SelectedProducerActivity);
+  private readonly production = inject(SelectedProducerProduction);
+  private readonly pacing = inject(ContractPacingHistoryStore);
+
+  readonly customer = this.context.customer;
+  private readonly customerId = computed(() => this.customer()?.id ?? null);
+  readonly contracts = this.activity.contracts;
+  readonly tickets = this.activity.tickets;
+  /** Every intention the producer has, in every crop year. */
+  readonly plantingIntentions = this.production.plantingIntentions;
+  readonly notes = inject(SelectedProducerEngagement).notes;
+  readonly storedGrain = this.production.storedGrain;
+  /** Transitively-linked producers, resolved as the home page's getLinkedGroup() (BFS over forward + reverse
+   *  edges across both the TU-scoped customers and the cross-TU cache). */
+  readonly linkedCustomers = this.context.linkedCustomers;
+  /** Closed historical contracts — needed for the harvest-pace year-over-year comparison. Read once for every
+   *  pacing figure on the profile. */
+  readonly historicalContracts = this.pacing.contractsFor(this.customerId);
 
   readonly summaryText = signal('');
 
@@ -83,7 +98,11 @@ export class ActivitySummaryComponent {
 
   constructor() {
     effect(() => {
-      // Read all inputs to register reactive dependencies
+      const id = this.customerId();
+      untracked(() => this.pacing.load(id));
+    });
+    effect(() => {
+      // Read everything the summary is written from, to register reactive dependencies
       const _customer = this.customer();
       const _contracts = this.contracts();
       const _tickets = this.tickets();
@@ -127,13 +146,14 @@ export class ActivitySummaryComponent {
   }
 
   private _generateCustomerIntro(): string {
-    if (!this.customer()) return '';
+    const customer = this.customer();
+    if (!customer) return '';
 
-    const customerName = this.customer().name || 'This customer';
-    const acres = this.customer().totalAcres || 0;
-    const farm = this.customer().farm || '';
-    const primaryContact = (this.customer().primaryContact || '').trim();
-    const commodities = this.customer().commodities || [];
+    const customerName = customer.name || 'This customer';
+    const acres = customer.totalAcres || 0;
+    const farm = customer.farm || '';
+    const primaryContact = (customer.primaryContact || '').trim();
+    const commodities = customer.commodities || [];
     const linkedGroup = this._getLinkedGroup();
 
     // Prefer the primary-contact name as the subject of the narrative ("John operates 5,000
@@ -595,8 +615,9 @@ export class ActivitySummaryComponent {
    *  note doesn't suppress a real stale-contact alert. */
   private _daysSinceLastNote(): number | null {
     if (!this.notes() || this.notes().length === 0) return null;
-    if (!this.customer()) return null;
-    const ownNotes = this.notes().filter(n => n && n.createdAt && n.customerId === this.customer().id);
+    const customer = this.customer();
+    if (!customer) return null;
+    const ownNotes = this.notes().filter(n => n && n.createdAt && n.customerId === customer.id);
     if (ownNotes.length === 0) return null;
     let latestMs = 0;
     for (const n of ownNotes) {

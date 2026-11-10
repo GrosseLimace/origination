@@ -67,8 +67,8 @@ export const producersModule: ModuleManifest = {
     },
   ],
   preload: preloadDashboardSummary,
-  // The profile header's producer details, all from the producer's saved details (ProducerDetails).
   customerPanels: [
+    // The profile header's producer details, all from the producer's saved details (ProducerDetails).
     {
       slot: 'badges',
       id: 'organic-badge',
@@ -110,6 +110,57 @@ export const producersModule: ModuleManifest = {
       segments: ['Producer'],
       order: 20,
       component: () => import('./components/farm-details/farm-details.component').then(m => m.FarmDetailsComponent),
+    },
+    // The producer's performance. The Producer Insights button and the Harvest Contract Pace box open and close the
+    // three Insights panels; the button needs what the Contract Pacing card does, so it never opens an empty space.
+    {
+      slot: 'actions',
+      id: 'insights-toggle',
+      requires: ['contracts:read', 'contract-pacing:read'],
+      segments: ['Producer'],
+      order: 10,
+      component: () => import('./components/producer-insights/producer-insights-toggle.component').then(m => m.ProducerInsightsToggleComponent),
+    },
+    {
+      slot: 'details',
+      id: 'contract-pace',
+      requires: ['contracts:read', 'contract-pacing:read'],
+      segments: ['Producer'],
+      order: 30,
+      component: () => import('./components/contract-pace/contract-pace.component').then(m => m.ContractPaceComponent),
+    },
+    {
+      slot: 'summary',
+      id: 'producer-insights',
+      requires: ['contracts:read', 'contract-pacing:read', 'notes:read'],
+      segments: ['Producer'],
+      order: 10,
+      component: () => import('./components/producer-insights/producer-insights.component').then(m => m.ProducerInsightsComponent),
+    },
+    {
+      slot: 'summary',
+      id: 'contract-pacing',
+      requires: ['contracts:read', 'contract-pacing:read'],
+      segments: ['Producer'],
+      order: 20,
+      component: () => import('./components/contract-pacing-card/contract-pacing-card.component').then(m => m.ContractPacingCardComponent),
+    },
+    {
+      slot: 'summary',
+      id: 'growth-opportunity',
+      requires: ['contracts:read', 'planting-intentions:read', 'notes:read', 'planting-estimates:read'],
+      segments: ['Producer'],
+      order: 30,
+      component: () => import('./components/growth-opportunity/growth-opportunity.component').then(m => m.GrowthOpportunityComponent),
+    },
+    {
+      // Always shown, under the Insights panels.
+      slot: 'summary',
+      id: 'activity-summary',
+      requires: ['contracts:read', 'tickets:read', 'contract-pacing:read', 'planting-intentions:read', 'stored-grain:read', 'notes:read'],
+      segments: ['Producer'],
+      order: 40,
+      component: () => import('./components/activity-summary/activity-summary.component').then(m => m.ActivitySummaryComponent),
     },
   ],
   // A producer's own production. Each reads it from the profile's SelectedProducerProduction.
