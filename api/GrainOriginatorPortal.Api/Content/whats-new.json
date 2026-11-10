@@ -1,5 +1,28 @@
 [
   {
+    "version": "2026.11.2",
+    "releasedOn": "2026-11-10",
+    "title": "45Z documents, stored in DocStore",
+    "summary": "Keep each producer's 45Z paperwork in one place: reports and ledgers save themselves, and attestations can be uploaded.",
+    "items": [
+      {
+        "group": "45Z",
+        "kind": "added",
+        "text": "Confirming a field's CI score now saves its Biofuel Feedstock Report and Mass Balance Ledger to DocStore automatically, labeled by field and crop year."
+      },
+      {
+        "group": "45Z",
+        "kind": "added",
+        "text": "Click 📄 45Z documents on the producer's 45Z card to view or download those files, or to upload the producer's signed attestation and other supporting documents for the year."
+      },
+      {
+        "group": "45Z",
+        "kind": "added",
+        "text": "Archive a document that no longer applies, and see every earlier version in Version history. Re-confirming a field's CI keeps the old report and ledger there, marked Overwritten."
+      }
+    ]
+  },
+  {
     "version": "2026.11.1",
     "releasedOn": "2026-11-05",
     "title": "45Z carbon intensity, field by field",
