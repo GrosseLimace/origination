@@ -1,15 +1,19 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ComponentRef, signal } from '@angular/core';
+import { ComponentRef, Provider, signal } from '@angular/core';
 import { of, throwError, Subject } from 'rxjs';
 import { Commodity, ProducerDetails } from '@models';
 import { EditCustomerDialogComponent } from './edit-customer-dialog.component';
 import { ApiService } from '@core/services/api.service';
 import { ToastService } from '@core/services/toast.service';
 import { AppStateService } from '@core/services/app-state.service';
-import { Customer, PlantingIntention } from '@models';
+import { Contract, Customer, PlantingIntention, Ticket } from '@models';
 import { MAX_BIN_SITES } from '@shared/utils/coordinates';
-import { CustomersApiService } from '../../data-access/customers-api.service';
+import { CustomersApiService } from '@features/customers';
+import { PermissionId } from '@core/access/permission-ids.generated';
+import { CustomerScreenSources, customerScreenSources } from '@testing/customer-screen-sources';
+import { ProducerEditingFake, producerEditingFake, provideProducerEditing } from '@testing/producer-editing.fake';
+import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
 
 // Removing a trade unit doesn't unplant the acres. When the producer has planting intentions
 // recorded against the trade unit being removed, the dialog asks where those acres should count
@@ -30,6 +34,26 @@ function makeIntention(over: Partial<PlantingIntention> = {}): PlantingIntention
   };
 }
 
+/** Everything the dialog checks: Edit's own permissions, Trade Units' and moving intentions'. */
+const EVERY_PERMISSION: PermissionId[] = [
+  'producer-details:read', 'producer-details:write', 'customers:write', 'planting-intentions:read', 'planting-intentions:write',
+];
+
+/** The page's roster, trade units and save, and the user's permissions (all of EVERY_PERMISSION unless a test says not). */
+let editing: ProducerEditingFake;
+let access: PermissionStub;
+/** The producer's activity and linked producers, as the page provides them. */
+let screen: CustomerScreenSources;
+
+/** The shared sources the dialog reads besides its inputs: the producer's activity and linked producers, the page's
+ *  editing, and the permissions. */
+function sharedSources(): Provider[] {
+  editing = producerEditingFake();
+  access = permissionStub(EVERY_PERMISSION);
+  screen = customerScreenSources();
+  return [...screen.providers, provideProducerEditing(editing), providePermissions(access)];
+}
+
 type Membership = { tradeUnit: string; isManual: boolean; hasOpenActivity: boolean; isActive: boolean };
 const manual = (tradeUnit: string): Membership => ({ tradeUnit, isManual: true, hasOpenActivity: false, isActive: true });
 const locked = (tradeUnit: string): Membership => ({ tradeUnit, isManual: false, hasOpenActivity: true, isActive: true });
@@ -39,13 +63,14 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
   let ref: ComponentRef<EditCustomerDialogComponent>;
   let intentions: PlantingIntention[];
   // The dialog emits the moves; the parent runs them, because it owns the cached intention lists.
-  let saved: { intentionMoves: { from: string; to: string }[] }[];
+  let saved: { intentionMoves?: { from: string; to: string }[] }[];
 
   beforeEach(() => {
     intentions = [];
     saved = [];
     TestBed.configureTestingModule({
       providers: [
+        ...sharedSources(),
         { provide: CustomersApiService, useExisting: ApiService },
         {
           provide: ApiService,
@@ -96,11 +121,11 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
   it('sends nothing while the page is still saving this producer, then saves normally once it is done', () => {
     withMemberships(manual('2190'));
 
-    ref.setInput('saving', true);
+    editing.saving.set(true);
     component.onSave();
     expect(saved).toEqual([]);
 
-    ref.setInput('saving', false);
+    editing.saving.set(false);
     component.onSave();
     expect(saved).toHaveLength(1);
   });
@@ -113,6 +138,19 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
 
     expect(component.tuRemovalPrompt()).toBeNull();
     expect(component.selectedTuCodes()).toEqual(['2190']);
+  });
+
+  it('without planting-intentions:write, removes the trade unit with no prompt and moves nothing', () => {
+    access.grant('producer-details:read', 'producer-details:write', 'customers:write', 'planting-intentions:read');
+    withMemberships(manual('2190'), manual('2210'));
+    intentions = [makeIntention({ tradeUnit: '2210' })];
+
+    component.removeTradeUnit('2210');
+
+    expect(component.tuRemovalPrompt()).toBeNull();
+    expect(component.selectedTuCodes()).toEqual(['2190']);
+    component.onSave();
+    expect(emittedMoves()).toEqual([]);
   });
 
   it('asks where the acres go, with the counts for that trade unit only', () => {
@@ -266,6 +304,7 @@ describe('EditCustomerDialogComponent — bin sites', () => {
     details$ = new Subject<ProducerDetails>();
     TestBed.configureTestingModule({
       providers: [
+        ...sharedSources(),
         { provide: CustomersApiService, useExisting: ApiService },
         {
           provide: ApiService,
@@ -811,6 +850,7 @@ describe('EditCustomerDialogComponent — rendering', () => {
     await TestBed.configureTestingModule({
       imports: [EditCustomerDialogComponent],
       providers: [
+        ...sharedSources(),
         { provide: CustomersApiService, useExisting: ApiService },
         {
           provide: ApiService,
@@ -838,7 +878,7 @@ describe('EditCustomerDialogComponent — rendering', () => {
     }).compileComponents();
     fixture = TestBed.createComponent(EditCustomerDialogComponent);
     ref = fixture.componentRef;
-    ref.setInput('selectedTradeUnits', ['2190']);
+    editing.producersTradeUnits.set(['2190']);
     fixture.detectChanges();
   });
 
@@ -847,7 +887,7 @@ describe('EditCustomerDialogComponent — rendering', () => {
   });
 
   it('keeps Save off and labelled Saving… while the page is still saving this producer', async () => {
-    ref.setInput('saving', true);
+    editing.saving.set(true);
     await open(makeCustomer());
 
     const button = Array.from(host().querySelectorAll<HTMLButtonElement>('button'))
@@ -855,6 +895,36 @@ describe('EditCustomerDialogComponent — rendering', () => {
     expect(button).toBeDefined();
     expect(button!.disabled).toBe(true);
     expect(text()).not.toContain('Save Changes');
+  });
+
+  it("lists the commodities of the producer's tickets and contracts beside their own, and keeps those derived", async () => {
+    screen.activity.tickets.set([{ productCode: 'YSB' } as Ticket]);
+    screen.activity.contracts.set([{ commodityCode: 'HRW' } as Contract]);
+    await open(makeCustomer({ commodities: ['YC'] }));
+
+    const dialog = fixture.componentInstance;
+    expect(dialog.editCommodities()).toEqual(['HRW', 'YC', 'YSB']);
+    expect(['HRW', 'YC', 'YSB'].map(code => dialog.isTicketCommodity(code))).toEqual([true, false, true]);
+  });
+
+  it("names a linked producer from the page's linked group when the page's producers don't include them", async () => {
+    screen.linkedCustomers.set([makeCustomer({ id: 9, scoularId: 'LINKED', name: 'Linked Farm' })]);
+    await open(makeCustomer({ linkedProducerIds: ['LINKED'] }));
+
+    expect(text()).toContain('Linked Farm');
+  });
+
+  it('shows Trade Units only to a user who may change them, and the rest of the dialog either way', async () => {
+    const headings = (): string[] => Array.from(host().querySelectorAll('h4')).map(h => (h.textContent ?? '').trim());
+    access.grant('producer-details:read', 'producer-details:write');
+    await open(makeCustomer());
+    expect(headings()).not.toContain('Trade Units');
+    expect(headings()).toContain('Farm & Crops');
+    expect(headings()).toContain('Link Producers');
+
+    access.grant(...EVERY_PERMISSION);
+    await render();
+    expect(headings()).toContain('Trade Units');
   });
 
   it('fills the form from the producer when the parent opens it', async () => {
@@ -881,7 +951,7 @@ describe('EditCustomerDialogComponent — rendering', () => {
     // With contacts, bin sites and links already edited, the re-read leaves those alone and only the
     // acres box (a plain field) changes, so nothing else in that response marks the view.
     const other = makeCustomer({ id: 7, scoularId: 'OTHER', name: 'Other Farm' });
-    ref.setInput('allCustomers', [other]);
+    editing.producers.set([other]);
     await open(makeCustomer({ totalAcres: 120, linkedProducerIds: ['OTHER'] }));
     const button = (label: string): HTMLButtonElement =>
       Array.from(host().querySelectorAll<HTMLButtonElement>('button')).find(b => (b.textContent ?? '').trim() === label)!;
@@ -908,7 +978,7 @@ describe('EditCustomerDialogComponent — rendering', () => {
     // With no trade unit selected, linked producers are looked up in a list fetched in the background.
     const customers$ = new Subject<Customer[]>();
     TestBed.inject(CustomersApiService).getCustomers = () => customers$.asObservable();
-    ref.setInput('selectedTradeUnits', []);
+    editing.producersTradeUnits.set([]);
     await open(makeCustomer({ linkedProducerIds: ['OTHER'] }));
     expect(text()).not.toContain('Other Farm');
 

@@ -1,7 +1,6 @@
 import { Component, forwardRef, input, output, inject, effect, computed, ChangeDetectionStrategy, ViewChild, ElementRef, signal, HostListener, Injector, Signal, runInInjectionContext, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ThemeService } from '@core/services/theme.service';
-import { EditCustomerDialogComponent } from '../edit-customer-dialog/edit-customer-dialog.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket, PlantingIntention, PlantingIntentionDraft, PlantingIntentionEdit, StoredGrain, DpContract, DashboardPlantingEstimate, SavedList } from '@models';
@@ -34,8 +33,7 @@ interface ProfileTab {
   imports: [
     CommonModule,
     CustomerContributionComponent,
-    CustomerSlotComponent,
-    EditCustomerDialogComponent
+    CustomerSlotComponent
   ],
   templateUrl: './customer-profile.component.html',
   // What it shows of the producer's production (planting intentions and the year being looked at, stored grain, DP
@@ -48,11 +46,8 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
   readonly savedListsLoadFailed = this.appState.savedListsLoadFailed;
 
   public customer = input.required<Customer>();
-  public allCustomers = input<Customer[]>([]);
 
   public selectedTradeUnits = input<string[]>([]);
-  /** The page's trade-unit save for this producer is still running; the edit dialog keeps Save off meanwhile. */
-  public isSavingTradeUnits = input(false);
   public contracts = input<Contract[]>([]);
   public tickets = input<Ticket[]>([]);
   public plantingIntentions = input<PlantingIntention[]>([]);
@@ -64,9 +59,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
   public isLoadingPlanting = input(false);
   public isLoadingStoredGrain = input(false);
   public isLoadingDpContracts = input(false);
-
-  /** The producer's contracts for the Edit Producer dialog, which offers their commodities. */
-  public allCustomerContracts = input<Contract[]>([]);
 
   public onAddPlanting = output<PlantingIntentionDraft>();
   public onEditPlanting = output<PlantingIntentionEdit>();
@@ -83,7 +75,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
   public canEditTeamLists = input(false);
   /** Save staged saved-list membership changes for the current producer; the host persists them. */
   public onSaveSavedListMembership = output<{ listId: number; add: boolean }[]>();
-  public onSaveCustomer = output<{ customerId: number; acres: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { siteKey: string; name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { binSiteKey?: string; commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[] }>();
   public linkedCustomers = input<Customer[]>([]);
   public onSelectLinkedCustomer = output<number>();
   public openTab = input<string | null>(null);
@@ -109,7 +100,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
   // Local state - signals
   activeTab = signal('contracts');
   showESignRecipients = signal(false);
-  showEditDialog = signal(false);
   showAddToListMenu = signal(false); // "Add to List" header dropdown open state
   /** Which tab the Add-to-List dropdown is showing: the user's own lists or (managers) team lists. */
   addToListTab = signal<'saved' | 'team'>('saved');
@@ -336,20 +326,6 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
 
   /** The tab being shown, or null when the strip is empty. */
   readonly shownContribution = computed(() => this.tabs().find(tab => tab.id === this.shownTab())?.contribution ?? null);
-
-  openEditDialog(): void {
-    this.showEditDialog.set(true);
-  }
-
-  closeEditDialog(): void {
-    this.showEditDialog.set(false);
-  }
-
-  handleSaveCustomer(data: { customerId: number; acres: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { siteKey: string; name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { binSiteKey?: string; commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[] }): void {
-    this.usageTracking.trackProducerDetailsEdit(data.customerId.toString());
-    this.onSaveCustomer.emit(data);
-    this.closeEditDialog();
-  }
 
   get isDarkMode(): boolean {
     return this.themeService.isDarkMode();

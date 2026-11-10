@@ -25,6 +25,7 @@ import { CustomerStore } from '../../data-access/customer.store';
 import { CustomersApiService } from '../../data-access/customers-api.service';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
+import { ProducerEditing } from '@core/context/producer-editing';
 // The Notes card's 'Last contacted' label, which the card works out from these same notes.
 import { describeLastContacted } from '@shared/utils/last-contacted';
 
@@ -1603,6 +1604,20 @@ describe('HomeComponent — a trade-unit save still in flight', () => {
     expect(h.c.isSavingTradeUnits()).toBe(false);
     h.c.handleSelectCustomer(A);
     expect(h.c.isSavingTradeUnits()).toBe(true);
+  });
+
+  // The Edit Producer Details dialog is Producers'; it saves through the page as ProducerEditing.
+  it('is what the Edit dialog saves through: its producers, trade units, this flag and this save', () => {
+    const h = setup();
+    const editing = h.fixture.debugElement.injector.get(ProducerEditing);
+    const handle = vi.spyOn(h.c, 'handleSaveCustomer').mockImplementation(() => undefined);
+
+    expect(editing.producers).toBe(h.c.customers);
+    expect(editing.producersTradeUnits).toBe(h.c.selectedTradeUnits);
+    expect(editing.saving).toBe(h.c.isSavingTradeUnits);
+    const edit = save(1);
+    editing.save(edit);
+    expect(handle).toHaveBeenCalledWith(edit);
   });
 
   it('a details-only save is not a trade-unit save', () => {

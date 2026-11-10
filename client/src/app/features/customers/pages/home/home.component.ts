@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, signal, computed, DestroyRef, effect, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, forwardRef, inject, signal, computed, DestroyRef, effect, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { forkJoin, of } from 'rxjs';
@@ -36,6 +36,7 @@ import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { CUSTOMER_SCREEN_SOURCE, SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
+import { ProducerEdit, ProducerEditing } from '@core/context/producer-editing';
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -56,13 +57,15 @@ import { SelectedProducerEngagement } from '@core/context/selected-producer-enga
     HomeEngagement,
     { provide: SelectedProducerEngagement, useExisting: HomeEngagement },
     { provide: CUSTOMER_SCREEN_SOURCE, useFactory: homeScreenSource },
+    // The Edit Producer Details dialog saves through the page, which keeps its lists up to date as the save goes.
+    { provide: ProducerEditing, useExisting: forwardRef(() => HomeComponent) },
   ],
   // The template reads only signals, computeds, getLinkedGroup() (which reads signals) and two
   // constant flags, and every async writer (API callbacks, effects, the resize listener, the
   // deep-link poll) writes signals - home.component.render.spec.ts renders each of those paths.
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class HomeComponent {
+export class HomeComponent implements ProducerEditing {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
   private readonly customerStore = inject(CustomerStore);
@@ -166,6 +169,16 @@ export class HomeComponent {
     const sel = this.selectedCustomer();
     return !!sel && this._tradeUnitSavesInFlight().has(sel.id);
   });
+
+  // ── ProducerEditing, for the Edit Producer Details dialog ──
+  /** The roster the dialog's link search offers, and the trade units it is from. */
+  readonly producers = this.customers;
+  readonly producersTradeUnits = this.selectedTradeUnits;
+  readonly saving = this.isSavingTradeUnits;
+  save(edit: ProducerEdit): void {
+    this.handleSaveCustomer(edit);
+  }
+
   readonly noteSaveSucceededCounter = this.notes.noteSaveSucceededCounter;
   /** The selected producer's follow-ups and the reminder card's state (see HomeRemindersStore). */
   readonly customerReminders = this.reminders.customerReminders;
@@ -758,7 +771,7 @@ export class HomeComponent {
    *  onboarding candidate that PUT inserts them into dbo.Customer, which the ProducerDetails
    *  save then depends on (FK). Existing customers with no TU change skip straight to the
    *  details save, unchanged. */
-  handleSaveCustomer(data: { customerId: number; scoularId?: string; acres: number; commodities: string[]; primaryContact: string; primaryPhone: string; contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[]; binSites: { siteKey: string; name: string; latitude?: number; longitude?: number; capacity?: number }[]; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { binSiteKey?: string; commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[]; intentionMoves?: { from: string; to: string }[] }): void {
+  handleSaveCustomer(data: ProducerEdit): void {
     // Only call the trade-unit reconcile when the dialog flagged it safe + meaningful
     // (onboarding a candidate, or the manual TU set actually changed). A pure details edit
     // skips it entirely, and a failed TU-load never reconciles (so manual TUs can't be wiped).

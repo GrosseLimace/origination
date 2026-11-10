@@ -42,7 +42,6 @@
           <!-- Profile -->
           <app-customer-profile
             [customer]="customer"
-            [allCustomers]="customers()"
             [selectedTradeUnits]="selectedTradeUnits()"
             [contracts]="customerContracts()"
             [tickets]="customerTickets()"
@@ -54,13 +53,10 @@
             [isLoadingPlanting]="isLoadingPlanting()"
             [isLoadingStoredGrain]="isLoadingStoredGrain()"
             [isLoadingDpContracts]="isLoadingDpContracts()"
-            [allCustomerContracts]="allCustomerContracts()"
             (onAddPlanting)="addPlantingIntention($event)"
             (onEditPlanting)="editPlantingIntention($event)"
             (onDeletePlanting)="deletePlantingIntention($event)"
             [linkedCustomers]="getLinkedGroup(customer)"
-            (onSaveCustomer)="handleSaveCustomer($event)"
-            [isSavingTradeUnits]="isSavingTradeUnits()"
             (onSelectLinkedCustomer)="handleSelectLinkedCustomer($event)"
             [openTab]="pendingTab()"
             [openPlantingYear]="pendingPlantingYear()"

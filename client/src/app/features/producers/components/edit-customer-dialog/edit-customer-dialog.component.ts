@@ -3,11 +3,11 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
-import { Customer, Contract, Ticket, Commodity } from '@models';
+import { Customer, Commodity } from '@models';
 import { applyProducerDetails } from '@shared/utils/apply-producer-details';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
-import { CustomersApiService } from '../../data-access/customers-api.service';
+import { CustomersApiService } from '@features/customers';
 import { ToastService } from '@core/services/toast.service';
 import { formatPhoneProgressive } from '@shared/utils/phone';
 import { BIN_SITE_NAME_MAX_LENGTH, COORDINATE_EXAMPLE, MAX_BIN_SITES, MAX_BIN_SITE_CAPACITY, formatBinSiteCapacityInput, formatCoordinatePairFull, parseBinSiteCapacity, parseCoordinatePair } from '@shared/utils/coordinates';
@@ -16,6 +16,10 @@ import { buildGrainOnFarmOptions, indexCommoditiesByCode, isLegacyGrainGroup, gr
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
 import { AppStateService } from '@core/services/app-state.service';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { PermissionService } from '@core/access/permission.service';
+import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
+import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
+import { ProducerEdit, ProducerEditing } from '@core/context/producer-editing';
 
 /** One bin-site row as edited: every field is the text in its input. Capacity holds the grouped
  *  display text ("50,000"). */
@@ -48,6 +52,12 @@ export interface GrainEditRow {
 const binSiteRowHasData = (r: BinSiteEditRow): boolean =>
   !!(r.name.trim() || r.capacity.trim());
 
+/**
+ * Edit Producer Details: the producer's trade units, Farm & Crops (contacts, bin sites with their grain on farm, acres
+ * and commodities) and their linked producers, with one Save. Opened by Producers' Edit button in the profile header,
+ * for the producer on screen. It reads their tickets and contracts from SelectedProducerActivity, their linked
+ * producers from SelectedCustomerContext, and saves through the page's ProducerEditing.
+ */
 @Component({
   selector: 'app-edit-customer-dialog',
   standalone: true,
@@ -62,6 +72,8 @@ const binSiteRowHasData = (r: BinSiteEditRow): boolean =>
     DialogFooterComponent
   ],
   templateUrl: './edit-customer-dialog.component.html',
+  // The dialog is a fixed overlay, so its element takes no space in the header's button row while it's closed.
+  host: { class: 'contents' },
   // View state is signals and computeds, apart from editAcres (a plain field behind ngModel) and the
   // private change snapshots hasChanges() reads. Those are written from template events, from the
   // open effect (inside the refresh the isOpen input schedules), and from the details re-read, which
@@ -77,44 +89,35 @@ export class EditCustomerDialogComponent {
   private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly cdr = inject(ChangeDetectorRef);
 
+  private readonly permissions = inject(PermissionService);
+  private readonly activity = inject(SelectedProducerActivity);
+  private readonly editing = inject(ProducerEditing);
+
+  /** Opened by the Edit button, for the customer on screen. */
   public isOpen = input(false);
   public customer = input<Customer | null>(null);
-  public tickets = input<Ticket[]>([]);
-  public contracts = input<Contract[]>([]);
-  public allCustomers = input<Customer[]>([]);
-  public linkedCustomers = input<Customer[]>([]);
-  public selectedTradeUnits = input<string[]>([]);
+  public close = output<void>();
+  /** The edit, which the Edit button hands the page to save. */
+  public save = output<ProducerEdit>();
+
+  // The producer's tickets and contracts, whose commodities the dialog lists as derived, and their linked producers.
+  readonly tickets = this.activity.tickets;
+  readonly contracts = this.activity.contracts;
+  readonly linkedCustomers = inject(SelectedCustomerContext).linkedCustomers;
+  /** The page's producers, which the link search offers, and the trade units they are from. */
+  readonly allCustomers = this.editing.producers;
+  readonly selectedTradeUnits = this.editing.producersTradeUnits;
   /** True while the page's trade-unit save for this producer is still running. Save stays off until it
    *  ends, so a slow save can't be sent again on top of itself - in PROD on 2026-10-28 one onboarding was
    *  saved four times that way, because the dialog closes at once and nothing on screen said it was busy. */
-  public saving = input(false);
+  readonly saving = this.editing.saving;
 
-  public close = output<void>();
-  public save = output<{
-    customerId: number;
-    // The producer code, sent only for an onboarding candidate: a candidate from the CTRM search has
-    // a placeholder id, and the server onboards it by this code (plan E4).
-    scoularId?: string;
-    acres: number;
-    commodities: string[];
-    // Derived from the primary contact row — kept on the payload so downstream consumers
-    // (optimistic updates, linked-producer propagation) don't need to re-derive it.
-    primaryContact: string;
-    primaryPhone: string;
-    contacts: { name: string; phone?: string; email?: string; isPrimary: boolean }[];
-    // Parsed at full precision (never rounded); array order is the display order. Capacity in bushels.
-    binSites: { siteKey: string; name: string; latitude?: number; longitude?: number; capacity?: number }[];
-    linkedProducerIds: string[];
-    removedIncomingIds: string[];
-    eSignEnabled: boolean;
-    tradeUnitCodes: string[];        // Desired ACTIVE manual TU set — reconciled on "Save Changes".
-    reconcileTradeUnits: boolean;    // Only reconcile when it's safe + meaningful (see canReconcileTradeUnits).
-    grainOnFarm: { binSiteKey?: string; commodityCode: string; bushelsOnHand?: number; bushelsSold?: number; targetBushels?: number; lastBid?: number; grade?: string }[];
-    // Planting intentions to re-home because their trade unit is being removed. The PARENT runs
-    // these, because it owns the cached intention lists that the profile renders — doing it here
-    // would move the rows server-side while the table kept showing the old trade unit.
-    intentionMoves: { from: string; to: string }[];
-  }>();
+  /** Trade Units shows only to a user who may change them; the rest of the dialog needs producer-details:write,
+   *  which the Edit button asks for. */
+  readonly canChangeTradeUnits = computed(() => this.permissions.has('customers:write'));
+  /** Whether removing a trade unit offers to move the producer's planting intentions on it. Without it they stay on
+   *  the trade unit, as when they can't be read. */
+  readonly canMoveIntentions = computed(() => this.permissions.hasAll(['planting-intentions:read', 'planting-intentions:write']));
 
   // ── Trade-unit assignment / management ──────────────────────────────────
   allTradeUnits = signal<{ code: string; description?: string }[]>([]);
@@ -917,11 +920,12 @@ export class EditCustomerDialogComponent {
    * Removes the trade unit straight away when no planting intentions are recorded against it,
    * otherwise opens the prompt. The intention list is fetched once, on demand. A failed fetch
    * removes the trade unit rather than blocking the user — the rows stay visible on the profile
-   * (flagged as no longer assigned) and in the audit script.
+   * (flagged as no longer assigned) and in the audit script. A user who may not move intentions
+   * gets the same: no prompt, and the rows stay where they are.
    */
   private _beginTradeUnitRemoval(code: string, kind: 'manual' | 'dormant'): void {
     const customer = this.customer();
-    if (!customer || customer.isOnboardCandidate) {
+    if (!customer || customer.isOnboardCandidate || !this.canMoveIntentions()) {
       this._applyTradeUnitRemoval(code, kind);
       return;
     }

@@ -23,6 +23,7 @@ import { ContractPacingCardComponent } from './components/contract-pacing-card/c
 import { GrowthOpportunityComponent } from './components/growth-opportunity/growth-opportunity.component';
 import { ActivitySummaryComponent } from './components/activity-summary/activity-summary.component';
 import { PrintReportButtonComponent } from './components/customer-print-report/print-report-button.component';
+import { EditProducerButtonComponent } from './components/edit-customer-dialog/edit-producer-button.component';
 
 describe('Producers preload: the Planting Dashboard summary', () => {
   const summary: DashboardSummary = { estimates: [], marketShares: [], actualHarvest: [] };
@@ -201,20 +202,27 @@ describe("Producers module: the producer's performance on the profile", () => {
   });
 });
 
-describe("Producers module: Print on the profile", () => {
-  const panel = () => producersModule.customerPanels!.find(p => p.id === 'print-report')!;
+describe("Producers module: Print and Edit on the profile", () => {
+  const panel = (id: string) => producersModule.customerPanels!.find(p => p.id === id)!;
+  const toolbar = () => producersModule.customerPanels!.filter(p => p.slot === 'toolbar');
 
-  it("adds Print to the header's buttons, before Edit, for producers only", () => {
-    expect([panel().slot, panel().order]).toEqual(['toolbar', 90]);
-    expect(panel().segments).toEqual(['Producer']);
+  it("adds Print, then Edit, to the header's buttons, for producers only", () => {
+    expect(toolbar().map(p => [p.id, p.order])).toEqual([['print-report', 90], ['edit-producer', 100]]);
+    for (const p of toolbar()) expect(p.segments).toEqual(['Producer']);
   });
 
   // The report's header needs only the customer; each section checks its own read.
-  it('asks for no permission of its own', () => {
-    expect(panel().requires).toEqual([]);
+  it('asks for no permission of its own for Print', () => {
+    expect(panel('print-report').requires).toEqual([]);
   });
 
-  it('loads as its button', async () => {
-    expect(await panel().component()).toBe(PrintReportButtonComponent);
+  // Edit re-reads the producer's details, and its save always writes them.
+  it("asks for the producer's details, to read and to change, for Edit", () => {
+    expect(panel('edit-producer').requires).toEqual(['producer-details:read', 'producer-details:write']);
+  });
+
+  it('loads each as its button', async () => {
+    expect(await panel('print-report').component()).toBe(PrintReportButtonComponent);
+    expect(await panel('edit-producer').component()).toBe(EditProducerButtonComponent);
   });
 });

@@ -652,7 +652,8 @@ These are the slots the customer screen needs to host everything it shows today.
 
 **Decided in Phase 4 (2026-11-10): no edit or print sections.**
 - **The Edit Producer Details dialog and the Producer Summary Report each move whole into Producers,** rather than being put together from module sections. Both are producer screens today, and a trader customer's edit or report would likely ask for different things.
-  - Each part inside shows only to a user with its permission. The report's sections and summary figures need their reads. In the dialog, Trade Units needs `customers:write`, Farm & Crops and Link Producers need `producer-details:write`, and moving planting intentions needs `planting-intentions:write`.
+  - Each part inside shows only to a user with its permission. The report's sections and summary figures need their reads. Edit itself needs `producer-details:read` and `producer-details:write`, which Farm & Crops and Link Producers need, because its save always writes the producer's details; a user who could change only trade units would be refused on every save. Inside, Trade Units also needs `customers:write`, and moving planting intentions needs `planting-intentions:write`.
+  - The dialog saves through `ProducerEditing` in `core/context`, which the home page provides, until the page's lists move into stores later in this phase.
   - Print and Edit are Producers panels in a new `toolbar` slot, the header's buttons, beside Add to List.
   - The manifest's `customerEditSections` and `customerPrintSections` are dropped.
 - **Phase 5 gives trader customers their own edit dialog,** shown for the `Commercial` segment, and their own report if one is wanted.

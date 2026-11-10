@@ -366,8 +366,8 @@ describe('CustomerProfileComponent — header slots and ScoularView recipients (
     ref = fixture.componentRef;
   });
 
-  // Producers fills them: the Organic badge and its panel, the Insights button, Print, the contacts, the bin sites,
-  // Farm Details, Harvest Contract Pace, and the Insights panels and Activity Summary.
+  // Producers fills them: the Organic badge and its panel, the Insights button, Print and Edit, the contacts, the bin
+  // sites, Farm Details, Harvest Contract Pace, and the Insights panels and Activity Summary.
   it("hosts the modules' panels where the producer's details and summaries sat", () => {
     ref.setInput('customer', makeCustomer({ eSignEnabled: true, phone: '4025550100', email: 'office@farm.com' }));
     fixture.detectChanges();
@@ -385,10 +385,12 @@ describe('CustomerProfileComponent — header slots and ScoularView recipients (
     expect(slot('details').nextElementSibling).toBeNull();
     // The actions sit in the row under the name, before the linked-producer picker.
     expect(slot('actions').parentElement!.classList).toContain('flex-wrap');
-    // The toolbar sits in the header's buttons, between Add to List and Edit, and Print is no longer the profile's own.
+    // The toolbar ends the header's buttons, after Add to List; Print and Edit are no longer the profile's own.
     expect(squash(slot('toolbar').previousElementSibling!.textContent)).toContain('Add to List');
-    expect(squash(slot('toolbar').nextElementSibling!.textContent)).toBe('Edit');
+    expect(slot('toolbar').nextElementSibling).toBeNull();
     expect(host().querySelector('button[title="Print"]')).toBeNull();
+    expect(Array.from(host().querySelectorAll('button')).some(b => squash(b.textContent) === 'Edit')).toBe(false);
+    expect(host().querySelector('app-edit-customer-dialog')).toBeNull();
     // The summary sits between the header card and the tabs, in a column spaced by its gap.
     expect(slot('summary').parentElement!.className).toContain('gap-8');
     expect(squash(slot('summary').previousElementSibling!.textContent)).toContain('Contact and Locations');

@@ -68,7 +68,6 @@ class StubList {
 class StubProfile {
   readonly ids = ids;
   readonly customer = input.required<Customer>();
-  readonly allCustomers = input<unknown>();
   readonly selectedTradeUnits = input<unknown>();
   readonly contracts = input<Contract[]>([]);
   readonly tickets = input<{ id: number }[]>([]);
@@ -84,7 +83,6 @@ class StubProfile {
   readonly isLoadingPlanting = input<unknown>();
   readonly isLoadingStoredGrain = input<unknown>();
   readonly isLoadingDpContracts = input<unknown>();
-  readonly allCustomerContracts = input<unknown>();
   readonly allCustomerTickets = input<unknown>();
   readonly allCustomerPlantingIntentions = input<unknown>();
   readonly allCustomerStoredGrain = input<unknown>();
@@ -102,7 +100,6 @@ class StubProfile {
   readonly onAddPlanting = output<unknown>();
   readonly onEditPlanting = output<unknown>();
   readonly onDeletePlanting = output<number>();
-  readonly onSaveCustomer = output<unknown>();
   readonly onSelectLinkedCustomer = output<number>();
   readonly onContractsWideChange = output<boolean>();
   readonly onSaveSavedListMembership = output<{ listId: number; add: boolean }[]>();

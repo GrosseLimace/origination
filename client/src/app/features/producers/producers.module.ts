@@ -172,6 +172,17 @@ export const producersModule: ModuleManifest = {
       order: 90,
       component: () => import('./components/customer-print-report/print-report-button.component').then(m => m.PrintReportButtonComponent),
     },
+    {
+      // Edit, and the Edit Producer Details dialog it opens, which re-reads the producer's details. Its save always
+      // writes them, so it needs producer-details:write; inside, Trade Units also needs customers:write, and moving
+      // planting intentions off a removed trade unit planting-intentions:write.
+      slot: 'toolbar',
+      id: 'edit-producer',
+      requires: ['producer-details:read', 'producer-details:write'],
+      segments: ['Producer'],
+      order: 100,
+      component: () => import('./components/edit-customer-dialog/edit-producer-button.component').then(m => m.EditProducerButtonComponent),
+    },
   ],
   // A producer's own production. Each reads it from the profile's SelectedProducerProduction.
   customerTabs: [

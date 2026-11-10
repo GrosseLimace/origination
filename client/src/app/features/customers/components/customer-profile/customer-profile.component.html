@@ -179,18 +179,8 @@
                   </div>
                 }
               </div>
-              <!-- The modules' buttons (Producers: Print), between Add to List and Edit. -->
+              <!-- The modules' buttons after Add to List (Producers: Print, Edit). -->
               <app-customer-slot slot="toolbar" />
-              <button
-                type="button"
-                class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors"
-                (click)="openEditDialog()"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
-                </svg>
-                Edit
-              </button>
             </div>
           </div>
 
@@ -295,17 +285,3 @@
         </div>
       </div>
     </div>
-
-    <!-- Edit Customer Dialog - managed locally like Blazor -->
-    <app-edit-customer-dialog
-      [isOpen]="showEditDialog()"
-      [customer]="customer()"
-      [tickets]="tickets()"
-      [contracts]="allCustomerContracts()"
-      [allCustomers]="allCustomers()"
-      [linkedCustomers]="linkedCustomers()"
-      [selectedTradeUnits]="selectedTradeUnits()"
-      [saving]="isSavingTradeUnits()"
-      (close)="closeEditDialog()"
-      (save)="handleSaveCustomer($event)">
-    </app-edit-customer-dialog>
