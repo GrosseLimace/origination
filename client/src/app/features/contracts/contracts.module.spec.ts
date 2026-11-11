@@ -2,11 +2,18 @@ import { describe, it, expect } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { Contract, Ticket } from '@models';
 import { provideSelectedProducerActivity, selectedProducerActivityFake } from '@testing/selected-producer-activity.fake';
-import { contractsModule } from './contracts.module';
+import { contractsModule, preloadContracts } from './contracts.module';
 import { ContractsTableComponent } from './components/contracts-table/contracts-table.component';
 import { TicketsTableComponent } from './components/tickets-table/tickets-table.component';
 
 const tab = (id: string) => contractsModule.customerTabs!.find(t => t.id === id)!;
+
+describe('Contracts module: its preload', () => {
+  // What it loads is in contracts.preload.spec.ts.
+  it("loads the trade units' contracts and today's tickets for each new trade-unit selection", () => {
+    expect(contractsModule.preload).toBe(preloadContracts);
+  });
+});
 
 describe("Contracts module: the customer profile's tabs", () => {
   it('contributes Open Contracts and, for producers, Unapplied Tickets, as the first tabs', () => {

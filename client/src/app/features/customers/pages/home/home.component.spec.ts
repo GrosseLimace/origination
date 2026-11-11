@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { signal } from '@angular/core';
+import { WritableSignal, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Params, Router } from '@angular/router';
 import { MsalService } from '@azure/msal-angular';
@@ -14,6 +14,8 @@ import { PermissionStub, permissionStub, providePermissions } from '@testing/per
 import {
   ProducerFixture, ProducerProfilesFake, producerProfilesFake, profilesOf, provideProducerProfiles, withFixtureProfile,
 } from '@testing/producer-profiles.fake';
+import { SelectedProducerActivityFake, provideSelectedProducerActivity, selectedProducerActivityFake } from '@testing/selected-producer-activity.fake';
+import { TradeUnitContracts } from '@core/context/trade-unit-contracts';
 import { OutlookCalendarService } from '@core/services/outlook-calendar.service';
 import { environment } from '@env/environment';
 import { Commodity, CommodityConversion, Contract, ContractPricingLine, Customer, DashboardPlantingEstimate, DpContract, Note, NoteLastContact, PlantingIntention, ProducerDetails, Reminder, ReminderDue, StoredGrain, Ticket } from '@models';
@@ -264,6 +266,8 @@ function makeAppState() {
 type AppStateStub = ReturnType<typeof makeAppState>;
 
 interface Harness {
+  activity: SelectedProducerActivityFake;
+  tradeUnitContracts: { contracts: WritableSignal<Contract[]> };
   fixture: ComponentFixture<HomeComponent>;
   c: HomeComponent;
   api: ApiStub;
@@ -307,9 +311,15 @@ function setup(opts: SetupOptions = {}): Harness {
   const outlook = { addToOutlook: vi.fn((_r: Reminder, _link: string): Observable<Reminder | null> => of(null)) };
   const router = { navigate: vi.fn() };
   const access = permissionStub([]);
+  // The selected producer's contracts, tickets and pricing lines are the Contracts module's; the page tells it who is
+  // selected and reads them back.
+  const activity = selectedProducerActivityFake();
+  const tradeUnitContracts = { contracts: signal<Contract[]>([]) };
 
   TestBed.configureTestingModule({
     providers: [
+      provideSelectedProducerActivity(activity),
+      { provide: TradeUnitContracts, useValue: tradeUnitContracts },
       { provide: CustomersApiService, useExisting: ApiService },
       { provide: ApiService, useValue: api },
       { provide: CustomerStore, useExisting: AppStateService },
@@ -339,16 +349,12 @@ function setup(opts: SetupOptions = {}): Harness {
   const fixture = TestBed.createComponent(HomeComponent);
   fixture.detectChanges();
   return {
-    fixture, c: fixture.componentInstance, api, app, toast, outlook, router, access, profiles,
+    fixture, c: fixture.componentInstance, api, app, toast, outlook, router, access, profiles, activity, tradeUnitContracts,
     flush: () => fixture.detectChanges(),
   };
 }
 
 /** The page's SelectedProducerActivity: what the contracts and tickets tables read, and their Retry. */
-function activityOf(h: Harness): SelectedProducerActivity {
-  return h.fixture.debugElement.injector.get(SelectedProducerActivity);
-}
-
 /** The page's SelectedProducerEngagement: what the Notes and My follow-ups cards read and act through. */
 function engagementOf(h: Harness): SelectedProducerEngagement {
   return h.fixture.debugElement.injector.get(SelectedProducerEngagement);
@@ -380,11 +386,9 @@ describe('HomeComponent', () => {
 
   // ── Selecting a producer ─────────────────────────────────────────────────
   describe('selecting a producer', () => {
-    it('loads the producer\'s contracts, tickets, stored grain, DP contracts and planting intentions into the per-customer views', () => {
+    it("tells the Contracts module who is selected, and loads their stored grain, DP contracts and planting intentions into the per-customer views", () => {
       const h = setup({
         arrange: api => {
-          api.getContractsByCustomer.mockReturnValue(of([contract(10, 'S-1'), contract(11, 'S-1')]));
-          api.getTicketsByCustomer.mockReturnValue(of([ticket(20, 'S-1')]));
           api.getStoredGrainByCustomer.mockReturnValue(of([grain('G1', 1)]));
           api.getPlantingIntentionsByCustomer.mockReturnValue(of([intention(30, 1)]));
         },
@@ -394,32 +398,12 @@ describe('HomeComponent', () => {
 
       expect(h.c.selectedCustomer()?.id).toBe(1);
       expect(h.app.selectCustomer).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
-      expect(h.c.customerContracts().map(x => x.id)).toEqual([10, 11]);
-      expect(h.c.customerTickets().map(x => x.id)).toEqual([20]);
+      expect(h.activity.select).toHaveBeenLastCalledWith(expect.objectContaining({ id: 1 }));
       expect(h.c.customerStoredGrain().map(x => x.id)).toEqual(['G1']);
       expect(h.c.customerPlantingIntentions().map(x => x.id)).toEqual([30]);
-      expect(h.c.isLoadingContracts()).toBe(false);
-      expect(h.c.isLoadingUnappliedTickets()).toBe(false);
       expect(h.c.isLoadingStoredGrain()).toBe(false);
       expect(h.c.isLoadingDpContracts()).toBe(false);
       expect(h.c.customerCodeMap().get(1)).toBe('S-1');
-    });
-
-    it('includes a split-load ticket carrying another producer\'s code when it is applied to this producer\'s contract', () => {
-      const h = setup({
-        arrange: api => {
-          api.getContractsByCustomer.mockReturnValue(of([contract(10, 'S-1', { sourceContractId: 'P10' })]));
-          api.getTicketsByCustomer.mockReturnValue(of([
-            ticket(20, 'S-1'),
-            ticket(21, 'S-OTHER', { ctrmContractNumber: 'P10', isApplied: true }),
-            ticket(22, 'S-OTHER', { ctrmContractNumber: 'P99', isApplied: true }),
-          ]));
-        },
-      });
-
-      h.c.handleSelectCustomer(A);
-
-      expect(h.c.customerTickets().map(t => t.id).sort()).toEqual([20, 21]);
     });
 
     it('ignores a slow stored-grain response for the previously selected producer', () => {
@@ -454,25 +438,6 @@ describe('HomeComponent', () => {
 
       expect(h.c.selectedCustomer()?.id).toBe(3);
       expect(h.c.customerPlantingIntentions().map(p => p.id)).toEqual([303]);
-    });
-
-    it('serves a re-click inside 60s from memory, then refreshes behind the rows once the copy has aged out', () => {
-      environment.ctrmReadAheadEnabled = false; // isolate from the 4s convergence re-read
-      const h = setup({
-        arrange: api => api.getContractsByCustomer.mockReturnValue(of([contract(10, 'S-1')])),
-      });
-
-      h.c.handleSelectCustomer(A);
-      h.c.handleSelectCustomer(B);
-      h.c.handleSelectCustomer(A);
-      expect(callsFor(h.api.getContractsByCustomer, 1)).toBe(1);
-      expect(h.c.customerContracts().map(x => x.id)).toEqual([10]);
-      expect(h.c.isLoadingContracts()).toBe(false);
-
-      vi.advanceTimersByTime(61_000);
-      h.c.handleSelectCustomer(B);
-      h.c.handleSelectCustomer(A);
-      expect(callsFor(h.api.getContractsByCustomer, 1)).toBe(2);
     });
 
     it('applies deep-link context from the query string and keeps it, while a manual click resets it', () => {
@@ -517,6 +482,7 @@ describe('HomeComponent', () => {
 
       expect(h.c.selectedCustomer()).toBeNull();
       expect(h.app.selectedCustomer()).toBeNull();
+      expect(h.activity.select).toHaveBeenLastCalledWith(null);
       expect(h.router.navigate).toHaveBeenCalledWith([], { queryParams: {}, replaceUrl: true });
     });
   });
@@ -540,17 +506,18 @@ describe('HomeComponent', () => {
     });
 
     it('drops per-producer caches so re-selecting a producer refetches its rows for the new scope', () => {
-      environment.ctrmReadAheadEnabled = false;
       const h = setup();
       h.c.handleSelectCustomer(A);
-      expect(callsFor(h.api.getContractsByCustomer, 1)).toBe(1);
+      expect(callsFor(h.api.getStoredGrainByCustomer, 1)).toBe(1);
 
       h.app.selectedTradeUnits.set(['TU1', 'TU2']);
       h.flush();
       h.c.handleSelectCustomer(A);
 
-      expect(callsFor(h.api.getContractsByCustomer, 1)).toBe(2);
+      expect(callsFor(h.api.getStoredGrainByCustomer, 1)).toBe(2);
       expect(callsFor(h.api.getPlantingIntentionsByCustomer, 1)).toBe(2);
+      // The selection is dropped with the old trade units, for the Contracts module too.
+      expect(h.activity.select).toHaveBeenCalledWith(null);
     });
 
     it('does not reload when the same trade units arrive in a different order', () => {
@@ -638,7 +605,6 @@ describe('HomeComponent', () => {
         customers: [a, B],
         arrange: api => {
           api.getCustomerById.mockReturnValue(of(customer(90)));
-          api.getContractsByCustomer.mockImplementation(id => of(id === 90 ? [contract(900, 'S-90')] : []));
         },
       });
       h.c.handleSelectCustomer(a);
@@ -647,7 +613,7 @@ describe('HomeComponent', () => {
 
       expect(h.api.getCustomerById).toHaveBeenCalledWith(90);
       expect(h.c.selectedCustomer()?.id).toBe(90);
-      expect(h.c.customerContracts().map(x => x.id)).toEqual([900]);
+      expect(h.activity.select).toHaveBeenLastCalledWith(expect.objectContaining({ id: 90 }));
       // The departing producer is still reachable through the reverse link, so the dropdown stays put.
       expect(h.c.getLinkedGroup(h.c.selectedCustomer()!).map(x => x.id)).toContain(1);
     });
@@ -666,18 +632,17 @@ describe('HomeComponent', () => {
   // ── Background-failure toast throttle ────────────────────────────────────
   describe('background-failure toast throttle', () => {
     it('one transient failure produces exactly one toast naming what failed', () => {
-      const h = setup({ arrange: api => api.getContracts.mockReturnValue(throwError(() => httpError(500))) });
+      const h = setup({ arrange: api => api.getStoredGrain.mockReturnValue(throwError(() => httpError(500))) });
 
       expect(h.toast.error).toHaveBeenCalledTimes(1);
-      expect(h.toast.error.mock.calls[0][0]).toContain('load contracts');
+      expect(h.toast.error.mock.calls[0][0]).toContain('load stored grain');
     });
 
-    it('seven sources failing at once produce a single toast', () => {
+    it('six sources failing at once produce a single toast', () => {
       const fail = () => throwError(() => httpError(503));
       const h = setup({
         arrange: api => {
           api.getAllProducerDetails.mockReturnValue(fail());
-          api.getContracts.mockReturnValue(fail());
           api.getStoredGrain.mockReturnValue(fail());
           api.getDpContracts.mockReturnValue(fail());
           api.getNotesLastContact.mockReturnValue(fail());
@@ -687,9 +652,9 @@ describe('HomeComponent', () => {
       });
       h.c.handleSelectCustomer(A);
 
-      // Seven distinct sources reported (all logged in dev)...
+      // Six distinct sources reported (all logged in dev)...
       const reported = new Set(vi.mocked(console.error).mock.calls.map(args => String(args[0])));
-      expect(reported.size).toBe(7);
+      expect(reported.size).toBe(6);
       // ...but the user is told once.
       expect(h.toast.error).toHaveBeenCalledTimes(1);
     });
@@ -738,167 +703,31 @@ describe('HomeComponent', () => {
   });
 
   // ── CTRM read-ahead: hover prefetch + click convergence ──────────────────
+  // The prefetch, its cap and the convergence re-read are the Contracts module's (CustomerActivityStore spec).
   describe('CTRM read-ahead', () => {
-    it('hover prefetch does nothing when read-ahead is disabled', () => {
-      environment.ctrmReadAheadEnabled = false;
+    it('hands the hover prefetch to the Contracts module', () => {
       const h = setup();
 
       h.c.handlePrefetchCustomer(B);
 
-      expect(h.api.getContractsByCustomer).not.toHaveBeenCalled();
-      expect(h.api.getTicketsByCustomer).not.toHaveBeenCalled();
-      expect(h.api.getPricingLinesByCustomer).not.toHaveBeenCalled();
-    });
-
-    it('caps hover prefetch at two producers in flight and does not duplicate one already in flight', () => {
-      environment.ctrmReadAheadEnabled = true;
-      const h = setup({ customers: [A, B, C, customer(4)] });
-      h.api.getContractsByCustomer.mockReturnValue(NEVER);
-
-      h.c.handlePrefetchCustomer(A);
-      h.c.handlePrefetchCustomer(B);
-      h.c.handlePrefetchCustomer(A);
-      h.c.handlePrefetchCustomer(C);
-
-      expect(h.api.getContractsByCustomer.mock.calls.map(args => args[0])).toEqual([1, 2]);
-    });
-
-    it('a hover prefetch touches no visible state, and the click then renders from it without a round trip', () => {
-      environment.ctrmReadAheadEnabled = true;
-      const h = setup();
-      h.api.getContractsByCustomer.mockReturnValue(of([contract(10, 'S-2')]));
-      h.api.getTicketsByCustomer.mockReturnValue(of([ticket(20, 'S-2')]));
-
-      h.c.handlePrefetchCustomer(B);
+      expect(h.activity.prefetch).toHaveBeenCalledWith(B);
       expect(h.c.selectedCustomer()).toBeNull();
-      expect(h.c.customerContracts()).toEqual([]);
-
-      h.c.handleSelectCustomer(B);
-
-      expect(h.api.getContractsByCustomer).toHaveBeenCalledTimes(1);
-      expect(h.api.getTicketsByCustomer).toHaveBeenCalledTimes(1);
-      expect(h.api.getPricingLinesByCustomer).toHaveBeenCalledTimes(1);
-      expect(h.c.customerContracts().map(x => x.id)).toEqual([10]);
-      expect(h.c.customerTickets().map(x => x.id)).toEqual([20]);
-    });
-
-    it('does not prefetch the producer already selected', () => {
-      environment.ctrmReadAheadEnabled = true;
-      const h = setup();
-      h.c.handleSelectCustomer(A);
-      const calls = h.api.getContractsByCustomer.mock.calls.length;
-
-      h.c.handlePrefetchCustomer(A);
-
-      expect(h.api.getContractsByCustomer.mock.calls.length).toBe(calls);
-    });
-
-    it('re-reads 4s after a first click and swaps in the converged rows, dropping a contract that closed', () => {
-      environment.ctrmReadAheadEnabled = true;
-      const h = setup();
-      h.api.getContractsByCustomer
-        .mockReturnValueOnce(of([contract(10, 'S-1'), contract(11, 'S-1')]))
-        .mockReturnValueOnce(of([contract(11, 'S-1'), contract(12, 'S-1')]));
-
-      h.c.handleSelectCustomer(A);
-      expect(h.c.customerContracts().map(x => x.id)).toEqual([10, 11]);
-
-      vi.advanceTimersByTime(4_000);
-
-      expect(callsFor(h.api.getContractsByCustomer, 1)).toBe(2);
-      expect(h.c.customerContracts().map(x => x.id).sort()).toEqual([11, 12]);
-    });
-
-    it('skips the convergence re-read when read-ahead is disabled', () => {
-      environment.ctrmReadAheadEnabled = false;
-      const h = setup();
-
-      h.c.handleSelectCustomer(A);
-      vi.advanceTimersByTime(5_000);
-
-      expect(callsFor(h.api.getContractsByCustomer, 1)).toBe(1);
-    });
-
-    it('cancels the convergence re-read when the user moves to another producer first', () => {
-      environment.ctrmReadAheadEnabled = true;
-      const h = setup();
-
-      h.c.handleSelectCustomer(A);
-      vi.advanceTimersByTime(1_000);
-      h.c.handleSelectCustomer(B);
-      vi.advanceTimersByTime(4_000);
-
-      expect(callsFor(h.api.getContractsByCustomer, 1)).toBe(1);
-      expect(callsFor(h.api.getContractsByCustomer, 2)).toBe(2);
     });
   });
 
   // ── API failures leave the page sane ─────────────────────────────────────
   describe('API failures', () => {
-    it('a CTRM-unavailable contract read shows the server\'s message and Retry recovers', () => {
-      const h = setup({
-        arrange: api => api.getContractsByCustomer.mockReturnValue(throwError(() =>
-          httpError(503, { code: 'INFRASTRUCTURE_CTRM_UNAVAILABLE', message: 'CTRM is down for maintenance.' }))),
-      });
-
+    it("shows the selected producer's contracts, tickets and pricing as the Contracts module reads them", () => {
+      const h = setup();
       h.c.handleSelectCustomer(A);
-      expect(h.c.contractsLoadError()).toBe('CTRM is down for maintenance.');
-      expect(h.c.isLoadingContracts()).toBe(false);
 
-      h.api.getContractsByCustomer.mockReturnValue(of([contract(10, 'S-1')]));
-      activityOf(h).retryContracts();
+      h.activity.contracts.set([contract(10, 'S-1')]);
+      h.activity.tickets.set([ticket(20, 'S-1')]);
+      h.activity.contractsLoadError.set('CTRM is down.');
 
-      expect(h.c.contractsLoadError()).toBeNull();
-      expect(h.c.isLoadingContracts()).toBe(false);
       expect(h.c.customerContracts().map(x => x.id)).toEqual([10]);
-    });
-
-    it('a 503 ticket read names the outage, leaves contracts intact, and Retry recovers', () => {
-      const h = setup({
-        arrange: api => {
-          api.getContractsByCustomer.mockReturnValue(of([contract(10, 'S-1')]));
-          api.getTicketsByCustomer.mockReturnValue(throwError(() => httpError(503)));
-        },
-      });
-
-      h.c.handleSelectCustomer(A);
-      expect(h.c.ticketsLoadError()).toBe('The data source is temporarily unavailable. Please retry shortly.');
-      expect(h.c.isLoadingUnappliedTickets()).toBe(false);
-      expect(h.c.customerContracts().map(x => x.id)).toEqual([10]);
-
-      h.api.getTicketsByCustomer.mockReturnValue(of([ticket(20, 'S-1')]));
-      activityOf(h).retryTickets();
-
-      expect(h.c.ticketsLoadError()).toBeNull();
       expect(h.c.customerTickets().map(x => x.id)).toEqual([20]);
-    });
-
-    it("gives the screen's pieces the selected producer's contracts, tickets and pricing through SelectedProducerActivity", () => {
-      const h = setup({
-        arrange: api => {
-          api.getContractsByCustomer.mockReturnValue(of([contract(10, 'S-1')]));
-          api.getTicketsByCustomer.mockReturnValue(of([ticket(20, 'S-1')]));
-        },
-      });
-
-      h.c.handleSelectCustomer(A);
-
-      const activity = activityOf(h);
-      expect(activity.contracts().map(x => x.id)).toEqual([10]);
-      expect(activity.tickets().map(x => x.id)).toEqual([20]);
-      expect(activity.contracts()).toBe(h.c.customerContracts());
-      expect(activity.isLoadingContracts()).toBe(false);
-      expect(activity.contractsLoadError()).toBeNull();
-    });
-
-    it('a failed pricing-line read is reported as an error, not as "no priced lines"', () => {
-      const h = setup({ arrange: api => api.getPricingLinesByCustomer.mockReturnValue(throwError(() => httpError(500))) });
-
-      h.c.handleSelectCustomer(A);
-
-      expect(h.c.pricingLinesLoadError()).toBe('Something went wrong loading this data. Please retry.');
-      expect(h.c.customerPricingLines()).toEqual([]);
-      expect(h.c.isLoadingPricingLines()).toBe(false);
+      expect(h.c.contractsLoadError()).toBe('CTRM is down.');
     });
 
     it('a failed customer roster load stops the spinner and leaves selection usable', () => {
@@ -1450,9 +1279,11 @@ describe("HomeComponent — the producer's saved details", () => {
 
   it("saves the commodities of the producer's tickets that their saved details don't list yet", () => {
     const a = customer(1, { commodities: ['YC'] });
-    const h = setup({ customers: [a, B], arrange: api => api.getTicketsByCustomer.mockReturnValue(of([ticket(20, 'S-1', { productCode: 'SB' })])) });
+    const h = setup({ customers: [a, B] });
 
     h.c.handleSelectCustomer(a);
+    h.activity.tickets.set([ticket(20, 'S-1', { productCode: 'SB' })]);
+    h.flush();
 
     expect(h.api.saveProducerDetails).toHaveBeenCalledWith(1, expect.objectContaining({ commodities: 'SB,YC' }));
     expect(h.profiles.profileOf(1)?.commodities).toBe('SB,YC');
@@ -1460,9 +1291,11 @@ describe("HomeComponent — the producer's saved details", () => {
 
   it('saves nothing when their saved details already list every commodity on their tickets', () => {
     const a = customer(1, { commodities: ['SB', 'YC'] });
-    const h = setup({ customers: [a, B], arrange: api => api.getTicketsByCustomer.mockReturnValue(of([ticket(20, 'S-1', { productCode: 'SB' })])) });
+    const h = setup({ customers: [a, B] });
 
     h.c.handleSelectCustomer(a);
+    h.activity.tickets.set([ticket(20, 'S-1', { productCode: 'SB' })]);
+    h.flush();
 
     expect(h.api.saveProducerDetails).not.toHaveBeenCalled();
   });

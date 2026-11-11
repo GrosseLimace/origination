@@ -45,7 +45,7 @@ A recent normalization pass also cleaned up plural/singular inconsistencies in t
 ```mermaid
 flowchart LR
     UI[Dashboard component]
-    Cached[(AppStateService<br/>customers, contracts,<br/>plantingIntentions)]
+    Cached[(CustomerStore, ContractStore,<br/>AppStateService<br/>customers, contracts,<br/>plantingIntentions)]
     Fresh[apiService.getDashboardSummary / Estimates / MarketShares / ActualHarvest /<br/>getContractsByCropYear / getCommodities]
     CTL[DashboardPlantingEstimatesController]
     SVC[DashboardService, Producers module<br/>ContractService for crop-year contracts]
@@ -88,7 +88,7 @@ Every row in `dbo.ProducerPlantingIntentions` carries the trade unit it was reco
 - `getDashboardActualHarvest` / `upsertDashboardActualHarvest` / `deleteDashboardActualHarvest`.
 - `getContractsByCropYear(cropYear, tradeUnits?)` — historical contracts for the selected planting year.
 - `getCommodities()` — crop catalog.
-- Plus the cached signals from `AppStateService` for `customers`, `contracts`, `plantingIntentions`.
+- Plus the cached signals: the customers from `CustomerStore`, the contracts and their loading flags from the Contracts module's `ContractStore` (`@features/contracts`), whose `ContractsApiService` also reads a crop year's contracts, and the planting intentions from `AppStateService`.
 
 ### Controller endpoints
 

@@ -4,8 +4,8 @@ import { Contract, ContractPricingLine, Ticket } from '@models';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 
 /**
- * A SelectedProducerActivity for specs: writable signals a test sets directly, and Retry spies. Starts with no
- * producer data, nothing loading and no failures.
+ * A SelectedProducerActivity for specs: writable signals a test sets directly, and spies for the selection, the
+ * prefetch and the retries. Starts with no producer data, nothing loading and no failures.
  */
 export function selectedProducerActivityFake() {
   return {
@@ -18,6 +18,8 @@ export function selectedProducerActivityFake() {
     contractsLoadError: signal<string | null>(null),
     ticketsLoadError: signal<string | null>(null),
     pricingLinesLoadError: signal<string | null>(null),
+    select: vi.fn(),
+    prefetch: vi.fn(),
     retryContracts: vi.fn(),
     retryTickets: vi.fn(),
   } satisfies SelectedProducerActivity;

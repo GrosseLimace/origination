@@ -9,6 +9,7 @@ import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { CustomerStore } from '@features/customers';
 import { AppStateService } from '@core/services/app-state.service';
+import { ContractStore, ContractsApiService } from '@features/contracts';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, Commodity } from '@models';
@@ -46,6 +47,9 @@ import { DashboardCacheEntry, DashboardStore } from '../../data-access/dashboard
 export class DashboardComponent {
   private readonly apiService = inject(ApiService);
   private readonly appStateService = inject(AppStateService);
+  /** The trade units' contracts and tickets, kept by the Contracts module. */
+  private readonly contractStore = inject(ContractStore);
+  private readonly contractsApi = inject(ContractsApiService);
   /** Every producer's details: their crops, farm acres and linked producers. */
   private readonly producerProfiles = inject(ProducerProfiles);
   private readonly customerStore = inject(CustomerStore);
@@ -58,7 +62,7 @@ export class DashboardComponent {
 
   // Read directly from appState — DataPreloadService populates these on TU change
   readonly customers = this.customerStore.customers;
-  readonly contracts = this.appStateService.contracts;
+  readonly contracts = this.contractStore.contracts;
   readonly plantingIntentions = this.appStateService.plantingIntentions;
 
   // Crop-year contracts from base.Contract (open + closed). Loaded reactively when the
@@ -111,7 +115,7 @@ export class DashboardComponent {
   // dataLoading, which also waits on today's tickets (a slow ODS scan).
   readonly loading = computed(() =>
     this.customerStore.customersLoading()
-    || this.appStateService.contractsLoading()
+    || this.contractStore.contractsLoading()
     || this._localLoading());
   totalAcres = signal(0);
   activeContracts = signal(0);
@@ -240,7 +244,7 @@ export class DashboardComponent {
   // (customers, contracts and today's tickets) has all arrived
   private readonly _dataReady = computed(() =>
     this.allCommodities().length > 0
-      || !(this.customerStore.customersLoading() || this.appStateService.contractsLoading() || this.appStateService.todaysTicketsLoading())
+      || !(this.customerStore.customersLoading() || this.contractStore.contractsLoading() || this.contractStore.todaysTicketsLoading())
   );
 
   // Request-ID pattern for concurrent load handling
@@ -467,7 +471,7 @@ export class DashboardComponent {
       this.cropYearLoadFailed.set(false);
 
       untracked(() => {
-        this.apiService.getContractsByCropYear(year, tus.length > 0 ? tus : undefined)
+        this.contractsApi.getContractsByCropYear(year, tus.length > 0 ? tus : undefined)
           .pipe(takeUntilDestroyed(this.destroyRef))
           .subscribe({
             next: contracts => { this._cropYearContracts.set(contracts); this.cropYearLoadFailed.set(false); },
@@ -501,7 +505,7 @@ export class DashboardComponent {
     // and would cause an extra recalc when 100k+ stored grain records finish downloading.
     effect(() => {
       this.customerStore.customers();
-      this.appStateService.contracts();
+      this.contractStore.contracts();
       this.appStateService.plantingIntentions();
       this.allCommodities();
       const ready = this._dataReady();

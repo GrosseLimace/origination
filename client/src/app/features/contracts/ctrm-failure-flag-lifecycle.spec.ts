@@ -5,7 +5,7 @@ import { of, throwError, firstValueFrom, lastValueFrom } from 'rxjs';
 import { catchError, tap } from 'rxjs/operators';
 import { TestBed } from '@angular/core/testing';
 import { effect, signal, untracked } from '@angular/core';
-import { AppStateService } from '@core/services/app-state.service';
+import { ContractStore } from './data-access/contract.store';
 
 /**
  * WHEN the failure flags are set and cleared - the half that a "does the signal work" test cannot see.
@@ -19,12 +19,11 @@ describe('CTRM failure flags — lifecycle', () => {
   const src = (...parts: string[]) => readFileSync(join(process.cwd(), 'src', 'app', ...parts), 'utf8');
 
   describe('the pipe pattern itself', () => {
-    let appState: AppStateService;
+    let appState: ContractStore;
 
     beforeEach(() => {
       TestBed.resetTestingModule();
-      TestBed.configureTestingModule({ providers: [AppStateService] });
-      appState = TestBed.inject(AppStateService);
+      appState = TestBed.inject(ContractStore);
     });
 
     it('leaves the flag SET when the read fails, even though the fallback flows on', async () => {
@@ -75,8 +74,8 @@ describe('CTRM failure flags — lifecycle', () => {
    */
   describe('every trade-unit-wide call site uses that arrangement', () => {
     const sites: [string, string[], RegExp][] = [
-      ['data-preload contracts', ['core', 'context', 'data-preload.service.ts'], /setContractsLoadFailed/],
-      ['data-preload tickets', ['core', 'context', 'data-preload.service.ts'], /setTicketsLoadFailed/],
+      ['Contracts preload contracts', ['features', 'contracts', 'contracts.module.ts'], /setContractsLoadFailed/],
+      ['Contracts preload tickets', ['features', 'contracts', 'contracts.module.ts'], /setTicketsLoadFailed/],
       ['build-list', ['features', 'lists', 'pages', 'build-list', 'build-list.component.ts'], /setContractsLoadFailed/],
       // What a saved list reads before it runs, and the trade unit's tickets a ticket list needs.
       ['saved lists contracts', ['features', 'lists', 'data-access', 'saved-lists.store.ts'], /setContractsLoadFailed/],
@@ -103,7 +102,7 @@ describe('CTRM failure flags — lifecycle', () => {
     });
 
     it('no setter clears the flags, because the fallback flows through them', () => {
-      const text = src('core', 'services', 'app-state.service.ts');
+      const text = src('features', 'contracts', 'data-access', 'contract.store.ts');
 
       for (const setter of ['setContracts(', 'setTickets(', 'setTodaysTickets(']) {
         const at = text.indexOf(setter + 'contracts: Contract[]') >= 0

@@ -1,12 +1,12 @@
 import { Injectable, inject, DestroyRef } from '@angular/core';
 import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject, merge, of } from 'rxjs';
-import { catchError, distinctUntilChanged, filter, switchMap, take, tap, timeout } from 'rxjs/operators';
+import { catchError, distinctUntilChanged, filter, switchMap, take, tap } from 'rxjs/operators';
 import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
-import { Contract, Ticket, NoteLastContact, ReminderDue, PlantingIntention, StoredGrain, DpContract, Commodity, CommodityConversion, HarvestWindow } from '@models';
+import { NoteLastContact, ReminderDue, PlantingIntention, StoredGrain, DpContract, Commodity, CommodityConversion, HarvestWindow } from '@models';
 import { environment } from '@env/environment';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { ModuleRegistry } from '@core/modules/module-registry';
@@ -58,22 +58,11 @@ export class DataPreloadService {
       take(1),
       switchMap(() => tuChanges$),
       switchMap(tradeUnits => {
-        if (tradeUnits.length === 0) {
-          this.appState.setContractsLoading(false);
-          this.appState.setTodaysTicketsLoading(false);
-          return of(null);
-        }
+        if (tradeUnits.length === 0) return of(null);
 
-        // Per-dataset flags — each flips false in its own tap below, so screens/categories
-        // render as soon as their data lands rather than waiting on the slowest core query.
-        // Customers' preload (below, with the other modules') keeps its own.
-        this.appState.setContractsLoading(true);
+        // A new trade-unit load: the last one's failures no longer describe anything. The modules' preloads (below)
+        // keep their own loading flags and failures: the customers', the contracts' and today's tickets'.
         this.appState.clearLoadFailures();
-        this.appState.setTodaysTicketsLoading(true);
-        // The TU-wide ticket set is no longer eagerly bulk-loaded — it's lazily fetched by the
-        // list/NLQ consumers (customer-list, build-list) when a ticket query needs it. Clear it on
-        // TU change so those consumers re-fetch for the new TU instead of reusing the prior TU's set.
-        this.appState.clearTicketsCache();
         // Same for the full note set: NLQ/saved-list consumers fetch it lazily when a note
         // query needs it. Badges use the noteLastContacts aggregate below instead.
         this.appState.clearNotesCache();
@@ -81,43 +70,6 @@ export class DataPreloadService {
         // between the TU change and the preload landing would run against the prior TU's rows.
         this.appState.clearDpContractsCache();
 
-        // Core group: the trade unit's customers (Customers' preload), contracts and today's tickets. A screen that
-        // needs all three waits on all three loading flags. todaysTickets$ is a fast query (today's date filter)
-        // and resolves in roughly the same time as customers + contracts.
-        const contracts$ = this.apiService.getContracts(tradeUnits).pipe(
-          // Cleared HERE, ahead of the catchError, so only a real emission clears it. Doing it inside
-          // setContracts meant the [] fallback below cleared the flag the catchError had just set.
-          tap(() => this.appState.setContractsLoadFailed(false)),
-          // Still resolves to [] so the rest of the page loads, but the failure is RECORDED - otherwise
-          // every contract-based prompt reports "no producers found" for what is actually an outage.
-          catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); }),
-          tap(data => {
-            this.appState.setContracts(data);
-            this.appState.setContractsLoading(false);
-          })
-        );
-        const todaysTickets$ = this.apiService.getTodaysTickets(tradeUnits).pipe(
-          // Above the honest cold time for this read (measured 3-5s, and the server now serves it
-          // stale-while-revalidate so a caller should rarely wait at all), but bounded so the Spot Loads
-          // skeleton cannot spin forever if the gateway stalls.
-          timeout(60000),
-          tap(() => {
-            this.appState.setTicketsLoadFailed(false);
-            this.appState.setSourceLoadPending(false);
-          }),
-          // A TIMEOUT is not a failure: the server keeps working and caches the result, so a retry shortly
-          // after succeeds. Saying "could not be loaded from CTRM" for it would be false - same distinction
-          // the trade-unit ticket read makes in build-list.
-          catchError((err) => {
-            if (err?.name === 'TimeoutError') this.appState.setSourceLoadPending(true);
-            else this.appState.setTicketsLoadFailed(true);
-            return of([] as Ticket[]);
-          }),
-          tap(data => {
-            this.appState.setTodaysTickets(data);
-            this.appState.setTodaysTicketsLoading(false);
-          })
-        );
         // Last-contact aggregate instead of the full note download: tiny rows (one per
         // customer with notes, all trade units) that feed the list badges. Full note
         // bodies load per-producer on selection or lazily for NLQ.
@@ -182,11 +134,12 @@ export class DataPreloadService {
             this.appState.setHarvestWindows(data);
           })
         );
-        // Each module's own preload (the trade unit's customers; Producers' dashboard summary and every producer's
-        // details), cancelled with the rest by the next trade-unit change.
+        // Each module's own preload (the trade unit's customers; their contracts and today's tickets; Producers'
+        // dashboard summary and every producer's details; Lists' saved lists), cancelled with the rest by the next
+        // trade-unit change.
         const modulePreloads = this.moduleRegistry.preloads(tradeUnits);
 
-        return merge(contracts$, todaysTickets$, notes$, reminders$, plantingIntentions$, storedGrain$, dpContracts$, commodities$, harvestWindows$, ...modulePreloads);
+        return merge(notes$, reminders$, plantingIntentions$, storedGrain$, dpContracts$, commodities$, harvestWindows$, ...modulePreloads);
       }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe();

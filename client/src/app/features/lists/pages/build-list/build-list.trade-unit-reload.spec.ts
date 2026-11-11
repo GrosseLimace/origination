@@ -6,6 +6,7 @@ import { MsalService } from '@azure/msal-angular';
 import { Observable, Subject, of } from 'rxjs';
 import { BuildListComponent } from './build-list.component';
 import { ApiService } from '@core/services/api.service';
+import { ContractsApiService } from '@features/contracts';
 import { AppStateService } from '@core/services/app-state.service';
 import { DataPreloadService } from '@core/context/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
@@ -99,6 +100,8 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
         AppStateService,
         { provide: CustomersApiService, useExisting: ApiService },
         { provide: SavedListsApiService, useExisting: ApiService },
+        // The contract and ticket calls are Contracts' API client's; this stub answers them.
+        { provide: ContractsApiService, useExisting: ApiService },
         { provide: ApiService, useValue: api },
         { provide: DataPreloadService, useValue: {} },
         { provide: ToastService, useValue: { info: vi.fn(), error: vi.fn(), success: vi.fn() } },

@@ -1,11 +1,12 @@
 import { Signal } from '@angular/core';
-import { Contract, ContractPricingLine, Ticket } from '@models';
+import { Contract, ContractPricingLine, Customer, Ticket } from '@models';
 
 /**
  * The selected producer's contracts, tickets and pricing lines, as the customer screen's pieces read them: the
  * contracts and tickets tabs, and whatever else on the screen shows the producer's activity. Declared in core so
- * those pieces can read it without importing the module that loads it; the page that hosts the customer screen
- * provides the implementation (the home page's HomeProducerActivityStore).
+ * those pieces can read it without importing the module that loads it. The Contracts module's CustomerActivityStore is
+ * the implementation, which the composition root provides; the page that hosts the customer screen tells it who is
+ * selected.
  */
 export abstract class SelectedProducerActivity {
   /** The producer's contracts. */
@@ -29,6 +30,13 @@ export abstract class SelectedProducerActivity {
   /** The same for the pricing-line read: the contracts can be fine while their prices are missing. */
   abstract readonly pricingLinesLoadError: Signal<string | null>;
 
+  /**
+   * The producer the customer screen now shows, or null for none: reads their contracts, tickets and pricing lines,
+   * from what was read before while it is fresh, and cancels what was still being read for the producer before.
+   */
+  abstract select(customer: Customer | null): void;
+  /** Reads a producer's activity ahead of a click the pointer suggests is coming, without showing it. */
+  abstract prefetch(customer: Customer): void;
   /** Reads the producer's contracts again, after a failure. */
   abstract retryContracts(): void;
   /** Reads the producer's tickets again, after a failure. */

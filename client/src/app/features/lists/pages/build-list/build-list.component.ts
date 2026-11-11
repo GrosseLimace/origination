@@ -11,6 +11,7 @@ import { CustomerStore, CustomersApiService } from '@features/customers';
 import { SavedListsApiService } from '../../data-access/saved-lists-api.service';
 import { SavedListsStore } from '../../data-access/saved-lists.store';
 import { AppStateService } from '@core/services/app-state.service';
+import { ContractStore, ContractsApiService } from '@features/contracts';
 import { DataPreloadService } from '@core/context/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
@@ -94,6 +95,9 @@ import { BuildListState, BuildListStore } from '../../data-access/build-list.sto
 export class BuildListComponent {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
+  /** The trade units' contracts and tickets, kept by the Contracts module. */
+  private readonly contractStore = inject(ContractStore);
+  private readonly contractsApi = inject(ContractsApiService);
   /** Every producer's details, kept by the Producers module; laid over the customers this page filters. */
   private readonly producerProfiles = inject(ProducerProfiles);
   private readonly customerStore = inject(CustomerStore);
@@ -108,10 +112,10 @@ export class BuildListComponent {
    *  rather than a genuine answer. Every empty state on this screen has to check it: a CTRM timeout
    *  otherwise reads as "no producers found", which is indistinguishable from a real empty list. */
   readonly sourceLoadFailed = computed(() =>
-    this.appState.contractsLoadFailed() || this.appState.ticketsLoadFailed());
+    this.contractStore.contractsLoadFailed() || this.contractStore.ticketsLoadFailed());
 
   /** A read that timed out client-side rather than failing - the data is still coming. */
-  readonly sourceLoadPending = this.appState.sourceLoadPending;
+  readonly sourceLoadPending = this.contractStore.sourceLoadPending;
   private readonly dataPreloadService = inject(DataPreloadService);
   private readonly toastService = inject(ToastService);
   private readonly nlqFilterService = inject(NlqFilterService);
@@ -205,7 +209,7 @@ export class BuildListComponent {
     // _ticketsReady stays false), so without this dependency the effect never re-runs and the query hangs
     // on "Processing query..." exactly as it did before the guard was added.
     this.sourceLoadFailed();
-    this.appState.sourceLoadPending();   // tracked for the same reason: it flips after a query is staged
+    this.contractStore.sourceLoadPending();   // tracked for the same reason: it flips after a query is staged
     this._storageReady();
     if (this.queryText().trim() && (this.isProcessing() || this.waitingForTickets() || this.waitingForNotes() || this.waitingForDp()) && this.coreDataLoaded()) {
       untracked(() => {
@@ -216,7 +220,7 @@ export class BuildListComponent {
         // Found by the failure drill on 2026-08-27: with CTRM unreachable, the producer screen and the
         // dashboard both showed their error states correctly, but Build-a-List hung. The error banner
         // lives in the results branch, and a stalled query never reaches it.
-        if (this.sourceLoadFailed() || this.appState.sourceLoadPending()) {
+        if (this.sourceLoadFailed() || this.contractStore.sourceLoadPending()) {
           this.waitingForTickets.set(false);
           this.waitingForNotes.set(false);
           this.waitingForDp.set(false);
@@ -286,8 +290,8 @@ export class BuildListComponent {
   // appState. If appState has more tickets than our local copy, hydrate and re-run
   // any already-completed ticket-dependent query so the result picks up the new data.
   private _appStateTicketsEffect = effect(() => {
-    const appTickets = this.appState.tickets();
-    const appTicketsTu = this.appState.ticketsTradeUnitKey();
+    const appTickets = this.contractStore.tickets();
+    const appTicketsTu = this.contractStore.ticketsTradeUnitKey();
     // Only adopt tickets that belong to the trade units we're currently showing. A length-only
     // comparison would hydrate from the PREVIOUS trade unit during a switch: our local set is
     // already cleared for the new TU while appState still holds the old, larger one (the two
@@ -783,8 +787,8 @@ export class BuildListComponent {
   // query running against a silently-empty contracts array would otherwise read as "0 producers".
   // Both live on AppStateService rather than here: customer-list and the trade-unit preload hit the same
   // reads, and three private copies of these flags meant sourceLoadFailed missed most outages.
-  readonly contractsLoadFailed = this.appState.contractsLoadFailed;
-  readonly ticketsLoadFailed = this.appState.ticketsLoadFailed;
+  readonly contractsLoadFailed = this.contractStore.contractsLoadFailed;
+  readonly ticketsLoadFailed = this.contractStore.ticketsLoadFailed;
   showRefinePanel = signal(false);
   pendingRefinements = signal<RefinementFilters>({});
   appliedRefinements = signal<RefinementFilters>({});
@@ -1309,8 +1313,8 @@ export class BuildListComponent {
     // any data the preload service hadn't finished (tickets, stored grain, etc.).
     if (currentTus.length > 0 && cachedCustomers.length > 0) {
       this.customers.set(cachedCustomers);
-      this.contracts.set(this.appState.contracts());
-      this.tickets.set(this.appState.tickets());
+      this.contracts.set(this.contractStore.contracts());
+      this.tickets.set(this.contractStore.tickets());
       this.plantingIntentions.set(this.appState.plantingIntentions());
       this.notes.set(this.appState.notes());
       this.storedGrain.set(this.appState.storedGrain());
@@ -1401,9 +1405,9 @@ export class BuildListComponent {
       customers: this.customersApi.getCustomers(tuParam).pipe(
         tap(() => this.customerStore.setCustomersLoadFailed(false)),
         catchError(() => { this.customerStore.setCustomersLoadFailed(true); return of([] as Customer[]); })),
-      contracts: this.apiService.getContracts(tuParam).pipe(
-        tap(() => this.appState.setContractsLoadFailed(false)),
-        catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })),
+      contracts: this.contractsApi.getContracts(tuParam).pipe(
+        tap(() => this.contractStore.setContractsLoadFailed(false)),
+        catchError(() => { this.contractStore.setContractsLoadFailed(true); return of([] as Contract[]); })),
       plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(
         tap(() => this.appState.setPlantingIntentionsLoadFailed(false)),
         catchError(() => { this.appState.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); })),
@@ -1430,7 +1434,7 @@ export class BuildListComponent {
         this.savedLists.set(data.savedLists);
         // Write to appState so other pages and restore path can use it
         this.customerStore.setCustomers(this.customers());
-        this.appState.setContracts(data.contracts);
+        this.contractStore.setContracts(data.contracts);
         this.appState.setPlantingIntentions(data.plantingIntentions);
         this.appState.setStoredGrain(data.storedGrain);
         this.savedListsStore.setLists(data.savedLists);
@@ -1482,18 +1486,18 @@ export class BuildListComponent {
     // empty. On a genuine timeout/HTTP error we now mark ticketsLoadFailed so the results area
     // can show a retry panel instead of a misleading "no producers found" (mirrors contracts).
     let ticketFetchFailed = false;
-    this.apiService.getTickets(tuParam).pipe(
+    this.contractsApi.getTickets(tuParam).pipe(
       timeout(310000),
       tap(() => {
-        this.appState.setTicketsLoadFailed(false);
-        this.appState.setSourceLoadPending(false);
+        this.contractStore.setTicketsLoadFailed(false);
+        this.contractStore.setSourceLoadPending(false);
       }),
       // A TIMEOUT is not a failure. Whichever source answers, it keeps working and caches the result, so
       // a retry shortly after succeeds - which makes "could not be loaded" a false statement. Only a real
       // error arms the failed flag; a timeout says "still loading". The 310s bound above earns its keep on
       // the CTRM path too: a cold trade-unit walk has been measured at up to 211s.
       catchError((err) => {
-        if (err?.name === 'TimeoutError') this.appState.setSourceLoadPending(true);
+        if (err?.name === 'TimeoutError') this.contractStore.setSourceLoadPending(true);
         else ticketFetchFailed = true;
         return of([] as Ticket[]);
       }),
@@ -1503,16 +1507,16 @@ export class BuildListComponent {
       if (requestId !== this._loadRequestId) return;
       if (tickets.length > 0) {
         this.tickets.set(tickets);
-        this.appState.setTickets(tickets);
-      } else if (this.appState.tickets().length > 0) {
+        this.contractStore.setTickets(tickets);
+      } else if (this.contractStore.tickets().length > 0) {
         // Timeout fired locally but the TU-wide cache already has data (e.g. another lazy
         // consumer populated it). Hydrate local from appState so the build-list filter sees
         // the real tickets instead of [].
-        this.tickets.set(this.appState.tickets());
+        this.tickets.set(this.contractStore.tickets());
       }
       // Only flag a failure when nothing usable came back at all — the appState fallback
       // above means the data genuinely arrived (via another consumer), so that's a success.
-      this.appState.setTicketsLoadFailed(ticketFetchFailed && this.tickets().length === 0);
+      this.contractStore.setTicketsLoadFailed(ticketFetchFailed && this.tickets().length === 0);
       this._ticketsReady.set(true);
     });
   }
@@ -1976,11 +1980,11 @@ export class BuildListComponent {
       customers: this.customersApi.getCustomers(tuParam).pipe(
         tap(() => this.customerStore.setCustomersLoadFailed(false)),
         catchError(() => { this.customerStore.setCustomersLoadFailed(true); return of([] as Customer[]); })),
-      contracts: this.apiService.getContracts(tuParam).pipe(
-        tap(() => this.appState.setContractsLoadFailed(false)),
-        catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })),
-      tickets: this.apiService.getTickets(tuParam).pipe(
-        tap(() => this.appState.setTicketsLoadFailed(false)),
+      contracts: this.contractsApi.getContracts(tuParam).pipe(
+        tap(() => this.contractStore.setContractsLoadFailed(false)),
+        catchError(() => { this.contractStore.setContractsLoadFailed(true); return of([] as Contract[]); })),
+      tickets: this.contractsApi.getTickets(tuParam).pipe(
+        tap(() => this.contractStore.setTicketsLoadFailed(false)),
         catchError(() => { ticketFetchFailed = true; return of([] as Ticket[]); })),
       plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(
         tap(() => this.appState.setPlantingIntentionsLoadFailed(false)),
@@ -2000,7 +2004,7 @@ export class BuildListComponent {
         this.customers.set(data.customers);
         this.contracts.set(data.contracts);
         this.tickets.set(data.tickets);
-        this.appState.setTicketsLoadFailed(ticketFetchFailed && data.tickets.length === 0);
+        this.contractStore.setTicketsLoadFailed(ticketFetchFailed && data.tickets.length === 0);
         this.notes.set(data.notes);
         // Warm the shared lazy cache so other consumers (home enrichment, customer-list
         // saved lists) and this page's next query skip the download.
@@ -2534,10 +2538,10 @@ export class BuildListComponent {
     // on where the user had browsed, and applied one year's yield to every year's acres.
     const tuKey = [...tuParam].sort().join(',');
     forkJoin({
-      contracts: forkJoin(years.map(y => this.apiService.getContractsByCropYear(y, tus).pipe(
+      contracts: forkJoin(years.map(y => this.contractsApi.getContractsByCropYear(y, tus).pipe(
         // Flagged rather than silently empty: this feeds the planting-coverage view, where [] reads as
         // "nobody has contracts for this crop year".
-        catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })
+        catchError(() => { this.contractStore.setContractsLoadFailed(true); return of([] as Contract[]); })
       ))),
       estimates: tuKey
         ? forkJoin(years.map(y => this.apiService.getDashboardPlantingEstimates(tuKey, y).pipe(

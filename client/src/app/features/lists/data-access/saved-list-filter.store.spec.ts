@@ -4,6 +4,7 @@ import { Observable, Subject, of } from 'rxjs';
 import { MsalService } from '@azure/msal-angular';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { ApiService } from '@core/services/api.service';
+import { ContractStore, ContractsApiService } from '@features/contracts';
 import { AppStateService } from '@core/services/app-state.service';
 import { NlqFilterContext, NlqFilterService } from '../nlq/nlq-filter.service';
 import { ToastService } from '@core/services/toast.service';
@@ -50,6 +51,8 @@ describe('SavedListFilterStore', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: SavedListsApiService, useValue: { getSavedLists: () => of([]), getQueryLibrary: () => of([]) } },
+        // The contract and ticket calls are Contracts' API client's; this stub answers them.
+        { provide: ContractsApiService, useExisting: ApiService },
         { provide: ApiService, useValue: appApi },
         { provide: NlqFilterService, useValue: nlq },
         { provide: ToastService, useValue: { success: vi.fn(), error: vi.fn() } },
@@ -118,12 +121,12 @@ describe('SavedListFilterStore', () => {
 
   it('works the list out again when the trade unit\'s tickets arrive later, for a list about tickets', () => {
     vi.spyOn(nlq, 'queryInvolvesTickets').mockReturnValue(true);
-    appState.setTickets([]);
+    TestBed.inject(ContractStore).setTickets([]);
     filter.select('10');
     vi.mocked(nlq.parseAndFilter).mockImplementation((_q, ctx) =>
       ({ customers: ctx.customers.filter(c => c.id === 1), detectedState: null, matchedPatterns: ['tickets'] }));
 
-    appState.setTickets([{ id: 1 } as Ticket]);
+    TestBed.inject(ContractStore).setTickets([{ id: 1 } as Ticket]);
     TestBed.tick();
 
     expect(kept()).toEqual([1]);

@@ -113,7 +113,7 @@ flowchart LR
     SVC --> ODS[(ODS views<br/>vw_CurrentContracts, vw_CurrentTickets,<br/>vw_ContractPricing, vw_GNTA39D1)]
     SVC --> APP[(App DB tables<br/>Customer, CustomerTradeUnit, Notes, ProducerDetails,<br/>ProducerPlantingIntentions, SavedLists, Commodities)]
 
-    UI -- "customer click" --> ByCustomer[apiService.getContractsByCustomer / getTicketsByCustomer / getStoredGrainByCustomer / getPlantingIntentionsByCustomer / getProducerDetails / getPricingLinesByCustomer / customersApi.getCustomerById / getCustomersLinkedTo]
+    UI -- "customer click" --> ByCustomer[contractsApi.getContractsByCustomer / getTicketsByCustomer / apiService.getStoredGrainByCustomer / getPlantingIntentionsByCustomer / getProducerDetails / getPricingLinesByCustomer / customersApi.getCustomerById / getCustomersLinkedTo]
     ByCustomer --> CTL
 ```
 
@@ -125,7 +125,7 @@ When the trade-unit selector changes, the home component fires a parallel batch 
 | --- | --- |
 | Component | `client/src/app/features/customers/pages/home/home.component.ts` |
 | Template | `client/src/app/features/customers/pages/home/home.component.html` |
-| Page stores (provided by the home component, one per visit) | `pages/home/home-*.store.ts` and `home-page.state.ts`: the selected producer's notes, follow-ups, planting intentions and linked producers, and `HomeProducerActivityStore` for their contracts, tickets, pricing lines, stored grain and DP contracts |
+| Page stores (provided by the home component, one per visit) | `pages/home/home-*.store.ts` and `home-page.state.ts`: the selected producer's notes, follow-ups, planting intentions and linked producers, and `HomeProducerActivityStore` for their stored grain and DP contracts, their linked group's notes and the commodity auto-save. Their contracts, tickets and pricing lines are the Contracts module's (`SelectedProducerActivity`), which the page tells who is selected |
 | Customer profile sub-component | `client/src/app/features/customers/components/customer-profile/customer-profile.component.ts` |
 | Customer list sub-component | `client/src/app/features/customers/components/customer-list/customer-list.component.ts` |
 | Saved-list picker (above the customer list) | The Lists module's `list-filter` panel: `features/lists/components/saved-list-filter/`, contributed in `lists.module.ts`, needing `saved-lists:read:own`. It narrows the list through the list's `CustomerListFilter`; the picked list and who it holds are Lists' `SavedListFilterStore`'s, so they outlast the page. A list is run once its data is loaded (the trade unit's tickets, stored grain, planting, contracts or DP, the full notes, as its query needs), and again when more of that arrives, when the roster grows or when the list changes. A new trade-unit selection keeps the pick while the list still applies to it. |
@@ -147,22 +147,20 @@ Customers used to be read directly from `originations.vw_CurrentCustomers` via a
 
 ### API service methods called
 
-The customer calls are on `CustomersApiService` (`features/customers/data-access`); the rest are still on `ApiService`.
+The customer calls are on `CustomersApiService` (`features/customers/data-access`), and the contract, ticket and pricing-line calls on the Contracts module's `ContractsApiService`, made by its stores rather than the page; the rest are still on `ApiService`.
 
 Bulk on init / TU change:
 
 - `getCustomers(tradeUnits?)` (Customers' preload loads them first, into `CustomerStore`)
-- `getContracts(tradeUnits?)`
-- `getTickets(tradeUnits?)`
-- `getNotes(tradeUnits?)`
+- (The trade units' contracts and today's tickets are Contracts' preload's, into `ContractStore`; the page no longer reads them. Neither reads the full ticket set or the full notes, which the screens that need them read.)
 - `getStoredGrain(tradeUnits?)`
 - `getPlantingIntentions(tradeUnits?)`
 - `getSavedLists()`
 - `getAllProducerDetails()`, through `ProducerProfiles.load()` (on each visit; the Producers preload reads them too, and a read already running is shared)
 - `getCommodities()`
-- `getDashboardPlantingEstimates(tu, year)` — per-TU yield estimates used by the Planting tab to show projected production; one call per year (`forkJoin`) covering planting intentions + contract crop years.
+- `getDashboardPlantingEstimates(tu, year)` — per-TU yield estimates used by the Planting tab to show projected production; one call per year (`forkJoin`) covering planting intentions + contract crop years. The contract crop years come from `TradeUnitContracts` (`core/context`), which `ContractStore` implements, until the yield estimates move to Producers (Phase 4, step 10d).
 
-Per-customer on selection:
+Per-customer on selection (the contracts, tickets and pricing lines by the Contracts module, which the page tells who is selected):
 
 - `getContractsByCustomer(customerId, scoularId?)`
 - `getTicketsByCustomer(customerId, scoularId?)`
@@ -202,23 +200,23 @@ The pending values are stored in component signals (`pendingContractId`, `pendin
 
 ## State and caching
 
-- The home component reads heavily from `AppStateService`: `contracts`, `tickets`, `notes`, `storedGrain`, `plantingIntentions`, `pricingLines`, `selectedCustomer`, `selectedTradeUnits`; and the customers from `CustomerStore`. It also writes (`CustomerStore.setCustomers`, `setContracts`, ...) after each successful fetch so other screens get the same cached data.
+- The home component reads heavily from `AppStateService`: `notes`, `storedGrain`, `plantingIntentions`, `selectedCustomer`, `selectedTradeUnits`; and the customers from `CustomerStore`. It also writes (`CustomerStore.setCustomers`, `setStoredGrain`, ...) after each successful fetch so other screens get the same cached data.
 - `DataPreloadService` may have already populated some of this on app load.
 - **Request deduplication** within the component: a `_customerRequestId` counter is incremented on every TU change. Stale responses with an outdated id are dropped to prevent the list from flipping back to the old TU's data when responses arrive out-of-order.
 
 ### The selected producer's contracts, tickets and pricing
 
-`pages/home/home-producer-activity.store.ts` (`HomeProducerActivityStore`). The home component calls it on every selection and exposes its signals to the template under the same names (`customerContracts`, `isLoadingContracts`, `contractsLoadError`, ...). The page also provides it as `SelectedProducerActivity` (`core/context`), which the contracts and tickets tables read their data, loading and failure state and Retry from, instead of through the profile's inputs.
+The Contracts module's `CustomerActivityStore` (`features/contracts/data-access`), which the composition root provides as `SelectedProducerActivity` (`core/context`). The home component tells it who is selected (`select`, and `select(null)` when the selection is cleared or the trade units change) and who the pointer rests on (`prefetch`), and exposes its signals to the template under the old names (`customerContracts`, `isLoadingContracts`, `contractsLoadError`, ...). The contracts and tickets tables read their data, loading and failure state and Retry from it, instead of through the profile's inputs. The page's own `HomeProducerActivityStore` keeps the producer's stored grain and DP contracts, their linked group's notes and the commodity auto-save, until Phase 4 moves them to Producers and Engagement.
 
 - **Freshness:** a producer read once is shown from memory on the next click, and re-read silently behind the visible rows once it is older than 60 seconds (the server's own per-producer cache). Pricing lines follow the same rule, keyed by `scoularId`. A trade-unit change forgets every producer's reads.
 - **First click on the CTRM path** (`ctrmReadAheadEnabled`): a one-off silent re-read 4 seconds later picks up anything the server's warm trade-unit cache missed, and hovering over a producer prefetches their contracts, tickets and pricing (two producers at most at once), so the click renders from memory.
-- **Merging:** each producer's live contract rows are merged into the trade unit's contract pool, which is also the shared cache Build a List and the Dashboard read; tickets stay in the page's own pool. A refresh first takes back exactly the rows the previous read contributed (`merge-producer-rows.ts`), so a closed contract or a newly applied ticket doesn't linger.
+- **Merging:** each producer's live contract rows are merged into the trade units' contracts (`ContractStore`), the shared cache Build a List and the Dashboard read; tickets stay in the store's own set of the selected producers' tickets. A refresh first takes back exactly the rows the previous read contributed (`merge-producer-rows.ts`), so a closed contract or a newly applied ticket doesn't linger.
 - **Failures:** a failed first read shows the server's message with Retry; a failed background refresh leaves the visible rows alone.
-- **Commodities:** when a producer's tickets or contracts arrive with commodities their profile doesn't list yet, the store saves them to the producer's details, one save per producer at a time.
+- **Commodities:** when a producer's tickets or contracts arrive with commodities their profile doesn't list yet, the page's `HomeProducerActivityStore` saves them to the producer's details, one save per producer at a time.
 
 ### StoredGrain merge race (important)
 
-The trade-unit merge is in `HomeComponent._loadAllData`; the per-producer one in `HomeProducerActivityStore.loadCustomerContractsAndTickets`.
+The trade-unit merge is in `HomeComponent._loadAllData`; the per-producer one in `HomeProducerActivityStore.loadStorageAndDp`.
 
 The TU-level `getStoredGrain` fetch and the per-customer `getStoredGrainByCustomer` fetch both write to the same `storedGrain` signal. If they ran in the wrong order, the TU fetch would overwrite the per-customer merge and the customer's storage tab would go blank.
 
@@ -239,7 +237,7 @@ Per-customer fetch keeps existing records that aren't this customer's, then appe
 const merged = [...existing.filter(s => s.customerId !== customerId), ...grain];
 ```
 
-If you're touching this code, preserve the merge semantics. Contracts and tickets use the stricter retract-then-replace merge in `merge-producer-rows.ts` (see above). Background: PR #239 (`fix_StorageLoadAndEntitlementsErrors`).
+If you're touching this code, preserve the merge semantics. Contracts and tickets use the stricter retract-then-replace merge in `features/contracts/utils/merge-producer-rows.ts` (see above). Background: PR #239 (`fix_StorageLoadAndEntitlementsErrors`).
 
 ## Contracts table — delivery math and loading states
 

@@ -48,45 +48,6 @@ describe('ApiService', () => {
     req.flush([]);
   });
 
-  // ── Contracts ──────────────────────────────────────────────────────────────
-
-  it('getContracts() calls GET /contracts', () => {
-    service.getContracts().subscribe();
-    const req = httpMock.expectOne(`${BASE}/contracts`);
-    expect(req.request.method).toBe('GET');
-    req.flush([]);
-  });
-
-  it('getContractsByCustomer() calls GET /contracts/customer/:id', () => {
-    service.getContractsByCustomer(7).subscribe();
-    const req = httpMock.expectOne(`${BASE}/contracts/customer/7`);
-    expect(req.request.method).toBe('GET');
-    req.flush([]);
-  });
-
-  it('getPricingLines() calls GET /contracts/pricing-lines with sourceContractId', () => {
-    service.getPricingLines('CTR-001').subscribe();
-    const req = httpMock.expectOne(r => r.url === `${BASE}/contracts/pricing-lines`);
-    expect(req.request.params.get('sourceContractId')).toBe('CTR-001');
-    req.flush([]);
-  });
-
-  // ── Tickets ────────────────────────────────────────────────────────────────
-
-  it('getTickets() calls GET /tickets', () => {
-    service.getTickets().subscribe();
-    const req = httpMock.expectOne(`${BASE}/tickets`);
-    expect(req.request.method).toBe('GET');
-    req.flush([]);
-  });
-
-  it('getTicketsByCustomer() calls GET /tickets/customer/:id', () => {
-    service.getTicketsByCustomer(3).subscribe();
-    const req = httpMock.expectOne(`${BASE}/tickets/customer/3`);
-    expect(req.request.method).toBe('GET');
-    req.flush([]);
-  });
-
   // ── Notes ──────────────────────────────────────────────────────────────────
 
   it('getNotesByCustomer() calls GET /notes/customer/:id', () => {

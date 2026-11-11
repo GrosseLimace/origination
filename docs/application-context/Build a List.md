@@ -36,7 +36,7 @@ This is where originators construct ad-hoc producer cohorts ("producers I haven'
 flowchart LR
     UI[Build a List component]
     NLQ[NlqFilterService.parseAndFilter / applyRefinementFilters]
-    State[(AppStateService<br/>customers, contracts, tickets, notes,<br/>storedGrain, plantingIntentions, commodities)]
+    State[(CustomerStore, ContractStore, AppStateService<br/>customers, contracts, tickets, notes,<br/>storedGrain, plantingIntentions, commodities)]
     Lib[apiService.getQueryLibrary]
     Saved[apiService.getSavedLists / saveList / updateList / deleteList]
 
@@ -51,7 +51,7 @@ flowchart LR
     SLC --> DB2[(dbo.SavedLists)]
 ```
 
-The screen does **not** make per-customer API calls — it operates entirely on the cached arrays in `AppStateService`. The library and saved-list endpoints are the only HTTP traffic during use.
+The screen does **not** make per-customer API calls — it operates entirely on the cached arrays in the shared stores (`CustomerStore`, `ContractStore`, `AppStateService`). The library and saved-list endpoints are the only HTTP traffic during use.
 
 ## Files
 
@@ -78,7 +78,7 @@ The screen does **not** make per-customer API calls — it operates entirely on 
 
 ### State it reads / writes
 
-Reads (heavy) from `AppStateService`: `contracts`, `tickets`, `notes`, `storedGrain`, `plantingIntentions`, `commodities`, `commodityConversions`; every producer's details from `ProducerProfiles` (`core/context`), which its prompts, refinements and result rows read by customer id; the customers from `CustomerStore` (`@features/customers`), and reloads them through `CustomersApiService` when it needs to; the trade-unit selection from `TradeUnitContext`. Its own query and results persist across navigation in `BuildListStore` (`features/lists/data-access`). The user's saved lists and the query library are kept in Lists' `SavedListsStore` (the same one the home page's saved-list picker and Add to List read), and their calls are `SavedListsApiService`'s. Writes only when bulk-fetching is necessary; mostly read-only since DataPreloadService has already populated state.
+Reads (heavy) the trade units' `contracts` and `tickets`, with their failure flags, from the Contracts module's `ContractStore` (`@features/contracts`), and its contract and ticket reads go through `ContractsApiService`; and from `AppStateService`: `notes`, `storedGrain`, `plantingIntentions`, `commodities`, `commodityConversions`; every producer's details from `ProducerProfiles` (`core/context`), which its prompts, refinements and result rows read by customer id; the customers from `CustomerStore` (`@features/customers`), and reloads them through `CustomersApiService` when it needs to; the trade-unit selection from `TradeUnitContext`. Its own query and results persist across navigation in `BuildListStore` (`features/lists/data-access`). The user's saved lists and the query library are kept in Lists' `SavedListsStore` (the same one the home page's saved-list picker and Add to List read), and their calls are `SavedListsApiService`'s. Writes only when bulk-fetching is necessary; mostly read-only since DataPreloadService has already populated state.
 
 ## NLQ pipeline
 

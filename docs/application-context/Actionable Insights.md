@@ -51,7 +51,7 @@ A **"Refresh" button** with a "Updated {time}" label triggers `DataPreloadServic
 ```mermaid
 flowchart LR
     UI[Insights component]
-    State[(AppStateService<br/>customers, contracts, tickets, todaysTickets,<br/>commodities, commodityConversions)]
+    State[(CustomerStore, ContractStore, AppStateService<br/>customers, contracts, todaysTickets,<br/>commodities, commodityConversions)]
     Computed[allInsights computed signal]
     Refresh[DataPreloadService.forceReload]
     API[Customers' preload / apiService.getContracts / getTickets / getCommodities]
@@ -64,7 +64,7 @@ flowchart LR
     API --> State
 ```
 
-The screen does **not** fetch its own data — it reads everything from `AppStateService` signals that other screens (or `DataPreloadService` on app boot / TU change) have already populated. The Refresh button is the only path that triggers HTTP traffic, and it goes through `DataPreloadService` so all dependent screens see the new data.
+The screen does **not** fetch its own data — it reads everything from the shared stores (`CustomerStore`, Contracts' `ContractStore`, `AppStateService`) that the modules' preloads (on app boot / TU change) or other screens have already populated. The Refresh button is the only path that triggers HTTP traffic, and it goes through `DataPreloadService` so all dependent screens see the new data.
 
 ## Files
 
@@ -73,7 +73,7 @@ The screen does **not** fetch its own data — it reads everything from `AppStat
 | Component | `client/src/app/features/lists/pages/insights/insights.component.ts` |
 | Template | `client/src/app/features/lists/pages/insights/insights.component.html` |
 | Data preload | `client/src/app/core/context/data-preload.service.ts` |
-| State consumed | `CustomerStore` (`@features/customers`): `customers`, `customersLoading`. `AppStateService`: `contracts`, `todaysTickets`, `commodities`, `commodityConversions`, `contractsLoading`, `todaysTicketsLoading` |
+| State consumed | `CustomerStore` (`@features/customers`): `customers`, `customersLoading`. `ContractStore` (`@features/contracts`): `contracts`, `todaysTickets`, `contractsLoading`, `todaysTicketsLoading`. `AppStateService`: `commodities`, `commodityConversions` |
 | Underlying ODS views (via other screens / preload) | `base.vw_CurrentContracts`, `base.vw_CurrentTickets`, `ctrm.vw_GNP024` (commodity conversions). Customers come from app-DB `dbo.Customer`. |
 | App tables (read indirectly via cached signals) | none directly |
 
@@ -108,7 +108,7 @@ The "Refresh" button calls `dataPreloadService.forceReload()`. `isBackgroundRefr
 
 ## State and caching
 
-- All read from `AppStateService`. The screen has no its own state besides UI flags (search terms, expanded category set, expanded customer set).
+- All read from those stores. The screen has no its own state besides UI flags (search terms, expanded category set, expanded customer set).
 - Data freshness depends entirely on when the upstream signals were populated. Refresh button is the manual override.
 
 ## User actions

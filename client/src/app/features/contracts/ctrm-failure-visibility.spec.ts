@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TestBed } from '@angular/core/testing';
-import { AppStateService } from '@core/services/app-state.service';
+import { ContractStore } from './data-access/contract.store';
 
 /**
  * A failed CTRM read must never reach the user as an empty list.
@@ -13,13 +13,12 @@ import { AppStateService } from '@core/services/app-state.service';
  * the same bug shows a grower's deliveries as zero, so the paths that distinguish the two are pinned here.
  */
 describe('CTRM failure visibility', () => {
-  describe('AppStateService — the trade-unit failure flags', () => {
-    let appState: AppStateService;
+  describe('ContractStore — the trade-unit failure flags', () => {
+    let appState: ContractStore;
 
     beforeEach(() => {
       TestBed.resetTestingModule();
-      TestBed.configureTestingModule({ providers: [AppStateService] });
-      appState = TestBed.inject(AppStateService);
+      appState = TestBed.inject(ContractStore);
     });
 
     it('starts clean, so a fresh session never claims a failure', () => {
@@ -81,17 +80,13 @@ describe('CTRM failure visibility', () => {
    * The client only knows a read failed if the API says so. These pin the contract the server side of
    * this now honours: 503 + INFRASTRUCTURE_CTRM_UNAVAILABLE rather than 200 with an empty array.
    */
-  describe('api.service — contract and ticket reads rethrow instead of swallowing', () => {
+  describe('ContractsApiService — contract and ticket reads rethrow instead of swallowing', () => {
     it('no contract or ticket read resolves a failure to an empty array', () => {
-      const src = readFileSync(join(process.cwd(), 'src', 'app', 'core', 'services', 'api.service.ts'), 'utf8');
+      const section = readFileSync(
+        join(process.cwd(), 'src', 'app', 'features', 'contracts', 'data-access', 'contracts-api.service.ts'), 'utf8');
 
-      // Isolate the contract + ticket section and check none of its calls swallow to of([]).
-      const from = src.indexOf('// Contract Operations');
-      const to = src.indexOf('// Planting Intention Operations');
-      expect(from).toBeGreaterThan(-1);
-      expect(to).toBeGreaterThan(from);
-
-      const section = src.slice(from, to);
+      // None of its calls may swallow a failure to of([]).
+      expect(section).toMatch(/getContracts\(/);
       const swallowed = section.match(/catchError\(\(\) => of\(\[\] as (Contract|Ticket)\[\]\)\)/g) ?? [];
       expect(swallowed).toEqual([]);
     });

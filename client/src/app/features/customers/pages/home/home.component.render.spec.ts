@@ -14,6 +14,8 @@ import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { providePermissions } from '@testing/permission.stub';
+import { SelectedProducerActivityFake, provideSelectedProducerActivity, selectedProducerActivityFake } from '@testing/selected-producer-activity.fake';
+import { TradeUnitContracts } from '@core/context/trade-unit-contracts';
 import { ProducerProfilesFake, producerProfile, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
 import { OutlookCalendarService } from '@core/services/outlook-calendar.service';
 import { environment } from '@env/environment';
@@ -73,7 +75,7 @@ class StubProfile {
   readonly dpContracts = input<unknown>();
   readonly yieldEstimates = input<unknown[]>([]);
   readonly isLoadingEstimates = input<unknown>();
-  // Read from the page's SelectedProducerActivity, as the real profile and its tables do.
+  // Read from SelectedProducerActivity, as the real profile and its tables do.
   readonly activity = inject(SelectedProducerActivity);
   readonly isLoadingContracts = this.activity.isLoadingContracts;
   readonly contractsLoadError = this.activity.contractsLoadError;
@@ -234,6 +236,8 @@ describe('HomeComponent (rendered)', () => {
   let app: ReturnType<typeof makeAppState>;
   /** Every producer's saved details, as the page and its pieces read them. */
   let profiles: ProducerProfilesFake;
+  /** The selected producer's contracts, tickets and pricing lines, which the Contracts module reads. */
+  let activity: SelectedProducerActivityFake;
   let queryParams: BehaviorSubject<Params>;
   const originalReadAhead = environment.ctrmReadAheadEnabled;
 
@@ -253,6 +257,9 @@ describe('HomeComponent (rendered)', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: CustomersApiService, useExisting: ApiService },
+        // The Contracts module's pieces, through core: the selected producer's activity and the trade units' contracts.
+        provideSelectedProducerActivity(activity),
+        { provide: TradeUnitContracts, useValue: { contracts: signal([]) } },
         { provide: ApiService, useValue: api },
         { provide: CustomerStore, useExisting: AppStateService },
         { provide: AppStateService, useValue: app },
@@ -279,6 +286,7 @@ describe('HomeComponent (rendered)', () => {
   }
 
   beforeEach(() => {
+    activity = selectedProducerActivityFake();
     queryParams = new BehaviorSubject<Params>({});
     environment.ctrmReadAheadEnabled = false;
   });
@@ -301,23 +309,25 @@ describe('HomeComponent (rendered)', () => {
   });
 
   it('opens a producer picked in the list, then fills in contracts and notes as each read lands', async () => {
-    const contracts = new Subject<Contract[]>();
     const notes = new Subject<Note[]>();
     await render(a => {
       a.getCustomers.mockReturnValue(of([A, B]));
-      a.getContractsByCustomer.mockReturnValue(contracts);
       a.getNotesByCustomer.mockReturnValue(notes);
     });
     expect(text('profile')).toBeNull();
 
     list().selectCustomer.emit(A);
+    // The Contracts module is told, and starts its read.
+    activity.isLoadingContracts.set(true);
     await settle();
+    expect(activity.select).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
     expect(text('profile')).toContain('name:Producer 1');
     expect(text('profile')).toContain('loadingContracts:true');
     expect(text('calculator')).toBe('Producer 1');
     expect(text('list')).toContain('selected:1');
 
-    contracts.next([contract(10, 'S-1')]);
+    activity.contracts.set([contract(10, 'S-1')]);
+    activity.isLoadingContracts.set(false);
     await settle();
     expect(text('profile')).toContain('contracts:10');
     expect(text('profile')).toContain('loadingContracts:false');
@@ -330,26 +340,24 @@ describe('HomeComponent (rendered)', () => {
   });
 
   it('shows a failed contract read as an error, and a successful retry replaces it', async () => {
-    const first = new Subject<Contract[]>();
-    await render(a => {
-      a.getCustomers.mockReturnValue(of([A]));
-      a.getContractsByCustomer.mockReturnValue(first);
-    });
+    await render(a => a.getCustomers.mockReturnValue(of([A])));
     list().selectCustomer.emit(A);
     await settle();
 
-    first.error({ status: 503 });
+    activity.contractsLoadError.set('The data source is temporarily unavailable. Please retry shortly.');
     await settle();
     expect(text('profile')).toContain('contractsError:The data source is temporarily unavailable. Please retry shortly.');
     expect(text('profile')).toContain('loadingContracts:false');
 
-    const retry = new Subject<Contract[]>();
-    api.getContractsByCustomer.mockReturnValue(retry);
-    // The contracts table's Retry button calls the page's activity directly.
+    // The contracts table's Retry button calls the Contracts module's activity directly.
     profile().activity.retryContracts();
+    expect(activity.retryContracts).toHaveBeenCalled();
+    activity.contractsLoadError.set(null);
+    activity.isLoadingContracts.set(true);
     await settle();
     expect(text('profile')).toContain('loadingContracts:true');
-    retry.next([contract(11, 'S-1')]);
+    activity.contracts.set([contract(11, 'S-1')]);
+    activity.isLoadingContracts.set(false);
     await settle();
     expect(text('profile')).toContain('contracts:11');
     expect(text('profile')).toMatch(/contractsError:\|/);
@@ -500,18 +508,14 @@ describe('HomeComponent (rendered)', () => {
   });
 
   it('inside an OnPush shell, a producer opened from the list fills in as its reads land', async () => {
-    const contracts = new Subject<Contract[]>();
-    await render(a => {
-      a.getCustomers.mockReturnValue(of([A, B]));
-      a.getContractsByCustomer.mockReturnValue(contracts);
-    }, OnPushShell);
+    await render(a => a.getCustomers.mockReturnValue(of([A, B])), OnPushShell);
     expect(text('list')).toContain('roster:1,2');
 
     list().selectCustomer.emit(B);
     await settle();
     expect(text('profile')).toContain('name:Producer 2');
 
-    contracts.next([contract(20, 'S-2')]);
+    activity.contracts.set([contract(20, 'S-2')]);
     await settle();
     expect(text('profile')).toContain('contracts:20');
 

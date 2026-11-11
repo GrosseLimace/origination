@@ -27,19 +27,8 @@ import { providePermissions } from '@testing/permission.stub';
 const PREFS_KEY = 'origination_user_prefs';
 const NOW = new Date('2026-10-13T12:00:00');
 
-function contract(id: number): Contract {
-  return {
-    id, customerId: 1, farmId: '', contractNumber: `P${id}`, quantity: 1000, unit: 'bushels', price: 0,
-    deliveryStart: new Date(2026, 8, 1), deliveryEnd: new Date(2026, 10, 30), status: 'Active', signed: true,
-  };
-}
-
-function ticket(id: number): Ticket {
-  return { id, farmId: '', ticketNumber: `${id}`, date: '2026-10-13', grossWeight: 0, tareWeight: 0, netWeight: 0, isApplied: false, isActive: true };
-}
-
 type Api = Record<
-  | 'getCommodityConversions' | 'getContracts' | 'getTodaysTickets' | 'getNotesLastContact'
+  | 'getCommodityConversions' | 'getNotesLastContact'
   | 'getMyReminders' | 'getPlantingIntentions' | 'getStoredGrain' | 'getDpContracts'
   | 'getCommodities' | 'getHarvestWindows',
   ReturnType<typeof vi.fn<(...args: unknown[]) => Observable<unknown>>>
@@ -80,8 +69,6 @@ describe('DataPreloadService', () => {
     modulePreload = vi.fn((_tradeUnits: readonly string[]) => of(null) as Observable<unknown>);
     api = {
       getCommodityConversions: vi.fn(() => of<CommodityConversion[]>([])),
-      getContracts: vi.fn(() => of([contract(1)])),
-      getTodaysTickets: vi.fn(() => of([ticket(1)])),
       getNotesLastContact: vi.fn(() => of([])),
       getMyReminders: vi.fn(() => of([])),
       getPlantingIntentions: vi.fn(() => of([])),
@@ -126,15 +113,11 @@ describe('DataPreloadService', () => {
     expect(modulePreload).not.toHaveBeenCalled();
   });
 
-  it('with no trade units, drops every loading flag and makes no trade-unit-scoped call', () => {
+  it('with no trade units, makes no trade-unit-scoped call and runs no module preload', () => {
     create();
-    appState.setContractsLoading(true);
-    appState.setTodaysTicketsLoading(true);
     signIn();
 
-    expect(appState.contractsLoading()).toBe(false);
-    expect(appState.todaysTicketsLoading()).toBe(false);
-    expect(api.getContracts).not.toHaveBeenCalled();
+    expect(api.getPlantingIntentions).not.toHaveBeenCalled();
     expect(modulePreload).not.toHaveBeenCalled();
   });
 
@@ -143,81 +126,10 @@ describe('DataPreloadService', () => {
     selectTradeUnits(['1085', '2190']);
     signIn();
 
-    for (const fn of [api.getContracts, api.getTodaysTickets, api.getPlantingIntentions, api.getStoredGrain, api.getDpContracts]) {
+    for (const fn of [api.getPlantingIntentions, api.getStoredGrain, api.getDpContracts]) {
       expect(fn).toHaveBeenCalledWith(['1085', '2190']);
     }
-    expect(appState.contracts()).toEqual([contract(1)]);
-    expect(appState.todaysTickets()).toEqual([ticket(1)]);
     expect(appState.dpContractsLoaded()).toBe(true);
-  });
-
-  it("drops each core dataset's loading flag as its own data lands", () => {
-    const contracts$ = new Subject<Contract[]>();
-    const tickets$ = new Subject<Ticket[]>();
-    api.getContracts.mockReturnValue(contracts$);
-    api.getTodaysTickets.mockReturnValue(tickets$);
-    create();
-    selectTradeUnits(['1085']);
-    signIn();
-
-    expect(appState.contractsLoading()).toBe(true);
-    expect(appState.todaysTicketsLoading()).toBe(true);
-
-    tickets$.next([ticket(1)]);
-    expect(appState.todaysTicketsLoading()).toBe(false); // each screen can render as its own data lands
-    expect(appState.contractsLoading()).toBe(true);
-
-    contracts$.next([contract(1)]);
-    expect(appState.contractsLoading()).toBe(false);
-  });
-
-  it('records a contracts failure for the outage banner while still loading the page with []', () => {
-    api.getContracts.mockReturnValue(throwError(() => new Error('gateway')));
-    create();
-    selectTradeUnits(['1085']);
-    signIn();
-
-    expect(appState.contractsLoadFailed()).toBe(true);
-    expect(appState.contracts()).toEqual([]);
-    expect(appState.contractsLoading()).toBe(false);
-  });
-
-  it('clears a previous contracts failure when the next load succeeds, even if it is empty', () => {
-    api.getContracts.mockReturnValueOnce(throwError(() => new Error('gateway'))).mockReturnValue(of([]));
-    const service = create();
-    selectTradeUnits(['1085']);
-    signIn();
-    expect(appState.contractsLoadFailed()).toBe(true);
-
-    service.forceReload();
-
-    expect(appState.contractsLoadFailed()).toBe(false);
-  });
-
-  it("treats a today's-tickets TIMEOUT as pending, not as a CTRM failure", () => {
-    api.getTodaysTickets.mockReturnValue(NEVER);
-    create();
-    selectTradeUnits(['1085']);
-    signIn();
-
-    vi.advanceTimersByTime(59_999);
-    expect(appState.todaysTicketsLoading()).toBe(true);
-
-    vi.advanceTimersByTime(1);
-    expect(appState.sourceLoadPending()).toBe(true);
-    expect(appState.ticketsLoadFailed()).toBe(false);
-    expect(appState.todaysTicketsLoading()).toBe(false);
-    expect(appState.todaysTickets()).toEqual([]);
-  });
-
-  it("records a real today's-tickets error as a failure", () => {
-    api.getTodaysTickets.mockReturnValue(throwError(() => new Error('500')));
-    create();
-    selectTradeUnits(['1085']);
-    signIn();
-
-    expect(appState.ticketsLoadFailed()).toBe(true);
-    expect(appState.sourceLoadPending()).toBe(false);
   });
 
   it('does not reload when the same trade units are re-selected in a different order', () => {
@@ -243,19 +155,16 @@ describe('DataPreloadService', () => {
     expect(modulePreload).toHaveBeenCalledTimes(2);
   });
 
-  it('drops the lazily-loaded ticket and note caches on a trade-unit change', () => {
+  // (The trade unit's ticket set is Contracts', which drops it in its own preload.)
+  it('drops the lazily-loaded note cache on a trade-unit change', () => {
     create();
     selectTradeUnits(['1085']);
     signIn();
-    appState.setTickets([ticket(9)]);
     appState.setNotes([]);
-    expect(appState.ticketsLoaded()).toBe(true);
     expect(appState.notesLoaded()).toBe(true);
 
     selectTradeUnits(['3000']);
 
-    expect(appState.ticketsLoaded()).toBe(false);
-    expect(appState.tickets()).toEqual([]);
     expect(appState.notesLoaded()).toBe(false);
   });
 
@@ -289,7 +198,7 @@ describe('DataPreloadService', () => {
 
     expect(appState.storedGrain()).toEqual([]);
     expect(appState.dpContractsLoaded()).toBe(true);
-    expect(appState.contracts()).toEqual([contract(1)]);
+    expect(api.getPlantingIntentions).toHaveBeenCalled();
   });
 
   // Each of these used to resolve a failure to [] with nothing recorded, so the screens showed
@@ -310,7 +219,7 @@ describe('DataPreloadService', () => {
       signIn();
 
       expect(failed()).toBe(true);
-      expect(appState.contracts()).toEqual([contract(1)]);
+      expect(appState.dpContractsLoaded()).toBe(true);
     });
 
     it.each(cases)('%s: cleared when the next load succeeds, even if it is empty', (_name, call, failed) => {
@@ -366,9 +275,9 @@ describe('DataPreloadService', () => {
     selectTradeUnits(['1085']);
     signIn();
 
-    expect(appState.contracts()).toEqual([contract(1)]);
+    expect(appState.dpContractsLoaded()).toBe(true);
 
     selectTradeUnits(['2190']);
-    expect(api.getContracts).toHaveBeenLastCalledWith(['2190']);
+    expect(api.getDpContracts).toHaveBeenLastCalledWith(['2190']);
   });
 });

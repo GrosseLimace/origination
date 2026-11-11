@@ -9,6 +9,7 @@ import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
+import { ContractStore, ContractsApiService } from '@features/contracts';
 import { NlqFilterContext, NlqFilterService } from '../nlq/nlq-filter.service';
 import { ToastService } from '@core/services/toast.service';
 import { Contract, Customer, Note, Ticket } from '@models';
@@ -46,6 +47,9 @@ export class SavedListsStore {
   private readonly api = inject(SavedListsApiService);
   private readonly appApi = inject(ApiService);
   private readonly appState = inject(AppStateService);
+  /** The trade units' contracts and tickets, kept by the Contracts module. */
+  private readonly contractStore = inject(ContractStore);
+  private readonly contractsApi = inject(ContractsApiService);
   private readonly customerStore = inject(CustomerStore);
   private readonly producerProfiles = inject(ProducerProfiles);
   private readonly tradeUnits = inject(TradeUnitContext);
@@ -165,8 +169,8 @@ export class SavedListsStore {
     return {
       customers,
       producerProfiles: this.producerProfiles.profiles(),
-      contracts: this.appState.contracts(),
-      tickets: this.appState.tickets(),
+      contracts: this.contractStore.contracts(),
+      tickets: this.contractStore.tickets(),
       notes: this.appState.notes(),
       noteLastContacts: this.appState.noteLastContacts(),
       myReminders: this.appState.myReminders(),
@@ -238,18 +242,18 @@ export class SavedListsStore {
       reads.push(this.appApi.getDpContracts(tus).pipe(
         tap(rows => this.appState.setDpContracts(rows)), catchError(() => of(null))));
     }
-    if (this.nlq.queryInvolvesTickets(query) && !this.appState.ticketsLoaded()) {
+    if (this.nlq.queryInvolvesTickets(query) && !this.contractStore.ticketsLoaded()) {
       reads.push(this.ticketsRead(tus));
     }
     if (this.nlq.queryInvolvesPlanting(query) && this.appState.plantingIntentions().length === 0) {
       reads.push(this.appApi.getPlantingIntentions(tus).pipe(
         tap(rows => this.appState.setPlantingIntentions(rows)), catchError(() => of(null))));
     }
-    if (this.nlq.queryInvolvesContracts(query) && this.appState.contracts().length === 0) {
-      reads.push(this.appApi.getContracts(tus).pipe(
-        tap(() => this.appState.setContractsLoadFailed(false)),
-        catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); }),
-        tap(rows => this.appState.setContracts(rows))));
+    if (this.nlq.queryInvolvesContracts(query) && this.contractStore.contracts().length === 0) {
+      reads.push(this.contractsApi.getContracts(tus).pipe(
+        tap(() => this.contractStore.setContractsLoadFailed(false)),
+        catchError(() => { this.contractStore.setContractsLoadFailed(true); return of([] as Contract[]); }),
+        tap(rows => this.contractStore.setContracts(rows))));
     }
     // The full notes only for what reads their bodies, authors, pins or counts: recency resolves from the last-contact
     // summary, which is always loaded.
@@ -334,7 +338,7 @@ export class SavedListsStore {
    */
   loadMembershipData(): void {
     const lists = [...this.listsInScope(), ...this.teamInScope()];
-    if (lists.some(list => this.nlq.queryInvolvesTickets(list.query)) && !this.appState.ticketsLoaded()) {
+    if (lists.some(list => this.nlq.queryInvolvesTickets(list.query)) && !this.contractStore.ticketsLoaded()) {
       const tus = this.selectedTradeUnits();
       const key = (tus ?? []).join(',');
       // Kept only while the selection is still the one it was read for: a trade-unit change clears the cache, and a
@@ -358,10 +362,10 @@ export class SavedListsStore {
   /** The trade unit's tickets into AppStateService, recording a failure so ticket lists don't read as "nobody". Kept
    *  only while `current` says the answer is still for the selection. */
   private ticketsRead(tus: string[] | undefined, current: () => boolean = () => true): Observable<unknown> {
-    return this.appApi.getTickets(tus).pipe(
-      tap(() => { if (current()) this.appState.setTicketsLoadFailed(false); }),
-      catchError(() => { if (current()) this.appState.setTicketsLoadFailed(true); return of([] as Ticket[]); }),
-      tap(rows => { if (current()) this.appState.setTickets(rows); }));
+    return this.contractsApi.getTickets(tus).pipe(
+      tap(() => { if (current()) this.contractStore.setTicketsLoadFailed(false); }),
+      catchError(() => { if (current()) this.contractStore.setTicketsLoadFailed(true); return of([] as Ticket[]); }),
+      tap(rows => { if (current()) this.contractStore.setTickets(rows); }));
   }
 
   /** Every note the user may read, into AppStateService's lazy cache. */

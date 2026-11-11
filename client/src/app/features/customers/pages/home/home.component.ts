@@ -31,6 +31,7 @@ import { HomeProducerActivityStore } from './home-producer-activity.store';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { CUSTOMER_SCREEN_SOURCE, SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
+import { TradeUnitContracts } from '@core/context/trade-unit-contracts';
 import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
 import { ProducerEdit, ProducerEditing } from '@core/context/producer-editing';
 import { ProducerProfiles } from '@core/context/producer-profiles';
@@ -50,7 +51,6 @@ import { profileLinkedIds } from '@shared/utils/producer-profile';
   providers: [
     HomePageState, HomeBackgroundFailures, HomeRemindersStore, HomeNotesStore, HomeLinkedProducersStore,
     HomePlantingStore, HomeProducerActivityStore, SelectedCustomerContext,
-    { provide: SelectedProducerActivity, useExisting: HomeProducerActivityStore },
     HomeEngagement,
     { provide: SelectedProducerEngagement, useExisting: HomeEngagement },
     { provide: CUSTOMER_SCREEN_SOURCE, useFactory: homeScreenSource },
@@ -86,8 +86,14 @@ export class HomeComponent implements ProducerEditing {
   private readonly linked = inject(HomeLinkedProducersStore);
   /** The selected producer's planting intentions and their handlers (see HomePlantingStore). */
   private readonly planting = inject(HomePlantingStore);
-  /** The selected producer's contracts, tickets, pricing, stored grain and DP (see HomeProducerActivityStore). */
+  /** The selected producer's stored grain and DP, their linked group's notes and the commodity auto-save (see
+   *  HomeProducerActivityStore). */
   private readonly activity = inject(HomeProducerActivityStore);
+  /** The selected producer's contracts, tickets and pricing lines: the Contracts module's, which the page tells who is
+   *  selected. */
+  private readonly producerActivity = inject(SelectedProducerActivity);
+  /** The trade units' contracts, whose crop years the yield estimates are read for (until those move to Producers). */
+  private readonly tradeUnitContracts = inject(TradeUnitContracts);
 
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -103,8 +109,6 @@ export class HomeComponent implements ProducerEditing {
 
   // Public signals — template binds directly to these
   readonly customers = this.page.customers;
-  readonly contracts = this.page.contracts;
-  readonly tickets = this.page.tickets;
   readonly plantingIntentions = this.page.plantingIntentions;
   /** Per-customer "last contacted" aggregate, all trade units — the list's badge feed (see HomeNotesStore). */
   readonly noteLastContacts = this.notes.noteLastContacts;
@@ -123,24 +127,22 @@ export class HomeComponent implements ProducerEditing {
   readonly pendingPlantingYear = this.page.pendingPlantingYear;
   readonly pendingTicketCrop = this.page.pendingTicketCrop;
   readonly selectedTradeUnits = this.page.selectedTradeUnits;
-  /** The selected producer's contracts, tickets, pricing lines, stored grain and DP contracts, with their loading and
-   *  error state (see HomeProducerActivityStore). */
-  readonly customerContracts = this.activity.customerContracts;
-  readonly customerTickets = this.activity.customerTickets;
-  readonly customerPricingLines = this.activity.customerPricingLines;
+  /** The selected producer's contracts, tickets and pricing lines, with their loading and error state (the Contracts
+   *  module's), and their stored grain and DP contracts (see HomeProducerActivityStore). */
+  readonly customerContracts = this.producerActivity.contracts;
+  readonly customerTickets = this.producerActivity.tickets;
+  readonly customerPricingLines = this.producerActivity.pricingLines;
   readonly customerCodeMap = this.activity.customerCodeMap;
   readonly customerStoredGrain = this.activity.customerStoredGrain;
   readonly customerDpContracts = this.activity.customerDpContracts;
-  readonly allCustomerContracts = this.activity.allCustomerContracts;
-  readonly allCustomerTickets = this.activity.allCustomerTickets;
   readonly allCustomerStoredGrain = this.activity.allCustomerStoredGrain;
   readonly allCustomerDpContracts = this.activity.allCustomerDpContracts;
-  readonly isLoadingContracts = this.activity.isLoadingContracts;
-  readonly contractsLoadError = this.activity.contractsLoadError;
-  readonly isLoadingUnappliedTickets = this.activity.isLoadingUnappliedTickets;
-  readonly ticketsLoadError = this.activity.ticketsLoadError;
-  readonly pricingLinesLoadError = this.activity.pricingLinesLoadError;
-  readonly isLoadingPricingLines = this.activity.isLoadingPricingLines;
+  readonly isLoadingContracts = this.producerActivity.isLoadingContracts;
+  readonly contractsLoadError = this.producerActivity.contractsLoadError;
+  readonly isLoadingUnappliedTickets = this.producerActivity.isLoadingTickets;
+  readonly ticketsLoadError = this.producerActivity.ticketsLoadError;
+  readonly pricingLinesLoadError = this.producerActivity.pricingLinesLoadError;
+  readonly isLoadingPricingLines = this.producerActivity.isLoadingPricingLines;
   readonly isLoadingStoredGrain = this.activity.isLoadingStoredGrain;
   readonly isLoadingDpContracts = this.activity.isLoadingDpContracts;
   /** The selected producer's notes panel and the note form's state (see HomeNotesStore). */
@@ -254,11 +256,6 @@ export class HomeComponent implements ProducerEditing {
     const stateCustomers = this.customerStore.customers();
     if (stateCustomers.length > 0) {
       this.customers.set(stateCustomers);
-      this.contracts.set(this.appState.contracts());
-      // Tickets are loaded per-producer, not held TU-wide, so don't reseed from appState.tickets
-      // (which is now only the lazy list/NLQ cache). The selected customer's tickets are re-fetched
-      // below; selecting any producer re-fetches theirs.
-      this.tickets.set([]);
       this.plantingIntentions.set(this.appState.plantingIntentions());
       this.isLoadingPlanting.set(false);
       this.noteLastContacts.set(this.appState.noteLastContacts());
@@ -293,11 +290,9 @@ export class HomeComponent implements ProducerEditing {
       const stateSelectedCustomer = this.appState.selectedCustomer();
       if (stateSelectedCustomer) {
         this.selectedCustomer.set(stateSelectedCustomer);
-        this.customerPricingLines.set(this.appState.pricingLines());
-        // Re-fetch this producer's tickets — they're no longer pre-loaded in appState.
-        this.isLoadingUnappliedTickets.set(true);
+        // Their contracts, tickets and pricing lines show from what Contracts read, refreshed if they have aged.
+        this.producerActivity.select(stateSelectedCustomer);
         this.activity.loadCustomerData(stateSelectedCustomer.id);
-        this.activity.loadCustomerTickets(stateSelectedCustomer.id, stateSelectedCustomer.scoularId);
         // Re-fetch the producer's (and linked group's) notes — the per-customer notes
         // cache is component-local, so navigation back must repopulate it (same pattern
         // as the tickets / planting re-fetch on restore).
@@ -363,17 +358,6 @@ export class HomeComponent implements ProducerEditing {
         this.loading.set(false);
         this._isLoading = false;
       }
-    });
-
-    this.apiService.getContracts(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (data) => {
-        const list = data ?? [];
-        const batchIds = new Set(list.map(c => c.id));
-        const fkExtras = this.contracts().filter(c => !batchIds.has(c.id));
-        this.contracts.set([...list, ...fkExtras]);
-        this.appState.setContracts(this.contracts());
-      },
-      error: (err) => this.backgroundFailures.report('load contracts', err)
     });
 
     // Tickets are no longer bulk-loaded here. They're fetched per-producer on select (applied +
@@ -459,7 +443,7 @@ export class HomeComponent implements ProducerEditing {
 
     // Gather all unique planting years from intentions + contracts so we fetch
     // yield estimates for every year the user might select.
-    const years = yieldEstimateYears(new Date().getFullYear(), this.plantingIntentions(), this.contracts());
+    const years = yieldEstimateYears(new Date().getFullYear(), this.plantingIntentions(), this.tradeUnitContracts.contracts());
 
     const yearCalls = years.map(y =>
       this.apiService.getDashboardPlantingEstimates(key, y).pipe(catchError(() => of([] as DashboardPlantingEstimate[])))
@@ -477,6 +461,7 @@ export class HomeComponent implements ProducerEditing {
   handleClearSelection(): void {
     this.selectedCustomer.set(null);
     this.appState.selectCustomer(null);
+    this.producerActivity.select(null);
     this.router.navigate([], { queryParams: {}, replaceUrl: true });
   }
 
@@ -491,14 +476,9 @@ export class HomeComponent implements ProducerEditing {
     // background via _loadAllData / data-preload for freshness).
     this.customers.set([]);
     this.customerStore.setCustomers([]);
-    // Per-producer tickets accumulate in the local signal across selections, so clear them on TU
-    // change to drop the prior TU's producers' tickets. (appState.tickets — the TU-wide list/NLQ
-    // cache — is cleared separately by data-preload's clearTicketsCache.)
-    this.tickets.set([]);
-    // Drop the per-customer caches — TU change can include / exclude different
-    // customers, and re-clicking a producer that overlaps the new TU must re-fetch
-    // contracts/tickets/pricing/grain to reflect the new scope. Without this, the
-    // HomeProducerActivityStore's loaded-at short-circuit would serve stale data from the prior TU.
+    // Drop the per-customer caches — TU change can include / exclude different customers, and re-clicking a
+    // producer that overlaps the new TU must re-read them for the new scope (the Contracts module forgets its own
+    // reads of contracts, tickets and pricing lines on a trade-unit change).
     // Notes are cleared for freshness parity: the next selection re-fetches, picking up
     // notes other users added since.
     this.activity.forgetAll();
@@ -511,8 +491,7 @@ export class HomeComponent implements ProducerEditing {
     // flags they own so the UI doesn't get stuck showing "Loading…" for data that's
     // no longer arriving.
     this._cancelSelection$.next();
-    this.isLoadingPricingLines.set(false);
-    this.isLoadingUnappliedTickets.set(false);
+    this.producerActivity.select(null);
     this.notes.stopLoading();
     // Reset loading flag so an explicit user selection is never blocked by a
     // background load that may still be in-flight.
@@ -572,14 +551,10 @@ export class HomeComponent implements ProducerEditing {
 
     this.selectedCustomer.set(customer);
     this.appState.selectCustomer(customer);
-    this.isLoadingContracts.set(true);
-    this.isLoadingUnappliedTickets.set(true);
-    this.contractsLoadError.set(null);
-    this.ticketsLoadError.set(null);
-    this.pricingLinesLoadError.set(null);
+    this.producerActivity.select(customer);
     this.isLoadingStoredGrain.set(true);
     this.isLoadingDpContracts.set(true);
-    this.activity.loadCustomerContractsAndTickets(customer.id, customer.scoularId);
+    this.activity.loadStorageAndDp(customer.id);
     this.activity.loadCustomerData(customer.id);
     this._fetchMissingLinkedProducers(customer);
     // Fetch this producer's (and known linked group's) full notes — notes are no longer
@@ -653,9 +628,9 @@ export class HomeComponent implements ProducerEditing {
     });
   }
 
-  /** Warms one producer's data on hover so the click renders from memory (see HomeProducerActivityStore.prefetch). */
+  /** Warms one producer's contracts and tickets on hover so the click renders from memory (the Contracts module's). */
   handlePrefetchCustomer(customer: Customer): void {
-    this.activity.prefetch(customer);
+    this.producerActivity.prefetch(customer);
   }
 
   /** Save handler for the edit dialog. Trade-unit assignment (if any) runs FIRST — for an
@@ -724,7 +699,7 @@ export class HomeComponent implements ProducerEditing {
     if (!customer) return;
 
     const allCommodities = [...new Set([
-      ...commodityCodesFrom(this.allCustomerTickets(), this.allCustomerContracts()), ...data.commodities
+      ...commodityCodesFrom(this.customerTickets(), this.customerContracts()), ...data.commodities
     ])].sort();
 
     const optimisticContacts = data.contacts.map((c, i) => ({ ...c, sortOrder: i }));
@@ -893,7 +868,8 @@ export class HomeComponent implements ProducerEditing {
     if (customer) {
       this.selectedCustomer.set(customer);
       this._fetchMissingLinkedProducers(customer);
-      this.activity.loadCustomerContractsAndTickets(customer.id, customer.scoularId);
+      this.producerActivity.select(customer);
+      this.activity.loadStorageAndDp(customer.id);
       this.activity.loadCustomerData(customer.id);
       this._ensureCustomerNotes(customer);
       this.planting.loadWithoutCache(customer.id);
@@ -907,7 +883,8 @@ export class HomeComponent implements ProducerEditing {
           this._crossTradeUnitCustomers.set(cache);
           this.selectedCustomer.set(fetched);
           this._fetchMissingLinkedProducers(fetched);
-          this.activity.loadCustomerContractsAndTickets(fetched.id, fetched.scoularId);
+          this.producerActivity.select(fetched);
+          this.activity.loadStorageAndDp(fetched.id);
           this.activity.loadCustomerData(fetched.id);
           this._ensureCustomerNotes(fetched);
           this.planting.loadWithoutCache(fetched.id);

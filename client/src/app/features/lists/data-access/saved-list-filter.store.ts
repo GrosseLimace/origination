@@ -4,6 +4,7 @@ import { SessionReset } from '@core/auth/session-reset.service';
 import { KeptCustomers } from '@core/context/customer-list-filter';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { AppStateService } from '@core/services/app-state.service';
+import { ContractStore } from '@features/contracts';
 import { NlqFilterService } from '../nlq/nlq-filter.service';
 import { CustomerStore } from '@features/customers';
 import { SavedList } from '../models/saved-list.model';
@@ -26,6 +27,8 @@ export class SavedListFilterStore {
   private readonly lists = inject(SavedListsStore);
   private readonly customerStore = inject(CustomerStore);
   private readonly appState = inject(AppStateService);
+  /** The trade units' contracts and tickets, kept by the Contracts module. */
+  private readonly contractStore = inject(ContractStore);
   private readonly tradeUnits = inject(TradeUnitContext);
   private readonly nlq = inject(NlqFilterService);
 
@@ -57,7 +60,7 @@ export class SavedListFilterStore {
 
     // More of what the list reads arrived after it was worked out: work it out again, for a list that reads it.
     effect(() => {
-      const tickets = this.appState.tickets();
+      const tickets = this.contractStore.tickets();
       const storedGrain = this.appState.storedGrain();
       const planting = this.appState.plantingIntentions();
       untracked(() => {

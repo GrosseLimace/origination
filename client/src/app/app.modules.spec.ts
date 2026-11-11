@@ -1,10 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { CustomerSearch } from '@core/context/customer-search';
+import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
+import { TradeUnitContracts } from '@core/context/trade-unit-contracts';
 import { ProducerProfiles } from '@core/context/producer-profiles';
 import { ApiService } from '@core/services/api.service';
 import { providePermissions } from '@testing/permission.stub';
 import { appModuleProviders, appModules } from './app.modules';
+import { ContractStore } from './features/contracts/data-access/contract.store';
+import { CustomerActivityStore } from './features/contracts/data-access/customer-activity.store';
 import { CustomersApiService } from './features/customers/data-access/customers-api.service';
 import { ProducerProfileStore } from './features/producers/data-access/producer-profile.store';
 import { routes } from './app.routes';
@@ -65,5 +69,13 @@ describe('what core declares and a module implements', () => {
     TestBed.configureTestingModule({ providers: [appModuleProviders, providePermissions()] });
 
     expect(TestBed.inject(CustomerSearch)).toBe(TestBed.inject(CustomersApiService));
+  });
+
+  // The customer screen reads the selected producer's contracts, tickets and pricing lines without importing Contracts.
+  it("gives SelectedProducerActivity as the Contracts module's activity store, and TradeUnitContracts as its ContractStore", () => {
+    TestBed.configureTestingModule({ providers: [appModuleProviders, providePermissions()] });
+
+    expect(TestBed.inject(SelectedProducerActivity)).toBe(TestBed.inject(CustomerActivityStore));
+    expect(TestBed.inject(TradeUnitContracts)).toBe(TestBed.inject(ContractStore));
   });
 });

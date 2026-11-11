@@ -4,6 +4,7 @@ import { NEVER, Observable, of, throwError } from 'rxjs';
 import { MsalService } from '@azure/msal-angular';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { ApiService } from '@core/services/api.service';
+import { ContractStore, ContractsApiService } from '@features/contracts';
 import { AppStateService } from '@core/services/app-state.service';
 import { NlqFilterContext, NlqFilterService } from '../nlq/nlq-filter.service';
 import { ToastService } from '@core/services/toast.service';
@@ -77,6 +78,8 @@ describe('SavedListsStore', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: SavedListsApiService, useValue: api },
+        // The contract and ticket calls are Contracts' API client's; this stub answers them.
+        { provide: ContractsApiService, useExisting: ApiService },
         { provide: ApiService, useValue: appApi },
         { provide: NlqFilterService, useValue: nlq },
         { provide: ToastService, useValue: toast },
@@ -124,7 +127,7 @@ describe('SavedListsStore', () => {
       nlq.parseAndFilter.mockImplementation((_q: string, ctx: NlqFilterContext) =>
         ({ customers: ctx.customers.filter(c => c.id === 3), detectedState: null, matchedPatterns: ['crop'] }));
 
-      appState.setContracts([{ id: 1 } as Contract]);
+      TestBed.inject(ContractStore).setContracts([{ id: 1 } as Contract]);
       TestBed.tick();
 
       expect(store.ownListsWithMembers()[0].customerIds).toEqual([3]);

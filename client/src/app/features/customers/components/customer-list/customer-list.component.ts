@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject, of } from 'rxjs';
-import { catchError, debounceTime, switchMap, map, tap } from 'rxjs/operators';
+import { catchError, debounceTime, switchMap, map } from 'rxjs/operators';
 import { Customer, NoteLastContact, ReminderDue } from '@models';
 import { CustomerStore } from '../../data-access/customer.store';
 import { CustomersApiService } from '../../data-access/customers-api.service';

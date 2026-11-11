@@ -28,7 +28,7 @@ describe('AppStateService', () => {
   it('initialises with default signal values', () => {
     expect(service.selectedCustomer()).toBeNull();
     expect(service.searchQuery()).toBe('');
-    expect(service.contracts()).toEqual([]);
+    expect(service.plantingIntentions()).toEqual([]);
   });
 
   it('selectCustomer() stores the selected customer', () => {
@@ -47,22 +47,22 @@ describe('AppStateService', () => {
     expect(service.searchQuery()).toBe('grain');
   });
 
-  it('setContracts() updates the data cache signal', () => {
-    service.setContracts([{ id: 7 } as never]);
-    expect(service.contracts()).toHaveLength(1);
-    expect(service.contracts()[0].id).toBe(7);
+  it('setPlantingIntentions() updates the data cache signal', () => {
+    service.setPlantingIntentions([{ id: 7 } as never]);
+    expect(service.plantingIntentions()).toHaveLength(1);
+    expect(service.plantingIntentions()[0].id).toBe(7);
   });
 
   it('clearAll() resets all state to defaults, the trade-unit selection included', () => {
     service.selectCustomer(mockCustomer);
     context.setTradeUnits(['TU1']);
     service.setSearchQuery('test');
-    service.setContracts([{ id: 7 } as never]);
+    service.setPlantingIntentions([{ id: 7 } as never]);
     service.clearAll();
     expect(service.selectedCustomer()).toBeNull();
     expect(context.selectedTradeUnits()).toEqual([]);
     expect(service.searchQuery()).toBe('');
-    expect(service.contracts()).toEqual([]);
+    expect(service.plantingIntentions()).toEqual([]);
   });
 
   it('clearAll() also clears every module store registered with SessionReset', () => {
@@ -81,9 +81,9 @@ describe('AppStateService', () => {
     }
 
     it('exposes its state as signals', () => {
-      // Guards the check below against passing vacuously if the surface stopped being found. (31 since the saved lists,
-      // the query library and the picked list moved to the Lists module's stores.)
-      expect(publicSignals().length).toBeGreaterThanOrEqual(31);
+      // Guards the check below against passing vacuously if the surface stopped being found. (20 since the trade units'
+      // contracts and tickets, their flags and the pricing lines moved to the Contracts module's stores.)
+      expect(publicSignals().length).toBeGreaterThanOrEqual(20);
     });
 
     it('offers no .set or .update on any public signal — writes go through the service\'s methods', () => {
@@ -97,52 +97,48 @@ describe('AppStateService', () => {
     it('rejects a direct write at compile time', () => {
       // Never runs; `tsc -p tsconfig.spec.json` fails if any of these lines starts compiling again.
       const neverCalled = () => {
-        // @ts-expect-error contracts is read-only
-        service.contracts.set([]);
+        // @ts-expect-error plantingIntentions is read-only
+        service.plantingIntentions.set([]);
         // @ts-expect-error searchQuery is read-only
         service.searchQuery.update(q => q);
-        // @ts-expect-error contractsLoadFailed is read-only
-        service.contractsLoadFailed.set(true);
+        // @ts-expect-error dpContractsLoadFailed is read-only
+        service.dpContractsLoadFailed.set(true);
       };
       expect(typeof neverCalled).toBe('function');
     });
 
     it('still drives computeds and effects through the read-only view', () => {
       const state = TestBed.inject(AppStateService);
-      const count = computed(() => state.contracts().length);
+      const count = computed(() => state.plantingIntentions().length);
       const seen: string[] = [];
       TestBed.runInInjectionContext(() => effect(() => { seen.push(state.searchQuery()); }));
       TestBed.tick();
 
-      state.setContracts([{ id: 7 } as never]);
+      state.setPlantingIntentions([{ id: 7 } as never]);
       state.setSearchQuery('2040');
       TestBed.tick();
 
       expect(count()).toBe(1);
       expect(seen).toEqual(['', '2040']);
       // Same signal every read, so toObservable / effect subscriptions stay attached.
-      expect(state.contracts).toBe(state.contracts);
+      expect(state.plantingIntentions).toBe(state.plantingIntentions);
     });
 
     it('the new setters write what they are given', () => {
-      service.setContractsLoading(true);
-      service.setTodaysTicketsLoading(true);
       service.setCommodityConversions([{ commodityCode: 'YC', lbsPerUnit: 56 }]);
       service.setHarvestWindows([{ commodityCode: 'YC' } as never]);
 
-      expect(service.contractsLoading()).toBe(true);
-      expect(service.todaysTicketsLoading()).toBe(true);
       expect(service.commodityConversions()).toEqual([{ commodityCode: 'YC', lbsPerUnit: 56 }]);
       expect(service.harvestWindows()).toEqual([{ commodityCode: 'YC' }]);
     });
 
-    it('clearLoadFailures resets both trade-unit failure flags', () => {
-      service.setContractsLoadFailed(true);
-      service.setTicketsLoadFailed(true);
+    it("clearLoadFailures resets the trade-unit reads' failure flags", () => {
+      service.setDpContractsLoadFailed(true);
+      service.setPlantingIntentionsLoadFailed(true);
       service.clearLoadFailures();
 
-      expect(service.contractsLoadFailed()).toBe(false);
-      expect(service.ticketsLoadFailed()).toBe(false);
+      expect(service.dpContractsLoadFailed()).toBe(false);
+      expect(service.plantingIntentionsLoadFailed()).toBe(false);
     });
   });
 

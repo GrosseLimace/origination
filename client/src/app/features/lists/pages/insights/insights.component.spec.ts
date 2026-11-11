@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { InsightsComponent } from './insights.component';
 import { AppStateService } from '@core/services/app-state.service';
+import { ContractStore } from '@features/contracts';
 import { DataPreloadService } from '@core/context/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
@@ -66,8 +67,8 @@ describe('InsightsComponent — Spot Loads derivation', () => {
 
   it('flags an unapplied ticket with no covering contract as a spot load', () => {
     TestBed.inject(CustomerStore).setCustomers([makeCustomer({ id: 1, scoularId: 'CUST1' })]);
-    appState.setContracts([]);
-    appState.setTodaysTickets([makeTicket({ id: 10, ticketNumber: 'T-10', isApplied: false })]);
+    TestBed.inject(ContractStore).setContracts([]);
+    TestBed.inject(ContractStore).setTodaysTickets([makeTicket({ id: 10, ticketNumber: 'T-10', isApplied: false })]);
 
     const loads = spotLoads();
     expect(loads.length).toBe(1);
@@ -76,8 +77,8 @@ describe('InsightsComponent — Spot Loads derivation', () => {
 
   it('is invariant to applied tickets in the payload (backend no longer sends them)', () => {
     TestBed.inject(CustomerStore).setCustomers([makeCustomer({ id: 1, scoularId: 'CUST1' })]);
-    appState.setContracts([]);
-    appState.setTodaysTickets([
+    TestBed.inject(ContractStore).setContracts([]);
+    TestBed.inject(ContractStore).setTodaysTickets([
       makeTicket({ id: 10, ticketNumber: 'T-10', isApplied: false }),
       // Applied rows used to arrive from the old SQL branch; the UI must ignore them, so whether
       // or not the API sends them the Spot Loads result is identical.
@@ -91,11 +92,11 @@ describe('InsightsComponent — Spot Loads derivation', () => {
 
   it('does NOT flag an unapplied ticket covered by an open same-commodity contract', () => {
     TestBed.inject(CustomerStore).setCustomers([makeCustomer({ id: 1, scoularId: 'CUST1' })]);
-    appState.setContracts([
+    TestBed.inject(ContractStore).setContracts([
       makeContract({ ctrmCustomerId: 'CUST1', commodityCode: 'YC',
         deliveryStart: new Date('2026-05-01'), deliveryEnd: new Date('2026-06-30') }),
     ]);
-    appState.setTodaysTickets([
+    TestBed.inject(ContractStore).setTodaysTickets([
       makeTicket({ id: 10, ticketNumber: 'T-10', productCode: 'YC', date: '2026-06-01', isApplied: false }),
     ]);
 

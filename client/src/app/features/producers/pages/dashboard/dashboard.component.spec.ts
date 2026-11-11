@@ -6,6 +6,7 @@ import { MsalService } from '@azure/msal-angular';
 import { Observable, Subject, of, throwError } from 'rxjs';
 
 import { ApiService } from '@core/services/api.service';
+import { ContractStore, ContractsApiService } from '@features/contracts';
 import { AppStateService } from '@core/services/app-state.service';
 import { DashboardCacheEntry, DashboardStore } from '../../data-access/dashboard.store';
 import { ToastService } from '@core/services/toast.service';
@@ -242,8 +243,12 @@ describe('DashboardComponent', () => {
       providers: [
         { provide: CustomerStore, useExisting: AppStateService },
         { provide: AppStateService, useValue: appState },
+        // The trade units' contracts and their loading flags are ContractStore's; this stub has them.
+        { provide: ContractStore, useValue: appState },
         { provide: DashboardStore, useValue: appState },
         { provide: TradeUnitContext, useValue: appState },
+        // The contract and ticket calls are Contracts' API client's; this stub answers them.
+        { provide: ContractsApiService, useExisting: ApiService },
         { provide: ApiService, useValue: api },
         { provide: ToastService, useValue: toast },
         { provide: UsageTrackingService, useValue: usage },

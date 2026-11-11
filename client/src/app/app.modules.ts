@@ -1,7 +1,11 @@
 import { Provider } from '@angular/core';
 import { CustomerSearch } from '@core/context/customer-search';
 import { ProducerProfiles } from '@core/context/producer-profiles';
+import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
+import { TradeUnitContracts } from '@core/context/trade-unit-contracts';
 import { ModuleManifest } from '@core/modules/module-manifest';
+import { ContractStore } from './features/contracts/data-access/contract.store';
+import { CustomerActivityStore } from './features/contracts/data-access/customer-activity.store';
 import { CustomersApiService } from './features/customers/data-access/customers-api.service';
 import { ProducerProfileStore } from './features/producers/data-access/producer-profile.store';
 import { bidSheetModule } from './features/bid-sheet/bid-sheet.module';
@@ -41,4 +45,9 @@ export const appModuleProviders: Provider[] = [
   { provide: ProducerProfiles, useExisting: ProducerProfileStore },
   // Searching customers, which Help's troubleshooter runs without importing Customers.
   { provide: CustomerSearch, useExisting: CustomersApiService },
+  // The selected producer's contracts, tickets and pricing lines, which the customer screen reads and the home page
+  // tells who is selected.
+  { provide: SelectedProducerActivity, useExisting: CustomerActivityStore },
+  // The trade units' contracts, whose crop years the home page reads yield estimates for (until step 10d).
+  { provide: TradeUnitContracts, useExisting: ContractStore },
 ];
