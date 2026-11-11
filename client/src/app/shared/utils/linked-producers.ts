@@ -49,3 +49,50 @@ export function buildLinkedProducerComponents(
   }
   return componentMap;
 }
+
+/**
+ * Returns every producer transitively linked to `customer` — both forward (the producers `customer`'s links name)
+ * and reverse (producers whose own links include `customer.scoularId`) — walked until the connected component is
+ * exhausted. `linkedIdsOf` gives a producer's links: the producer codes their saved details link to. Prevents infinite
+ * loops with a visited set. Caps at 50 members to avoid worst-case fanout. Only producers in `all` can be found; one
+ * not loaded yet is silently excluded until it is.
+ */
+export function linkedGroupOf(customer: Customer, all: Customer[], linkedIdsOf: (c: Customer) => readonly string[]): Customer[] {
+  const MAX_GROUP_SIZE = 50;
+  const bySourceId = new Map<string, Customer>();
+  for (const c of all) {
+    if (c.scoularId) bySourceId.set(c.scoularId, c);
+  }
+
+  const visited = new Set<number>([customer.id]);
+  const result = new Map<number, Customer>();
+  const queue: Customer[] = [customer];
+
+  while (queue.length > 0 && visited.size < MAX_GROUP_SIZE) {
+    const cur = queue.shift()!;
+
+    // Forward: follow each producer code the current customer links to
+    for (const sourceId of linkedIdsOf(cur)) {
+      const neighbor = bySourceId.get(sourceId);
+      if (neighbor && !visited.has(neighbor.id)) {
+        visited.add(neighbor.id);
+        result.set(neighbor.id, neighbor);
+        queue.push(neighbor);
+      }
+    }
+
+    // Reverse: find anyone whose links mention the current customer
+    const curSource = cur.scoularId || '';
+    if (curSource) {
+      for (const other of all) {
+        if (visited.has(other.id)) continue;
+        if (linkedIdsOf(other).includes(curSource)) {
+          visited.add(other.id);
+          result.set(other.id, other);
+          queue.push(other);
+        }
+      }
+    }
+  }
+  return [...result.values()];
+}

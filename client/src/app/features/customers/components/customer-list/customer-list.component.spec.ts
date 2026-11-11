@@ -1,30 +1,31 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ComponentRef } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ComponentRef, input } from '@angular/core';
 import { Observable, of, throwError } from 'rxjs';
 import { MsalService } from '@azure/msal-angular';
 import { CustomerListComponent } from './customer-list.component';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
-import { Customer, NoteLastContact, ProducerDetails, ReminderDue } from '@models';
+import { Customer } from '@models';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { CustomerListFilter } from '@core/context/customer-list-filter';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
+import { ModuleManifest } from '@core/modules/module-manifest';
+import { APP_MODULES } from '@core/modules/module-registry';
 import { CustomerListScrollStore } from '../../data-access/customer-list-scroll.store';
 import { CustomerStore } from '../../data-access/customer.store';
 import { CustomersApiService } from '../../data-access/customers-api.service';
-import { ProducerProfilesFake, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
-import { providePermissions } from '@testing/permission.stub';
+import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
 
 // Behaviour safety net for the producer list ahead of its OnPush conversion. Pins, through the
 // signal inputs and the rendered DOM:
 //   - which empty state shows (no trade unit / loading / All Producers / no matches);
-//   - the row content (acres badge vs "Not added", formatted location and phone, selection tint);
-//   - the "last contacted" badge (day/month/year wording, colour tiers, linked-producer chains);
-//   - the follow-up badge (soonest reminder wins, overdue/today/tomorrow/in-N wording);
+//   - the row content (formatted location and phone, "Not added", selection tint), and its row slots, where the
+//     modules put their badges (Producers' acres, Engagement's last-contacted and follow-up lines: their own specs
+//     cover those);
 //   - the debounced API search (TU / group scoping, ODS onboarding fallback and its 3-char floor,
-//     producer-details overlay, "Search failed" state, clearing, restore on remount, reset on TU change);
+//     "Search failed" state, clearing, restore on remount, reset on TU change);
 //   - its side of the list-filter slot: keeping who the filter keeps, waiting while it works them out, leaving a
 //     search when a filter is picked, and clearing it on Reset (the saved-list picker that fills the slot, and its
 //     runs, are the Lists module's: app.saved-list-filter.spec.ts covers the two together);
@@ -39,14 +40,6 @@ import { providePermissions } from '@testing/permission.stub';
 /** Frozen clock. Every timer is faked so the 150ms search debounce and the 350ms prefetch dwell
  *  are driven explicitly with advanceTimersByTime. */
 const NOW = new Date('2026-10-13T12:00:00');
-const DAY = 24 * 60 * 60 * 1000;
-
-/** Noon local time N days from the frozen "now". */
-function daysFromNow(n: number): Date {
-  const d = new Date(NOW.getTime() + n * DAY);
-  d.setHours(12, 0, 0, 0);
-  return d;
-}
 
 function makeCustomer(over: Partial<Customer> = {}): Customer {
   return {
@@ -56,23 +49,21 @@ function makeCustomer(over: Partial<Customer> = {}): Customer {
   };
 }
 
-function makeLastContact(customerCode: string, daysAgo: number): NoteLastContact {
-  return { customerId: 0, customerCode, lastNoteAt: daysFromNow(-daysAgo) };
-}
-
-function makeReminder(over: Partial<ReminderDue> = {}): ReminderDue {
-  return { id: 1, customerId: 1, dueAt: '2026-10-20T12:00:00Z', ...over };
-}
-
-function makeDetails(over: Partial<ProducerDetails> = {}): ProducerDetails {
-  return { id: 1, customerId: 1, customerName: 'Sample Farms', createdBy: 'test', createdAt: '2026-01-01T00:00:00', ...over };
-}
+@Component({ selector: 'app-stub-tag', standalone: true, changeDetection: ChangeDetectionStrategy.OnPush, template: '<span>tag {{ customer().id }}</span>' })
+class StubTag { readonly customer = input.required<Customer>(); }
+@Component({ selector: 'app-stub-line', standalone: true, changeDetection: ChangeDetectionStrategy.OnPush, template: '<span>line {{ customer().id }}</span>' })
+class StubLine { readonly customer = input.required<Customer>(); }
+/** Stand-in panels for the rows' slots, shown only to a user holding notes:read, which only the row-slot test grants. */
+const ROW_MODULES: ModuleManifest[] = [{
+  id: 'engagement',
+  customerPanels: [
+    { slot: 'row-tags', id: 'tag', requires: ['notes:read'], order: 10, component: () => Promise.resolve(StubTag) },
+    { slot: 'row-details', id: 'line', requires: ['notes:read'], order: 10, component: () => Promise.resolve(StubLine) },
+  ],
+}];
 
 const KANSAS = { groupName: 'Kansas', tradeUnitCodes: ['2191', '2190'] };
 const NEBRASKA = { groupName: 'Nebraska', tradeUnitCodes: ['3001'] };
-
-const LAST_CONTACT_LABEL = /^(Today|Never contacted|\d+ (day|days|month|months|year|years) ago)$/;
-const FOLLOW_UP_LABEL = /^Follow-up /;
 
 // ── Harness ───────────────────────────────────────────────────────────────────
 
@@ -80,9 +71,8 @@ describe('CustomerListComponent', () => {
   let fixture: ComponentFixture<CustomerListComponent>;
   let component: CustomerListComponent;
   let ref: ComponentRef<CustomerListComponent>;
+  let access: PermissionStub;
   let appState: AppStateService;
-  /** Every producer's saved details, as the list reads them. */
-  let profiles: ProducerProfilesFake;
   let api: {
     searchCustomers: ReturnType<typeof vi.fn<(term: string, tradeUnits?: string[]) => Observable<Customer[]>>>;
     searchOdsCustomers: ReturnType<typeof vi.fn<(term: string) => Observable<Customer[]>>>;
@@ -101,31 +91,17 @@ describe('CustomerListComponent', () => {
   const searchInput = (): HTMLInputElement => host().querySelector<HTMLInputElement>('input[placeholder="Search producers..."]')!;
   const resetButton = (): HTMLButtonElement | null => host().querySelector<HTMLButtonElement>('button[title="Clear search and filters"]');
 
-  /** The wrapper element of the badge span in a row whose text matches `label`. */
-  function badgeFor(id: number, label: RegExp): HTMLElement | null {
-    const span = Array.from(row(id).querySelectorAll('span')).find(s => label.test((s.textContent ?? '').trim()));
-    return span?.parentElement ?? null;
-  }
-  const badgeText = (id: number, label: RegExp): string | undefined => badgeFor(id, label)?.textContent?.trim();
-
   /** Re-render after an app-state change the template doesn't read directly. */
   function render(): void {
     fixture.changeDetectorRef.markForCheck();
     fixture.detectChanges();
   }
 
-  function create(inputs: {
-    customers?: Customer[]; noteLastContacts?: NoteLastContact[];
-    myReminders?: ReminderDue[]; loading?: boolean; selectedCustomer?: Customer | null;
-    producerDetailsMap?: ReadonlyMap<number, ProducerDetails>; linkedProducerCustomers?: Customer[];
-  } = {}): void {
-    // The producers' saved details are ProducerProfiles', not an input.
-    const { producerDetailsMap, ...rest } = inputs;
-    if (producerDetailsMap) profiles.set([...producerDetailsMap.values()]);
+  function create(inputs: { customers?: Customer[]; loading?: boolean; selectedCustomer?: Customer | null } = {}): void {
     fixture = TestBed.createComponent(CustomerListComponent);
     component = fixture.componentInstance;
     ref = fixture.componentRef;
-    for (const [name, value] of Object.entries(rest)) ref.setInput(name, value);
+    for (const [name, value] of Object.entries(inputs)) ref.setInput(name, value);
     fixture.detectChanges();
   }
 
@@ -151,8 +127,8 @@ describe('CustomerListComponent', () => {
   }
 
   beforeEach(async () => {
-    profiles = producerProfilesFake();
     localStorage.clear();
+    access = permissionStub();
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
     api = {
@@ -167,9 +143,10 @@ describe('CustomerListComponent', () => {
         { provide: CustomersApiService, useExisting: ApiService },
         // The list-filter slot's host reads the selected customer, which the home page provides.
         SelectedCustomerContext,
-        // The slot shows the panels the user holds the permissions for; none are listed in this spec.
-        providePermissions(),
-        provideProducerProfiles(profiles),
+        // The slots show the panels the user holds the permissions for: the stand-in row panels need one granted only
+        // where they are tested.
+        providePermissions(access),
+        { provide: APP_MODULES, useValue: ROW_MODULES },
         {
           provide: MsalService,
           useValue: { instance: { getActiveAccount: () => ({ name: 'Caden Egr', username: 'cegr@scoular.com' }), getAllAccounts: () => [] } },
@@ -242,11 +219,9 @@ describe('CustomerListComponent', () => {
   // ── Row content ───────────────────────────────────────────────────────────
 
   describe('rows', () => {
-    it('renders name, Scoular ID, acres, formatted location / phone, and e-mail only when present', () => {
+    it('renders name, Scoular ID, formatted location / phone, and e-mail only when present', () => {
       TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       create({
-        // The acres are Alpha's saved details.
-        producerDetailsMap: new Map([[1, makeDetails({ customerId: 1, totalAcres: 1200 })]]),
         customers: [
           makeCustomer({ id: 1, name: 'Alpha Ag', scoularId: 'ALPHA', phone: '316.555.0142', email: 'alpha@example.com' }),
           makeCustomer({ id: 2, name: 'Bravo Bros', scoularId: 'BRAVO', location: '', stateProvince: 'NE', phone: '555-0142' }),
@@ -256,7 +231,6 @@ describe('CustomerListComponent', () => {
 
       expect(rowNames()).toEqual(['Alpha Ag', 'Bravo Bros', 'Charlie Co']);
       expect(rowText(1)).toContain('ALPHA');
-      expect(rowText(1)).toContain('1,200 acres');
       expect(rowText(1)).toContain('Pratt, KS');
       expect(rowText(1)).toContain('(316) 555-0142');       // 10 digits → (XXX) XXX-XXXX
       expect(rowText(1)).toContain('alpha@example.com');
@@ -308,129 +282,31 @@ describe('CustomerListComponent', () => {
     });
   });
 
-  // ── Last-contacted badge ──────────────────────────────────────────────────
+  // ── The rows' slots ───────────────────────────────────────────────────────
 
-  describe('last contacted badge', () => {
-    it('says the date is unavailable, not "Never contacted", when the last-contact load failed', () => {
+  describe("the modules' row slots", () => {
+    it("shows each row's tags beside the name (none for a customer not added yet) and its lines under the contact details", async () => {
+      access.grant('notes:read');
       TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
-      appState.setNoteLastContactsLoadFailed(true);
-      create({ customers: [makeCustomer({ id: 1, scoularId: 'C1' })], noteLastContacts: [] });
-
-      expect(rowText(1)).toContain('Last contact unavailable');
-      expect(rowText(1)).not.toContain('Never contacted');
-    });
-
-    it('still says "Never contacted" when the load succeeded and the producer has no notes', () => {
-      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
-      create({ customers: [makeCustomer({ id: 1, scoularId: 'C1' })], noteLastContacts: [] });
-
-      expect(rowText(1)).toContain('Never contacted');
-      expect(rowText(1)).not.toContain('Last contact unavailable');
-    });
-
-    it('words the most recent note by day / month / year and colours it by recency', () => {
-      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
-      create({
-        customers: [1, 2, 3, 4, 5, 6, 7].map(id => makeCustomer({ id, scoularId: `C${id}` })),
-        noteLastContacts: [
-          makeLastContact('C1', 0),
-          makeLastContact('C2', 1),
-          makeLastContact('C3', 40), makeLastContact('C3', 7),   // the most recent row wins
-          makeLastContact('C4', 8),
-          makeLastContact('C5', 45),
-          makeLastContact('C6', 400),
-          // C7: no notes at all
-        ],
-      });
-
-      expect(badgeText(1, LAST_CONTACT_LABEL)).toBe('Today');
-      expect(badgeFor(1, LAST_CONTACT_LABEL)?.className).toContain('text-green-500');
-      expect(badgeText(2, LAST_CONTACT_LABEL)).toBe('1 day ago');
-      expect(badgeText(3, LAST_CONTACT_LABEL)).toBe('7 days ago');
-      expect(badgeFor(3, LAST_CONTACT_LABEL)?.className).toContain('text-green-500');   // ≤ 7 days
-      expect(badgeText(4, LAST_CONTACT_LABEL)).toBe('8 days ago');
-      expect(badgeFor(4, LAST_CONTACT_LABEL)?.className).toContain('text-yellow-500');  // 8–30 days
-      expect(badgeText(5, LAST_CONTACT_LABEL)).toBe('1 month ago');
-      expect(badgeFor(5, LAST_CONTACT_LABEL)?.className).toContain('text-red-500');     // > 30 days
-      expect(badgeText(6, LAST_CONTACT_LABEL)).toBe('1 year ago');
-      expect(badgeText(7, LAST_CONTACT_LABEL)).toBe('Never contacted');
-      expect(badgeFor(7, LAST_CONTACT_LABEL)?.className).toContain('text-red-500');
-    });
-
-    it('surfaces the newest note across the whole linked-producer chain, including reverse links fetched separately', () => {
-      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
-      // The links are in the producers' saved details: A → B → C, and Z (off the roster) → X.
-      const links = new Map<number, ProducerDetails>([
-        [1, { customerId: 1, linkedProducerIds: 'B1' } as ProducerDetails],
-        [2, { customerId: 2, linkedProducerIds: 'C1' } as ProducerDetails],
-        [99, { customerId: 99, linkedProducerIds: 'X1' } as ProducerDetails],
-      ]);
-      create({
-        customers: [
-          makeCustomer({ id: 1, scoularId: 'A1' }),
-          makeCustomer({ id: 2, scoularId: 'B1' }),
-          makeCustomer({ id: 3, scoularId: 'C1' }),
-          makeCustomer({ id: 4, scoularId: 'X1' }),   // only linked FROM an off-roster producer
-        ],
-        noteLastContacts: [makeLastContact('C1', 2), makeLastContact('Z1', 3)],
-        producerDetailsMap: links,
-      });
-
-      // A → B → C: A and B both see C's note from two days ago.
-      expect(badgeText(1, LAST_CONTACT_LABEL)).toBe('2 days ago');
-      expect(badgeText(2, LAST_CONTACT_LABEL)).toBe('2 days ago');
-      expect(badgeText(4, LAST_CONTACT_LABEL)).toBe('Never contacted');
-
-      // Z (another trade unit) links to X; once the home page supplies Z, X picks up Z's note.
-      ref.setInput('linkedProducerCustomers', [makeCustomer({ id: 99, scoularId: 'Z1' })]);
+      create({ customers: [makeCustomer({ id: 1, name: 'Alpha Ag' }), makeCustomer({ id: 2, name: 'Zed', isOnboardCandidate: true })] });
+      await vi.runAllTimersAsync();
       fixture.detectChanges();
-      expect(badgeText(4, LAST_CONTACT_LABEL)).toBe('3 days ago');
-    });
-  });
 
-  // ── Follow-up badge ───────────────────────────────────────────────────────
-
-  describe('follow-up badge', () => {
-    it('shows the soonest open reminder per producer with overdue / today / tomorrow / in-N wording', () => {
-      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
-      create({
-        customers: [1, 2, 3, 4, 5].map(id => makeCustomer({ id, scoularId: `C${id}` })),
-        myReminders: [
-          makeReminder({ id: 1, customerId: 1, dueAt: '2026-10-18T12:00:00Z' }),
-          makeReminder({ id: 2, customerId: 1, dueAt: '2026-10-11T12:00:00Z' }),   // soonest: 2 days overdue
-          makeReminder({ id: 3, customerId: 2, dueAt: '2026-10-13T12:00:00Z' }),
-          makeReminder({ id: 4, customerId: 3, dueAt: '2026-10-14T12:00:00Z' }),
-          makeReminder({ id: 5, customerId: 4, dueAt: '2026-10-17T12:00:00Z' }),
-          // customer 5: none
-        ],
-      });
-
-      expect(badgeText(1, FOLLOW_UP_LABEL)).toBe('Follow-up overdue by 2 days');
-      expect(badgeFor(1, FOLLOW_UP_LABEL)?.className).toContain('text-red-600');
-      expect(badgeText(2, FOLLOW_UP_LABEL)).toBe('Follow-up today');
-      expect(badgeFor(2, FOLLOW_UP_LABEL)?.className).toContain('text-amber-600');
-      expect(badgeText(3, FOLLOW_UP_LABEL)).toBe('Follow-up tomorrow');
-      expect(badgeText(4, FOLLOW_UP_LABEL)).toBe('Follow-up in 4 days');
-      expect(badgeFor(4, FOLLOW_UP_LABEL)?.className).toContain('text-gray-500');
-      expect(rowText(5)).not.toContain('Follow-up');
-
-      // Completing every reminder clears the badges.
-      ref.setInput('myReminders', []);
-      fixture.detectChanges();
-      expect(text()).not.toContain('Follow-up');
+      expect(row(1).querySelector('div')?.textContent).toContain('tag 1');
+      expect(rowText(1)).toContain('line 1');
+      expect(rowText(2)).not.toContain('tag');
+      expect(rowText(2)).toContain('Not added');
+      expect(rowText(2)).toContain('line 2');
     });
   });
 
   // ── Search ────────────────────────────────────────────────────────────────
 
   describe('search', () => {
-    it("debounces typing into one API search scoped to the selected trade units, each row with the producer's saved acres", () => {
+    it('debounces typing into one API search scoped to the selected trade units', () => {
       TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       api.searchCustomers.mockReturnValue(of([makeCustomer({ id: 5, name: 'Smith Farms'})]));
-      create({
-        customers: [makeCustomer({ id: 1, name: 'Alpha Ag' })],
-        producerDetailsMap: new Map([[5, makeDetails({ customerId: 5, totalAcres: 900 })]]),
-      });
+      create({ customers: [makeCustomer({ id: 1, name: 'Alpha Ag' })] });
 
       typeSearch('Smi', false);
       vi.advanceTimersByTime(100);
@@ -440,7 +316,6 @@ describe('CustomerListComponent', () => {
       expect(api.searchCustomers).toHaveBeenCalledWith('smith', ['2190']);   // trimmed + lower-cased
       expect(api.searchOdsCustomers).not.toHaveBeenCalled();
       expect(rowNames()).toEqual(['Smith Farms']);
-      expect(rowText(5)).toContain('900 acres');            // from the producer's saved details
       expect(appState.searchQuery()).toBe('  Smith ');      // the raw term is what's persisted
     });
 
@@ -468,7 +343,6 @@ describe('CustomerListComponent', () => {
       expect(api.searchOdsCustomers).toHaveBeenCalledWith('zed');
       expect(rowNames()).toEqual(['Zed Ranch']);
       expect(rowText(70)).toContain('Not added');
-      expect(rowText(70)).not.toContain('acres');
     });
 
     // Changed deliberately: a failed search used to fall back to the whole loaded roster, which

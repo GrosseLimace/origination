@@ -3,3 +3,7 @@
 export { CustomerStore } from './data-access/customer.store';
 export { CustomersApiService } from './data-access/customers-api.service';
 export type { CustomerTradeUnit } from './data-access/customers-api.service';
+
+// Producers linked to the trade units' customers from outside them, and each producer's linked group: Engagement reads
+// the group's notes and last-contacted dates.
+export { LinkedProducersStore } from './data-access/linked-producers.store';

@@ -6,7 +6,7 @@ import { Observable, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 
 // Services / models
-import { ApiService } from '@core/services/api.service';
+import { EngagementApiService } from './engagement-api.service';
 import { Reminder } from '@models';
 
 /**
@@ -29,7 +29,7 @@ import { Reminder } from '@models';
  */
 @Injectable({ providedIn: 'root' })
 export class OutlookCalendarService {
-  private readonly api = inject(ApiService);
+  private readonly api = inject(EngagementApiService);
 
   /**
    * Adds an already-saved reminder to the calendar and resolves the updated reminder.

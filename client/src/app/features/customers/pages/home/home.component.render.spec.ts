@@ -17,13 +17,13 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { providePermissions } from '@testing/permission.stub';
 import { SelectedProducerActivityFake, provideSelectedProducerActivity, selectedProducerActivityFake } from '@testing/selected-producer-activity.fake';
 import { SelectedProducerProductionFake, provideSelectedProducerProduction, selectedProducerProductionFake } from '@testing/selected-producer-production.fake';
+import { SelectedProducerEngagementFake, provideSelectedProducerEngagement, selectedProducerEngagementFake } from '@testing/selected-producer-engagement.fake';
 import { ProducerProfilesFake, producerProfile, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
-import { OutlookCalendarService } from '@core/services/outlook-calendar.service';
 import { environment } from '@env/environment';
 import { CustomerSlotComponent } from '@core/modules/customer-slot.component';
 import { ModuleManifest } from '@core/modules/module-manifest';
 import { APP_MODULES } from '@core/modules/module-registry';
-import type { Contract, Customer, Note, NoteLastContact, PlantingIntention, Reminder, ReminderDue } from '@models';
+import type { Contract, Customer, Note, PlantingIntention } from '@models';
 
 import { HomeComponent } from './home.component';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
@@ -45,17 +45,13 @@ const ids = (rows: { id: number | string }[] | null | undefined) => (rows ?? [])
 
 @Component({
   selector: 'app-customer-list', standalone: true, changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<div data-testid="list">roster:{{ ids(customers()) }}|selected:{{ selectedCustomer()?.id }}|loading:{{ loading() }}|lastContacts:{{ noteLastContacts().length }}|myReminders:{{ myReminders().length }}|linked:{{ ids(linkedProducerCustomers()) }}</div>`,
+  template: `<div data-testid="list">roster:{{ ids(customers()) }}|selected:{{ selectedCustomer()?.id }}|loading:{{ loading() }}</div>`,
 })
 class StubList {
   readonly ids = ids;
   readonly customers = input<Customer[]>([]);
   readonly selectedCustomer = input<Customer | null>(null);
-  readonly noteLastContacts = input<NoteLastContact[]>([]);
-  readonly myReminders = input<ReminderDue[]>([]);
   readonly loading = input(false);
-  readonly producerDetailsMap = input<unknown>();
-  readonly linkedProducerCustomers = input<Customer[]>([]);
   readonly selectCustomer = output<Customer>();
   readonly prefetchCustomer = output<Customer>();
   readonly clearSelection = output<void>();
@@ -94,7 +90,8 @@ class StubProfile {
 })
 class StubNotes {
   readonly ids = ids;
-  // Read from the page, as the real card does: its notes and their state, and the linked producers.
+  // Read through SelectedProducerEngagement, as the real card does: its notes and their state; and the linked producers
+  // from the page.
   readonly engagement = inject(SelectedProducerEngagement);
   readonly notes = this.engagement.notes;
   readonly isLoadingNotes = this.engagement.isLoadingNotes;
@@ -109,7 +106,7 @@ class StubNotes {
 })
 class StubReminders {
   readonly ids = ids;
-  // Read from the page, as the real card does.
+  // Read through SelectedProducerEngagement, as the real card does.
   private readonly engagement = inject(SelectedProducerEngagement);
   readonly reminders = this.engagement.reminders;
   readonly isLoading = this.engagement.isLoadingReminders;
@@ -168,17 +165,12 @@ function makeApi() {
     getProducerDetails: vi.fn((id: number) => of({ id, customerId: id, customerName: '' })),
     saveProducerDetails: vi.fn((id: number) => of({ id, customerId: id, customerName: '' })),
     getCommodities: empty<unknown[]>(),
-    getNotes: empty<Note[]>(),
-    getNotesLastContact: empty<NoteLastContact[]>(),
-    getNotesByCustomer: empty<Note[]>(),
-    getRemindersByCustomer: empty<Reminder[]>(),
     getCustomerBySourceId: vi.fn((): Observable<Customer | null> => of(null)),
     getCustomersLinkedTo: empty<Customer[]>(),
     getCustomerById: vi.fn((id: number) => of(customer(id))),
     getPricingLinesByCustomer: empty<unknown[]>(),
     getContractsByCustomer: empty<Contract[]>(),
     getTicketsByCustomer: empty<unknown[]>(),
-    createNote: vi.fn((customerId: number) => of(note(500, customerId, new Date()))),
   };
 }
 type ApiStub = ReturnType<typeof makeApi>;
@@ -189,18 +181,12 @@ function makeAppState() {
     selectedCustomer: signal<Customer | null>(null),
     customers: signal<Customer[]>([]),
     contracts: signal<Contract[]>([]),
-    notes: signal<Note[]>([]),
-    notesLoaded: signal(false),
-    noteLastContacts: signal<NoteLastContact[]>([]),
-    myReminders: signal<ReminderDue[]>([]),
     commodities: signal<unknown[]>([]),
     commodityConversions: signal<unknown[]>([]),
     pricingLines: signal<unknown[]>([]),
     selectCustomer: vi.fn((c: Customer | null) => s.selectedCustomer.set(c)),
     setCustomers: vi.fn((v: Customer[]) => s.customers.set(v)),
-    setContracts: vi.fn(), setNotes: vi.fn(), setNoteLastContacts: vi.fn(),
-    setMyReminders: vi.fn(), setPricingLines: vi.fn(),
-    setCustomersLoadFailed: vi.fn(), setNoteLastContactsLoadFailed: vi.fn(),
+    setContracts: vi.fn(), setPricingLines: vi.fn(), setCustomersLoadFailed: vi.fn(),
   };
   return s;
 }
@@ -215,6 +201,8 @@ describe('HomeComponent (rendered)', () => {
   let activity: SelectedProducerActivityFake;
   /** The selected producer's planting, stored grain and DP, which the Producers module reads. */
   let production: SelectedProducerProductionFake;
+  /** The selected producer's notes and the user's follow-ups, which the Engagement module reads. */
+  let engagement: SelectedProducerEngagementFake;
   let queryParams: BehaviorSubject<Params>;
   const originalReadAhead = environment.ctrmReadAheadEnabled;
 
@@ -237,6 +225,7 @@ describe('HomeComponent (rendered)', () => {
         // The Contracts and Producers modules' pieces, through core: the selected producer's activity and production.
         provideSelectedProducerActivity(activity),
         provideSelectedProducerProduction(production),
+        provideSelectedProducerEngagement(engagement),
         { provide: ApiService, useValue: api },
         { provide: CustomerStore, useExisting: AppStateService },
         { provide: AppStateService, useValue: app },
@@ -247,7 +236,6 @@ describe('HomeComponent (rendered)', () => {
         provideProducerProfiles(profiles),
         // The right column is the sidebar slot: Engagement's two cards, stubbed, contributed as the real module does.
         { provide: APP_MODULES, useValue: sidebarModules },
-        { provide: OutlookCalendarService, useValue: { addToOutlook: vi.fn(() => of(null)) } },
         { provide: MsalService, useValue: { instance: { getActiveAccount: () => null, getAllAccounts: () => [] } } },
         { provide: ActivatedRoute, useValue: { queryParams } },
         { provide: Router, useValue: { navigate: vi.fn() } },
@@ -265,6 +253,7 @@ describe('HomeComponent (rendered)', () => {
   beforeEach(() => {
     activity = selectedProducerActivityFake();
     production = selectedProducerProductionFake();
+    engagement = selectedProducerEngagementFake();
     queryParams = new BehaviorSubject<Params>({});
     environment.ctrmReadAheadEnabled = false;
   });
@@ -287,11 +276,7 @@ describe('HomeComponent (rendered)', () => {
   });
 
   it('opens a producer picked in the list, then fills in contracts and notes as each read lands', async () => {
-    const notes = new Subject<Note[]>();
-    await render(a => {
-      a.getCustomers.mockReturnValue(of([A, B]));
-      a.getNotesByCustomer.mockReturnValue(notes);
-    });
+    await render(a => a.getCustomers.mockReturnValue(of([A, B])));
     expect(text('profile')).toBeNull();
 
     list().selectCustomer.emit(A);
@@ -299,6 +284,7 @@ describe('HomeComponent (rendered)', () => {
     activity.isLoadingContracts.set(true);
     await settle();
     expect(activity.select).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
+    expect(engagement.select).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
     expect(text('profile')).toContain('name:Producer 1');
     expect(text('profile')).toContain('loadingContracts:true');
     expect(text('calculator')).toBe('Producer 1');
@@ -310,8 +296,7 @@ describe('HomeComponent (rendered)', () => {
     expect(text('profile')).toContain('contracts:10');
     expect(text('profile')).toContain('loadingContracts:false');
 
-    notes.next([note(5, 1, new Date())]);
-    notes.complete();
+    engagement.notes.set([note(5, 1, new Date())]);
     await settle();
     expect(text('notes')).toContain('notes:5');
     expect(text('notes')).toContain('loading:false');
@@ -342,16 +327,14 @@ describe('HomeComponent (rendered)', () => {
   });
 
   it('shows the producer\'s follow-ups when they land', async () => {
-    const reminders = new Subject<Reminder[]>();
-    await render(a => {
-      a.getCustomers.mockReturnValue(of([A]));
-      a.getRemindersByCustomer.mockReturnValue(reminders);
-    });
+    await render(a => a.getCustomers.mockReturnValue(of([A])));
     list().selectCustomer.emit(A);
+    engagement.isLoadingReminders.set(true);
     await settle();
     expect(text('reminders')).toContain('loading:true');
 
-    reminders.next([{ id: 9, customerId: 1, customerName: '', dueAt: '2026-10-20T00:00:00Z', subject: '', isCompleted: false, createdAt: '' }]);
+    engagement.reminders.set([{ id: 9, customerId: 1, customerName: '', dueAt: '2026-10-20T00:00:00Z', subject: '', isCompleted: false, createdAt: '' }]);
+    engagement.isLoadingReminders.set(false);
     await settle();
     expect(text('reminders')).toContain('reminders:9|loading:false');
   });
@@ -373,7 +356,6 @@ describe('HomeComponent (rendered)', () => {
     await settle();
     expect(text('profile')).toContain('linked:90');
     expect(text('notes')).toContain('linked:90');
-    expect(text('list')).toContain('linked:90');
   });
 
   it("the producer's planting, as the Producers module reads it after the click, shows on the profile", async () => {
@@ -393,8 +375,11 @@ describe('HomeComponent (rendered)', () => {
     await settle();
 
     const notesCard = fixture.debugElement.query(By.directive(StubNotes)).componentInstance as StubNotes;
-    // The real card's Add Note calls the page's engagement directly.
+    // The real card's Add Note calls SelectedProducerEngagement directly; what it answers lands on the card.
     notesCard.engagement.addNote({ content: 'hi', mentions: [] });
+    expect(engagement.addNote).toHaveBeenCalledWith({ content: 'hi', mentions: [] });
+    engagement.notes.set([note(500, 1, new Date())]);
+    engagement.noteSaveSucceededCounter.set(1);
     await settle();
     expect(text('notes')).toContain('notes:500');
     expect(text('notes')).toContain('saved:1');
@@ -411,13 +396,6 @@ describe('HomeComponent (rendered)', () => {
     await settle();
     expect(text('profile')).toBeNull();
     expect(text('list')).toContain('roster:50');
-  });
-
-  it('shows a last-contact aggregate the shared state receives later (effect path)', async () => {
-    await render();
-    app.noteLastContacts.set([{ customerId: 1, lastNoteAt: new Date() }]);
-    await settle();
-    expect(text('list')).toContain('lastContacts:1');
   });
 
   it('opens a deep-linked producer once the roster arrives (polling timer path)', async () => {

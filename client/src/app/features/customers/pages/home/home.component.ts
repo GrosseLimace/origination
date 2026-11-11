@@ -15,15 +15,10 @@ import { CustomerListComponent } from '../../components/customer-list/customer-l
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
 import { CustomerSlotComponent } from '@core/modules/customer-slot.component';
 import { commodityCodesFrom } from '@shared/utils/commodity-codes';
-import { linkedGroupOf } from './home-derivations';
 import { HomeBackgroundFailures } from './home-background-failures';
 import { HomePageState } from './home-page.state';
 import { homeScreenSource } from './home-screen-source';
-import { HomeEngagement } from './home-engagement';
-import { HomeRemindersStore } from './home-reminders.store';
-import { HomeNotesStore } from './home-notes.store';
-import { HomeLinkedProducersStore } from './home-linked-producers.store';
-import { HomeProducerActivityStore } from './home-producer-activity.store';
+import { LinkedProducersStore } from '../../data-access/linked-producers.store';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { CUSTOMER_SCREEN_SOURCE, SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
@@ -43,13 +38,10 @@ import { profileLinkedIds } from '@shared/utils/producer-profile';
   templateUrl: './home.component.html',
   // Page-scoped state and behaviour, one instance per visit to the page. SelectedCustomerContext is the customer
   // the page shows, for the panels and tabs the modules add to it; their contracts, tickets and pricing
-  // (SelectedProducerActivity) and their production (SelectedProducerProduction) are the modules' own, which the page
-  // tells who is selected.
+  // (SelectedProducerActivity), their production (SelectedProducerProduction) and their notes and the user's follow-ups
+  // (SelectedProducerEngagement) are the modules' own, which the page tells who is selected.
   providers: [
-    HomePageState, HomeBackgroundFailures, HomeRemindersStore, HomeNotesStore, HomeLinkedProducersStore,
-    HomeProducerActivityStore, SelectedCustomerContext,
-    HomeEngagement,
-    { provide: SelectedProducerEngagement, useExisting: HomeEngagement },
+    HomePageState, HomeBackgroundFailures, SelectedCustomerContext,
     { provide: CUSTOMER_SCREEN_SOURCE, useFactory: homeScreenSource },
     // The Edit Producer Details dialog saves through the page, which keeps its lists up to date as the save goes.
     { provide: ProducerEditing, useExisting: forwardRef(() => HomeComponent) },
@@ -75,20 +67,18 @@ export class HomeComponent implements ProducerEditing {
   private readonly backgroundFailures = inject(HomeBackgroundFailures);
   /** Signals shared with the page-scoped stores (see HomePageState). */
   private readonly page = inject(HomePageState);
-  /** Personal follow-up reminders (see HomeRemindersStore). */
-  private readonly reminders = inject(HomeRemindersStore);
-  /** Notes cache, notes panel and last-contact badge feed (see HomeNotesStore). */
-  private readonly notes = inject(HomeNotesStore);
-  /** Cross-trade-unit linked producers and the walk that fetches them (see HomeLinkedProducersStore). */
-  private readonly linked = inject(HomeLinkedProducersStore);
-  /** The selected producer's linked group's notes and their customer codes (see HomeProducerActivityStore). */
-  private readonly activity = inject(HomeProducerActivityStore);
+  /** The producers linked to the trade units' customers from outside them, the walk that fetches them, and each
+   *  producer's linked group (see LinkedProducersStore). */
+  private readonly linked = inject(LinkedProducersStore);
   /** The selected producer's contracts, tickets and pricing lines: the Contracts module's, which the page tells who is
    *  selected. */
   private readonly producerActivity = inject(SelectedProducerActivity);
   /** The selected producer's planting intentions, stored grain, DP contracts and crop year: the Producers module's,
    *  which the page tells who is selected. */
   private readonly production = inject(SelectedProducerProduction);
+  /** The selected producer's notes, with their linked group's, and the user's follow-ups for them: the Engagement
+   *  module's, which the page tells who is selected. */
+  private readonly engagement = inject(SelectedProducerEngagement);
 
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -104,10 +94,6 @@ export class HomeComponent implements ProducerEditing {
 
   // Public signals — template binds directly to these
   readonly customers = this.page.customers;
-  /** Per-customer "last contacted" aggregate, all trade units — the list's badge feed (see HomeNotesStore). */
-  readonly noteLastContacts = this.notes.noteLastContacts;
-  /** The signed-in user's own open follow-ups across all producers (see HomeRemindersStore). */
-  readonly myReminders = this.reminders.myReminders;
 
   readonly selectedCustomer = this.page.selectedCustomer;
   /** True when the open-contracts table has its extra columns expanded — drops the Notes
@@ -120,21 +106,16 @@ export class HomeComponent implements ProducerEditing {
   readonly pendingTicketCrop = this.page.pendingTicketCrop;
   readonly selectedTradeUnits = this.page.selectedTradeUnits;
   /** The selected producer's contracts, tickets and pricing lines, with their loading and error state (the Contracts
-   *  module's), and their linked group's customer codes (see HomeProducerActivityStore). */
+   *  module's). */
   readonly customerContracts = this.producerActivity.contracts;
   readonly customerTickets = this.producerActivity.tickets;
   readonly customerPricingLines = this.producerActivity.pricingLines;
-  readonly customerCodeMap = this.activity.customerCodeMap;
   readonly isLoadingContracts = this.producerActivity.isLoadingContracts;
   readonly contractsLoadError = this.producerActivity.contractsLoadError;
   readonly isLoadingUnappliedTickets = this.producerActivity.isLoadingTickets;
   readonly ticketsLoadError = this.producerActivity.ticketsLoadError;
   readonly pricingLinesLoadError = this.producerActivity.pricingLinesLoadError;
   readonly isLoadingPricingLines = this.producerActivity.isLoadingPricingLines;
-  /** The selected producer's notes panel and the note form's state (see HomeNotesStore). */
-  readonly customerNotes = this.notes.customerNotes;
-  readonly isLoadingNotes = this.notes.isLoadingNotes;
-  readonly isSavingNote = this.notes.isSavingNote;
 
   /** Producer ids whose trade-unit save (PUT .../trade-units) is still running. */
   private readonly _tradeUnitSavesInFlight = signal<ReadonlySet<number>>(new Set());
@@ -153,21 +134,9 @@ export class HomeComponent implements ProducerEditing {
     this.handleSaveCustomer(edit);
   }
 
-  readonly noteSaveSucceededCounter = this.notes.noteSaveSucceededCounter;
-  /** The selected producer's follow-ups and the reminder card's state (see HomeRemindersStore). */
-  readonly customerReminders = this.reminders.customerReminders;
-  readonly isLoadingReminders = this.reminders.isLoadingReminders;
-  readonly isSavingReminder = this.reminders.isSavingReminder;
-  readonly reminderSaveSucceededCounter = this.reminders.reminderSaveSucceededCounter;
-
   readonly isMobile = signal(false);
   readonly loading = signal(false);
 
-
-  // Customers fetched from outside the current trade unit filter (e.g. linked producers in other TUs)
-  private readonly _crossTradeUnitCustomers = this.linked.crossTradeUnitCustomersById;
-  /** Flat array of the cross-TU/linked producers (see HomeLinkedProducersStore). */
-  readonly crossTradeUnitCustomers = this.linked.crossTradeUnitCustomers;
 
   // Track last trade unit key to avoid duplicate loads triggered by the effect
   private _lastTradeUnitKey = '';
@@ -188,20 +157,6 @@ export class HomeComponent implements ProducerEditing {
     }
     this._lastTradeUnitKey = [...this.selectedTradeUnits()].sort().join(',');
     this._initialized = true;
-
-    // Keep the last-contact aggregate in sync with appState — handles the case where the
-    // data-preload delivers it after _restoreStateFromService() already ran (restore path
-    // skips _loadAllData so there is no subscription to pick up the arriving data).
-    effect(() => {
-      const rows = this.appState.noteLastContacts();
-      untracked(() => this.noteLastContacts.set(rows));
-    });
-
-    // Same for the caller's own open follow-ups, which the preload delivers alongside it.
-    effect(() => {
-      const rows = this.appState.myReminders();
-      untracked(() => this.myReminders.set(rows));
-    });
 
     // React to global trade unit changes made via TradeUnitSelectorComponent
     effect(() => {
@@ -234,8 +189,6 @@ export class HomeComponent implements ProducerEditing {
     const stateCustomers = this.customerStore.customers();
     if (stateCustomers.length > 0) {
       this.customers.set(stateCustomers);
-      this.noteLastContacts.set(this.appState.noteLastContacts());
-      this.myReminders.set(this.appState.myReminders());
 
       const stateSelectedCustomer = this.appState.selectedCustomer();
       if (stateSelectedCustomer) {
@@ -245,12 +198,8 @@ export class HomeComponent implements ProducerEditing {
         // Their planting intentions are read again on the way back, as they may have changed elsewhere; their stored
         // grain and DP show from what was read.
         this.production.select(stateSelectedCustomer, { reread: true });
-        this.activity.loadCustomerData(stateSelectedCustomer.id);
-        // Re-fetch the producer's (and linked group's) notes — the per-customer notes
-        // cache is component-local, so navigation back must repopulate it (same pattern
-        // as the tickets / planting re-fetch on restore).
-        this.notes.startSelection();
-        this._ensureCustomerNotes(stateSelectedCustomer);
+        // Their notes and the user's follow-ups show as Engagement kept them.
+        this.engagement.select(stateSelectedCustomer);
       }
     }
   }
@@ -307,13 +256,7 @@ export class HomeComponent implements ProducerEditing {
       }
     });
 
-    // Tickets are no longer bulk-loaded here. They're fetched per-producer on select (applied +
-    // unapplied via HomeProducerActivityStore.loadCustomerTickets) since applied tickets are only ever viewed on a selected
-    // producer; list/NLQ ticket queries lazily fetch the TU-wide set themselves when needed.
-
-    // Last-contact aggregate instead of the full note download — the selected producer's
-    // full notes load separately via _ensureCustomerNotes on selection.
-    this.notes.refreshLastContacts();
+    // The trade units' contracts, tickets, planting, notes and the rest are the modules' preloads' to read.
   }
 
   /** Reads every producer's details again, as each visit to the page does; ProducerProfiles keeps them, and every
@@ -329,15 +272,12 @@ export class HomeComponent implements ProducerEditing {
 
   /**
    * Some producers' details have landed in ProducerProfiles. If the selected producer's are among them, their links may
-   * have changed: walk the links again, rebuild their linked group's contracts, tickets and notes, and make sure the
-   * group's notes are cached.
+   * have changed: walk them again. Engagement reads the notes of the group as it grows.
    */
   private _afterProducerDetailsLanded(customerIds: Iterable<number>): void {
     const sel = this.selectedCustomer();
     if (!sel || !new Set(customerIds).has(sel.id)) return;
     this._fetchMissingLinkedProducers(sel);
-    this.activity.loadCustomerData(sel.id, sel);
-    this._ensureCustomerNotes(sel);
   }
 
   handleClearSelection(): void {
@@ -345,6 +285,7 @@ export class HomeComponent implements ProducerEditing {
     this.appState.selectCustomer(null);
     this.producerActivity.select(null);
     this.production.select(null);
+    this.engagement.select(null);
     this.router.navigate([], { queryParams: {}, replaceUrl: true });
   }
 
@@ -352,54 +293,27 @@ export class HomeComponent implements ProducerEditing {
     this.selectedTradeUnits.set(tradeUnits);
     this.selectedCustomer.set(null);
     this.appState.selectCustomer(null);
-    this._crossTradeUnitCustomers.set(new Map());
+    // The producers linked from outside the trade units, and the walks that found them, were for the last ones.
+    this.linked.clear();
     // Clear the stale customer list immediately so the old roster doesn't show while the
-    // new API calls are in flight. The last-contact aggregate is NOT cleared — it covers
-    // all trade units, so it stays correct across TU switches (it refreshes in the
-    // background via _loadAllData / data-preload for freshness).
+    // new API calls are in flight.
     this.customers.set([]);
     this.customerStore.setCustomers([]);
-    // Drop the per-customer caches — TU change can include / exclude different customers, and re-clicking a
-    // producer that overlaps the new TU must re-read them for the new scope (the Contracts and Producers modules
-    // forget their own reads of the producers' activity and production on a trade-unit change).
-    // Notes are cleared for freshness parity: the next selection re-fetches, picking up
-    // notes other users added since.
-    this.notes.forgetAll();
-    this.linked.forgetWalks();
-    // Cancel any in-flight per-customer requests (pricing lines, contracts, tickets,
-    // grain, planting, notes, linked-producers) tied to the prior customer so they
-    // don't write into signals after the new TU has loaded. Also clears the loading
-    // flags they own so the UI doesn't get stuck showing "Loading…" for data that's
-    // no longer arriving.
+    // The Contracts, Producers and Engagement modules forget their own reads of the producers on a trade-unit change, so
+    // re-clicking a producer the new trade units still cover reads them again for the new scope (notes included, which
+    // picks up those other reps added since). Cancel what is still being read for the producer (their details and the
+    // linked walk here; the modules' own reads with their selection), and drop the modules' selection, so nothing lands
+    // after the new trade units have loaded and no loading state is left waiting on it.
     this._cancelSelection$.next();
     this.producerActivity.select(null);
     this.production.select(null);
-    this.notes.stopLoading();
+    this.engagement.select(null);
     // Reset loading flag so an explicit user selection is never blocked by a
     // background load that may still be in-flight.
     this._isLoading = false;
-    if (tradeUnits && tradeUnits.length > 0) {
-      this._loadAllData(tradeUnits);
-    } else {
-      // No TU selected (e.g. after Reset) — data-preload skips its pipeline entirely in
-      // this state, so refresh the last-contact aggregate here so customer list cards
-      // show correct "last contacted" dates in search results. The aggregate spans all
-      // trade units, so the same call serves the no-TU flow.
-      this.notes.refreshLastContacts();
-    }
-  }
-
-  /**
-   * Ensures the full notes for `customer` AND its currently-known linked group are loaded and
-   * fresh, then recomputes the selected producer's notes panel + last-contact badges. The caching
-   * (stale-while-revalidate, once per selection, failures not cached) is HomeNotesStore's.
-   */
-  private _ensureCustomerNotes(customer: Customer): void {
-    const groupIds = [...new Set([customer.id, ...this.getLinkedGroup(customer).map(c => c.id)])];
-    this.notes.ensureCustomerNotes(groupIds, () => {
-      const sel = this.selectedCustomer();
-      if (sel) this.activity.loadCustomerData(sel.id);
-    });
+    // With none selected the modules' preloads don't run; the list's last-contacted badges read the summary, which covers
+    // every trade unit, themselves.
+    if (tradeUnits && tradeUnits.length > 0) this._loadAllData(tradeUnits);
   }
 
   handleSelectCustomer(customer: Customer, fromDeepLink = false): void {
@@ -407,8 +321,6 @@ export class HomeComponent implements ProducerEditing {
     // browser's connection pool isn't blocked by stale linked-producer / notes /
     // planting calls when the user clicks through producers quickly.
     this._cancelSelection$.next();
-    // New selection — allow each producer's notes to be re-fetched once so other reps' adds show.
-    this.notes.startSelection();
     // Reset navigation context when user manually selects (but NOT when coming from a deep link)
     if (!fromDeepLink) {
       this.pendingContractId.set(null);
@@ -437,15 +349,9 @@ export class HomeComponent implements ProducerEditing {
     // Their planting intentions, from what was read before; their stored grain and DP; and the crop year a deep link
     // asked for, else the newest.
     this.production.select(customer, { plantingYear: this.pendingPlantingYear() });
-    this.activity.loadCustomerData(customer.id);
+    // Their notes and their linked group's, as the group becomes known, and the user's follow-ups for them.
+    this.engagement.select(customer);
     this._fetchMissingLinkedProducers(customer);
-    // Fetch this producer's (and known linked group's) full notes — notes are no longer
-    // bulk-downloaded, so selection is what hydrates the notes panel. Cache-hit = instant.
-    this._ensureCustomerNotes(customer);
-    this.reminders.loadCustomerReminders(customer.id);
-
-    // (No-TU special case removed: the selected producer's notes come from the per-customer
-    // fetch above, and the badge aggregate spans all trade units — both are TU-independent.)
   }
 
   /**
@@ -465,15 +371,10 @@ export class HomeComponent implements ProducerEditing {
     });
   }
 
-  /**
-   * Fetches every producer transitively linked to `customer` that isn't loaded yet (see
-   * HomeLinkedProducersStore), topping up the selected producer's notes as each level lands.
-   */
+  /** Fetches every producer transitively linked to `customer` that isn't loaded yet (see LinkedProducersStore), until
+   *  the next selection. */
   private _fetchMissingLinkedProducers(customer: Customer): void {
-    this.linked.fetchMissingLinkedProducers(customer, () => {
-      const sel = this.selectedCustomer();
-      if (sel) this._ensureCustomerNotes(sel);
-    });
+    this.linked.fetchMissingLinkedProducers(customer, this._cancelSelection$);
   }
 
   private _propagatePrimaryContact(linkedCustomer: Customer, primary: { name: string; phone?: string; email?: string }): void {
@@ -625,7 +526,7 @@ export class HomeComponent implements ProducerEditing {
       // outside the currently-selected trade units live in the cross-TU cache and would
       // be silently skipped otherwise.
       const linkedCustomer = this.customers().find(c => c.scoularId === linkedIdStr)
-        ?? [...this._crossTradeUnitCustomers().values()].find(c => c.scoularId === linkedIdStr);
+        ?? this.linked.crossTradeUnitCustomers().find(c => c.scoularId === linkedIdStr);
       if (!linkedCustomer) continue;
       const currentSourceId = customer.scoularId || '';
       const linkedId = linkedCustomer.id;
@@ -655,7 +556,7 @@ export class HomeComponent implements ProducerEditing {
       // that don't have one yet.
       const primaryRow = data.contacts.find(c => c.isPrimary)
         ?? { name: data.primaryContact, phone: data.primaryPhone || undefined, isPrimary: true };
-      const allKnown = [...this.customers(), ...this._crossTradeUnitCustomers().values()];
+      const allKnown = [...this.customers(), ...this.linked.crossTradeUnitCustomers()];
       for (const linkedIdStr of data.linkedProducerIds) {
         const linkedCustomer = allKnown.find(c => c.scoularId === linkedIdStr);
         if (linkedCustomer) {
@@ -664,9 +565,7 @@ export class HomeComponent implements ProducerEditing {
           // Linked producer not loaded locally — fetch by sourceId then propagate
           this.customersApi.getCustomerBySourceId(linkedIdStr).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
             next: (fetched) => {
-              const cache = new Map(this._crossTradeUnitCustomers());
-              cache.set(fetched.id, fetched);
-              this._crossTradeUnitCustomers.set(cache);
+              this.linked.put(fetched);
               this._propagatePrimaryContact(fetched, primaryRow);
             },
             error: (err) => this.backgroundFailures.report('load a linked producer', err)
@@ -686,36 +585,27 @@ export class HomeComponent implements ProducerEditing {
 
     // Keep the cross-TU cache in sync too — a customer viewed across TU boundaries may
     // live there instead of the main roster, and would keep showing the pre-edit eSign.
-    if (this._crossTradeUnitCustomers().has(updated.id)) {
-      this._crossTradeUnitCustomers.update(cache => {
-        const next = new Map(cache);
-        next.set(updated.id, updated);
-        return next;
-      });
-    }
+    this.linked.refresh(updated);
 
     this.selectedCustomer.set(updated);
     this.customerStore.setCustomers(this.customers());
     this.appState.selectCustomer(updated);
+    // The producer as they now are (an onboarding cleared the candidate flag, perhaps with a new id); the notes of a
+    // newly linked producer show as the group grows.
+    this.engagement.select(updated);
 
     // Fetch any newly linked producers that aren't loaded yet so the dropdown updates
     // immediately. Recursive BFS (transitive) so newly added edges extend the group.
     this._fetchMissingLinkedProducers(updated);
-    this.activity.loadCustomerData(updated.id, updated);
-    // A newly-linked producer that was ALREADY in the roster never goes through the BFS
-    // network path, so make sure the expanded group's notes are cached for the panel.
-    this._ensureCustomerNotes(updated);
   }
 
   /**
-   * Every producer transitively linked to `customer`, forward and reverse (see linkedGroupOf), among
-   * the roster and the cross-trade-unit cache. Relies on `_fetchMissingLinkedProducers` having
-   * populated the cache; if a transitively-linked producer isn't loaded yet, it's silently excluded
-   * until its fetch completes and triggers a re-render.
+   * Every producer transitively linked to `customer`, forward and reverse, among the trade units' customers and the
+   * producers linked from outside them (LinkedProducersStore.groupOf). One not fetched yet is left out until its fetch
+   * lands, which re-renders.
    */
   getLinkedGroup(customer: Customer): Customer[] {
-    return linkedGroupOf(customer, [...this.customers(), ...this._crossTradeUnitCustomers().values()],
-      c => profileLinkedIds(this.producerProfiles.profileOf(c.id)));
+    return this.linked.groupOf(customer);
   }
 
   handleSelectLinkedCustomer(customerId: number): void {
@@ -725,8 +615,6 @@ export class HomeComponent implements ProducerEditing {
     // then C left B's fetches running; whichever resolved last won, so C's profile could get
     // overwritten with B's contracts/tickets/notes.
     this._cancelSelection$.next();
-    // New selection — allow each producer's notes to be re-fetched once (other reps' adds show).
-    this.notes.startSelection();
     // Reset navigation context — user is manually selecting a linked producer
     this.pendingContractId.set(null);
     this.pendingTab.set(null);
@@ -734,38 +622,28 @@ export class HomeComponent implements ProducerEditing {
     // Cache the departing customer so getLinkedGroup can still find it for reverse-link
     // lookups after the new customer is selected (prevents the dropdown from disappearing).
     const departing = this.selectedCustomer();
-    if (departing && !this.customers().some(c => c.id === departing.id)) {
-      const cache = new Map(this._crossTradeUnitCustomers());
-      cache.set(departing.id, departing);
-      this._crossTradeUnitCustomers.set(cache);
-    }
+    if (departing && !this.customers().some(c => c.id === departing.id)) this.linked.put(departing);
     const customer = this.customers().find(c => c.id === customerId);
     if (customer) {
       this.selectedCustomer.set(customer);
       this._fetchMissingLinkedProducers(customer);
       this.producerActivity.select(customer);
       this.production.select(customer, { plantingYear: this.pendingPlantingYear(), reread: true });
-      this.activity.loadCustomerData(customer.id);
-      this._ensureCustomerNotes(customer);
+      this.engagement.select(customer);
     } else {
       // Linked customer is in a different trade unit — fetch them from the API
       this.customersApi.getCustomerById(customerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (fetched) => {
           // Cache so getLinkedGroup can find them even though they're outside the TU filter
-          const cache = new Map(this._crossTradeUnitCustomers());
-          cache.set(fetched.id, fetched);
-          this._crossTradeUnitCustomers.set(cache);
+          this.linked.put(fetched);
           this.selectedCustomer.set(fetched);
           this._fetchMissingLinkedProducers(fetched);
           this.producerActivity.select(fetched);
           this.production.select(fetched, { plantingYear: this.pendingPlantingYear(), reread: true });
-          this.activity.loadCustomerData(fetched.id);
-          this._ensureCustomerNotes(fetched);
+          this.engagement.select(fetched);
         },
         error: (err) => this.backgroundFailures.report('load the selected producer', err)
       });
     }
-    // (No-TU special case removed: _ensureCustomerNotes above hydrates the linked
-    // customer's notes via the per-customer endpoint, which is TU-independent.)
   }
 }

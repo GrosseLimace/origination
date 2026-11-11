@@ -3,7 +3,7 @@ import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { ComponentRef } from '@angular/core';
 import { of } from 'rxjs';
 import { CustomerNotesComponent } from './customer-notes.component';
-import { ApiService } from '@core/services/api.service';
+import { EngagementApiService } from '../../data-access/engagement-api.service';
 import { ToastService } from '@core/services/toast.service';
 import { Customer, MentionCatalog, Note, NoteMention } from '@models';
 import { TeamsDirectoryService } from '../../data-access/teams-directory.service';
@@ -53,7 +53,7 @@ describe('CustomerNotesComponent — note search filter + highlight', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [
-        { provide: ApiService, useValue: { getMentionCatalog: () => of({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [], teamsChannels: [] }) } },
+        { provide: EngagementApiService, useValue: { getMentionCatalog: () => of({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [], teamsChannels: [] }) } },
         // The component injects this to offer Teams channels; the real one needs MSAL, which these
         // tests have no reason to stand up.
         { provide: TeamsDirectoryService, useValue: { getChannels: () => of([]) } },
@@ -179,7 +179,7 @@ describe('CustomerNotesComponent — degraded mention catalog', () => {
   function create(catalog: Partial<MentionCatalog>): CustomerNotesComponent {
     TestBed.configureTestingModule({
       providers: [
-        { provide: ApiService, useValue: { getMentionCatalog: () => of({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [], teamsChannels: [], ...catalog }) } },
+        { provide: EngagementApiService, useValue: { getMentionCatalog: () => of({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [], teamsChannels: [], ...catalog }) } },
         { provide: TeamsDirectoryService, useValue: { getChannels: () => of([]) } },
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
         provideSelectedProducerEngagement(engagement = selectedProducerEngagementFake()),
@@ -212,7 +212,7 @@ describe('CustomerNotesComponent — degraded notice in the rendered picker', ()
   function render(catalog: Partial<MentionCatalog>): ComponentFixture<CustomerNotesComponent> {
     TestBed.configureTestingModule({
       providers: [
-        { provide: ApiService, useValue: { getMentionCatalog: () => of({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [], teamsChannels: [], ...catalog }) } },
+        { provide: EngagementApiService, useValue: { getMentionCatalog: () => of({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [], teamsChannels: [], ...catalog }) } },
         { provide: TeamsDirectoryService, useValue: { getChannels: () => of([]) } },
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
         provideSelectedProducerEngagement(engagement = selectedProducerEngagementFake()),
@@ -277,7 +277,7 @@ describe('CustomerNotesComponent — write controls', () => {
     const engagement = selectedProducerEngagementFake();
     TestBed.configureTestingModule({
       providers: [
-        { provide: ApiService, useValue: { getMentionCatalog: () => of({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [], teamsChannels: [] }) } },
+        { provide: EngagementApiService, useValue: { getMentionCatalog: () => of({ people: [], tradeUnits: [], tradeUnitGroups: [], appGroups: [], teamsChannels: [] }) } },
         { provide: TeamsDirectoryService, useValue: { getChannels: () => of([]) } },
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
         provideSelectedProducerEngagement(engagement),

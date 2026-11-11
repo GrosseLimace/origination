@@ -25,44 +25,6 @@ describe('ApiService', () => {
     httpMock.verify();
   });
 
-  // ── Notes ──────────────────────────────────────────────────────────────────
-
-  it('getNotesByCustomer() calls GET /notes/customer/:id', () => {
-    service.getNotesByCustomer(5).subscribe();
-    const req = httpMock.expectOne(`${BASE}/notes/customer/5`);
-    expect(req.request.method).toBe('GET');
-    req.flush([]);
-  });
-
-  it('getNotesLastContact() calls GET /notes/last-contact', () => {
-    service.getNotesLastContact().subscribe();
-    const req = httpMock.expectOne(`${BASE}/notes/last-contact`);
-    expect(req.request.method).toBe('GET');
-    req.flush([]);
-  });
-
-  it('createNote() calls POST /notes with body', () => {
-    service.createNote(5, 'Good contact', 'TU1').subscribe();
-    const req = httpMock.expectOne(`${BASE}/notes`);
-    expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({ customerId: 5, content: 'Good contact', tradeUnit: 'TU1' });
-    req.flush({});
-  });
-
-  it('deleteNote() calls DELETE /notes/:id', () => {
-    service.deleteNote(9).subscribe();
-    const req = httpMock.expectOne(`${BASE}/notes/9`);
-    expect(req.request.method).toBe('DELETE');
-    req.flush(null);
-  });
-
-  it('toggleNotePin() calls PUT /notes/:id/toggle-pin', () => {
-    service.toggleNotePin(4).subscribe();
-    const req = httpMock.expectOne(`${BASE}/notes/4/toggle-pin`);
-    expect(req.request.method).toBe('PUT');
-    req.flush({});
-  });
-
   // ── Producer Details (grain on farm) ────────────────────────────────────────
 
   it('getProducerDetails() calls GET /producerdetails/customer/:id and round-trips grainOnFarm', () => {

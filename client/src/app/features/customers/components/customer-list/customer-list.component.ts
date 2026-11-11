@@ -4,39 +4,25 @@ import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject, of } from 'rxjs';
 import { catchError, debounceTime, switchMap, map } from 'rxjs/operators';
-import { Customer, NoteLastContact, ReminderDue } from '@models';
+import { Customer } from '@models';
 import { CustomerStore } from '../../data-access/customer.store';
 import { CustomersApiService } from '../../data-access/customers-api.service';
 import { AppStateService } from '@core/services/app-state.service';
-import { REMINDER_DUE_CLASS, reminderDueTier } from '@shared/utils/reminder-due';
-import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
-import { profileLinkedIds } from '@shared/utils/producer-profile';
 import { CardComponent, CardContentComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { TradeUnitSelectorComponent } from '@core/layout/trade-unit-selector/trade-unit-selector.component';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { CustomerListFilter } from '@core/context/customer-list-filter';
 import { CustomerSlotComponent } from '@core/modules/customer-slot.component';
-import { ProducerProfiles } from '@core/context/producer-profiles';
+import { CustomerRowSlotComponent } from '@core/modules/customer-row-slot.component';
 import { CustomerListScrollStore } from '../../data-access/customer-list-scroll.store';
-
-/** The follow-up badge on a producer row — the signed-in user's next open reminder for them. */
-interface ReminderBadge {
-  text: string;
-  cssClass: string;
-}
-
-interface LastContactInfo {
-  text: string;
-  daysAgo: number;
-  cssClass: string;
-}
 
 @Component({
   selector: 'app-customer-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, CardComponent, CardContentComponent, BadgeComponent, TradeUnitSelectorComponent, CustomerSlotComponent],
-  // The filter the panel in the list-filter slot sets (the Lists module's saved-list picker).
+  imports: [CommonModule, FormsModule, CardComponent, CardContentComponent, BadgeComponent, TradeUnitSelectorComponent, CustomerSlotComponent, CustomerRowSlotComponent],
+  // The filter the panel in the list-filter slot sets (the Lists module's saved-list picker). Each row's badges are the
+  // modules' panels in its row slots: Producers' acres, and Engagement's last-contacted and follow-up lines.
   providers: [CustomerListFilter],
   host: { class: 'block w-full' },
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -47,17 +33,7 @@ export class CustomerListComponent {
 
   public customers = input<Customer[]>([]);
   public selectedCustomer = input<Customer | null>(null);
-  /** Per-customer "last contacted" aggregate (all trade units, one row per customer with
-   *  notes) — feeds the badge cache without the full note download. */
-  public noteLastContacts = input<NoteLastContact[]>([]);
-  /** The signed-in user's OWN open follow-ups (all producers). Private per user — the API only
-   *  returns the caller's — so this badge never reveals another originator's plans. */
-  public myReminders = input<ReminderDue[]>([]);
   public loading = input(false);
-  /** Extra customers fetched for incoming/outgoing linked-producer lookups (populated by the home
-   *  page when a customer is selected in no-TU mode). Folded into the incoming-link map so the
-   *  last-contacted date on the card reflects notes from reverse-linked producers. */
-  public linkedProducerCustomers = input<Customer[]>([]);
   public selectCustomer = output<Customer>();
   public clearSelection = output<void>();
   /** Emitted once the pointer has rested on a row long enough to suggest a click is coming, so the
@@ -71,9 +47,6 @@ export class CustomerListComponent {
   private readonly appStateService = inject(AppStateService);
   private readonly customerStore = inject(CustomerStore);
   private readonly tradeUnitContext = inject(TradeUnitContext);
-  /** Every producer's saved details: the acres on each row, the links the last-contacted badge follows, and what a
-   *  saved list's prompts and refines read. */
-  private readonly producerProfiles = inject(ProducerProfiles);
   private readonly scrollStore = inject(CustomerListScrollStore);
   private readonly filter = inject(CustomerListFilter);
   private readonly destroyRef = inject(DestroyRef);
@@ -107,22 +80,10 @@ export class CustomerListComponent {
    *  not "no producers". */
   readonly customersLoadFailed = computed(() =>
     this.customerStore.customersLoadFailed() && this.customers().length === 0);
-  /** The last-contact aggregate failed to load and nothing replaced it, so "no contact on record" is
-   *  unknown rather than "Never contacted". */
-  readonly contactHistoryUnavailable = computed(() =>
-    this.appStateService.noteLastContactsLoadFailed() && this.noteLastContacts().length === 0);
-
-  // Performance optimization: Cache last contact info to avoid repeated filtering/sorting
-  // Signal so the OnPush template re-renders automatically when the cache is rebuilt.
-  lastContactCache = signal(new Map<number, LastContactInfo>());
-  /** Per-customer follow-up badge, keyed by customer id. Rebuilt with the last-contact cache. */
-  reminderCache = signal(new Map<number, ReminderBadge>());
 
   private _scrollTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
-    this._rebuildLastContactCache();
-
     // Restore state from service
     this.searchInputValue = this.appStateService.searchQuery();
     this.applyFilters();
@@ -192,25 +153,6 @@ export class CustomerListComponent {
           this._scrollItemIntoView(el, 'auto');
         }
       }
-    });
-
-    // React to customers/last-contact/filteredCustomers changes — filteredCustomers covers the
-    // search-with-no-TU case where customers() input is empty but filteredCustomers has results.
-    effect(() => {
-      this.customers();
-      this.filteredCustomers();
-      this.noteLastContacts();
-      this.linkedProducerCustomers();
-      this._rebuildLastContactCache();
-    });
-
-    // The follow-up badge rebuilds on its own so adding or completing a reminder repaints the
-    // list without redoing the (much larger) last-contact pass over every producer.
-    effect(() => {
-      this.customers();
-      this.filteredCustomers();
-      this.myReminders();
-      this._rebuildReminderCache();
     });
 
     // After an onboarding save the parent re-selects the producer as a real record: the candidate
@@ -375,11 +317,6 @@ export class CustomerListComponent {
     this.applyFilters();
   }
 
-  /** A producer's farm acres, from their saved details; 0 without any. */
-  acresOf(customer: Customer): number {
-    return this.producerProfiles.profileOf(customer.id)?.totalAcres ?? 0;
-  }
-
   clearAll(): void {
     this.searchInputValue = '';
     this.appStateService.setSearchQuery('');
@@ -391,165 +328,6 @@ export class CustomerListComponent {
     this.clearSelection.emit();
   }
 
-  /**
-   * Builds the follow-up badge for each visible producer: the SOONEST open reminder the signed-in
-   * user has for them.
-   *
-   * Keyed on customerId rather than customerCode, and deliberately NOT walked across the
-   * linked-producer group the way last-contact is. A reminder is a personal to-do about the one
-   * producer it was set on — surfacing it on a linked producer's row would send the user to the
-   * wrong page when they click it.
-   */
-  private _rebuildReminderCache(): void {
-    const rows = this.myReminders();
-    if (rows.length === 0) {
-      // Skip the allocation entirely in the common case: most producers have no follow-up, and
-      // for a brand-new user this runs on every list render.
-      if (this.reminderCache().size > 0) this.reminderCache.set(new Map());
-      return;
-    }
-
-    const soonestByCustomer = new Map<number, number>();
-    for (const row of rows) {
-      const due = this._parseUtcMs(row.dueAt);
-      const existing = soonestByCustomer.get(row.customerId);
-      if (existing === undefined || due < existing) soonestByCustomer.set(row.customerId, due);
-    }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const newCache = new Map<number, ReminderBadge>();
-    for (const [customerId, dueMs] of soonestByCustomer) {
-      const dueDay = new Date(dueMs);
-      dueDay.setHours(0, 0, 0, 0);
-      const days = Math.round((dueDay.getTime() - today.getTime()) / 86_400_000);
-
-      let text: string;
-      if (days < 0) {
-        const overdue = Math.abs(days);
-        text = overdue === 1 ? 'Follow-up overdue by 1 day' : `Follow-up overdue by ${overdue} days`;
-      } else if (days === 0) {
-        text = 'Follow-up today';
-      } else if (days === 1) {
-        text = 'Follow-up tomorrow';
-      } else {
-        text = `Follow-up in ${days} days`;
-      }
-
-      // Colour comes from the shared rule the producer-pane card also reads, so the badge and the
-      // card can never disagree about how urgent the same follow-up is.
-      newCache.set(customerId, { text, cssClass: REMINDER_DUE_CLASS[reminderDueTier(dueDay)] });
-    }
-
-    // New Map reference so the OnPush template re-renders.
-    this.reminderCache.set(newCache);
-  }
-
-  /** Bare ISO strings from the API are UTC without a Z suffix. */
-  private _parseUtcMs(ts: string): number {
-    const raw = !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
-    return new Date(raw).getTime();
-  }
-
-  /**
-   * Performance optimization: Pre-calculate all last contact info once
-   * instead of filtering/sorting on every render for every customer.
-   *
-   * Fed by the last-contact aggregate (one row per customer with notes, all trade units)
-   * rather than the full note download — O(r + n) where r = customers-with-notes.
-   */
-  private _rebuildLastContactCache(): void {
-    const newCache = new Map<number, LastContactInfo>();
-
-    // Treat bare ISO strings as UTC (API stores DateTime.UtcNow without Z suffix).
-    const parseUtc = (ts: string | Date) => {
-      const raw = typeof ts === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
-      return new Date(raw).getTime();
-    };
-
-    // Index the aggregate by customerCode (ODS source ID string) — more stable than
-    // customerId. This works even after linked-producer relationships are removed or for
-    // cross-TU producers whose customer record isn't in the current loaded set. Rows are
-    // already the most-recent CREATED note per customer (createdAt only — pinning/editing
-    // is not a new contact event; the server aggregate uses MAX(CreatedAt)).
-    const lastByCode = new Map<string, number>();
-    for (const row of this.noteLastContacts()) {
-      const key = row.customerCode;
-      if (!key) continue;
-      const ms = parseUtc(row.lastNoteAt);
-      const existing = lastByCode.get(key);
-      if (existing === undefined || ms > existing) lastByCode.set(key, ms);
-    }
-
-    // Calculate last contact for each customer - single pass O(n)
-    // Use filteredCustomers when available (covers API search results when no TU is selected
-    // and customers() input is empty). Fall back to customers() for TU-filtered loads.
-    const customersToCache = this.filteredCustomers().length > 0 ? this.filteredCustomers() : this.customers();
-
-    // Walk the FULL connected component for each customer — same transitive closure used
-    // on build-list — so chained links (A→B→C) all surface the latest note across every
-    // member of the chain. Without this, A's badge would only see A's own notes plus B's
-    // (one hop), missing notes on C even though they're in the same producer network.
-    // Includes any linked-producer customers fetched on demand by home page so links across
-    // TUs still resolve when the main roster is filtered or empty.
-    const allCustomers = [...this.customers(), ...this.linkedProducerCustomers()];
-    const profiles = this.producerProfiles.profiles();
-    const components = buildLinkedProducerComponents(allCustomers, c => profileLinkedIds(profiles.get(c.id)));
-
-    for (const customer of customersToCache) {
-      // Start from the connected component when we have a scoularId — otherwise fall back
-      // to direct outgoing links keyed by this customer's id (rare: customers without a
-      // scoularId can still have links in their saved details).
-      let allCodes: Set<string>;
-      if (customer.scoularId) {
-        allCodes = components.get(customer.scoularId) ?? new Set([customer.scoularId]);
-      } else {
-        allCodes = new Set(profileLinkedIds(profiles.get(customer.id)));
-      }
-      let lastMs = -1;
-      for (const code of allCodes) {
-        const ms = lastByCode.get(code);
-        if (ms !== undefined && ms > lastMs) lastMs = ms;
-      }
-
-      if (lastMs < 0) {
-        newCache.set(customer.id, {
-          text: 'Never contacted',
-          daysAgo: -1,
-          cssClass: 'text-red-500'
-        });
-        continue;
-      }
-
-      const noteDate = new Date(lastMs);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      noteDate.setHours(0, 0, 0, 0);
-      const daysAgo = Math.max(0, Math.round((today.getTime() - noteDate.getTime()) / (1000 * 60 * 60 * 24)));
-
-      let text: string;
-      if (daysAgo === 0) text = 'Today';
-      else if (daysAgo === 1) text = '1 day ago';
-      else if (daysAgo < 30) text = `${daysAgo} days ago`;
-      else if (daysAgo < 365) {
-        const months = Math.floor(daysAgo / 30);
-        text = months === 1 ? '1 month ago' : `${months} months ago`;
-      }
-      else {
-        const years = Math.floor(daysAgo / 365);
-        text = years === 1 ? '1 year ago' : `${years} years ago`;
-      }
-
-      const cssClass = this._getLastContactClass(daysAgo);
-
-      newCache.set(customer.id, { text, daysAgo, cssClass });
-    }
-
-    // Assign new Map reference so the signal notifies the OnPush template to re-render.
-    this.lastContactCache.set(newCache);
-  }
-
   getCustomerItemClass(customer: Customer): string {
     const isSelected = this.selectedCustomer()?.id === customer.id;
     const baseClass = 'px-4 py-3 cursor-pointer transition-colors';
@@ -557,13 +335,6 @@ export class CustomerListComponent {
       ? 'bg-green-50 dark:bg-green-900/30'
       : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700';
     return `${baseClass} ${stateClass}`;
-  }
-
-  private _getLastContactClass(daysAgo: number): string {
-    if (daysAgo < 0) return 'text-red-500';
-    if (daysAgo <= 7) return 'text-green-500';
-    if (daysAgo <= 30) return 'text-yellow-500';
-    return 'text-red-500';
   }
 
   getFormattedLocation(customer: Customer): string {

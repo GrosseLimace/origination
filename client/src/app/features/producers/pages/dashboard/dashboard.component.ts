@@ -41,6 +41,7 @@ import { ProducerProfiles } from '@core/context/producer-profiles';
 import { DashboardCacheEntry, DashboardStore } from '../../data-access/dashboard.store';
 import { ProducerStore } from '../../data-access/producer.store';
 import { ProducersApiService } from '../../data-access/producers-api.service';
+import { EngagementStore } from '@features/engagement';
 
 @Component({
   selector: 'app-dashboard',
@@ -52,6 +53,7 @@ import { ProducersApiService } from '../../data-access/producers-api.service';
 export class DashboardComponent {
   private readonly apiService = inject(ApiService);
   private readonly appStateService = inject(AppStateService);
+  private readonly engagementStore = inject(EngagementStore);
   private readonly producerStore = inject(ProducerStore);
   private readonly producersApi = inject(ProducersApiService);
   /** The trade units' contracts and tickets, kept by the Contracts module. */
@@ -196,7 +198,7 @@ export class DashboardComponent {
   /** Last-contact display for a customer — shown only on the "without intentions" producer view. */
   getLastContactInfo(customerId: number): { text: string; colorClass: string; daysAgo: number } {
     // Reads only the last-contact aggregate; if that failed to load, "no row" means unknown.
-    const unknown = this.appStateService.noteLastContactsLoadFailed() && this.appStateService.noteLastContacts().length === 0;
+    const unknown = this.engagementStore.noteLastContactsLoadFailed() && this.engagementStore.noteLastContacts().length === 0;
     return this._lastContactByCustomer().get(customerId)
       ?? (unknown
         ? { text: 'Last contact unavailable', colorClass: 'text-gray-400 dark:text-gray-500', daysAgo: Infinity }
@@ -386,7 +388,7 @@ export class DashboardComponent {
 
   // Last-contacted info per customer, from the last-contact aggregate (see buildLastContactByCustomer).
   private readonly _lastContactByCustomer = computed(() =>
-    buildLastContactByCustomer(this.appStateService.noteLastContacts(), this.customers(), this.producerProfiles.profiles()));
+    buildLastContactByCustomer(this.engagementStore.noteLastContacts(), this.customers(), this.producerProfiles.profiles()));
 
   readonly producersTabRows = computed(() => {
     const view = this.producerView();

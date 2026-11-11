@@ -1,9 +1,6 @@
 import { computed, inject } from '@angular/core';
 import type { CustomerScreenSource } from '@core/context/selected-customer-context.service';
-import { ProducerProfiles } from '@core/context/producer-profiles';
-import { profileLinkedIds } from '@shared/utils/producer-profile';
-import { linkedGroupOf } from './home-derivations';
-import { HomeLinkedProducersStore } from './home-linked-producers.store';
+import { LinkedProducersStore } from '../../data-access/linked-producers.store';
 import { HomePageState } from './home-page.state';
 
 /**
@@ -12,17 +9,14 @@ import { HomePageState } from './home-page.state';
  */
 export function homeScreenSource(): CustomerScreenSource {
   const page = inject(HomePageState);
-  const linked = inject(HomeLinkedProducersStore);
-  const profiles = inject(ProducerProfiles);
+  const linked = inject(LinkedProducersStore);
   return {
     customer: page.selectedCustomer,
-    // As HomeComponent.getLinkedGroup: among the roster and the producers fetched from other trade units, by the links in
-    // their saved details.
+    // As HomeComponent.getLinkedGroup: among the trade units' customers and the producers fetched from other trade
+    // units, by the links in their saved details.
     linkedCustomers: computed(() => {
       const customer = page.selectedCustomer();
-      return customer
-        ? linkedGroupOf(customer, [...page.customers(), ...linked.crossTradeUnitCustomersById().values()], c => profileLinkedIds(profiles.profileOf(c.id)))
-        : [];
+      return customer ? linked.groupOf(customer) : [];
     }),
     link: computed(() => ({
       tab: page.pendingTab(),

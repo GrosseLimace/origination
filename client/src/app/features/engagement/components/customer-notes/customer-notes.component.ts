@@ -7,7 +7,6 @@ import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.direct
 import { HasPermissionDirective } from '@core/access/has-permission.directive';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ToastService } from '@core/services/toast.service';
-import { ApiService } from '@core/services/api.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { TeamsDirectoryService } from '../../data-access/teams-directory.service';
 import { Customer, Note, NoteMention, MentionCatalog, GraphTeamsChannel } from '@models';
@@ -16,6 +15,7 @@ import { SelectedProducerEngagement } from '@core/context/selected-producer-enga
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { ProducerProfiles } from '@core/context/producer-profiles';
 import { binSiteNames, splitByBinSiteNames, BIN_SITE_NAME_CLASS } from '@shared/utils/bin-site-mentions';
+import { EngagementApiService } from '../../data-access/engagement-api.service';
 
 /** A single selectable row in the "@" mention dropdown. */
 interface MentionOption {
@@ -79,7 +79,7 @@ export class CustomerNotesComponent {
 
   private readonly destroyRef = inject(DestroyRef);
   private readonly toastService = inject(ToastService);
-  private readonly apiService = inject(ApiService);
+  private readonly engagementApi = inject(EngagementApiService);
   private readonly usageTracking = inject(UsageTrackingService);
   private readonly teamsDirectory = inject(TeamsDirectoryService);
 
@@ -203,7 +203,7 @@ export class CustomerNotesComponent {
 
   constructor() {
     // Load the "@" mention catalog once (per-user, not per-customer).
-    this.apiService.getMentionCatalog()
+    this.engagementApi.getMentionCatalog()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(c => this.mentionCatalog.set(c));
 
@@ -592,7 +592,7 @@ export class CustomerNotesComponent {
     // that the name turns green a moment later; if registration fails the text stays as plain text
     // and the toast says why, which is honest — no mention was recorded, so nothing will be posted.
     if (opt.pendingChannel) {
-      this.apiService.registerTeamsChannel(opt.pendingChannel)
+      this.engagementApi.registerTeamsChannel(opt.pendingChannel)
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({
           next: registered => this.mentions.update(list =>

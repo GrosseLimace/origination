@@ -61,6 +61,7 @@ import { ProducerProfiles } from '@core/context/producer-profiles';
 import { profileCommodities, profileLinkedIds } from '@shared/utils/producer-profile';
 import { BuildListState, BuildListStore } from '../../data-access/build-list.store';
 import { ProducerStore, ProducersApiService } from '@features/producers';
+import { EngagementStore, EngagementApiService } from '@features/engagement';
 
 @Component({
   selector: 'app-build-list',
@@ -96,6 +97,8 @@ import { ProducerStore, ProducersApiService } from '@features/producers';
 export class BuildListComponent {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
+  private readonly engagementStore = inject(EngagementStore);
+  private readonly engagementApi = inject(EngagementApiService);
   private readonly producerStore = inject(ProducerStore);
   private readonly producersApi = inject(ProducersApiService);
   /** The trade units' contracts and tickets, kept by the Contracts module. */
@@ -166,7 +169,7 @@ export class BuildListComponent {
   private _queryGenId = 0;
   // Key of the server-narrowed note slice currently in this.notes() for DISPLAY (encodes the
   // query generation + scope, e.g. `${gen}:content:beans|corn`, `${gen}:w:3`, `${gen}:pinned`).
-  // Scoped reads are LOCAL-only — they never warm appState.notes/notesLoaded (that cache means
+  // Scoped reads are LOCAL-only — they never warm EngagementStore.notes/notesLoaded (that cache means
   // "the full set"), so a partial slice can't leak to other consumers as if it were complete.
   private _loadedNoteScopeKey = signal<string>('');
   private _scopedNotesFetchInFlight = false;
@@ -199,7 +202,7 @@ export class BuildListComponent {
   // reselect to recover. Including waitingForTickets() clears it as soon as tickets land.
   private _dataReadyEffect = effect(() => {
     this.notes();
-    this.appState.notesLoaded();
+    this.engagementStore.notesLoaded();
     this._loadedNoteScopeKey();   // re-run when a scoped note slice lands
     this.storedGrain();
     this.dpContracts();
@@ -267,7 +270,7 @@ export class BuildListComponent {
     const staged = this._pendingApplyCriteria();
     // Tracked reads — re-run whenever any of these resolve so a pending commit can proceed.
     this._loadedNoteScopeKey();
-    this.appState.notesLoaded();
+    this.engagementStore.notesLoaded();
     this._ticketsReady();
     this._contractsReady();
     this._dpReady();
@@ -411,8 +414,8 @@ export class BuildListComponent {
     if (this.producerStore.dpContractsLoadFailed() && this.nlqFilterService.queryInvolvesDpContracts(q)) missing.push('DP contracts');
     if (this.producerStore.plantingIntentionsLoadFailed() && this.nlqFilterService.queryInvolvesPlanting(q)) missing.push('planting intentions');
     if (this.nlqFilterService.queryInvolvesContact(q)) {
-      if (this.appState.noteLastContactsLoadFailed()) missing.push('last-contacted dates');
-      if (this.appState.myRemindersLoadFailed()) missing.push('follow-ups');
+      if (this.engagementStore.noteLastContactsLoadFailed()) missing.push('last-contacted dates');
+      if (this.engagementStore.myRemindersLoadFailed()) missing.push('follow-ups');
     }
     return missing;
   });
@@ -845,7 +848,7 @@ export class BuildListComponent {
    *  STABLE sort key that doesn't shift as note bodies stream in for batched prompts. Absent from
    *  the map = the producer and its entire linked chain have never been contacted. */
   private readonly _lastContactTimeByCustomer = computed(() =>
-    lastContactTimeByCustomer(this.appState.noteLastContacts(), this.linkedProducerComponents(), this.customers()));
+    lastContactTimeByCustomer(this.engagementStore.noteLastContacts(), this.linkedProducerComponents(), this.customers()));
 
   /** Most recent note per customer — pre-indexed for O(1) template lookup. Derived from the
    *  aggregate-backed {@link _lastContactTimeByCustomer} (with linked rollup), so the badge agrees
@@ -1093,7 +1096,7 @@ export class BuildListComponent {
     if (chunks.length === 0) return;
 
     this._binNotesFetchInFlight = true;
-    const requests = chunks.map(ch => this.apiService.getNotes(undefined, {
+    const requests = chunks.map(ch => this.engagementApi.getNotes(undefined, {
       customerIds: ch.ids,
       contentAny: binNoteContentAny(ch, BuildListComponent.BIN_NOTES_QUERY_BUDGET),
     }).pipe(catchError(() => of([] as Note[]))));
@@ -1319,7 +1322,7 @@ export class BuildListComponent {
       this.contracts.set(this.contractStore.contracts());
       this.tickets.set(this.contractStore.tickets());
       this.plantingIntentions.set(this.producerStore.plantingIntentions());
-      this.notes.set(this.appState.notes());
+      this.notes.set(this.engagementStore.notes());
       this.storedGrain.set(this.producerStore.storedGrain());
       this.dpContracts.set(this.producerStore.dpContracts());
       // Only "ready" if the shared cache was actually populated by a completed fetch — otherwise a
@@ -1432,7 +1435,7 @@ export class BuildListComponent {
         // Seed notes from the shared lazy cache when another consumer already loaded it
         // (home saved-list enrichment, customer-list NLQ). Otherwise leave local notes
         // as-is; _fetchAndFilter tops them up when a query actually needs them.
-        if (this.appState.notesLoaded()) this.notes.set(this.appState.notes());
+        if (this.engagementStore.notesLoaded()) this.notes.set(this.engagementStore.notes());
         this.storedGrain.set(data.storedGrain);
         this.savedLists.set(data.savedLists);
         // Write to appState so other pages and restore path can use it
@@ -1779,7 +1782,7 @@ export class BuildListComponent {
   private _notesReadyForQuery(r: RefinementFilters = this.appliedRefinements()): boolean {
     const scope = this._noteScope(r);
     if (scope.mode === 'none' || scope.mode === 'batched') return true;
-    if (scope.mode === 'full') return this.appState.notesLoaded();
+    if (scope.mode === 'full') return this.engagementStore.notesLoaded();
     return this._loadedNoteScopeKey() === scope.key;
   }
 
@@ -1849,7 +1852,7 @@ export class BuildListComponent {
     // still counts (same reason batched mode omits TU), and the by-me set is small so it's free to
     // fetch all. Other scoped fetches (content / window / pinned) keep the TU scope.
     const tuParam = scope.opts.authorAny ? undefined : (tu.length > 0 ? tu : undefined);
-    this.apiService.getNotes(tuParam, scope.opts).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.engagementApi.getNotes(tuParam, scope.opts).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this._scopedNotesFetchInFlight = false;
         this.notes.set(data ?? []);            // DISPLAY only — do NOT warm the full-set cache
@@ -1898,7 +1901,7 @@ export class BuildListComponent {
     this._batchNotesFetchInFlight = true;
     // No trade-unit filter — like the full-set load and the last-contact aggregate, fetch ALL
     // notes for these customerIds so a linked producer's note in an unselected TU is never missed.
-    this.apiService.getNotes(undefined, { customerIds: ids }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.engagementApi.getNotes(undefined, { customerIds: ids }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this._batchNotesFetchInFlight = false;
         for (const id of ids) this._batchedNoteCustomerIds.add(id);
@@ -1920,24 +1923,24 @@ export class BuildListComponent {
    *  _dataReadyEffect to run the parked query. On error it marks the cache loaded (empty) so
    *  the spinner clears and the query proceeds rather than hanging. */
   private _ensureNotesLoaded(): void {
-    if (this.appState.notesLoaded()) {
+    if (this.engagementStore.notesLoaded()) {
       // Cache warm elsewhere (home/customer-list) — sync the local signal if we missed it.
-      if (this.notes().length !== this.appState.notes().length) this.notes.set(this.appState.notes());
+      if (this.notes().length !== this.engagementStore.notes().length) this.notes.set(this.engagementStore.notes());
       return;
     }
     if (this._notesFetchInFlight) return;
     this._notesFetchInFlight = true;
-    this.apiService.getNotes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.engagementApi.getNotes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this._notesFetchInFlight = false;
         const list = data ?? [];
-        this.appState.setNotes(list); // sets notesLoaded = true
+        this.engagementStore.setNotes(list); // sets notesLoaded = true
         this.notes.set(list);         // re-triggers _dataReadyEffect
       },
       error: () => {
         this._notesFetchInFlight = false;
         // Give up rather than strand the spinner — run against an empty set (genuine no-match).
-        this.appState.setNotes([]);
+        this.engagementStore.setNotes([]);
         this.notes.set([]);
       }
     });
@@ -1965,7 +1968,7 @@ export class BuildListComponent {
     // authors, or pinned flags (noteFilterActive). Recency filtering uses the last-contact
     // aggregate and non-note prompts never touch notes, so neither waits on the full set.
     // notesLoaded (not length) distinguishes "not fetched" from "TU genuinely has none".
-    const notesReady = !needsNotes || this.appState.notesLoaded();
+    const notesReady = !needsNotes || this.engagementStore.notesLoaded();
     if (tusMatch && this.coreDataLoaded() && this.customers().length > 0 && ticketsOk && storageOk && dpOk && notesOk && notesReady) {
       this._resolvePendingIncludes();
       // Async coverage queries own isProcessing until their fetch resolves (see _applyNlqFilter).
@@ -1977,7 +1980,7 @@ export class BuildListComponent {
     // Only hit the notes endpoint when this query/refine actually needs note content AND the
     // shared cache is cold — otherwise reuse (or skip) it. Non-note and recency-only prompts
     // never download the full set.
-    const fetchingNotes = needsNotes && !this.appState.notesLoaded();
+    const fetchingNotes = needsNotes && !this.engagementStore.notesLoaded();
     let ticketFetchFailed = false;
     forkJoin({
       customers: this.customersApi.getCustomers(tuParam).pipe(
@@ -1993,8 +1996,8 @@ export class BuildListComponent {
         tap(() => this.producerStore.setPlantingIntentionsLoadFailed(false)),
         catchError(() => { this.producerStore.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); })),
       notes: fetchingNotes
-        ? this.apiService.getNotes().pipe(catchError(() => of([] as Note[])))
-        : of(this.appState.notes()),
+        ? this.engagementApi.getNotes().pipe(catchError(() => of([] as Note[])))
+        : of(this.engagementStore.notes()),
       storedGrain: this.producersApi.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
       dpContracts: this.producersApi.getDpContracts(tuParam).pipe(
         tap(() => this.producerStore.setDpContractsLoadFailed(false)),
@@ -2011,7 +2014,7 @@ export class BuildListComponent {
         this.notes.set(data.notes);
         // Warm the shared lazy cache so other consumers (home enrichment, customer-list
         // saved lists) and this page's next query skip the download.
-        if (fetchingNotes) this.appState.setNotes(data.notes);
+        if (fetchingNotes) this.engagementStore.setNotes(data.notes);
         this.plantingIntentions.set(data.plantingIntentions);
         this.storedGrain.set(data.storedGrain);
         this.dpContracts.set(data.dpContracts);
@@ -2094,8 +2097,8 @@ export class BuildListComponent {
       contracts: this.contracts(),
       tickets: this.tickets(),
       notes: this.notes(),
-      noteLastContacts: this.appState.noteLastContacts(),
-      myReminders: this.appState.myReminders(),
+      noteLastContacts: this.engagementStore.noteLastContacts(),
+      myReminders: this.engagementStore.myReminders(),
       plantingIntentions: this.plantingIntentions(),
       storedGrain: this.storedGrain(),
       dpContracts: this.dpContracts(),
@@ -2276,7 +2279,7 @@ export class BuildListComponent {
       if (this._loadedNoteScopeKey() !== scope.key) this._ensureNotesForQuery();
     } else if (scope.mode === 'full') {
       if (this._loadedNoteScopeKey() !== '') {
-        this.notes.set(this.appState.notes());
+        this.notes.set(this.engagementStore.notes());
         this._loadedNoteScopeKey.set('');
       }
       this._ensureNotesLoaded();
@@ -2934,7 +2937,7 @@ export class BuildListComponent {
 
   getLastContactInfo(customerId: number): { text: string; colorClass: string; daysAgo: number } {
     // The badges read only the last-contact aggregate; if that failed to load, "no row" means unknown.
-    const unknown = this.appState.noteLastContactsLoadFailed() && this.appState.noteLastContacts().length === 0;
+    const unknown = this.engagementStore.noteLastContactsLoadFailed() && this.engagementStore.noteLastContacts().length === 0;
     return this.lastContactByCustomer().get(customerId)
       ?? (unknown
         ? { text: 'Last contact unavailable', colorClass: 'text-gray-400 dark:text-gray-500', daysAgo: Infinity }

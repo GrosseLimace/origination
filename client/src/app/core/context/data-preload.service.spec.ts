@@ -20,7 +20,6 @@ import { providePermissions } from '@testing/permission.stub';
  *  - a contracts failure is RECORDED (outage banner) while the page still loads with [],
  *  - a today's-tickets TIMEOUT is "pending", not "failed"; a real error is "failed",
  *  - re-selecting the same trade units in another order does not reload; forceReload does,
- *  - a TU change drops the lazily-loaded note cache,
  *  - every module's preload runs with the selected trade units, and is cancelled by the next selection.
  */
 
@@ -28,8 +27,7 @@ const PREFS_KEY = 'origination_user_prefs';
 const NOW = new Date('2026-10-13T12:00:00');
 
 type Api = Record<
-  | 'getCommodityConversions' | 'getNotesLastContact'
-  | 'getMyReminders' | 'getCommodities' | 'getHarvestWindows',
+  | 'getCommodityConversions' | 'getCommodities' | 'getHarvestWindows',
   ReturnType<typeof vi.fn<(...args: unknown[]) => Observable<unknown>>>
 >;
 
@@ -68,8 +66,6 @@ describe('DataPreloadService', () => {
     modulePreload = vi.fn((_tradeUnits: readonly string[]) => of(null) as Observable<unknown>);
     api = {
       getCommodityConversions: vi.fn(() => of<CommodityConversion[]>([])),
-      getNotesLastContact: vi.fn(() => of([])),
-      getMyReminders: vi.fn(() => of([])),
       getCommodities: vi.fn(() => of([])),
       getHarvestWindows: vi.fn(() => of([])),
     };
@@ -113,18 +109,19 @@ describe('DataPreloadService', () => {
     create();
     signIn();
 
-    expect(api.getNotesLastContact).not.toHaveBeenCalled();
+    expect(api.getCommodities).not.toHaveBeenCalled();
     expect(modulePreload).not.toHaveBeenCalled();
   });
 
-  // (The trade units' own data is the modules': their customers, contracts, tickets, planting, stored grain and DP.)
+  // (The trade units' own data is the modules': their customers, contracts, tickets, planting, stored grain, DP, the
+  // last-contact summary and the user's follow-ups.)
   it('loads the shared datasets into app state once trade units are selected', () => {
     api.getCommodities.mockReturnValue(of([{ code: 'YC' }]));
     create();
     selectTradeUnits(['1085', '2190']);
     signIn();
 
-    for (const fn of [api.getNotesLastContact, api.getCommodities, api.getHarvestWindows]) {
+    for (const fn of [api.getCommodities, api.getHarvestWindows]) {
       expect(fn).toHaveBeenCalledTimes(1);
     }
     expect(appState.commodities()).toEqual([{ code: 'YC' }]);
@@ -151,19 +148,6 @@ describe('DataPreloadService', () => {
     selectTradeUnits(['1085']);
     service.forceReload();
     expect(modulePreload).toHaveBeenCalledTimes(2);
-  });
-
-  // (The trade unit's ticket set is Contracts', which drops it in its own preload.)
-  it('drops the lazily-loaded note cache on a trade-unit change', () => {
-    create();
-    selectTradeUnits(['1085']);
-    signIn();
-    appState.setNotes([]);
-    expect(appState.notesLoaded()).toBe(true);
-
-    selectTradeUnits(['3000']);
-
-    expect(appState.notesLoaded()).toBe(false);
   });
 
   it("runs each module's preload with the selected trade units", () => {
@@ -195,16 +179,12 @@ describe('DataPreloadService', () => {
     signIn();
 
     expect(appState.commodities()).toEqual([]);
-    expect(api.getNotesLastContact).toHaveBeenCalled();
     expect(modulePreload).toHaveBeenCalledWith(['1085']);
   });
 
-  // Each of these used to resolve a failure to [] with nothing recorded, so the screens showed
-  // "no producers", "Never contacted" and the like for an outage.
+  // Each of these used to resolve a failure to [] with nothing recorded, so the screens showed an outage as "none".
   describe('records which trade-unit reads failed, so an empty result is not shown as "none"', () => {
     const cases: [string, keyof Api, () => boolean][] = [
-      ['last-contact dates', 'getNotesLastContact', () => appState.noteLastContactsLoadFailed()],
-      ['follow-ups', 'getMyReminders', () => appState.myRemindersLoadFailed()],
       ['harvest windows', 'getHarvestWindows', () => appState.harvestWindowsLoadFailed()],
     ];
 

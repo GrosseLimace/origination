@@ -6,8 +6,7 @@ import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
-import { NoteLastContact, ReminderDue, Commodity, CommodityConversion, HarvestWindow } from '@models';
-import { environment } from '@env/environment';
+import { Commodity, CommodityConversion, HarvestWindow } from '@models';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { ModuleRegistry } from '@core/modules/module-registry';
 
@@ -61,38 +60,9 @@ export class DataPreloadService {
         if (tradeUnits.length === 0) return of(null);
 
         // A new trade-unit load: the last one's failures no longer describe anything. The modules' preloads (below)
-        // keep their own loading flags and failures: the customers', the contracts' and today's tickets', and the
-        // trade units' planting and DP.
+        // keep their own loading flags and failures: the customers', the contracts' and today's tickets', the trade
+        // units' planting and DP, and the last-contact summary's and the user's follow-ups'.
         this.appState.clearLoadFailures();
-        // Same for the full note set: NLQ/saved-list consumers fetch it lazily when a note
-        // query needs it. Badges use the noteLastContacts aggregate below instead.
-        this.appState.clearNotesCache();
-
-        // Last-contact aggregate instead of the full note download: tiny rows (one per
-        // customer with notes, all trade units) that feed the list badges. Full note
-        // bodies load per-producer on selection or lazily for NLQ.
-        const notes$ = this.apiService.getNotesLastContact().pipe(
-          // Recorded, not just emptied: with no rows every producer reads "Never contacted".
-          tap(() => this.appState.setNoteLastContactsLoadFailed(false)),
-          catchError(() => { this.appState.setNoteLastContactsLoadFailed(true); return of([] as NoteLastContact[]); }),
-          tap(data => {
-            this.appState.setNoteLastContacts(data);
-          })
-        );
-
-        // The signed-in user's own open follow-ups — the same shape of feed as the last-contact
-        // aggregate above and just as cheap, so the reminder badge is ready with the list rather
-        // than popping in later. Skipped entirely while the feature is flagged off, so a build
-        // without calendar consent makes no reminder calls at all.
-        const reminders$ = environment.remindersEnabled
-          ? this.apiService.getMyReminders().pipe(
-              tap(() => this.appState.setMyRemindersLoadFailed(false)),
-              catchError(() => { this.appState.setMyRemindersLoadFailed(true); return of([] as ReminderDue[]); }),
-              tap(data => {
-                this.appState.setMyReminders(data);
-              })
-            )
-          : of([] as ReminderDue[]);
 
         // Secondary group — each result streams into AppState as it arrives.
         // Using merge (not forkJoin) so fast calls like getCommodities don't wait
@@ -112,10 +82,11 @@ export class DataPreloadService {
         );
         // Each module's own preload (the trade unit's customers; their contracts and today's tickets; Producers'
         // dashboard summary, every producer's details, and the trade units' planting, stored grain, DP and yield
-        // estimates; Lists' saved lists), cancelled with the rest by the next trade-unit change.
+        // estimates; Engagement's last-contact summary and the user's follow-ups; Lists' saved lists), cancelled with
+        // the rest by the next trade-unit change.
         const modulePreloads = this.moduleRegistry.preloads(tradeUnits);
 
-        return merge(notes$, reminders$, commodities$, harvestWindows$, ...modulePreloads);
+        return merge(commodities$, harvestWindows$, ...modulePreloads);
       }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe();

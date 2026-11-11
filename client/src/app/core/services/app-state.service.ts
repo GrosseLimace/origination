@@ -1,5 +1,5 @@
 import { Injectable, inject, signal } from '@angular/core';
-import { Customer, Note, NoteLastContact, ReminderDue, Commodity, CommodityConversion, HarvestWindow } from '@models';
+import { Customer, Commodity, CommodityConversion, HarvestWindow } from '@models';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { SessionReset } from '@core/auth/session-reset.service';
 
@@ -13,15 +13,9 @@ export class AppStateService {
   private readonly _selectedCustomer = signal<Customer | null>(null);
   private readonly _allProducersMode = signal(false);
   private readonly _searchQuery = signal<string>('');
-  private readonly _notes = signal<Note[]>([]);
-  private readonly _noteLastContacts = signal<NoteLastContact[]>([]);
-  private readonly _myReminders = signal<ReminderDue[]>([]);
   private readonly _commodities = signal<Commodity[]>([]);
   private readonly _commodityConversions = signal<CommodityConversion[]>([]);
   private readonly _harvestWindows = signal<HarvestWindow[]>([]);
-  private readonly _notesLoaded = signal(false);
-  private readonly _noteLastContactsLoadFailed = signal(false);
-  private readonly _myRemindersLoadFailed = signal(false);
   private readonly _harvestWindowsLoadFailed = signal(false);
   private readonly _commodityConversionsLoadFailed = signal(false);
 
@@ -40,17 +34,7 @@ export class AppStateService {
   // Search state
   readonly searchQuery = this._searchQuery.asReadonly();
 
-  // Data cache - persists across navigation
-  /** Full TU-wide note set — a LAZY cache for NLQ/saved-list consumers only (see notesLoaded).
-   *  No longer eagerly bulk-loaded on page load / TU change; badges use noteLastContacts. */
-  readonly notes = this._notes.asReadonly();
-  /** Per-customer "last contacted" aggregate — the lightweight badge feed (all trade units,
-   *  entitlement-filtered). Preloaded on TU change; tiny regardless of how many notes exist. */
-  readonly noteLastContacts = this._noteLastContacts.asReadonly();
-  /** The signed-in user's OWN open follow-up reminders — the producer-list reminder badge feed.
-   *  Private per user (the API only returns the caller's), and tiny: one row per scheduled
-   *  follow-up, no reminder text. Preloaded on TU change alongside noteLastContacts. */
-  readonly myReminders = this._myReminders.asReadonly();
+  // Reference data - persists across navigation
   readonly commodities = this._commodities.asReadonly();
   readonly commodityConversions = this._commodityConversions.asReadonly();
   readonly harvestWindows = this._harvestWindows.asReadonly();
@@ -67,20 +51,6 @@ export class AppStateService {
     this._searchQuery.set(query);
   }
 
-  // Update data cache
-  setNotes(notes: Note[]): void {
-    this._notes.set(notes);
-    this._notesLoaded.set(true);
-  }
-
-  setNoteLastContacts(rows: NoteLastContact[]): void {
-    this._noteLastContacts.set(rows);
-  }
-
-  setMyReminders(rows: ReminderDue[]): void {
-    this._myReminders.set(rows);
-  }
-
   setCommodities(commodities: Commodity[]): void {
     this._commodities.set(commodities);
   }
@@ -93,27 +63,8 @@ export class AppStateService {
     this._harvestWindows.set(windows);
   }
 
-  // True once the full TU-wide note set has been loaded into `notes` (via setNotes). NLQ/
-  // saved-list consumers gate their lazy fetch on this instead of `notes().length === 0`,
-  // because notes are no longer eagerly bulk-loaded — an emptiness check would misfire for
-  // a user whose trade units genuinely have zero notes. Reset on TU change / logout.
-  readonly notesLoaded = this._notesLoaded.asReadonly();
-
-  clearNotesCache(): void {
-    this._notes.set([]);
-    this._notesLoaded.set(false);
-  }
-
-  /** Set when the last-contact aggregate's read failed, as opposed to returning nothing. Without it every producer
-   *  reads "Never contacted" and the recency prompts ("not contacted in 30 days") match everyone. */
-  readonly noteLastContactsLoadFailed = this._noteLastContactsLoadFailed.asReadonly();
-  setNoteLastContactsLoadFailed(failed: boolean): void { this._noteLastContactsLoadFailed.set(failed); }
-
-  /** Same, for the signed-in user's follow-ups: follow-up badges vanish and follow-up prompts match no one. */
-  readonly myRemindersLoadFailed = this._myRemindersLoadFailed.asReadonly();
-  setMyRemindersLoadFailed(failed: boolean): void { this._myRemindersLoadFailed.set(failed); }
-
-  /** Same, for the harvest windows behind contract pacing, which otherwise reads "No contract data available". */
+  /** Set when the harvest windows' read failed, as opposed to returning nothing: contract pacing would otherwise read
+   *  "No contract data available". */
   readonly harvestWindowsLoadFailed = this._harvestWindowsLoadFailed.asReadonly();
   setHarvestWindowsLoadFailed(failed: boolean): void { this._harvestWindowsLoadFailed.set(failed); }
 
@@ -125,8 +76,6 @@ export class AppStateService {
 
   /** A new trade-unit load is starting: the previous load's failures no longer describe anything. */
   clearLoadFailures(): void {
-    this._noteLastContactsLoadFailed.set(false);
-    this._myRemindersLoadFailed.set(false);
     this._harvestWindowsLoadFailed.set(false);
   }
 
@@ -140,9 +89,6 @@ export class AppStateService {
     this.tradeUnitContext.clear();
     this._selectedCustomer.set(null);
     this._searchQuery.set('');
-    this.clearNotesCache();
-    this._noteLastContacts.set([]);
-    this._myReminders.set([]);
     this._commodities.set([]);
     this.sessionReset.reset();
   }

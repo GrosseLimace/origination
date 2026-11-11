@@ -117,6 +117,15 @@ export const producersModule: ModuleManifest = {
   ],
   preload: preloadProducers,
   customerPanels: [
+    {
+      // Each customer list row's acres, beside the producer's name, from their saved details.
+      slot: 'row-tags',
+      id: 'acres',
+      requires: ['producer-details:read'],
+      segments: ['Producer'],
+      order: 10,
+      component: () => import('./components/acres-badge/acres-badge.component').then(m => m.AcresBadgeComponent),
+    },
     // The profile header's producer details, all from the producer's saved details (ProducerDetails).
     {
       slot: 'badges',

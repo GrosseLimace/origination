@@ -105,11 +105,17 @@ export interface CustomerContribution {
  * header's buttons at its top right; `details` in the details row, and inside its Contact column `contacts` above the
  * customer's address and `locations` below its phone and email; `summary` between the header and the tabs. On the home
  * page: `sidebar`, the right column, and `floating`, the launcher over the page. In the customer list: `list-filter`,
- * above its rows, where a panel narrows the list through the list's CustomerListFilter.
+ * above its rows, where a panel narrows the list through the list's CustomerListFilter; and on each row `row-tags`,
+ * beside the customer's name, and `row-details`, under their address, phone and email. A row's panels are rendered
+ * once per row and take the row's customer as their `customer` input (see CustomerRowSlotComponent), so they read it
+ * from there rather than from SelectedCustomerContext.
  */
 export type CustomerSlot =
   | 'badges' | 'badge-panels' | 'actions' | 'toolbar' | 'details' | 'contacts' | 'locations' | 'summary' | 'sidebar'
-  | 'floating' | 'list-filter';
+  | 'floating' | 'list-filter' | CustomerRowSlot;
+
+/** The slots on each of the customer list's rows. */
+export type CustomerRowSlot = 'row-tags' | 'row-details';
 
 /** A panel on the customer screen. */
 export interface CustomerPanel extends CustomerContribution {

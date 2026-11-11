@@ -28,7 +28,7 @@ describe('AppStateService', () => {
   it('initialises with default signal values', () => {
     expect(service.selectedCustomer()).toBeNull();
     expect(service.searchQuery()).toBe('');
-    expect(service.notes()).toEqual([]);
+    expect(service.commodities()).toEqual([]);
   });
 
   it('selectCustomer() stores the selected customer', () => {
@@ -47,23 +47,22 @@ describe('AppStateService', () => {
     expect(service.searchQuery()).toBe('grain');
   });
 
-  it('setNotes() updates the data cache signal, and marks the notes loaded', () => {
-    service.setNotes([{ id: 7 } as never]);
-    expect(service.notes()).toHaveLength(1);
-    expect(service.notes()[0].id).toBe(7);
-    expect(service.notesLoaded()).toBe(true);
+  it('setCommodities() updates the reference data', () => {
+    service.setCommodities([{ id: 7 } as never]);
+    expect(service.commodities()).toHaveLength(1);
+    expect(service.commodities()[0].id).toBe(7);
   });
 
   it('clearAll() resets all state to defaults, the trade-unit selection included', () => {
     service.selectCustomer(mockCustomer);
     context.setTradeUnits(['TU1']);
     service.setSearchQuery('test');
-    service.setNotes([{ id: 7 } as never]);
+    service.setCommodities([{ id: 7 } as never]);
     service.clearAll();
     expect(service.selectedCustomer()).toBeNull();
     expect(context.selectedTradeUnits()).toEqual([]);
     expect(service.searchQuery()).toBe('');
-    expect(service.notes()).toEqual([]);
+    expect(service.commodities()).toEqual([]);
   });
 
   it('clearAll() also clears every module store registered with SessionReset', () => {
@@ -84,8 +83,8 @@ describe('AppStateService', () => {
     it('exposes its state as signals', () => {
       // Guards the check below against passing vacuously if the surface stopped being found. (14 since the trade units'
       // contracts and tickets, their flags and the pricing lines moved to the Contracts module's stores, and their
-      // planting, stored grain and DP to the Producers module's.)
-      expect(publicSignals().length).toBeGreaterThanOrEqual(14);
+      // planting, stored grain and DP to the Producers module's, and the notes, last contacts and follow-ups to Engagement's.)
+      expect(publicSignals().length).toBeGreaterThanOrEqual(8);
     });
 
     it('offers no .set or .update on any public signal — writes go through the service\'s methods', () => {
@@ -99,31 +98,31 @@ describe('AppStateService', () => {
     it('rejects a direct write at compile time', () => {
       // Never runs; `tsc -p tsconfig.spec.json` fails if any of these lines starts compiling again.
       const neverCalled = () => {
-        // @ts-expect-error notes is read-only
-        service.notes.set([]);
+        // @ts-expect-error commodities is read-only
+        service.commodities.set([]);
         // @ts-expect-error searchQuery is read-only
         service.searchQuery.update(q => q);
-        // @ts-expect-error noteLastContactsLoadFailed is read-only
-        service.noteLastContactsLoadFailed.set(true);
+        // @ts-expect-error harvestWindowsLoadFailed is read-only
+        service.harvestWindowsLoadFailed.set(true);
       };
       expect(typeof neverCalled).toBe('function');
     });
 
     it('still drives computeds and effects through the read-only view', () => {
       const state = TestBed.inject(AppStateService);
-      const count = computed(() => state.notes().length);
+      const count = computed(() => state.commodities().length);
       const seen: string[] = [];
       TestBed.runInInjectionContext(() => effect(() => { seen.push(state.searchQuery()); }));
       TestBed.tick();
 
-      state.setNotes([{ id: 7 } as never]);
+      state.setCommodities([{ id: 7 } as never]);
       state.setSearchQuery('2040');
       TestBed.tick();
 
       expect(count()).toBe(1);
       expect(seen).toEqual(['', '2040']);
       // Same signal every read, so toObservable / effect subscriptions stay attached.
-      expect(state.notes).toBe(state.notes);
+      expect(state.commodities).toBe(state.commodities);
     });
 
     it('the new setters write what they are given', () => {
@@ -135,12 +134,13 @@ describe('AppStateService', () => {
     });
 
     it("clearLoadFailures resets the trade-unit reads' failure flags", () => {
-      service.setNoteLastContactsLoadFailed(true);
       service.setHarvestWindowsLoadFailed(true);
+      service.setCommodityConversionsLoadFailed(true);
       service.clearLoadFailures();
 
-      expect(service.noteLastContactsLoadFailed()).toBe(false);
       expect(service.harvestWindowsLoadFailed()).toBe(false);
+      // Read once per sign-in, so a trade-unit change keeps it.
+      expect(service.commodityConversionsLoadFailed()).toBe(true);
     });
   });
 

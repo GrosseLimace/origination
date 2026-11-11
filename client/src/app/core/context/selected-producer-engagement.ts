@@ -1,13 +1,20 @@
 import { Signal } from '@angular/core';
-import { Note, NoteMention, Reminder, ReminderDraft } from '@models';
+import { Customer, Note, NoteMention, Reminder, ReminderDraft } from '@models';
 
 /**
  * The selected producer's notes and the signed-in user's follow-ups for them, with what the user can do to each,
  * as the customer screen's pieces read them: the Notes and My follow-ups cards. Declared in core so those pieces can
- * use it without importing the module that loads the data; the page that hosts the customer screen provides the
- * implementation (the home page's notes and reminders stores, through HomeEngagement).
+ * use it without importing the module that loads the data. The Engagement module's CustomerEngagementStore is the
+ * implementation, which the composition root provides; the page that hosts the customer screen tells it who is selected.
  */
 export abstract class SelectedProducerEngagement {
+  /**
+   * The customer the screen now shows, or null for none: reads the notes of the customer and their linked group, and the
+   * user's follow-ups for them, and cancels what was still being read for the one before. The same customer again keeps
+   * what is shown, taking the customer as they now are.
+   */
+  abstract select(customer: Customer | null): void;
+
   /** The producer's notes, with their linked producers', newest first. */
   abstract readonly notes: Signal<Note[]>;
   /** True while the notes are loading. */

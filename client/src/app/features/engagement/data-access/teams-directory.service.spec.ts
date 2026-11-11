@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { firstValueFrom, Subject, throwError, of } from 'rxjs';
-import { ApiService } from '@core/services/api.service';
+import { EngagementApiService } from './engagement-api.service';
 import { TeamsDirectoryService } from './teams-directory.service';
 import type { GraphTeamsChannel } from '@models';
 
@@ -28,7 +28,7 @@ describe('TeamsDirectoryService', () => {
 
   beforeEach(() => {
     getMyTeamsChannels = vi.fn(() => of([channel()]));
-    TestBed.configureTestingModule({ providers: [{ provide: ApiService, useValue: { getMyTeamsChannels } }] });
+    TestBed.configureTestingModule({ providers: [{ provide: EngagementApiService, useValue: { getMyTeamsChannels } }] });
     service = TestBed.inject(TeamsDirectoryService);
   });
 

@@ -5,6 +5,7 @@ import { MsalService } from '@azure/msal-angular';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { ApiService } from '@core/services/api.service';
 import { ContractStore, ContractsApiService } from '@features/contracts';
+import { EngagementApiService } from '@features/engagement';
 import { AppStateService } from '@core/services/app-state.service';
 import { NlqFilterContext, NlqFilterService } from '../nlq/nlq-filter.service';
 import { ToastService } from '@core/services/toast.service';
@@ -80,6 +81,8 @@ describe('SavedListsStore', () => {
         { provide: SavedListsApiService, useValue: api },
         // The contract and ticket calls are Contracts' API client's; this stub answers them.
         { provide: ContractsApiService, useExisting: ApiService },
+        // So are the trade units' notes, Engagement's.
+        { provide: EngagementApiService, useExisting: ApiService },
         { provide: ApiService, useValue: appApi },
         { provide: NlqFilterService, useValue: nlq },
         { provide: ToastService, useValue: toast },

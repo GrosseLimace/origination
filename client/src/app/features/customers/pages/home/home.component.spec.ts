@@ -16,19 +16,17 @@ import {
 } from '@testing/producer-profiles.fake';
 import { SelectedProducerActivityFake, provideSelectedProducerActivity, selectedProducerActivityFake } from '@testing/selected-producer-activity.fake';
 import { SelectedProducerProductionFake, provideSelectedProducerProduction, selectedProducerProductionFake } from '@testing/selected-producer-production.fake';
-import { OutlookCalendarService } from '@core/services/outlook-calendar.service';
+import { SelectedProducerEngagementFake, provideSelectedProducerEngagement, selectedProducerEngagementFake } from '@testing/selected-producer-engagement.fake';
 import { environment } from '@env/environment';
-import { Commodity, CommodityConversion, Contract, ContractPricingLine, Customer, Note, NoteLastContact, ProducerDetails, Reminder, ReminderDue, Ticket } from '@models';
+import { Commodity, CommodityConversion, Contract, ContractPricingLine, Customer, ProducerDetails, Ticket } from '@models';
 
 import { HomeComponent } from './home.component';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { CustomerStore } from '../../data-access/customer.store';
 import { CustomersApiService } from '../../data-access/customers-api.service';
+import { LinkedProducersStore } from '../../data-access/linked-producers.store';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
-import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
 import { ProducerEditing } from '@core/context/producer-editing';
-// The Notes card's 'Last contacted' label, which the card works out from these same notes.
-import { describeLastContacted } from '@shared/utils/last-contacted';
 
 /**
  * Safety net for the producer page ahead of the OnPush conversion and decomposition. HomeComponent
@@ -117,32 +115,6 @@ function details(customerId: number, over: Partial<ProducerDetails> = {}): Produ
   };
 }
 
-function note(id: number, customerId: number, createdAt: Date): Note {
-  return {
-    id,
-    customerId,
-    customerName: `Producer ${customerId}`,
-    content: `note ${id}`,
-    isPinned: false,
-    createdBy: 'tester',
-    createdAt,
-  };
-}
-
-function reminder(id: number, customerId: number, over: Partial<Reminder> = {}): Reminder {
-  return {
-    id,
-    customerId,
-    customerName: `Producer ${customerId}`,
-    customerCode: `S-${customerId}`,
-    dueAt: '2026-10-20T15:00:00Z',
-    subject: 'Call back',
-    isCompleted: false,
-    createdAt: NOW.toISOString(),
-    ...over,
-  };
-}
-
 function httpError(status: number, error: unknown = null): { status: number; error: unknown } {
   return { status, error };
 }
@@ -158,16 +130,6 @@ function makeApi() {
     // Answers with what was saved, as the server does.
     saveProducerDetails: vi.fn((id: number, body?: Partial<ProducerDetails>): Observable<ProducerDetails> => of(details(id, body))),
     getCommodities: vi.fn((): Observable<Commodity[]> => of([])),
-    getNotes: vi.fn((): Observable<Note[]> => of([])),
-    getNotesLastContact: vi.fn((): Observable<NoteLastContact[]> => of([])),
-    getNotesByCustomer: vi.fn((_id: number): Observable<Note[]> => of([])),
-    getRemindersByCustomer: vi.fn((_id: number): Observable<Reminder[]> => of([])),
-    createReminder: vi.fn((customerId: number, dueAt: string, subject?: string): Observable<Reminder> =>
-      of(reminder(900, customerId, { dueAt, subject: subject ?? '' }))),
-    updateReminder: vi.fn((id: number): Observable<Reminder> => of(reminder(id, 1))),
-    setReminderCompleted: vi.fn((id: number, completed: boolean): Observable<Reminder> =>
-      of(reminder(id, 1, { isCompleted: completed }))),
-    deleteReminder: vi.fn((_id: number): Observable<void> => of(undefined)),
     getCustomerBySourceId: vi.fn((_sourceId: string): Observable<Customer | null> => of(null)),
     getCustomersLinkedTo: vi.fn((_sourceId: string): Observable<Customer[]> => of([])),
     getCustomerById: vi.fn((id: number): Observable<Customer> => of(customer(id))),
@@ -186,24 +148,15 @@ function makeAppState() {
     selectedCustomer: signal<Customer | null>(null),
     customers: signal<Customer[]>([]),
     contracts: signal<Contract[]>([]),
-    notes: signal<Note[]>([]),
-    notesLoaded: signal(false),
-    noteLastContacts: signal<NoteLastContact[]>([]),
-    myReminders: signal<ReminderDue[]>([]),
     commodities: signal<Commodity[]>([]),
     commodityConversions: signal<CommodityConversion[]>([]),
     pricingLines: signal<ContractPricingLine[]>([]),
     selectCustomer: vi.fn((c: Customer | null) => s.selectedCustomer.set(c)),
     setCustomers: vi.fn((v: Customer[]) => s.customers.set(v)),
     setContracts: vi.fn((v: Contract[]) => s.contracts.set(v)),
-    setNotes: vi.fn((v: Note[]) => { s.notes.set(v); s.notesLoaded.set(true); }),
-    setNoteLastContacts: vi.fn((v: NoteLastContact[]) => s.noteLastContacts.set(v)),
-    setMyReminders: vi.fn((v: ReminderDue[]) => s.myReminders.set(v)),
     setPricingLines: vi.fn((v: ContractPricingLine[]) => s.pricingLines.set(v)),
     customersLoadFailed: signal(false),
-    noteLastContactsLoadFailed: signal(false),
     setCustomersLoadFailed: vi.fn((v: boolean) => s.customersLoadFailed.set(v)),
-    setNoteLastContactsLoadFailed: vi.fn((v: boolean) => s.noteLastContactsLoadFailed.set(v)),
   };
   return s;
 }
@@ -213,12 +166,16 @@ interface Harness {
   activity: SelectedProducerActivityFake;
   /** The selected producer's production: the Producers module's, which the page tells who is selected. */
   production: SelectedProducerProductionFake;
+  /** The selected producer's notes and the user's follow-ups: the Engagement module's, which the page tells who is
+   *  selected. */
+  engagement: SelectedProducerEngagementFake;
+  /** The producers linked from outside the trade units, which the page's walk fetches. */
+  linked: LinkedProducersStore;
   fixture: ComponentFixture<HomeComponent>;
   c: HomeComponent;
   api: ApiStub;
   app: AppStateStub;
   toast: { error: ReturnType<typeof vi.fn>; success: ReturnType<typeof vi.fn>; info: ReturnType<typeof vi.fn> };
-  outlook: { addToOutlook: ReturnType<typeof vi.fn> };
   router: { navigate: ReturnType<typeof vi.fn> };
   access: PermissionStub;
   /** Every producer's details, as the page reads and updates them. */
@@ -253,18 +210,19 @@ function setup(opts: SetupOptions = {}): Harness {
   opts.arrange?.(api, app);
 
   const toast = { error: vi.fn(), success: vi.fn(), info: vi.fn() };
-  const outlook = { addToOutlook: vi.fn((_r: Reminder, _link: string): Observable<Reminder | null> => of(null)) };
   const router = { navigate: vi.fn() };
   const access = permissionStub([]);
   // The selected producer's contracts, tickets and pricing lines are the Contracts module's; the page tells it who is
   // selected and reads them back.
   const activity = selectedProducerActivityFake();
   const production = selectedProducerProductionFake();
+  const engagement = selectedProducerEngagementFake();
 
   TestBed.configureTestingModule({
     providers: [
       provideSelectedProducerActivity(activity),
       provideSelectedProducerProduction(production),
+      provideSelectedProducerEngagement(engagement),
       { provide: CustomersApiService, useExisting: ApiService },
       { provide: ApiService, useValue: api },
       { provide: CustomerStore, useExisting: AppStateService },
@@ -274,7 +232,6 @@ function setup(opts: SetupOptions = {}): Harness {
       { provide: UsageTrackingService, useValue: { trackProfileOpened: vi.fn() } },
       providePermissions(access),
       provideProducerProfiles(profiles),
-      { provide: OutlookCalendarService, useValue: outlook },
       {
         provide: MsalService,
         useValue: {
@@ -294,17 +251,11 @@ function setup(opts: SetupOptions = {}): Harness {
   const fixture = TestBed.createComponent(HomeComponent);
   fixture.detectChanges();
   return {
-    fixture, c: fixture.componentInstance, api, app, toast, outlook, router, access, profiles, activity, production,
+    fixture, c: fixture.componentInstance, api, app, toast, router, access, profiles, activity, production, engagement,
+    linked: TestBed.inject(LinkedProducersStore),
     flush: () => fixture.detectChanges(),
   };
 }
-
-/** The page's SelectedProducerActivity: what the contracts and tickets tables read, and their Retry. */
-/** The page's SelectedProducerEngagement: what the Notes and My follow-ups cards read and act through. */
-function engagementOf(h: Harness): SelectedProducerEngagement {
-  return h.fixture.debugElement.injector.get(SelectedProducerEngagement);
-}
-
 
 
 function callsFor(fn: ReturnType<typeof vi.fn>, id: number): number {
@@ -331,7 +282,7 @@ describe('HomeComponent', () => {
 
   // ── Selecting a producer ─────────────────────────────────────────────────
   describe('selecting a producer', () => {
-    it('tells the Contracts and Producers modules who is selected', () => {
+    it('tells the Contracts, Producers and Engagement modules who is selected', () => {
       const h = setup();
 
       h.c.handleSelectCustomer(A);
@@ -341,7 +292,8 @@ describe('HomeComponent', () => {
       expect(h.activity.select).toHaveBeenLastCalledWith(expect.objectContaining({ id: 1 }));
       // Their planting from what was read before, on the newest crop year: no deep link asked for one.
       expect(h.production.select).toHaveBeenLastCalledWith(expect.objectContaining({ id: 1 }), { plantingYear: null });
-      expect(h.c.customerCodeMap().get(1)).toBe('S-1');
+      // Their notes and their linked group's, and the user's follow-ups for them.
+      expect(h.engagement.select).toHaveBeenLastCalledWith(expect.objectContaining({ id: 1 }));
     });
 
     it("a linked producer's selection reads their planting again", () => {
@@ -352,6 +304,7 @@ describe('HomeComponent', () => {
 
       expect(h.c.selectedCustomer()?.id).toBe(2);
       expect(h.production.select).toHaveBeenLastCalledWith(expect.objectContaining({ id: 2 }), { plantingYear: null, reread: true });
+      expect(h.engagement.select).toHaveBeenLastCalledWith(expect.objectContaining({ id: 2 }));
     });
 
     it('applies deep-link context from the query string and keeps it, while a manual click resets it', () => {
@@ -371,24 +324,6 @@ describe('HomeComponent', () => {
       expect(h.c.pendingTicketCrop()).toBeNull();
     });
 
-    it('loads notes for the producer and its linked group and derives the last-contacted label', () => {
-      const linkedA = customer(1, { linkedProducerIds: ['S-2'] });
-      const h = setup({
-        customers: [linkedA, B, C],
-        arrange: api => api.getNotesByCustomer.mockImplementation(id =>
-          of(id === 1 ? [note(1, 1, new Date('2026-10-01T12:00:00Z'))] : id === 2 ? [note(2, 2, NOW)] : [])),
-      });
-
-      expect(describeLastContacted(h.c.customerNotes())).toBe('Never');
-      h.c.handleSelectCustomer(linkedA);
-
-      expect(h.api.getNotesByCustomer).toHaveBeenCalledWith(1);
-      expect(h.api.getNotesByCustomer).toHaveBeenCalledWith(2);
-      expect(h.c.customerNotes().map(n => n.id)).toEqual([2, 1]); // newest first
-      expect(describeLastContacted(h.c.customerNotes())).toBe('Today');
-      expect(h.c.isLoadingNotes()).toBe(false);
-    });
-
     it('clearing the selection empties it in the page, the shared state and the URL', () => {
       const h = setup();
       h.c.handleSelectCustomer(A);
@@ -399,6 +334,7 @@ describe('HomeComponent', () => {
       expect(h.app.selectedCustomer()).toBeNull();
       expect(h.activity.select).toHaveBeenLastCalledWith(null);
       expect(h.production.select).toHaveBeenLastCalledWith(null);
+      expect(h.engagement.select).toHaveBeenLastCalledWith(null);
       expect(h.router.navigate).toHaveBeenCalledWith([], { queryParams: {}, replaceUrl: true });
     });
 
@@ -414,6 +350,7 @@ describe('HomeComponent', () => {
       expect(h.c.selectedCustomer()?.id).toBe(1);
       expect(h.activity.select).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
       expect(h.production.select).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }), { reread: true });
+      expect(h.engagement.select).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
     });
   });
 
@@ -436,7 +373,7 @@ describe('HomeComponent', () => {
     });
 
     // Each module forgets its own reads of the producers on a trade-unit change.
-    it('drops the selection for the Contracts and Producers modules too', () => {
+    it('drops the selection for the Contracts, Producers and Engagement modules too', () => {
       const h = setup();
       h.c.handleSelectCustomer(A);
 
@@ -445,6 +382,7 @@ describe('HomeComponent', () => {
 
       expect(h.activity.select).toHaveBeenLastCalledWith(null);
       expect(h.production.select).toHaveBeenLastCalledWith(null);
+      expect(h.engagement.select).toHaveBeenLastCalledWith(null);
     });
 
     it('does not reload when the same trade units arrive in a different order', () => {
@@ -459,16 +397,15 @@ describe('HomeComponent', () => {
       expect(h.api.getCustomers.mock.calls.length).toBe(calls);
     });
 
-    it('with no trade unit selected, refreshes only the last-contact aggregate', () => {
+    // The list's last-contacted badges read the summary, which covers every trade unit, themselves.
+    it('with no trade unit selected, reads no customers', () => {
       const h = setup();
       const customerCalls = h.api.getCustomers.mock.calls.length;
-      const lastContactCalls = h.api.getNotesLastContact.mock.calls.length;
 
       h.app.selectedTradeUnits.set([]);
       h.flush();
 
       expect(h.api.getCustomers.mock.calls.length).toBe(customerCalls);
-      expect(h.api.getNotesLastContact.mock.calls.length).toBe(lastContactCalls + 1);
       expect(h.c.customers()).toEqual([]);
     });
 
@@ -516,9 +453,8 @@ describe('HomeComponent', () => {
 
       h.c.handleSelectCustomer(a);
 
-      expect(h.c.crossTradeUnitCustomers().map(x => x.id).sort()).toEqual([90, 91, 92]);
+      expect(h.linked.crossTradeUnitCustomers().map(x => x.id).sort()).toEqual([90, 91, 92]);
       expect(h.c.getLinkedGroup(a).map(x => x.id).sort()).toEqual([90, 91, 92]);
-      expect(h.c.customerCodeMap().get(91)).toBe('S-91');
 
       const fetches = h.api.getCustomerBySourceId.mock.calls.length;
       h.c.handleSelectCustomer(B);
@@ -541,6 +477,7 @@ describe('HomeComponent', () => {
       expect(h.api.getCustomerById).toHaveBeenCalledWith(90);
       expect(h.c.selectedCustomer()?.id).toBe(90);
       expect(h.activity.select).toHaveBeenLastCalledWith(expect.objectContaining({ id: 90 }));
+      expect(h.engagement.select).toHaveBeenLastCalledWith(expect.objectContaining({ id: 90 }));
       // The departing producer is still reachable through the reverse link, so the dropdown stays put.
       expect(h.c.getLinkedGroup(h.c.selectedCustomer()!).map(x => x.id)).toContain(1);
     });
@@ -570,15 +507,14 @@ describe('HomeComponent', () => {
       const h = setup({
         arrange: api => {
           api.getAllProducerDetails.mockReturnValue(fail());
-          api.getNotesLastContact.mockReturnValue(fail());
           api.getProducerDetails.mockReturnValue(fail());
         },
       });
       h.c.handleSelectCustomer(A);
 
-      // Three distinct sources reported (all logged in dev)...
+      // Two distinct sources reported (all logged in dev)...
       const reported = new Set(vi.mocked(console.error).mock.calls.map(args => String(args[0])));
-      expect(reported.size).toBe(3);
+      expect(reported.size).toBe(2);
       // ...but the user is told once.
       expect(h.toast.error).toHaveBeenCalledTimes(1);
     });
@@ -666,40 +602,6 @@ describe('HomeComponent', () => {
     });
   });
 
-  // ── Reminders ────────────────────────────────────────────────────────────
-  describe('reminders', () => {
-    it('creating a follow-up adds it to the producer and the badge feed, and flags an Outlook failure', () => {
-      const h = setup();
-      h.c.handleSelectCustomer(A);
-
-      engagementOf(h).saveReminder({ dueAt: '2026-10-20T15:00:00Z', subject: 'Call back', notes: '' });
-
-      expect(h.api.createReminder).toHaveBeenCalledWith(1, '2026-10-20T15:00:00Z', 'Call back', '');
-      expect(h.c.customerReminders().map(r => r.id)).toEqual([900]);
-      expect(h.c.myReminders().map(r => r.id)).toEqual([900]);
-      expect(h.app.setMyReminders).toHaveBeenLastCalledWith([expect.objectContaining({ id: 900, customerId: 1 })]);
-      expect(h.c.reminderSaveSucceededCounter()).toBe(1);
-      expect(h.c.isSavingReminder()).toBe(false);
-      expect(h.toast.success).toHaveBeenCalledWith('Follow-up added');
-      expect(h.outlook.addToOutlook).toHaveBeenCalledTimes(1);
-      expect(h.toast.info).toHaveBeenCalledWith(expect.stringContaining('could not be added to Outlook'));
-    });
-
-    it('completing a follow-up removes it from the badge feed but keeps it on the producer', () => {
-      const open = reminder(5, 1);
-      const h = setup({ arrange: api => api.getRemindersByCustomer.mockReturnValue(of([open])) });
-      h.c.handleSelectCustomer(A);
-      h.app.myReminders.set([{ id: 5, customerId: 1, dueAt: open.dueAt }]);
-      h.flush();
-
-      engagementOf(h).toggleReminderComplete(open);
-
-      expect(h.api.setReminderCompleted).toHaveBeenCalledWith(5, true);
-      expect(h.c.customerReminders()[0].isCompleted).toBe(true);
-      expect(h.c.myReminders()).toEqual([]);
-    });
-  });
-
   // ── Planting intentions: the Producers module's, which a trade-unit save asks to move ──
   describe('planting intentions', () => {
     const save = (over: Record<string, unknown>) => ({
@@ -744,13 +646,7 @@ describe('HomeComponent', () => {
     it('keeps a linked producer fetched from another trade unit as the API gives it', () => {
       const h = setup({ customers: [a, B], arrange: arrangeLinks });
       h.c.handleSelectCustomer(a);
-      expect(h.c.crossTradeUnitCustomers().find(x => x.id === 90)).toEqual(customer(90));
-    });
-
-    it('loads the notes of a linked producer the walk discovers', () => {
-      const h = setup({ customers: [a, B], arrange: arrangeLinks });
-      h.c.handleSelectCustomer(a);
-      expect(h.api.getNotesByCustomer).toHaveBeenCalledWith(90);
+      expect(h.linked.crossTradeUnitCustomers().find(x => x.id === 90)).toEqual(customer(90));
     });
 
     it('makes no linked-producer calls for a producer with no scoularId and no links', () => {
@@ -764,13 +660,13 @@ describe('HomeComponent', () => {
     it('a trade-unit change empties the cross-trade-unit cache and the next visit walks again', () => {
       const h = setup({ customers: [a, B], arrange: arrangeLinks });
       h.c.handleSelectCustomer(a);
-      expect(h.c.crossTradeUnitCustomers().map(x => x.id)).toEqual([90]);
+      expect(h.linked.crossTradeUnitCustomers().map(x => x.id)).toEqual([90]);
       const walks = h.api.getCustomersLinkedTo.mock.calls.filter(args => args[0] === 'S-1').length;
 
       h.api.getCustomers.mockReturnValue(of([a, B]));
       h.app.selectedTradeUnits.set(['TU2']);
       h.flush();
-      expect(h.c.crossTradeUnitCustomers()).toEqual([]);
+      expect(h.linked.crossTradeUnitCustomers()).toEqual([]);
 
       h.c.handleSelectCustomer(a);
       expect(h.api.getCustomersLinkedTo.mock.calls.filter(args => args[0] === 'S-1').length).toBe(walks + 1);
@@ -793,184 +689,6 @@ describe('HomeComponent', () => {
     });
   });
 
-  // ── Notes (characterisation, written against the pre-extraction page) ────────
-  describe('notes', () => {
-    /** The note CRUD calls are not in the shared API stub; add them to the same object the page holds. */
-    function withNoteApi(h: Harness) {
-      return Object.assign(h.api, {
-        createNote: vi.fn((customerId: number, content: string, _tu?: string, _m?: unknown): Observable<Note> =>
-          of({ ...note(500, customerId, NOW), content })),
-        toggleNotePin: vi.fn((id: number): Observable<Note> => of({ ...note(id, 1, new Date('2026-09-01T00:00:00Z')), isPinned: true })),
-        updateNote: vi.fn((id: number, content: string, _m?: unknown): Observable<Note> =>
-          of({ ...note(id, 1, new Date('2026-10-01T12:00:00Z')), content })),
-        deleteNote: vi.fn((_id: number): Observable<void> => of(undefined)),
-      });
-    }
-
-    const older = note(1, 1, new Date('2026-09-01T00:00:00Z'));
-    const newer = note(2, 1, new Date('2026-10-01T12:00:00Z'));
-
-    it("gives the screen's pieces the producer's notes and the user's follow-ups through SelectedProducerEngagement", () => {
-      const h = setup({
-        arrange: api => {
-          api.getNotesByCustomer.mockReturnValue(of([older]));
-          api.getRemindersByCustomer.mockReturnValue(of([reminder(9, 1)]));
-        },
-      });
-      h.c.handleSelectCustomer(A);
-
-      const engagement = engagementOf(h);
-      expect(engagement.notes().map(n => n.id)).toEqual([1]);
-      expect(engagement.notes()).toBe(h.c.customerNotes());
-      expect(engagement.reminders().map(r => r.id)).toEqual([9]);
-      expect(engagement.isLoadingNotes()).toBe(false);
-      expect(engagement.remindersEnabled).toBe(environment.remindersEnabled);
-    });
-
-    it('adding a note puts it in the panel and the badge feed, and clears the form', () => {
-      const h = setup({ arrange: api => api.getNotesByCustomer.mockReturnValue(of([older])) });
-      const api = withNoteApi(h);
-      h.c.handleSelectCustomer(A);
-
-      engagementOf(h).addNote({ content: 'called', mentions: [] });
-
-      expect(api.createNote).toHaveBeenCalledWith(1, 'called', 'TU1', []);
-      expect(h.c.customerNotes().map(n => n.id)).toEqual([500, 1]);
-      expect(describeLastContacted(h.c.customerNotes())).toBe('Today');
-      expect(h.c.noteLastContacts()).toEqual([{ customerId: 1, customerCode: undefined, lastNoteAt: NOW }]);
-      expect(h.app.setNoteLastContacts).toHaveBeenLastCalledWith(h.c.noteLastContacts());
-      expect(h.c.noteSaveSucceededCounter()).toBe(1);
-      expect(h.c.isSavingNote()).toBe(false);
-      expect(h.toast.success).toHaveBeenCalledWith('Note added');
-    });
-
-    it('a failed add keeps the typed text (no counter bump) and shows the server\'s reason', () => {
-      const h = setup();
-      const api = withNoteApi(h);
-      api.createNote.mockReturnValue(throwError(() => new Error('That group is no longer available.')));
-      h.c.handleSelectCustomer(A);
-
-      engagementOf(h).addNote({ content: 'x', mentions: [] });
-
-      expect(h.toast.error).toHaveBeenCalledWith('That group is no longer available.');
-      expect(h.c.noteSaveSucceededCounter()).toBe(0);
-      expect(h.c.isSavingNote()).toBe(false);
-    });
-
-    it('ignores a second add while one is saving, and refuses an onboarding candidate', () => {
-      const h = setup();
-      const api = withNoteApi(h);
-      const pending = new Subject<never>();
-      api.createNote.mockReturnValue(pending);
-      h.c.handleSelectCustomer(A);
-
-      engagementOf(h).addNote({ content: 'one', mentions: [] });
-      engagementOf(h).addNote({ content: 'two', mentions: [] });
-      expect(api.createNote).toHaveBeenCalledTimes(1);
-      expect(h.c.isSavingNote()).toBe(true);
-
-      h.c.handleSelectCustomer(customer(4, { isOnboardCandidate: true }));
-      api.createNote.mockClear();
-      pending.error(new Error('first save failed')); // ends the first save, which clears the flag
-      expect(h.c.isSavingNote()).toBe(false);
-      engagementOf(h).addNote({ content: 'three', mentions: [] });
-      expect(api.createNote).not.toHaveBeenCalled();
-      expect(h.toast.error).toHaveBeenCalledWith('Assign a trade unit and save this producer before adding notes.');
-    });
-
-    it('pinning moves a note to the top; editing replaces its text', () => {
-      const h = setup({ arrange: api => api.getNotesByCustomer.mockReturnValue(of([older, newer])) });
-      withNoteApi(h);
-      h.c.handleSelectCustomer(A);
-      expect(h.c.customerNotes().map(n => n.id)).toEqual([2, 1]);
-
-      engagementOf(h).toggleNotePin(older);
-      expect(h.c.customerNotes().map(n => n.id)).toEqual([1, 2]);
-      expect(h.toast.success).toHaveBeenCalledWith('Note pinned');
-
-      engagementOf(h).editNote({ noteId: 2, content: 'edited', mentions: [] });
-      expect(h.c.customerNotes().find(n => n.id === 2)?.content).toBe('edited');
-      expect(h.toast.success).toHaveBeenCalledWith('Note updated');
-    });
-
-    it('deleting the last note drops the producer back to "Never" and mirrors into the loaded NLQ cache', () => {
-      const h = setup({ arrange: api => api.getNotesByCustomer.mockReturnValue(of([older])) });
-      withNoteApi(h);
-      h.app.setNotes([older, note(9, 3, NOW)]);
-      h.c.handleSelectCustomer(A);
-      expect(h.c.noteLastContacts().map(r => r.customerId)).toEqual([1]);
-
-      engagementOf(h).deleteNote(1);
-
-      expect(h.c.customerNotes()).toEqual([]);
-      expect(describeLastContacted(h.c.customerNotes())).toBe('Never');
-      expect(h.c.noteLastContacts()).toEqual([]);
-      expect(h.app.notes().map(n => n.id)).toEqual([9]);
-      expect(h.toast.success).toHaveBeenCalledWith('Note deleted');
-    });
-
-    it('a re-click shows cached notes at once with no spinner, then re-reads them once', () => {
-      const second = new Subject<Note[]>();
-      const h = setup({ arrange: api => api.getNotesByCustomer.mockReturnValue(of([older])) });
-      h.c.handleSelectCustomer(A);
-      h.c.handleSelectCustomer(B);
-      h.api.getNotesByCustomer.mockReturnValue(second.asObservable());
-
-      h.c.handleSelectCustomer(A);
-      expect(h.c.customerNotes().map(n => n.id)).toEqual([1]);
-      expect(h.c.isLoadingNotes()).toBe(false);
-      expect(callsFor(h.api.getNotesByCustomer, 1)).toBe(2);
-
-      second.next([older, newer]);
-      second.complete(); // forkJoin answers on completion
-      expect(h.c.customerNotes().map(n => n.id)).toEqual([2, 1]);
-    });
-
-    it('a failed notes read is not cached as "no notes": the next selection shows the spinner and retries', () => {
-      const h = setup({ arrange: api => api.getNotesByCustomer.mockReturnValue(throwError(() => httpError(500))) });
-      h.c.handleSelectCustomer(A);
-      expect(h.c.isLoadingNotes()).toBe(false);
-      expect(h.c.customerNotes()).toEqual([]);
-      const reads = callsFor(h.api.getNotesByCustomer, 1);
-
-      h.api.getNotesByCustomer.mockReturnValue(NEVER);
-      h.c.handleSelectCustomer(B);
-      h.c.handleSelectCustomer(A);
-
-      expect(h.c.isLoadingNotes()).toBe(true);
-      expect(callsFor(h.api.getNotesByCustomer, 1)).toBe(reads + 1);
-    });
-
-    it('a trade-unit change forgets cached notes, so the next selection re-reads them with nothing cached to show', () => {
-      const h = setup({ arrange: api => api.getNotesByCustomer.mockReturnValue(of([older])) });
-      h.c.handleSelectCustomer(A);
-      h.api.getNotesByCustomer.mockReturnValue(NEVER);
-      const reads = callsFor(h.api.getNotesByCustomer, 1);
-
-      h.app.selectedTradeUnits.set(['TU2']);
-      h.flush();
-      expect(h.c.isLoadingNotes()).toBe(false);
-      h.c.handleSelectCustomer(A);
-
-      expect(callsFor(h.api.getNotesByCustomer, 1)).toBe(reads + 1);
-      expect(h.c.customerNotes()).toEqual([]);
-    });
-
-    it('keeps the badge feed in step with what a producer\'s fresh notes say', () => {
-      const h = setup({
-        arrange: (api, app) => {
-          app.noteLastContacts.set([{ customerId: 1, lastNoteAt: new Date('2026-01-01T00:00:00Z') }]);
-          api.getNotesByCustomer.mockReturnValue(of([newer]));
-        },
-      });
-      h.flush();
-
-      h.c.handleSelectCustomer(A);
-
-      expect(h.c.noteLastContacts()).toEqual([{ customerId: 1, customerCode: undefined, lastNoteAt: new Date('2026-10-01T12:00:00Z') }]);
-    });
-  });
-
   // These reads used to fail silently into an empty list; the shared flags are what the producer
   // list and Build-a-List read to say "couldn't load" instead of "none".
   describe('trade-unit read failures', () => {
@@ -984,12 +702,6 @@ describe('HomeComponent', () => {
       const ok = setup();
       expect(ok.app.setCustomersLoadFailed).toHaveBeenCalledWith(false);
       expect(ok.app.customersLoadFailed()).toBe(false);
-    });
-
-    it('records a failed last-contact read (and still toasts it)', () => {
-      const h = setup({ arrange: api => api.getNotesLastContact.mockReturnValue(fail()) });
-      expect(h.app.noteLastContactsLoadFailed()).toBe(true);
-      expect(h.toast.error).toHaveBeenCalled();
     });
 
   });
@@ -1109,6 +821,16 @@ describe("HomeComponent — the producer's saved details", () => {
     customerId, acres: 0, commodities: [], primaryContact: '', primaryPhone: '', contacts: [], binSites: [],
     linkedProducerIds: [], removedIncomingIds: [], eSignEnabled: false, tradeUnitCodes: [],
     reconcileTradeUnits: false, grainOnFarm: [],
+  });
+
+  // The notes card refuses a note for a customer not added yet; after the save it must see the customer as they now are.
+  it('tells Engagement the producer as they are after a save', () => {
+    const h = setup();
+    h.c.handleSelectCustomer(A);
+
+    h.c.handleSaveCustomer({ ...edit(1), eSignEnabled: true });
+
+    expect(h.engagement.select).toHaveBeenLastCalledWith(expect.objectContaining({ id: 1, eSignEnabled: true }));
   });
 
   it("removing an incoming link saves the other producer's links, from their saved details, without this one", () => {

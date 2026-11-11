@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type { Customer, Note, Reminder } from '@models';
-import { lastContactFromNotes, linkedGroupOf, sortNotes, sortReminders } from './home-derivations';
+import type { Note, Reminder } from '@models';
+import { lastContactFromNotes, sortNotes, sortReminders } from './notes-and-reminders';
 
 function note(id: number, createdAt: string | Date, over: Partial<Note> = {}): Note {
   return {
@@ -9,21 +9,11 @@ function note(id: number, createdAt: string | Date, over: Partial<Note> = {}): N
   };
 }
 
-/** Each test producer's links, as their saved details hold them. */
-const links = new WeakMap<Customer, string[]>();
-const linksOf = (c: Customer) => links.get(c) ?? [];
-
-function customer(id: number, linked: string[] = []): Customer {
-  const c = { id, scoularId: `S-${id}`, name: `P${id}` } as Customer;
-  links.set(c, linked);
-  return c;
-}
-
 function reminder(id: number, dueAt: string, isCompleted = false): Reminder {
   return { id, customerId: 1, customerName: 'P', dueAt, subject: '', isCompleted, createdAt: '' } as Reminder;
 }
 
-describe('home derivations', () => {
+describe('notes and reminders', () => {
   describe('sortNotes', () => {
     it('puts pinned notes first, then newest by modified-or-created, sorting in place', () => {
       const notes = [
@@ -62,31 +52,6 @@ describe('home derivations', () => {
       ];
       expect(sortReminders(input).map(r => r.id)).toEqual([4, 2, 3, 1]);
       expect(input.map(r => r.id)).toEqual([1, 2, 3, 4]);
-    });
-  });
-
-
-  describe('linkedGroupOf', () => {
-    it('walks forward and reverse links transitively and excludes the producer itself', () => {
-      const a = customer(1, ['S-2']);
-      const b = customer(2, ['S-4']);
-      const c = customer(3, ['S-1']);
-      const d = customer(4);
-      const e = customer(5);
-      expect(linkedGroupOf(a, [a, b, c, d, e], linksOf).map(x => x.id).sort()).toEqual([2, 3, 4]);
-      expect(linkedGroupOf(d, [a, b, c, d, e], linksOf).map(x => x.id).sort()).toEqual([1, 2, 3]);
-      expect(linkedGroupOf(e, [a, b, c, d, e], linksOf)).toEqual([]);
-    });
-
-    it('survives a cycle and skips a link to a producer that is not loaded', () => {
-      const a = customer(1, ['S-2', 'S-99']);
-      const b = customer(2, ['S-1']);
-      expect(linkedGroupOf(a, [a, b], linksOf).map(x => x.id)).toEqual([2]);
-    });
-
-    it('stops at 50 members', () => {
-      const chain = Array.from({ length: 80 }, (_, i) => customer(i + 1, [`S-${i + 2}`]));
-      expect(linkedGroupOf(chain[0], chain, linksOf).length).toBe(49);
     });
   });
 });

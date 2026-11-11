@@ -9,6 +9,7 @@ import { ApiService } from '@core/services/api.service';
 import { ContractsApiService } from '@features/contracts';
 import { AppStateService } from '@core/services/app-state.service';
 import { ProducersApiService } from '@features/producers';
+import { EngagementApiService } from '@features/engagement';
 import { DataPreloadService } from '@core/context/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
@@ -105,6 +106,8 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
         { provide: ContractsApiService, useExisting: ApiService },
         // So are the planting, stored grain, DP and dashboard calls, which are Producers'.
         { provide: ProducersApiService, useExisting: ApiService },
+        // And the notes and follow-ups calls, which are Engagement's.
+        { provide: EngagementApiService, useExisting: ApiService },
         { provide: ApiService, useValue: api },
         { provide: DataPreloadService, useValue: {} },
         { provide: ToastService, useValue: { info: vi.fn(), error: vi.fn(), success: vi.fn() } },

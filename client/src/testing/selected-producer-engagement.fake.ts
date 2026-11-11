@@ -4,11 +4,12 @@ import { Note, Reminder } from '@models';
 import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
 
 /**
- * A SelectedProducerEngagement for specs: writable signals a test sets directly, and a spy per action. Starts with no
- * notes or follow-ups, nothing loading or saving, and follow-ups switched on.
+ * A SelectedProducerEngagement for specs: writable signals a test sets directly, and a spy per action and for the
+ * selection. Starts with no notes or follow-ups, nothing loading or saving, and follow-ups switched on.
  */
 export function selectedProducerEngagementFake() {
   return {
+    select: vi.fn(),
     notes: signal<Note[]>([]),
     isLoadingNotes: signal(false),
     isSavingNote: signal(false),

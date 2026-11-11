@@ -7,7 +7,6 @@ import { SessionReset } from '@core/auth/session-reset.service';
 import { ProducerProfiles } from '@core/context/producer-profiles';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { alreadyShown } from '@core/http/shown-errors';
-import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ContractStore, ContractsApiService } from '@features/contracts';
 import { NlqFilterContext, NlqFilterService } from '../nlq/nlq-filter.service';
@@ -19,6 +18,7 @@ import { SavedList } from '../models/saved-list.model';
 import { filterSavedListsByTradeUnitOverlap } from '../utils/saved-list-trade-units';
 import { SavedListsApiService } from './saved-lists-api.service';
 import { ProducerStore, ProducersApiService } from '@features/producers';
+import { EngagementStore, EngagementApiService } from '@features/engagement';
 
 /** One change to a customer's membership of a saved list: added to it, or taken off it. */
 export interface SavedListMembershipChange {
@@ -46,8 +46,9 @@ export interface ResolvedList {
 @Injectable({ providedIn: 'root' })
 export class SavedListsStore {
   private readonly api = inject(SavedListsApiService);
-  private readonly appApi = inject(ApiService);
   private readonly appState = inject(AppStateService);
+  private readonly engagementStore = inject(EngagementStore);
+  private readonly engagementApi = inject(EngagementApiService);
   private readonly producerStore = inject(ProducerStore);
   private readonly producersApi = inject(ProducersApiService);
   /** The trade units' contracts and tickets, kept by the Contracts module. */
@@ -174,9 +175,9 @@ export class SavedListsStore {
       producerProfiles: this.producerProfiles.profiles(),
       contracts: this.contractStore.contracts(),
       tickets: this.contractStore.tickets(),
-      notes: this.appState.notes(),
-      noteLastContacts: this.appState.noteLastContacts(),
-      myReminders: this.appState.myReminders(),
+      notes: this.engagementStore.notes(),
+      noteLastContacts: this.engagementStore.noteLastContacts(),
+      myReminders: this.engagementStore.myReminders(),
       plantingIntentions: this.producerStore.plantingIntentions(),
       storedGrain: this.producerStore.storedGrain(),
       dpContracts: this.producerStore.dpContracts(),
@@ -260,7 +261,7 @@ export class SavedListsStore {
     }
     // The full notes only for what reads their bodies, authors, pins or counts: recency resolves from the last-contact
     // summary, which is always loaded.
-    if (this.needsFullNotes(list) && !this.appState.notesLoaded()) {
+    if (this.needsFullNotes(list) && !this.engagementStore.notesLoaded()) {
       reads.push(this.notesRead());
     }
     if (list.filters && !list.filters._promptCategory && this._queryLibrary().length === 0
@@ -348,7 +349,7 @@ export class SavedListsStore {
       // late answer for the old selection would otherwise fill it with the wrong trade unit's tickets.
       this.startOnce('tickets:' + key, () => this.ticketsRead(tus, () => (this.selectedTradeUnits() ?? []).join(',') === key));
     }
-    if (lists.some(list => this.needsFullNotes(list)) && !this.appState.notesLoaded()) {
+    if (lists.some(list => this.needsFullNotes(list)) && !this.engagementStore.notesLoaded()) {
       this.startOnce('notes', () => this.notesRead());
     }
   }
@@ -373,7 +374,7 @@ export class SavedListsStore {
 
   /** Every note the user may read, into AppStateService's lazy cache. */
   private notesRead(): Observable<unknown> {
-    return this.appApi.getNotes().pipe(tap(rows => this.appState.setNotes(rows ?? [])), catchError(() => of([] as Note[])));
+    return this.engagementApi.getNotes().pipe(tap(rows => this.engagementStore.setNotes(rows ?? [])), catchError(() => of([] as Note[])));
   }
 
   private needsFullNotes(list: SavedList): boolean {

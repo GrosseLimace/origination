@@ -3,7 +3,7 @@ import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { ComponentRef } from '@angular/core';
 import { of } from 'rxjs';
 import { CustomerNotesComponent } from './customer-notes.component';
-import { ApiService } from '@core/services/api.service';
+import { EngagementApiService } from '../../data-access/engagement-api.service';
 import { ToastService } from '@core/services/toast.service';
 import { Customer, MentionCatalog, Note } from '@models';
 import { TeamsDirectoryService } from '../../data-access/teams-directory.service';
@@ -52,7 +52,7 @@ describe('CustomerNotesComponent — group mentions', () => {
     TestBed.configureTestingModule({
       providers: [
         {
-          provide: ApiService,
+          provide: EngagementApiService,
           useValue: {
             getMentionCatalog: () => of(catalog),
             registerTeamsChannel: (b: { displayName: string; teamName: string; channelId: string }) =>

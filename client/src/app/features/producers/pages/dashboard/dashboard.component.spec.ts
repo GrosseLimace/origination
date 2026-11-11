@@ -10,6 +10,7 @@ import { ContractStore, ContractsApiService } from '@features/contracts';
 import { AppStateService } from '@core/services/app-state.service';
 import { ProducerStore } from '../../data-access/producer.store';
 import { ProducersApiService } from '../../data-access/producers-api.service';
+import { EngagementStore } from '@features/engagement';
 import { DashboardCacheEntry, DashboardStore } from '../../data-access/dashboard.store';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
@@ -163,8 +164,8 @@ const APP_CONTRACTS: Contract[] = [
 @Component({ selector: 'app-trade-unit-selector', standalone: true, template: '' })
 class TradeUnitSelectorStub {}
 
-/** The members the dashboard reads of the stores it reads (AppStateService, ContractStore, DashboardStore, ProducerStore
- *  and TradeUnitContext), as real signals so its computeds/effects react. */
+/** The members the dashboard reads of the stores it reads (AppStateService, ContractStore, DashboardStore, ProducerStore,
+ *  EngagementStore and TradeUnitContext), as real signals so its computeds/effects react. */
 function makeAppState() {
   const selectedTradeUnits = signal<string[]>([TU]);
   const commodities = signal<Commodity[]>([]);
@@ -253,6 +254,8 @@ describe('DashboardComponent', () => {
         { provide: DashboardStore, useValue: appState },
         // So are the trade units' planting and stored grain, which are ProducerStore's.
         { provide: ProducerStore, useValue: appState },
+        // And the last-contact summary, which is EngagementStore's.
+        { provide: EngagementStore, useValue: appState },
         { provide: TradeUnitContext, useValue: appState },
         // The contract and ticket calls are Contracts' API client's; this stub answers them.
         { provide: ContractsApiService, useExisting: ApiService },

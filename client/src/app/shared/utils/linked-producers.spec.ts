@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Customer } from '@models';
-import { buildLinkedProducerComponents } from './linked-producers';
+import { buildLinkedProducerComponents, linkedGroupOf } from './linked-producers';
 
 /** Each producer's links, as their saved details hold them. */
 const links = new Map<Customer, string[]>();
@@ -138,5 +138,38 @@ describe('buildLinkedProducerComponents', () => {
     ]);
 
     expect(map.get('A')!.size).toBe(2);
+  });
+});
+
+describe('linkedGroupOf', () => {
+  /** Each test producer's links, as their saved details hold them. */
+  const groupLinks = new WeakMap<Customer, string[]>();
+  const linksOf = (c: Customer) => groupLinks.get(c) ?? [];
+  function customer(id: number, linked: string[] = []): Customer {
+    const c = { id, scoularId: `S-${id}`, name: `P${id}` } as Customer;
+    groupLinks.set(c, linked);
+    return c;
+  }
+
+  it('walks forward and reverse links transitively and excludes the producer itself', () => {
+    const a = customer(1, ['S-2']);
+    const b = customer(2, ['S-4']);
+    const c = customer(3, ['S-1']);
+    const d = customer(4);
+    const e = customer(5);
+    expect(linkedGroupOf(a, [a, b, c, d, e], linksOf).map(x => x.id).sort()).toEqual([2, 3, 4]);
+    expect(linkedGroupOf(d, [a, b, c, d, e], linksOf).map(x => x.id).sort()).toEqual([1, 2, 3]);
+    expect(linkedGroupOf(e, [a, b, c, d, e], linksOf)).toEqual([]);
+  });
+
+  it('survives a cycle and skips a link to a producer that is not loaded', () => {
+    const a = customer(1, ['S-2', 'S-99']);
+    const b = customer(2, ['S-1']);
+    expect(linkedGroupOf(a, [a, b], linksOf).map(x => x.id)).toEqual([2]);
+  });
+
+  it('stops at 50 members', () => {
+    const chain = Array.from({ length: 80 }, (_, i) => customer(i + 1, [`S-${i + 2}`]));
+    expect(linkedGroupOf(chain[0], chain, linksOf).length).toBe(49);
   });
 });

@@ -56,16 +56,29 @@ export class SelectedCustomerContext {
    * The selected customer's segment, or null with no customer. Every customer is a producer until customers carry a
    * segment of their own.
    */
-  readonly segment = computed<CustomerSegment | null>(() => (this.customer() ? 'Producer' : null));
+  readonly segment = computed<CustomerSegment | null>(() => {
+    const customer = this.customer();
+    return customer ? segmentOf(customer) : null;
+  });
 
   /**
    * Whether a contribution applies to the selected customer: it lists no segments, or the customer's segment is among
    * them. With no customer selected, only contributions for every customer apply.
    */
   appliesTo(contribution: { readonly segments?: readonly CustomerSegment[] }): boolean {
-    const segments = contribution.segments ?? [];
-    if (segments.length === 0) return true;
-    const segment = this.segment();
-    return segment !== null && segments.includes(segment);
+    return appliesToSegment(contribution, this.segment());
   }
+}
+
+/** A customer's segment. Every customer is a producer until customers carry a segment of their own. */
+export function segmentOf(_customer: Customer): CustomerSegment {
+  return 'Producer';
+}
+
+/** Whether a contribution applies to a customer of `segment`: it lists no segments, or `segment` is among them. With no
+ *  customer (null), only contributions for every customer apply. */
+export function appliesToSegment(contribution: { readonly segments?: readonly CustomerSegment[] }, segment: CustomerSegment | null): boolean {
+  const segments = contribution.segments ?? [];
+  if (segments.length === 0) return true;
+  return segment !== null && segments.includes(segment);
 }

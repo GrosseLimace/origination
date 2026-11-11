@@ -11,6 +11,7 @@ import { ApiService } from '@core/services/api.service';
 import { ContractsApiService } from '@features/contracts';
 import { AppStateService } from '@core/services/app-state.service';
 import { ProducerStore, ProducersApiService } from '@features/producers';
+import { EngagementApiService, EngagementStore } from '@features/engagement';
 import { DataPreloadService } from '@core/context/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
@@ -189,6 +190,8 @@ describe('BuildListComponent', () => {
         { provide: ContractsApiService, useExisting: ApiService },
         // So are the planting, stored grain, DP and dashboard calls, which are Producers'.
         { provide: ProducersApiService, useExisting: ApiService },
+        // And the notes and follow-ups calls, which are Engagement's.
+        { provide: EngagementApiService, useExisting: ApiService },
         { provide: ApiService, useValue: api },
         { provide: NlqFilterService, useValue: nlq },
         { provide: DataPreloadService, useValue: {} },
@@ -480,8 +483,8 @@ describe('BuildListComponent', () => {
     });
 
     it('a contact prompt names the failed last-contact and follow-up loads', () => {
-      appState.setNoteLastContactsLoadFailed(true);
-      appState.setMyRemindersLoadFailed(true);
+      TestBed.inject(EngagementStore).setNoteLastContactsLoadFailed(true);
+      TestBed.inject(EngagementStore).setMyRemindersLoadFailed(true);
       const c = mount();
 
       c.queryText.set('Producers not contacted in 30 days');
@@ -492,7 +495,7 @@ describe('BuildListComponent', () => {
     });
 
     it('shows no missing-data panel when the prompt does not depend on the failed data', () => {
-      appState.setNoteLastContactsLoadFailed(true);
+      TestBed.inject(EngagementStore).setNoteLastContactsLoadFailed(true);
       const c = mount();
 
       c.selectLibraryQuery(LIB_CONTRACTS);
@@ -502,7 +505,7 @@ describe('BuildListComponent', () => {
     });
 
     it('row badges say "Last contact unavailable", not "Never contacted", when that load failed', () => {
-      appState.setNoteLastContactsLoadFailed(true);
+      TestBed.inject(EngagementStore).setNoteLastContactsLoadFailed(true);
       const c = mount();
 
       c.selectLibraryQuery(LIB_ALL);
@@ -626,7 +629,7 @@ describe('BuildListComponent', () => {
         { customerId: 1, customerCode: 'C1', lastNoteAt: new Date(NOW.getTime() - 3 * DAY) },
         { customerId: 3, customerCode: 'C3', lastNoteAt: new Date(NOW.getTime() - 45 * DAY) },
       ];
-      appState.setNoteLastContacts(lastContacts);
+      TestBed.inject(EngagementStore).setNoteLastContacts(lastContacts);
       const c = mount();
       c.selectLibraryQuery(LIB_ALL);
 
@@ -1271,7 +1274,7 @@ describe('BuildListComponent', () => {
     });
 
     it('a "producers with notes" prompt loads note bodies per rendered batch, sorted by last contact', () => {
-      appState.setNoteLastContacts([
+      TestBed.inject(EngagementStore).setNoteLastContacts([
         { customerId: 1, customerCode: 'C1', lastNoteAt: new Date(NOW.getTime() - 9 * DAY) },
         { customerId: 2, customerCode: 'C2', lastNoteAt: new Date(NOW.getTime() - 2 * DAY) },
       ]);
@@ -1294,7 +1297,7 @@ describe('BuildListComponent', () => {
       TestBed.tick();
 
       expect(api.getNotes).toHaveBeenCalledWith();
-      expect(appState.notesLoaded()).toBe(true);
+      expect(TestBed.inject(EngagementStore).notesLoaded()).toBe(true);
     });
 
     // ── Harvest-window pacing ──

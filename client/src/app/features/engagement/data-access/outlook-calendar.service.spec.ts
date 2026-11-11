@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import { OutlookCalendarService } from './outlook-calendar.service';
-import { ApiService } from '@core/services/api.service';
+import { EngagementApiService } from './engagement-api.service';
 import { Reminder } from '@models';
 
 // The Graph call moved into the API on 2026-09-15, so almost everything this spec used to guard —
@@ -29,7 +29,7 @@ describe('OutlookCalendarService', () => {
 
   function build(): OutlookCalendarService {
     TestBed.configureTestingModule({
-      providers: [{ provide: ApiService, useValue: api }],
+      providers: [{ provide: EngagementApiService, useValue: api }],
     });
     return TestBed.inject(OutlookCalendarService);
   }

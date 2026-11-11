@@ -90,7 +90,7 @@ The dashboard's calls and the planting intentions are on the Producers module's 
 - `getDashboardActualHarvest` / `upsertDashboardActualHarvest` / `deleteDashboardActualHarvest`.
 - `getContractsByCropYear(cropYear, tradeUnits?)` — historical contracts for the selected planting year.
 - `getCommodities()` — crop catalog.
-- Plus the cached signals: the customers from `CustomerStore`, the contracts and their loading flags from the Contracts module's `ContractStore` (`@features/contracts`), whose `ContractsApiService` also reads a crop year's contracts, and the trade units' planting intentions and stored grain, with the planting read's failure flag, from the Producers module's `ProducerStore`, which Producers' preload fills (the dashboard reads the planting itself only when none has landed).
+- Plus the cached signals: the customers from `CustomerStore`, the contracts and their loading flags from the Contracts module's `ContractStore` (`@features/contracts`), whose `ContractsApiService` also reads a crop year's contracts, and the trade units' planting intentions and stored grain, with the planting read's failure flag, from the Producers module's `ProducerStore`, which Producers' preload fills (the dashboard reads the planting itself only when none has landed), and, for the producers without intentions, when each was last contacted, from the Engagement module's `EngagementStore` (`@features/engagement`).
 
 ### Controller endpoints
 

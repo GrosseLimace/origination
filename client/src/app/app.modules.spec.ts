@@ -3,12 +3,14 @@ import { TestBed } from '@angular/core/testing';
 import { CustomerSearch } from '@core/context/customer-search';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { SelectedProducerProduction } from '@core/context/selected-producer-production';
+import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
 import { ProducerProfiles } from '@core/context/producer-profiles';
 import { ApiService } from '@core/services/api.service';
 import { providePermissions } from '@testing/permission.stub';
 import { appModuleProviders, appModules } from './app.modules';
 import { CustomerActivityStore } from './features/contracts/data-access/customer-activity.store';
 import { CustomersApiService } from './features/customers/data-access/customers-api.service';
+import { CustomerEngagementStore } from './features/engagement/data-access/customer-engagement.store';
 import { ProducerProfileStore } from './features/producers/data-access/producer-profile.store';
 import { ProducerProductionStore } from './features/producers/data-access/producer-production.store';
 import { routes } from './app.routes';
@@ -84,5 +86,13 @@ describe('what core declares and a module implements', () => {
     TestBed.configureTestingModule({ providers: [appModuleProviders, { provide: ApiService, useValue: {} }, providePermissions()] });
 
     expect(TestBed.inject(SelectedProducerProduction)).toBe(TestBed.inject(ProducerProductionStore));
+  });
+
+  // The customer screen's Notes and My follow-ups cards and the producer panels read the selected customer's notes and
+  // the user's follow-ups without importing Engagement, and the home page tells it who is selected.
+  it("gives SelectedProducerEngagement as the Engagement module's customer store", () => {
+    TestBed.configureTestingModule({ providers: [appModuleProviders, providePermissions()] });
+
+    expect(TestBed.inject(SelectedProducerEngagement)).toBe(TestBed.inject(CustomerEngagementStore));
   });
 });

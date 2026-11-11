@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, of } from 'rxjs';
 import { catchError, shareReplay } from 'rxjs/operators';
 
-import { ApiService } from '@core/services/api.service';
+import { EngagementApiService } from './engagement-api.service';
 import { GraphTeamsChannel } from '@models';
 
 /**
@@ -22,7 +22,7 @@ import { GraphTeamsChannel } from '@models';
  */
 @Injectable({ providedIn: 'root' })
 export class TeamsDirectoryService {
-  private readonly api = inject(ApiService);
+  private readonly api = inject(EngagementApiService);
 
   /** Cached for the session; the API caches per user as well. */
   private channels$?: Observable<GraphTeamsChannel[]>;

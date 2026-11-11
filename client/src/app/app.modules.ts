@@ -3,9 +3,11 @@ import { CustomerSearch } from '@core/context/customer-search';
 import { ProducerProfiles } from '@core/context/producer-profiles';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { SelectedProducerProduction } from '@core/context/selected-producer-production';
+import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
 import { ModuleManifest } from '@core/modules/module-manifest';
 import { CustomerActivityStore } from './features/contracts/data-access/customer-activity.store';
 import { CustomersApiService } from './features/customers/data-access/customers-api.service';
+import { CustomerEngagementStore } from './features/engagement/data-access/customer-engagement.store';
 import { ProducerProfileStore } from './features/producers/data-access/producer-profile.store';
 import { ProducerProductionStore } from './features/producers/data-access/producer-production.store';
 import { bidSheetModule } from './features/bid-sheet/bid-sheet.module';
@@ -51,4 +53,7 @@ export const appModuleProviders: Provider[] = [
   // The selected producer's planting intentions, stored grain, DP contracts and crop year, which the customer screen's
   // production tabs and panels read and the home page tells who is selected.
   { provide: SelectedProducerProduction, useExisting: ProducerProductionStore },
+  // The selected customer's notes and the user's follow-ups for them, which the customer screen's Notes and My follow-ups
+  // cards and the producer panels read and the home page tells who is selected.
+  { provide: SelectedProducerEngagement, useExisting: CustomerEngagementStore },
 ];

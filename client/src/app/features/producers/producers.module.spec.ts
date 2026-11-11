@@ -32,6 +32,7 @@ import { GrowthOpportunityComponent } from './components/growth-opportunity/grow
 import { ActivitySummaryComponent } from './components/activity-summary/activity-summary.component';
 import { PrintReportButtonComponent } from './components/customer-print-report/print-report-button.component';
 import { EditProducerButtonComponent } from './components/edit-customer-dialog/edit-producer-button.component';
+import { AcresBadgeComponent } from './components/acres-badge/acres-badge.component';
 
 describe('Producers preload: the Planting Dashboard summary', () => {
   const summary: DashboardSummary = { estimates: [], marketShares: [], actualHarvest: [] };
@@ -370,6 +371,15 @@ describe("Producers module: the producer's performance on the profile", () => {
       ProducerInsightsToggleComponent, ContractPaceComponent, ProducerInsightsComponent, ContractPacingCardComponent,
       GrowthOpportunityComponent, ActivitySummaryComponent,
     ]);
+  });
+});
+
+describe("Producers module: the customer list's rows", () => {
+  const panel = () => producersModule.customerPanels!.find(p => p.id === 'acres')!;
+
+  it("adds each producer's acres beside their name, from their saved details", async () => {
+    expect([panel().slot, panel().order, panel().segments, panel().requires]).toEqual(['row-tags', 10, ['Producer'], ['producer-details:read']]);
+    expect(await panel().component()).toBe(AcresBadgeComponent);
   });
 });
 
