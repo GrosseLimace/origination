@@ -5,7 +5,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Observable, Subject, of, forkJoin, takeUntil } from 'rxjs';
 import { catchError, debounceTime, switchMap, map, tap } from 'rxjs/operators';
 import { StoredGrain, DpContract, Ticket, PlantingIntention, Contract } from '@models';
-import { Customer, SavedList, Note, NoteLastContact, ReminderDue, ProducerDetails, QueryLibraryItem } from '@models';
+import { Customer, SavedList, Note, NoteLastContact, ReminderDue, QueryLibraryItem } from '@models';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { CustomerStore } from '../../data-access/customer.store';
@@ -19,6 +19,7 @@ import { CardComponent, CardContentComponent } from '@shared/components/card/car
 import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { TradeUnitSelectorComponent } from '@core/layout/trade-unit-selector/trade-unit-selector.component';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { ProducerProfiles } from '@core/context/producer-profiles';
 import { CustomerListScrollStore } from '../../data-access/customer-list-scroll.store';
 
 /** The follow-up badge on a producer row — the signed-in user's next open reminder for them. */
@@ -66,7 +67,6 @@ export class CustomerListComponent {
    *  returns the caller's — so this badge never reveals another originator's plans. */
   public myReminders = input<ReminderDue[]>([]);
   public loading = input(false);
-  public producerDetailsMap = input<ReadonlyMap<number, ProducerDetails>>(new Map());
   /** Extra customers fetched for incoming/outgoing linked-producer lookups (populated by the home
    *  page when a customer is selected in no-TU mode). Folded into the incoming-link map so the
    *  last-contacted date on the card reflects notes from reverse-linked producers. */
@@ -84,6 +84,9 @@ export class CustomerListComponent {
   private readonly appStateService = inject(AppStateService);
   private readonly customerStore = inject(CustomerStore);
   private readonly tradeUnitContext = inject(TradeUnitContext);
+  /** Every producer's saved details: the acres on each row, the links the last-contacted badge follows, and what a
+   *  saved list's prompts and refines read. */
+  private readonly producerProfiles = inject(ProducerProfiles);
   private readonly scrollStore = inject(CustomerListScrollStore);
   private readonly msalService = inject(MsalService);
   private readonly nlqFilterService = inject(NlqFilterService);
@@ -189,18 +192,7 @@ export class CustomerListComponent {
         return;
       }
       this.searchFailed.set(false);
-      let result = customers.map(c => {
-        const pd = this.producerDetailsMap().get(c.id);
-        if (pd) {
-          return {
-            ...c,
-            totalAcres: pd.totalAcres ?? c.totalAcres,
-            primaryContact: pd.primaryContact ?? c.primaryContact,
-            commodities: pd.commodities ? pd.commodities.split(',').map(s => s.trim()) : c.commodities
-          };
-        }
-        return c;
-      });
+      let result = customers;
       if (this.selectedListId() && this.selectedListId() !== 'all') {
         const savedList = this.savedLists().find(l => String(l.id) === this.selectedListId());
         if (savedList) {
@@ -634,7 +626,7 @@ export class CustomerListComponent {
     const notes = this.appStateService.notes();
     const context: NlqFilterContext = {
       customers: this.customers(),
-      producerProfiles: this.producerDetailsMap(),
+      producerProfiles: this.producerProfiles.profiles(),
       contracts,
       tickets: this.appStateService.tickets(),
       notes,
@@ -665,7 +657,7 @@ export class CustomerListComponent {
     }
     const refined = listFilters
       ? this.nlqFilterService.applyRefinementFilters(result.customers, listFilters, contracts, notes, {
-          producerProfiles: this.producerDetailsMap(),
+          producerProfiles: this.producerProfiles.profiles(),
           tickets: this.appStateService.tickets(),
           storedGrain: this.appStateService.storedGrain(),
           dpContracts: this.appStateService.dpContracts(),
@@ -694,6 +686,11 @@ export class CustomerListComponent {
     this.searchLoading.set(false);
     this.appStateService.setSearchQuery('');
     this.applyFilters();
+  }
+
+  /** A producer's farm acres, from their saved details; 0 without any. */
+  acresOf(customer: Customer): number {
+    return this.producerProfiles.profileOf(customer.id)?.totalAcres ?? 0;
   }
 
   clearAll(): void {
@@ -813,18 +810,18 @@ export class CustomerListComponent {
     // Includes any linked-producer customers fetched on demand by home page so links across
     // TUs still resolve when the main roster is filtered or empty.
     const allCustomers = [...this.customers(), ...this.linkedProducerCustomers()];
-    const profiles = this.producerDetailsMap();
+    const profiles = this.producerProfiles.profiles();
     const components = buildLinkedProducerComponents(allCustomers, c => profileLinkedIds(profiles.get(c.id)));
 
     for (const customer of customersToCache) {
       // Start from the connected component when we have a scoularId — otherwise fall back
       // to direct outgoing links keyed by this customer's id (rare: customers without a
-      // scoularId can still carry linkedProducerIds).
+      // scoularId can still have links in their saved details).
       let allCodes: Set<string>;
       if (customer.scoularId) {
         allCodes = components.get(customer.scoularId) ?? new Set([customer.scoularId]);
       } else {
-        allCodes = new Set(customer.linkedProducerIds || []);
+        allCodes = new Set(profileLinkedIds(profiles.get(customer.id)));
       }
       let lastMs = -1;
       for (const code of allCodes) {

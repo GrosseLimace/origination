@@ -159,7 +159,7 @@
                   @if (customer.isOnboardCandidate) {
                     <app-badge variant="warning" class="flex-shrink-0 whitespace-nowrap">Not added</app-badge>
                   } @else {
-                    <app-badge variant="secondary" class="flex-shrink-0 whitespace-nowrap">{{ customer.totalAcres | number }} acres</app-badge>
+                    <app-badge variant="secondary" class="flex-shrink-0 whitespace-nowrap">{{ acresOf(customer) | number }} acres</app-badge>
                   }
                 </div>
                 @if (customer.scoularId) {
@@ -171,7 +171,6 @@
                      hierarchy and pushed the row past 200px so under three
                      producers fit on a laptop. -->
                 <div class="space-y-0.5 mt-1">
-                  <p class="text-[length:var(--text-fluid-sm)] text-gray-600 dark:text-gray-400 truncate">{{ customer.farm }}</p>
                   <div class="flex items-center gap-2 text-[length:var(--text-fluid-sm)] text-gray-500 dark:text-gray-400">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>

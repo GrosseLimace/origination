@@ -646,7 +646,6 @@ export class CustomerPrintReportComponent {
       <div style="background: ${accentLight}; border-radius: 10px; padding: 18px 22px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
         <div>
           <div style="font-size: 24px; font-weight: 700; color: #111;">${this._esc(c.name)}</div>
-          ${c.farm ? `<div style="font-size: 14px; color: #4b5563; margin-top: 2px;">${this._esc(c.farm)}</div>` : ''}
         </div>
         <div style="display: flex; gap: 24px; font-size: 12px; color: #4b5563;">
           <div>

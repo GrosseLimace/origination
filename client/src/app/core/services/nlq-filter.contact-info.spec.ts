@@ -15,7 +15,7 @@ function customer(
 ): Customer {
   // The source system's email and phone are the customer's; the typed-in contact rows are in its saved details.
   return withProfile({
-    id, name, farm: '', location: '', totalAcres: 0, linkedProducerIds: [], eSignEnabled: false,
+    id, name, location: '', eSignEnabled: false,
     email: '', phone: '', ...over,
   } as Customer, { contacts });
 }

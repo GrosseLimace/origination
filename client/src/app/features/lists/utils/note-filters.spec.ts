@@ -10,8 +10,8 @@ const NOW = new Date('2026-10-13T12:00:00Z');
 const DAY = 86400000;
 
 const customer = (id: number, over: Partial<Customer> = {}): Customer => ({
-  id, name: `P${id}`, scoularId: `C${id}`, farm: '', location: '', phone: '', email: '', totalAcres: 0,
-  linkedProducerIds: [], eSignEnabled: false, achEnabled: false, ...over,
+  id, name: `P${id}`, scoularId: `C${id}`, location: '', phone: '', email: '', 
+  eSignEnabled: false, achEnabled: false, ...over,
 });
 const note = (id: number, over: Partial<Note> = {}): Note => ({
   id, customerId: 1, customerName: '', customerCode: 'C1', content: '', isPinned: false, createdBy: 'x',

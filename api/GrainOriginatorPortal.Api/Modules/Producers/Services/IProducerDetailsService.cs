@@ -22,8 +22,8 @@ public interface IProducerDetailsService
     Task<bool> DeleteAsync(long customerId, CancellationToken cancellationToken);
 
     /// <summary>
-    /// The active customers that link to the producer with this CTRM code (incoming linked producers), each
-    /// with its total acres and the codes it links to, so the client can follow chains. Not limited by trade
+    /// The active customers that link to the producer with this CTRM code (incoming linked producers). Their own
+    /// links and acres are their producer details, which the client follows chains through. Not limited by trade
     /// unit: linked producers deliberately span trade units (AR-02).
     /// </summary>
     Task<List<CustomerResponse>> GetLinkedToAsync(string scoularId, CancellationToken cancellationToken);

@@ -216,7 +216,7 @@ A `logicallyInResultsIds` computed considers a producer "in results" if they're 
 
 Gated on `linkedFeatureActive` = `noteFilterActive()` || queryText matches `/linked\s+(?:producer|record)/`. When active:
 
-- **Dedup pass** at the end of `displayedCustomers`: if customer X has `linkedProducerIds` that include another visible customer Y, Y is hidden. Mutual links tie-break on lower id. Manual include doesn't override dedup — adding A and B (linked) still shows them as one entity.
+- **Dedup pass** at the end of `displayedCustomers`: if customer X's saved details (`ProducerProfiles`) link to another visible customer Y, Y is hidden. Mutual links tie-break on lower id. Manual include doesn't override dedup — adding A and B (linked) still shows them as one entity.
 - A **"+N Linked Producers"** chip renders under the parent's location/acres line. Click expands a detail panel.
 - The detail panel shows each linked producer in the same compact identity layout (avatar, name, farm, location, acres). When notes are also active, each linked sub-row gets its own notes column with independent pagination.
 

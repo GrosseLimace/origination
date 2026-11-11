@@ -12,6 +12,7 @@ import { Customer, NoteLastContact, ProducerDetails, ReminderDue, SavedList } fr
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { CustomerListScrollStore } from '../../data-access/customer-list-scroll.store';
 import { CustomerStore } from '../../data-access/customer.store';
+import { ProducerProfilesFake, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
 
 // Behaviour safety net for the producer list ahead of its OnPush conversion. Pins, through the
 // signal inputs and the rendered DOM:
@@ -46,8 +47,8 @@ function daysFromNow(n: number): Date {
 
 function makeCustomer(over: Partial<Customer> = {}): Customer {
   return {
-    id: 1, scoularId: 'SAMP1', name: 'Sample Farms', farm: 'Sample Farm Co', location: 'Pratt',
-    stateProvince: 'KS', phone: '', email: '', totalAcres: 1200, linkedProducerIds: [],
+    id: 1, scoularId: 'SAMP1', name: 'Sample Farms', location: 'Pratt',
+    stateProvince: 'KS', phone: '', email: '',
     eSignEnabled: false, achEnabled: false, ...over,
   };
 }
@@ -81,6 +82,8 @@ describe('CustomerListComponent', () => {
   let component: CustomerListComponent;
   let ref: ComponentRef<CustomerListComponent>;
   let appState: AppStateService;
+  /** Every producer's saved details, as the list reads them. */
+  let profiles: ProducerProfilesFake;
   let nlq: NlqFilterService;
   let api: {
     searchCustomers: ReturnType<typeof vi.fn<(term: string, tradeUnits?: string[]) => Observable<Customer[]>>>;
@@ -124,12 +127,15 @@ describe('CustomerListComponent', () => {
   function create(inputs: {
     customers?: Customer[]; savedLists?: SavedList[]; noteLastContacts?: NoteLastContact[];
     myReminders?: ReminderDue[]; loading?: boolean; selectedCustomer?: Customer | null;
-    producerDetailsMap?: Map<number, ProducerDetails>; linkedProducerCustomers?: Customer[];
+    producerDetailsMap?: ReadonlyMap<number, ProducerDetails>; linkedProducerCustomers?: Customer[];
   } = {}): void {
+    // The producers' saved details are ProducerProfiles', not an input.
+    const { producerDetailsMap, ...rest } = inputs;
+    if (producerDetailsMap) profiles.set([...producerDetailsMap.values()]);
     fixture = TestBed.createComponent(CustomerListComponent);
     component = fixture.componentInstance;
     ref = fixture.componentRef;
-    for (const [name, value] of Object.entries(inputs)) ref.setInput(name, value);
+    for (const [name, value] of Object.entries(rest)) ref.setInput(name, value);
     fixture.detectChanges();
   }
 
@@ -154,6 +160,7 @@ describe('CustomerListComponent', () => {
   }
 
   beforeEach(async () => {
+    profiles = producerProfilesFake();
     localStorage.clear();
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
@@ -179,6 +186,7 @@ describe('CustomerListComponent', () => {
       providers: [
         { provide: ApiService, useValue: api },
         { provide: NlqFilterService, useValue: nlq },
+        provideProducerProfiles(profiles),
         {
           provide: MsalService,
           useValue: { instance: { getActiveAccount: () => ({ name: 'Caden Egr', username: 'cegr@scoular.com' }), getAllAccounts: () => [] } },
@@ -254,8 +262,10 @@ describe('CustomerListComponent', () => {
     it('renders name, Scoular ID, acres, formatted location / phone, and e-mail only when present', () => {
       TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       create({
+        // The acres are Alpha's saved details.
+        producerDetailsMap: new Map([[1, makeDetails({ customerId: 1, totalAcres: 1200 })]]),
         customers: [
-          makeCustomer({ id: 1, name: 'Alpha Ag', scoularId: 'ALPHA', totalAcres: 1200, phone: '316.555.0142', email: 'alpha@example.com' }),
+          makeCustomer({ id: 1, name: 'Alpha Ag', scoularId: 'ALPHA', phone: '316.555.0142', email: 'alpha@example.com' }),
           makeCustomer({ id: 2, name: 'Bravo Bros', scoularId: 'BRAVO', location: '', stateProvince: 'NE', phone: '555-0142' }),
           makeCustomer({ id: 3, name: 'Charlie Co', scoularId: undefined, location: 'Hays', stateProvince: undefined }),
         ],
@@ -431,9 +441,9 @@ describe('CustomerListComponent', () => {
   // ── Search ────────────────────────────────────────────────────────────────
 
   describe('search', () => {
-    it('debounces typing into one API search scoped to the selected trade units, overlaying producer details', () => {
+    it("debounces typing into one API search scoped to the selected trade units, each row with the producer's saved acres", () => {
       TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
-      api.searchCustomers.mockReturnValue(of([makeCustomer({ id: 5, name: 'Smith Farms', totalAcres: 0 })]));
+      api.searchCustomers.mockReturnValue(of([makeCustomer({ id: 5, name: 'Smith Farms'})]));
       create({
         customers: [makeCustomer({ id: 1, name: 'Alpha Ag' })],
         producerDetailsMap: new Map([[5, makeDetails({ customerId: 5, totalAcres: 900 })]]),
@@ -447,7 +457,7 @@ describe('CustomerListComponent', () => {
       expect(api.searchCustomers).toHaveBeenCalledWith('smith', ['2190']);   // trimmed + lower-cased
       expect(api.searchOdsCustomers).not.toHaveBeenCalled();
       expect(rowNames()).toEqual(['Smith Farms']);
-      expect(rowText(5)).toContain('900 acres');            // ProducerDetails acres win over the search row
+      expect(rowText(5)).toContain('900 acres');            // from the producer's saved details
       expect(appState.searchQuery()).toBe('  Smith ');      // the raw term is what's persisted
     });
 
@@ -463,7 +473,7 @@ describe('CustomerListComponent', () => {
     });
 
     it('falls back to the ODS master for unscoped searches of 3+ chars, marking hits "Not added"', () => {
-      api.searchOdsCustomers.mockReturnValue(of([makeCustomer({ id: 70, name: 'Zed Ranch', totalAcres: 0 })]));
+      api.searchOdsCustomers.mockReturnValue(of([makeCustomer({ id: 70, name: 'Zed Ranch'})]));
       create({ customers: [] });
 
       typeSearch('ze');
@@ -646,7 +656,7 @@ describe('CustomerListComponent', () => {
 
   // A list's prompts on acres, contacts, links, grain on farm and bin sites read every producer's saved details.
   describe("saved lists, against the producers' saved details", () => {
-    it('runs the list with the details the page gives the list', () => {
+    it("runs the list with every producer's saved details", () => {
       TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       const details = new Map<number, ProducerDetails>([[1, { customerId: 1, totalAcres: 900 } as ProducerDetails]]);
       create({
@@ -658,7 +668,7 @@ describe('CustomerListComponent', () => {
       pickSavedList('10');
 
       const [, ctx] = vi.mocked(nlq.parseAndFilter).mock.calls.at(-1)!;
-      expect(ctx.producerProfiles).toBe(details);
+      expect(ctx.producerProfiles).toBe(profiles.profiles());
     });
   });
 

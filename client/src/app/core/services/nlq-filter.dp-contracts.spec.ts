@@ -12,8 +12,8 @@ import { Customer, DpContract } from '@models';
  */
 function customer(id: number, name: string): Customer {
   return withProfile({
-    id, name, farm: '', location: '', phone: '', email: '',
-    totalAcres: 0, linkedProducerIds: [], eSignEnabled: false,
+    id, name, location: '', phone: '', email: '',
+    eSignEnabled: false,
   } as Customer, { commodities: 'Corn,Soybeans' });
 }
 

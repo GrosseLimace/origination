@@ -3,7 +3,6 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { forkJoin, of } from 'rxjs';
 import { applyAdoptedCustomerId } from './adopt-assigned-customer';
-import { applyProducerDetails } from '@shared/utils/apply-producer-details';
 import { catchError, finalize, takeUntil } from 'rxjs/operators';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
@@ -36,6 +35,7 @@ import { SelectedProducerActivity } from '@core/context/selected-producer-activi
 import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
 import { ProducerEdit, ProducerEditing } from '@core/context/producer-editing';
 import { ProducerProfiles } from '@core/context/producer-profiles';
+import { profileLinkedIds } from '@shared/utils/producer-profile';
 import { SavedListMembership } from '@core/context/saved-list-membership';
 @Component({
   selector: 'app-home',
@@ -121,8 +121,6 @@ export class HomeComponent implements ProducerEditing {
   /** The user's own lists and a manager's team lists, resolved (see HomeSavedListsStore). */
   readonly savedLists = this.lists.savedLists;
   readonly teamSavedLists = this.lists.teamSavedLists;
-  /** Every producer's details, which the customer list lays over its search results. */
-  readonly producerDetailsMap = this.producerProfiles.profiles;
 
   readonly selectedCustomer = this.page.selectedCustomer;
   /** True when the open-contracts table has its extra columns expanded — drops the Notes
@@ -374,10 +372,9 @@ export class HomeComponent implements ProducerEditing {
         this._isLoading = false;
         this.lists.enrichSavedLists();
 
-        // Lay the producers' details over them: those already read (by the preload, or this page's read below when it
-        // landed first). A read still running lays its own over them when it lands.
-        const profiles = this.producerProfiles.profiles();
-        if (profiles.size > 0) this._mergeProducerDetails(Array.from(profiles.values()));
+        // The selected producer's details, if already read (by the preload, or this page's read below when it landed
+        // first), may link them to producers not walked yet. A read still running does the same when it lands.
+        this._afterProducerDetailsLanded(this.producerProfiles.profiles().keys());
       },
       error: () => {
         if (requestId !== this._customerRequestId) return;
@@ -451,48 +448,28 @@ export class HomeComponent implements ProducerEditing {
     this.lists.loadSavedLists();
   }
 
-  /** Reads every producer's details again, as each visit to the page does; ProducerProfiles keeps them. Producers
-   *  not loaded yet get them when they land. */
+  /** Reads every producer's details again, as each visit to the page does; ProducerProfiles keeps them, and every
+   *  piece of the screen reads them from there. */
   private _loadProducerDetails(): void {
     this.producerProfiles.load().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (details) => {
-        if (this.customers().length > 0) this._mergeProducerDetails(details);
+        if (this.customers().length > 0) this._afterProducerDetailsLanded(details.map(d => d.customerId));
       },
       error: (err) => this.backgroundFailures.report('load producer details', err)
     });
   }
 
-  /** Lays the details over the producers they belong to, in the list and on the profile. ProducerProfiles already
-   *  holds them. */
-  private _mergeProducerDetails(details: ProducerDetails[]): void {
-    if (details.length === 0) return;
-    const detailsMap = new Map(details.map(d => [d.customerId, d]));
-    let changed = false;
-    const updated = this.customers().map(customer => {
-      const pd = detailsMap.get(customer.id);
-      if (pd) {
-        changed = true;
-        return applyProducerDetails(customer, pd);
-      }
-      return customer;
-    });
-
-    if (changed) {
-      this.customers.set(updated);
-      this.customerStore.setCustomers(updated);
-      const sel = this.selectedCustomer();
-      if (sel) {
-        const updatedSel = updated.find(c => c.id === sel.id);
-        if (updatedSel) {
-          this.selectedCustomer.set(updatedSel);
-          this._fetchMissingLinkedProducers(updatedSel);
-          this.activity.loadCustomerData(updatedSel.id, updatedSel);
-          // linkedProducerIds may have changed with the merged details — make sure the
-          // (possibly expanded) group's notes are cached.
-          this._ensureCustomerNotes(updatedSel);
-        }
-      }
-    }
+  /**
+   * Some producers' details have landed in ProducerProfiles. If the selected producer's are among them, their links may
+   * have changed: walk the links again, rebuild their linked group's contracts, tickets and notes, and make sure the
+   * group's notes are cached.
+   */
+  private _afterProducerDetailsLanded(customerIds: Iterable<number>): void {
+    const sel = this.selectedCustomer();
+    if (!sel || !new Set(customerIds).has(sel.id)) return;
+    this._fetchMissingLinkedProducers(sel);
+    this.activity.loadCustomerData(sel.id, sel);
+    this._ensureCustomerNotes(sel);
   }
 
   private _loadYieldData(): void {
@@ -605,22 +582,14 @@ export class HomeComponent implements ProducerEditing {
     this.usageTracking.trackProfileOpened(customer.id.toString());
     const pd = this.producerProfiles.profileOf(customer.id);
     if (pd) {
-      customer = applyProducerDetails(customer, pd);
       this._refreshSelectedProducerDetails(customer.id, pd);
     } else {
       this.apiService.getProducerDetails(customer.id).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (details) => {
           this.producerProfiles.put(details);
-          const sel = this.selectedCustomer();
-          if (sel?.id === customer.id) {
-            const updated = applyProducerDetails(sel, details);
-            this.selectedCustomer.set(updated);
-            this._fetchMissingLinkedProducers(updated);
-            this.activity.loadCustomerData(updated.id, updated);
-            // linkedProducerIds may have just arrived/changed — make sure the (possibly
-            // expanded) group's notes are cached so the panel shows the full history.
-            this._ensureCustomerNotes(updated);
-          }
+          // Their links may have just arrived, so the (possibly expanded) group's notes are cached and the panel
+          // shows the full history.
+          this._afterProducerDetailsLanded([details.customerId]);
         },
         error: (err) => this.backgroundFailures.report('refresh producer details', err)
       });
@@ -658,26 +627,14 @@ export class HomeComponent implements ProducerEditing {
    * Re-reads the clicked producer's details in the background and applies them if they changed since
    * the page loaded them — e.g. a teammate added grain on farm (QA, RUNDMAP, 2026-10-12: the list showed
    * none while Build a List, which reads fresh, showed 50,000 bu). The profile already shows the cached
-   * copy, so this only matters when something changed; then the map, the list row and the profile update.
+   * copy, so this only matters when something changed; then everything that reads ProducerProfiles updates.
    */
   private _refreshSelectedProducerDetails(customerId: number, cached: ProducerDetails): void {
     this.apiService.getProducerDetails(customerId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (details) => {
         if (JSON.stringify(details) === JSON.stringify(cached)) return;
-        const linkedBefore = cached.linkedProducerIds ?? '';
         this.producerProfiles.put(details);
-        this._mergeProducerDetails([details]);
-        const sel = this.selectedCustomer();
-        // _mergeProducerDetails updates the profile when the producer is in this trade unit's list; one
-        // opened from outside it (a linked producer in another trade unit) is updated here.
-        if (sel?.id === customerId && !this.customers().some(c => c.id === customerId)) {
-          const updated = applyProducerDetails(sel, details);
-          this.selectedCustomer.set(updated);
-          if ((details.linkedProducerIds ?? '') !== linkedBefore) {
-            this._fetchMissingLinkedProducers(updated);
-            this._ensureCustomerNotes(updated);
-          }
-        }
+        this._afterProducerDetailsLanded([details.customerId]);
       },
       error: (err) => this.backgroundFailures.report('refresh producer details', err)
     });
@@ -697,7 +654,7 @@ export class HomeComponent implements ProducerEditing {
   private _propagatePrimaryContact(linkedCustomer: Customer, primary: { name: string; phone?: string; email?: string }): void {
     const existingPd = this.producerProfiles.profileOf(linkedCustomer.id);
     // Skip if the linked producer already has a primary contact
-    if (existingPd?.primaryContact || linkedCustomer.primaryContact) return;
+    if (existingPd?.primaryContact) return;
 
     this.apiService.saveProducerDetails(linkedCustomer.id, {
       scoularId: linkedCustomer.scoularId || null,
@@ -706,7 +663,7 @@ export class HomeComponent implements ProducerEditing {
       primaryContact: primary.name,
       primaryPhone: primary.phone ?? null,
       commodities: existingPd?.commodities ?? null,
-      linkedProducerIds: existingPd?.linkedProducerIds ?? ((linkedCustomer.linkedProducerIds || []).join(',') || null),
+      linkedProducerIds: existingPd?.linkedProducerIds || null,
       // grainOnFarm intentionally omitted — this save isn't editing grain on farm, and the server
       // preserves the existing rows when it is absent (a cached copy could be older than a teammate's edit).
       // Preserve any existing contact rows; otherwise seed the full primary row (name + phone +
@@ -715,22 +672,8 @@ export class HomeComponent implements ProducerEditing {
         ? existingPd.contacts.map(c => ({ name: c.name, phone: c.phone, email: c.email, isPrimary: c.isPrimary }))
         : [{ name: primary.name, phone: primary.phone, email: primary.email, isPrimary: true }]
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (pd) => {
-        this.producerProfiles.put(pd);
-        // Update the customer object in local state (server response already updated the pd map).
-        const updated = { ...linkedCustomer, primaryContact: primary.name, primaryPhone: primary.phone, contacts: pd.contacts };
-        const idx = this.customers().findIndex(c => c.id === linkedCustomer.id);
-        if (idx >= 0) {
-          const arr = [...this.customers()];
-          arr[idx] = updated;
-          this.customers.set(arr);
-          this.customerStore.setCustomers(arr);
-        } else {
-          const cache = new Map(this._crossTradeUnitCustomers());
-          cache.set(linkedCustomer.id, updated);
-          this._crossTradeUnitCustomers.set(cache);
-        }
-      },
+      // The linked producer's new contact shows wherever their details are read.
+      next: (pd) => this.producerProfiles.put(pd),
       error: (err) => this.backgroundFailures.report('update the linked producer contact', err)
     });
   }
@@ -814,18 +757,8 @@ export class HomeComponent implements ProducerEditing {
     // The profile shows each grain row's site by name; fill it in from the sites being saved.
     const siteNames = new Map(data.binSites.map(b => [b.siteKey, b.name]));
     const optimisticGrain = data.grainOnFarm.map(g => ({ ...g, binSiteName: g.binSiteKey ? siteNames.get(g.binSiteKey) ?? null : null }));
-    const updated: Customer = {
-      ...customer,
-      totalAcres: data.acres,
-      grainOnFarm: optimisticGrain,
-      commodities: allCommodities,
-      primaryContact: data.primaryContact,
-      primaryPhone: data.primaryPhone,
-      contacts: optimisticContacts,
-      binSites: optimisticBinSites,
-      linkedProducerIds: data.linkedProducerIds,
-      eSignEnabled: data.eSignEnabled
-    };
+    // eSign is the customer's own; everything else the dialog edits is the producer's details, put in below.
+    const updated: Customer = { ...customer, eSignEnabled: data.eSignEnabled };
 
     const savedCommodities = allCommodities.length > 0 ? allCommodities.join(',') : null;
     const savedLinkedIds = data.linkedProducerIds.length > 0 ? data.linkedProducerIds.join(',') : null;
@@ -842,8 +775,8 @@ export class HomeComponent implements ProducerEditing {
       binSites: data.binSites
     };
 
-    // The edit shows at once wherever the producer's details are read, as it does on the producer above; the save's
-    // answer replaces it. A producer with no saved details yet gets them here for the first time.
+    // The edit shows at once wherever the producer's details are read; the save's answer replaces it. A producer with
+    // no saved details yet gets them here for the first time.
     const existingPd = this.producerProfiles.profileOf(data.customerId)
       ?? { id: 0, customerId: data.customerId, scoularId: customer.scoularId, customerName: customer.name, createdBy: '', createdAt: '' };
     this.producerProfiles.put({ ...existingPd, totalAcres: data.acres || undefined, primaryContact: data.primaryContact || undefined, primaryPhone: data.primaryPhone || undefined, commodities: savedCommodities ?? undefined, linkedProducerIds: savedLinkedIds ?? undefined, grainOnFarm: optimisticGrain, contacts: optimisticContacts, binSites: optimisticBinSites });
@@ -870,9 +803,9 @@ export class HomeComponent implements ProducerEditing {
         ?? [...this._crossTradeUnitCustomers().values()].find(c => c.scoularId === linkedIdStr);
       if (!linkedCustomer) continue;
       const currentSourceId = customer.scoularId || '';
-      const updatedLinkedIds = (linkedCustomer.linkedProducerIds || []).filter(id => id !== currentSourceId);
       const linkedId = linkedCustomer.id;
       const existingPd = this.producerProfiles.profileOf(linkedId);
+      const updatedLinkedIds = profileLinkedIds(existingPd).filter(id => id !== currentSourceId);
       this.apiService.saveProducerDetails(linkedId, {
         scoularId: linkedCustomer.scoularId || null,
         customerName: linkedCustomer.name,
@@ -885,26 +818,9 @@ export class HomeComponent implements ProducerEditing {
         // preserves the existing rows when it is absent (a cached copy could be older than a teammate's edit).
         // `contacts` intentionally omitted — the server preserves existing rows when absent.
       }).subscribe({
-        next: (pd) => {
-          this.producerProfiles.put(pd);
-          const updatedLinkedCustomer: Customer = { ...linkedCustomer, linkedProducerIds: updatedLinkedIds };
-          // Update whichever store the linked customer lives in so the transitive BFS
-          // sees the new state immediately (no stale A→C edge lingering after removal).
-          const idx = this.customers().findIndex(c => c.id === linkedId);
-          if (idx >= 0) {
-            const arr = [...this.customers()];
-            arr[idx] = updatedLinkedCustomer;
-            this.customers.set(arr);
-            this.customerStore.setCustomers(arr);
-          }
-          if (this._crossTradeUnitCustomers().has(linkedId)) {
-            this._crossTradeUnitCustomers.update(cache => {
-              const next = new Map(cache);
-              next.set(linkedId, updatedLinkedCustomer);
-              return next;
-            });
-          }
-        },
+        // The linked groups read the links from ProducerProfiles, so the removed link is gone from them at once (no
+        // stale A→C edge lingering after removal).
+        next: (pd) => this.producerProfiles.put(pd),
         error: (err) => this.backgroundFailures.report('update the linked producer', err)
       });
     }
@@ -944,8 +860,7 @@ export class HomeComponent implements ProducerEditing {
     }
 
     // Keep the cross-TU cache in sync too — a customer viewed across TU boundaries may
-    // live there instead of the main roster. Without this, the transitive BFS could
-    // still hit a stale copy with the pre-edit linkedProducerIds.
+    // live there instead of the main roster, and would keep showing the pre-edit eSign.
     if (this._crossTradeUnitCustomers().has(updated.id)) {
       this._crossTradeUnitCustomers.update(cache => {
         const next = new Map(cache);
@@ -974,7 +889,8 @@ export class HomeComponent implements ProducerEditing {
    * until its fetch completes and triggers a re-render.
    */
   getLinkedGroup(customer: Customer): Customer[] {
-    return linkedGroupOf(customer, [...this.customers(), ...this._crossTradeUnitCustomers().values()]);
+    return linkedGroupOf(customer, [...this.customers(), ...this._crossTradeUnitCustomers().values()],
+      c => profileLinkedIds(this.producerProfiles.profileOf(c.id)));
   }
 
   handleSelectLinkedCustomer(customerId: number): void {
@@ -1010,9 +926,6 @@ export class HomeComponent implements ProducerEditing {
       // Linked customer is in a different trade unit — fetch them from the API
       this.customersApi.getCustomerById(customerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (fetched) => {
-          // Merge producer details if available
-          const pd = this.producerProfiles.profileOf(fetched.id);
-          if (pd) fetched = applyProducerDetails(fetched, pd);
           // Cache so getLinkedGroup can find them even though they're outside the TU filter
           const cache = new Map(this._crossTradeUnitCustomers());
           cache.set(fetched.id, fetched);

@@ -56,16 +56,12 @@ public sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
 
         // DTO-only fields — populated by service layer enrichment, not stored on the table.
         entity.Ignore(e => e.CustomerCode);
-        entity.Ignore(e => e.Farm);
-        entity.Ignore(e => e.TotalAcres);
         entity.Ignore(e => e.ESignEnabled);
         entity.Ignore(e => e.AchEnabled);
         entity.Ignore(e => e.ActiveTradeUnits);
         entity.Ignore(e => e.ScoularViewRecipients);
         entity.Ignore(e => e.Guild);
         entity.Ignore(e => e.Coordinates);
-        entity.Ignore(e => e.FarmIds);
-        entity.Ignore(e => e.LinkedProducerIds);
 
         entity.HasIndex(e => e.Name).HasDatabaseName("IX_Customer_CustomerName");
         entity.HasIndex(e => e.ScoularId).HasDatabaseName("IX_Customer_ScoularId");

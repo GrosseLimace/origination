@@ -21,8 +21,8 @@ import { By } from '@angular/platform-browser';
 import { HomeComponent } from './features/customers/pages/home/home.component';
 
 const customer = (id: number, name: string) => ({
-  id, name, scoularId: `C${id}`, farm: name, location: 'Omaha, NE', phone: '4025551234', email: 'a@b.com',
-  totalAcres: 500, linkedProducerIds: [], eSignEnabled: false, achEnabled: false, isActive: true,
+  id, name, scoularId: `C${id}`, location: 'Omaha, NE', phone: '4025551234', email: 'a@b.com',
+  eSignEnabled: false, achEnabled: false, isActive: true,
   merchandisingCity: 'Omaha', merchandisingStateProvince: 'NE', tradeUnits: ['1084'],
 });
 

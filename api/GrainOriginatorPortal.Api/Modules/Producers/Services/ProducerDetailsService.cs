@@ -214,16 +214,9 @@ public class ProducerDetailsService : IProducerDetailsService
         var linkingIds = await ReadLinkedAsync(() => _repository.GetCustomerIdsLinkingToAsync(scoularId, cancellationToken));
         if (linkingIds.Count == 0) return [];
 
-        // The Customers module fills each customer in as its list shows it (e-sign, ACH, trade units); the
-        // producer fields go on top.
-        var customers = await _customers.GetActiveAsync(linkingIds, cancellationToken);
-        var fields = await ReadLinkedAsync(() => _repository.GetLinkFieldsAsync(customers.Select(c => c.Id).ToList(), cancellationToken));
-
-        return customers
-            .Select(c => fields.TryGetValue(c.Id, out var f)
-                ? c with { TotalAcres = f.TotalAcres ?? c.TotalAcres, LinkedProducerIds = f.LinkedProducerIds }
-                : c)
-            .ToList();
+        // The Customers module fills each customer in as its list shows it (e-sign, ACH, trade units). Their acres and
+        // links are their saved details, which the client reads from /api/producer-details.
+        return await _customers.GetActiveAsync(linkingIds, cancellationToken);
     }
 
     /// <summary>A database outage while reading linked producers is a retryable 503, as it was before the move.</summary>

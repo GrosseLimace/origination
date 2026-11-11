@@ -7,8 +7,8 @@ import { Customer, Note, NoteLastContact } from '@models';
  *  names so name-search paths can't accidentally match a keyword. */
 function customer(id: number, name: string, scoularId: string, linkedProducerIds: string[] = []): Customer {
   return withProfile({
-    id, name, scoularId, farm: '', location: '', phone: '', email: '',
-    totalAcres: 0, linkedProducerIds: [], eSignEnabled: false,
+    id, name, scoularId, location: '', phone: '', email: '',
+    eSignEnabled: false,
   } as unknown as Customer, { linkedProducerIds: linkedProducerIds.join(',') });
 }
 

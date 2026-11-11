@@ -18,8 +18,8 @@ import { CustomerStore } from '@features/customers';
 
 function makeCustomer(over: Partial<Customer> = {}): Customer {
   return {
-    id: 1, scoularId: 'CUST1', name: 'Test Farm', farm: 'Test Farm LLC', location: 'Omaha, NE',
-    phone: '', email: '', totalAcres: 0, linkedProducerIds: [], eSignEnabled: false, ...over,
+    id: 1, scoularId: 'CUST1', name: 'Test Farm', location: 'Omaha, NE',
+    phone: '', email: '', eSignEnabled: false, ...over,
   };
 }
 

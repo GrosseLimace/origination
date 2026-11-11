@@ -14,6 +14,7 @@ import { Customer, Note, NoteMention, MentionCatalog, GraphTeamsChannel } from '
 import { environment } from '@env/environment';
 import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
+import { ProducerProfiles } from '@core/context/producer-profiles';
 import { binSiteNames, splitByBinSiteNames, BIN_SITE_NAME_CLASS } from '@shared/utils/bin-site-mentions';
 
 /** A single selectable row in the "@" mention dropdown. */
@@ -38,6 +39,8 @@ interface MentionOption {
 export class CustomerNotesComponent {
   /** The producer's notes and what can be done to them; the page loads them. */
   private readonly engagement = inject(SelectedProducerEngagement);
+  /** Every producer's saved details: the bin sites a note's text is highlighted against. */
+  private readonly producerProfiles = inject(ProducerProfiles);
   /** The producers linked to this one, from the page that hosts the customer screen. */
   private readonly screen = inject(SelectedCustomerContext);
 
@@ -328,10 +331,10 @@ export class CustomerNotesComponent {
    *  shared with them) plus, within the remaining text, any current search-term matches (highlighted).
    *  Pure string splitting into text segments — no HTML is built, so there is no XSS surface. */
   /** Bin-site names per producer shown in this panel (the producer and any linked producers whose
-   *  notes appear here), so a note is highlighted against its own producer's sites. */
+   *  notes appear here), from their saved details, so a note is highlighted against its own producer's sites. */
   private readonly _binSiteNamesByCustomer = computed(() => {
     const map = new Map<number, string[]>();
-    for (const c of [this.customer(), ...this.linkedCustomers()]) map.set(c.id, binSiteNames(c.binSites));
+    for (const c of [this.customer(), ...this.linkedCustomers()]) map.set(c.id, binSiteNames(this.producerProfiles.profileOf(c.id)?.binSites));
     return map;
   });
 

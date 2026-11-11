@@ -18,8 +18,8 @@ import { EditProducerButtonComponent } from './edit-producer-button.component';
 
 function makeCustomer(over: Partial<Customer> = {}): Customer {
   return {
-    id: 42, scoularId: 'SAMPFRM', name: 'Sample Farms', farm: '', location: '', phone: '', email: '', totalAcres: 0,
-    linkedProducerIds: [], eSignEnabled: false, achEnabled: false, ...over,
+    id: 42, scoularId: 'SAMPFRM', name: 'Sample Farms', location: '', phone: '', email: '', 
+    eSignEnabled: false, achEnabled: false, ...over,
   };
 }
 

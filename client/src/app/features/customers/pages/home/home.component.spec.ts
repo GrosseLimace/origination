@@ -12,7 +12,9 @@ import { ToastService } from '@core/services/toast.service';
 import { NlqFilterContext, NlqFilterResult, NlqFilterService } from '@core/services/nlq-filter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
-import { ProducerProfilesFake, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
+import {
+  ProducerFixture, ProducerProfilesFake, producerProfilesFake, profilesOf, provideProducerProfiles, withFixtureProfile,
+} from '@testing/producer-profiles.fake';
 import { OutlookCalendarService } from '@core/services/outlook-calendar.service';
 import { environment } from '@env/environment';
 import {
@@ -50,21 +52,28 @@ import { describeLastContacted } from '@shared/utils/last-contacted';
 
 const NOW = new Date('2026-10-13T15:00:00Z');
 
-function customer(id: number, over: Partial<Customer> = {}): Customer {
-  return {
+/** The page's ProducerProfiles in the running test (set by setup), so a producer built later in the test with saved
+ *  details is known too: the store holds every producer's details, not only the trade unit's. */
+let liveProfiles: ProducerProfilesFake | null = null;
+
+/** A producer. Their acres, commodities and links are their saved details, which ProducerProfiles holds. */
+function customer(id: number, { totalAcres, commodities, linkedProducerIds, ...over }: Partial<Customer> & ProducerFixture = {}): Customer {
+  const built: Customer = {
     id,
     scoularId: `S-${id}`,
     name: `Producer ${id}`,
-    farm: '',
     location: 'Omaha, NE',
     phone: '',
     email: '',
-    totalAcres: 0,
-    linkedProducerIds: [],
     eSignEnabled: false,
     achEnabled: false,
     ...over,
   };
+  if (totalAcres === undefined && !commodities && !linkedProducerIds) return built;
+  withFixtureProfile(built, { totalAcres, commodities, linkedProducerIds });
+  const saved = profilesOf([built]).get(id);
+  if (saved) liveProfiles?.put(saved);
+  return built;
 }
 
 function contract(id: number, ctrmCustomerId: string, over: Partial<Contract> = {}): Contract {
@@ -201,7 +210,8 @@ function makeApi() {
     getQueryLibrary: vi.fn((): Observable<QueryLibraryItem[]> => of([])),
     getAllProducerDetails: vi.fn((): Observable<ProducerDetails[]> => of([])),
     getProducerDetails: vi.fn((id: number): Observable<ProducerDetails> => of(details(id))),
-    saveProducerDetails: vi.fn((id: number): Observable<ProducerDetails> => of(details(id))),
+    // Answers with what was saved, as the server does.
+    saveProducerDetails: vi.fn((id: number, body?: Partial<ProducerDetails>): Observable<ProducerDetails> => of(details(id, body))),
     getDashboardPlantingEstimates: vi.fn((_key: string, _year: number): Observable<DashboardPlantingEstimate[]> => of([])),
     getCommodities: vi.fn((): Observable<Commodity[]> => of([])),
     getNotes: vi.fn((): Observable<Note[]> => of([])),
@@ -325,9 +335,14 @@ function setup(opts: SetupOptions = {}): Harness {
   // Every producer's details, read through the API stub and kept, as the Producers module's store does.
   const profiles = producerProfilesFake();
   profiles.load.mockImplementation(() => api.getAllProducerDetails().pipe(tap(list => profiles.set(list ?? []))));
+  liveProfiles = profiles;
   const app = makeAppState();
   const nlq = makeNlq();
-  api.getCustomers.mockReturnValue(of(opts.customers ?? [A, B, C]));
+  const roster = opts.customers ?? [A, B, C];
+  api.getCustomers.mockReturnValue(of(roster));
+  // What the server holds: the roster's saved details, and a producer's own when it is read on its own.
+  api.getAllProducerDetails.mockImplementation(() => of([...profilesOf(roster).values()]));
+  api.getProducerDetails.mockImplementation((id: number) => of(profiles.profileOf(id) ?? details(id)));
   opts.arrange?.(api, nlq, app);
 
   const toast = { error: vi.fn(), success: vi.fn(), info: vi.fn() };
@@ -1106,7 +1121,7 @@ describe('HomeComponent', () => {
       expect(h.app.plantingIntentions().map(p => p.id)).toContain(700);
       expect(h.toast.success).toHaveBeenCalledWith('Planting intention added');
       expect(h.api.saveProducerDetails).toHaveBeenCalledWith(1, expect.objectContaining({ commodities: 'SOYBEANS' }));
-      expect(h.c.selectedCustomer()?.commodities).toEqual(['SOYBEANS']);
+      expect(h.profiles.profileOf(1)?.commodities).toBe('SOYBEANS');
 
       // The cache was updated too: a re-click shows the added row without another read.
       h.c.handleSelectCustomer(B);
@@ -1203,16 +1218,11 @@ describe('HomeComponent', () => {
       api.getCustomersLinkedTo.mockReturnValue(of([]));
     };
 
-    it('applies known producer details to a linked producer fetched from another trade unit', () => {
-      const h = setup({
-        customers: [a, B],
-        arrange: api => {
-          arrangeLinks(api);
-          api.getAllProducerDetails.mockReturnValue(of([details(90, { totalAcres: 640 })]));
-        },
-      });
+    // Its details are ProducerProfiles', where every piece of the screen reads them.
+    it('keeps a linked producer fetched from another trade unit as the API gives it', () => {
+      const h = setup({ customers: [a, B], arrange: arrangeLinks });
       h.c.handleSelectCustomer(a);
-      expect(h.c.crossTradeUnitCustomers().find(x => x.id === 90)?.totalAcres).toBe(640);
+      expect(h.c.crossTradeUnitCustomers().find(x => x.id === 90)).toEqual(customer(90));
     });
 
     it('loads the notes of a linked producer the walk discovers', () => {
@@ -1677,5 +1687,62 @@ describe('HomeComponent — a trade-unit save still in flight', () => {
     h.c.handleSaveCustomer({ ...save(1), acres: 640, reconcileTradeUnits: false });
 
     expect(h.profiles.profileOf(1)).toMatchObject({ customerId: 1, customerName: A.name, totalAcres: 640 });
+  });
+});
+
+// A producer's commodities and links are their saved details, read and saved through ProducerProfiles.
+describe("HomeComponent — the producer's saved details", () => {
+  const edit = (customerId: number) => ({
+    customerId, acres: 0, commodities: [], primaryContact: '', primaryPhone: '', contacts: [], binSites: [],
+    linkedProducerIds: [], removedIncomingIds: [], eSignEnabled: false, tradeUnitCodes: [],
+    reconcileTradeUnits: false, grainOnFarm: [],
+  });
+
+  it("saves the commodities of the producer's tickets that their saved details don't list yet", () => {
+    const a = customer(1, { commodities: ['YC'] });
+    const h = setup({ customers: [a, B], arrange: api => api.getTicketsByCustomer.mockReturnValue(of([ticket(20, 'S-1', { productCode: 'SB' })])) });
+
+    h.c.handleSelectCustomer(a);
+
+    expect(h.api.saveProducerDetails).toHaveBeenCalledWith(1, expect.objectContaining({ commodities: 'SB,YC' }));
+    expect(h.profiles.profileOf(1)?.commodities).toBe('SB,YC');
+  });
+
+  it('saves nothing when their saved details already list every commodity on their tickets', () => {
+    const a = customer(1, { commodities: ['SB', 'YC'] });
+    const h = setup({ customers: [a, B], arrange: api => api.getTicketsByCustomer.mockReturnValue(of([ticket(20, 'S-1', { productCode: 'SB' })])) });
+
+    h.c.handleSelectCustomer(a);
+
+    expect(h.api.saveProducerDetails).not.toHaveBeenCalled();
+  });
+
+  it("removing an incoming link saves the other producer's links, from their saved details, without this one", () => {
+    const b = customer(2, { linkedProducerIds: ['S-1', 'S-3'] });
+    const h = setup({ customers: [A, b] });
+    h.c.handleSelectCustomer(A);
+
+    h.c.handleSaveCustomer({ ...edit(1), removedIncomingIds: ['S-2'] });
+
+    expect(h.api.saveProducerDetails).toHaveBeenCalledWith(2, expect.objectContaining({ linkedProducerIds: 'S-3' }));
+    expect(h.profiles.profileOf(2)?.linkedProducerIds).toBe('S-3');
+  });
+
+  // The selection's first walk is still out, so it isn't marked done yet.
+  it('walks the links that arrive with the selected producer\'s details after they were picked', () => {
+    const details$ = new Subject<ProducerDetails>();
+    const h = setup({
+      arrange: api => {
+        api.getProducerDetails.mockReturnValue(details$);
+        api.getCustomersLinkedTo.mockReturnValue(NEVER);
+        api.getCustomerBySourceId.mockImplementation(src => of(src === 'S-90' ? customer(90) : null));
+      },
+    });
+    h.c.handleSelectCustomer(A);
+    expect(h.api.getCustomerBySourceId).not.toHaveBeenCalled();
+
+    details$.next(details(1, { linkedProducerIds: 'S-90' }));
+
+    expect(h.api.getCustomerBySourceId).toHaveBeenCalledWith('S-90');
   });
 });

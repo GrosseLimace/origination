@@ -2052,14 +2052,15 @@ export class NlqFilterService {
       result = result.filter(c => !profileOf(c)?.totalAcres);
     }
 
-    // Farm name search — "farm [name]", "on [name] farm". Skipped for grain-on-farm / target
-    // prompts, where "on farm" is the dimension keyword, not a farm name to match against.
+    // Farm name search — "farm [name]", "on [name] farm" — matched against the producer's name, which is the farm's
+    // (the customer record has no separate farm name; the one it had was never filled in, so this matched no one).
+    // Skipped for grain-on-farm / target prompts, where "on farm" is the dimension keyword, not a farm name.
     const farmNameMatch = isGrainOnFarmQuery ? null : lowerQuery.match(/(?:farm\s+(?:named?\s+)?|on\s+)([a-z][a-z\s]{1,40}?)(?:\s+farm)?(?:\s+|$)/);
     if (farmNameMatch && !this.grainCrops.includes(farmNameMatch[1].trim()) && !this.stateNames[farmNameMatch[1].trim()]) {
       const farmName = farmNameMatch[1].trim();
       // Avoid false matches on common query words
       if (farmName.length > 2 && !['the', 'this', 'that', 'with', 'without', 'and', 'more', 'less', 'over', 'under', 'farm', 'grain'].includes(farmName)) {
-        result = result.filter(c => (c.farm || '').toLowerCase().includes(farmName));
+        result = result.filter(c => (c.name || '').toLowerCase().includes(farmName));
       }
     }
 

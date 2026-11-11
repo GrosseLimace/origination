@@ -6,8 +6,8 @@ import { Customer } from '@models';
 /** Minimal customer with just the fields the ACH filter reads. Neutral names so name-search can't interfere. */
 function customer(id: number, name: string, achEnabled: boolean): Customer {
   return {
-    id, name, farm: '', location: '', phone: '', email: '',
-    totalAcres: 0, linkedProducerIds: [], eSignEnabled: false, achEnabled,
+    id, name, location: '', phone: '', email: '',
+    eSignEnabled: false, achEnabled,
   } as Customer;
 }
 

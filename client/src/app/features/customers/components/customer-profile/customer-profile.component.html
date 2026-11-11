@@ -6,7 +6,7 @@
         <div class="p-4 @4xl/profile:p-6">
           <!-- Top: Name block + action buttons -->
           <div class="flex items-start justify-between gap-3 mb-4">
-            <div class="min-w-0 group/name">
+            <div class="min-w-0">
               <!-- Name + code column, then status badges. The name and its code stay
                    stacked as one column so the badges either sit beside the name (short
                    names) or drop as a unit BELOW the code (long names) - never between
@@ -57,7 +57,7 @@
                 </div>
               </div>
               @if (customer().eSignEnabled && showESignRecipients()) {
-                <div class="mt-2 header-panel">
+                <div class="mt-2">
                   @if (customer().scoularViewRecipients) {
                     <p class="text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-1.5">ScoularView Recipients</p>
                     <div class="flex flex-wrap gap-2">
@@ -74,12 +74,8 @@
                   }
                 </div>
               }
-              <!-- What the modules' badges open: Producers' Organic panel. An open panel carries header-panel, as the
-                   eSign one does, and the farm line below takes more room from any open one. -->
+              <!-- What the modules' badges open: Producers' Organic panel. -->
               <app-customer-slot slot="badge-panels" />
-              @if (customer().farm) {
-                <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 group-has-[.header-panel]/name:mt-3">{{ customer().farm }}</p>
-              }
               <div class="flex items-center gap-2 mt-2 flex-wrap">
                 <!-- The modules' actions: Producers' Producer Insights button. -->
                 <app-customer-slot slot="actions" />

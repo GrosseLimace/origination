@@ -9,8 +9,8 @@ import { PrintReportButtonComponent } from './print-report-button.component';
 
 function makeCustomer(over: Partial<Customer> = {}): Customer {
   return {
-    id: 42, scoularId: 'SAMPFRM', name: 'Sample Farms', farm: 'Sample Farm Co', location: 'Pratt', stateProvince: 'KS',
-    phone: '316-555-0100', email: 'sample@example.com', totalAcres: 1200, linkedProducerIds: [], eSignEnabled: false,
+    id: 42, scoularId: 'SAMPFRM', name: 'Sample Farms', location: 'Pratt', stateProvince: 'KS',
+    phone: '316-555-0100', email: 'sample@example.com', eSignEnabled: false,
     achEnabled: false, ...over,
   };
 }

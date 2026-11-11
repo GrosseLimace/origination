@@ -16,7 +16,7 @@ import { ToastService } from '@core/services/toast.service';
 import { NlqFilterService } from '@core/services/nlq-filter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { providePermissions } from '@testing/permission.stub';
-import { provideProducerProfiles } from '@testing/producer-profiles.fake';
+import { ProducerProfilesFake, producerProfile, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
 import { OutlookCalendarService } from '@core/services/outlook-calendar.service';
 import { environment } from '@env/environment';
 import { CustomerSlotComponent } from '@core/modules/customer-slot.component';
@@ -167,7 +167,7 @@ class OnPushShell {}
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
 const customer = (id: number, over: Partial<Customer> = {}) =>
-  ({ id, scoularId: `S-${id}`, name: `Producer ${id}`, linkedProducerIds: [], ...over }) as Customer;
+  ({ id, scoularId: `S-${id}`, name: `Producer ${id}`, ...over }) as Customer;
 const contract = (id: number, code: string) => ({ id, ctrmCustomerId: code, sourceContractId: `P${id}` }) as Contract;
 const note = (id: number, customerId: number, createdAt: Date) =>
   ({ id, customerId, customerName: '', content: '', isPinned: false, createdBy: '', createdAt }) as Note;
@@ -244,6 +244,8 @@ describe('HomeComponent (rendered)', () => {
   let fixture: ComponentFixture<unknown>;
   let api: ApiStub;
   let app: ReturnType<typeof makeAppState>;
+  /** Every producer's saved details, as the page and its pieces read them. */
+  let profiles: ProducerProfilesFake;
   let queryParams: BehaviorSubject<Params>;
   const originalReadAhead = environment.ctrmReadAheadEnabled;
 
@@ -258,6 +260,7 @@ describe('HomeComponent (rendered)', () => {
   ): Promise<void> {
     api = makeApi();
     app = makeAppState();
+    profiles = producerProfilesFake();
     arrange?.(api, app);
     TestBed.configureTestingModule({
       providers: [
@@ -279,7 +282,7 @@ describe('HomeComponent (rendered)', () => {
         },
         { provide: UsageTrackingService, useValue: { trackProfileOpened: vi.fn() } },
         providePermissions(),
-        provideProducerProfiles(),
+        provideProducerProfiles(profiles),
         // The right column is the sidebar slot: Engagement's two cards, stubbed, contributed as the real module does.
         { provide: APP_MODULES, useValue: sidebarModules },
         { provide: OutlookCalendarService, useValue: { addToOutlook: vi.fn(() => of(null)) } },
@@ -414,7 +417,9 @@ describe('HomeComponent (rendered)', () => {
     await settle();
     expect(text('profile')).toContain('linked:|');
 
-    linkedTo.next([customer(90, { linkedProducerIds: ['S-1'] })]);
+    // Producer 90's saved details link to A.
+    profiles.put(producerProfile(90, { linkedProducerIds: 'S-1' }));
+    linkedTo.next([customer(90)]);
     linkedTo.complete();
     await settle();
     expect(text('profile')).toContain('linked:90');

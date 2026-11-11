@@ -1,7 +1,7 @@
 import { Provider, signal } from '@angular/core';
 import { Observable, of } from 'rxjs';
 import { vi } from 'vitest';
-import { ProducerDetails } from '@models';
+import { GrainOnFarmItem, ProducerBinSiteItem, ProducerContactItem, ProducerDetails } from '@models';
 import { ProducerProfiles } from '@core/context/producer-profiles';
 
 /** One producer's saved details for a spec: the given fields on top of an otherwise empty record. */
@@ -24,6 +24,27 @@ const attached = new WeakMap<object, ProducerDetails>();
 export function withProfile<T extends { id: number }>(customer: T, over: Partial<ProducerDetails>): T {
   attached.set(customer, producerProfile(customer.id, over));
   return customer;
+}
+
+/**
+ * A producer's saved details as a spec's customer fixture writes them: the fields a customer once carried, lists as
+ * arrays. withFixtureProfile turns them into the producer's profile.
+ */
+export interface ProducerFixture {
+  totalAcres?: number;
+  commodities?: string[];
+  linkedProducerIds?: string[];
+  contacts?: ProducerContactItem[];
+  primaryContact?: string;
+  primaryPhone?: string;
+  binSites?: ProducerBinSiteItem[];
+  binSitesModifiedAt?: string | null;
+  grainOnFarm?: GrainOnFarmItem[];
+}
+
+/** Gives a spec's customer the saved details its fixture wrote (see ProducerFixture), and returns the customer. */
+export function withFixtureProfile<T extends { id: number }>(customer: T, { commodities, linkedProducerIds, ...rest }: ProducerFixture): T {
+  return withProfile(customer, { ...rest, commodities: commodities?.join(','), linkedProducerIds: linkedProducerIds?.join(',') });
 }
 
 /** The saved details withProfile gave these customers, by id, as ProducerProfiles.profiles() holds them. */

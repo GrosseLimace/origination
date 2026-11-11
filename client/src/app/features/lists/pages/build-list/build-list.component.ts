@@ -1315,9 +1315,6 @@ export class BuildListComponent {
       // different TU. The background refresh will set it when fresh tickets arrive.
       // Ticket-dependent queries will wait via the "Loading delivery data..." path,
       // ensuring they always use fresh data.
-      const heldDetails = [...this.producerProfiles.profiles().values()];
-      if (heldDetails.length > 0) this._mergeProducerDetails(heldDetails);
-
       // Restore filtered results if we had a previous query for the same TUs
       const saved = this.buildListStore.buildListState();
       const savedTus = saved?.tradeUnits ?? [];
@@ -1406,8 +1403,9 @@ export class BuildListComponent {
       savedLists: this.apiService.getSavedLists().pipe(
         tap(() => this.appState.setSavedListsLoadFailed(false)),
         catchError(() => { this.appState.setSavedListsLoadFailed(true); return of([] as SavedList[]); })),
-      // Read again, as each fresh load does; a failed read falls back to the details already held.
-      producerDetails: this.producerProfiles.load().pipe(catchError(() => of([...this.producerProfiles.profiles().values()])))
+      // Every producer's details, read again as each fresh load does, which the prompts and refines read through
+      // ProducerProfiles. A failed read leaves the details already held.
+      producerDetails: this.producerProfiles.load().pipe(catchError(() => of([] as ProducerDetails[])))
     }).pipe(takeUntil(this._cancelLoad$), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         // Ignore stale response from a previous TU's load
@@ -1422,8 +1420,6 @@ export class BuildListComponent {
         if (this.appState.notesLoaded()) this.notes.set(this.appState.notes());
         this.storedGrain.set(data.storedGrain);
         this.savedLists.set(data.savedLists);
-        // Merge producer details into customer objects (ProducerProfiles already keeps them)
-        this._mergeProducerDetails(data.producerDetails);
         // Write to appState so other pages and restore path can use it
         this.customerStore.setCustomers(this.customers());
         this.appState.setContracts(data.contracts);
@@ -1511,42 +1507,6 @@ export class BuildListComponent {
       this.appState.setTicketsLoadFailed(ticketFetchFailed && this.tickets().length === 0);
       this._ticketsReady.set(true);
     });
-  }
-
-  /** Merge ProducerDetails into customer objects (commodities, acres, bin sites, etc.). */
-  private _mergeProducerDetails(details: ProducerDetails[]): void {
-    if (details.length === 0) return;
-    const detailsMap = new Map(details.map(d => [d.customerId, d]));
-    let changed = false;
-    const merged = this.customers().map(customer => {
-      const pd = detailsMap.get(customer.id);
-      if (pd) {
-        changed = true;
-        return {
-          ...customer,
-          totalAcres: pd.totalAcres ?? customer.totalAcres,
-          binSitesModifiedAt: pd.binSitesModifiedAt ?? customer.binSitesModifiedAt,
-          primaryContact: pd.primaryContact ?? customer.primaryContact,
-          primaryPhone: pd.primaryPhone ?? customer.primaryPhone,
-          // User-entered contact rows exist only on producer details (the customer record never
-          // carries them), and the has-email / has-phone refinements read them. Same rule as the
-          // shared applyProducerDetails.
-          contacts: pd.contacts ?? customer.contacts,
-          commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
-          // Per-commodity grain-on-farm (bushels on hand + $/bu target) — carried onto the customer
-          // so the NLQ engine can filter "grain on farm" / "target" prompts client-side.
-          grainOnFarm: pd.grainOnFarm ?? customer.grainOnFarm,
-          // Bin sites (lat/long) — carried over so "producers with bin sites" filters client-side.
-          binSites: pd.binSites ?? customer.binSites,
-          linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
-        };
-      }
-      return customer;
-    });
-    if (changed) {
-      this.customers.set([...merged]);
-      // cropsByCustomer computed auto-invalidates when customers() changes
-    }
   }
 
   private _restoreUIState(): void {
@@ -2024,12 +1984,12 @@ export class BuildListComponent {
       dpContracts: this.apiService.getDpContracts(tuParam).pipe(
         tap(() => this.appState.setDpContractsLoadFailed(false)),
         catchError(() => { this.appState.setDpContractsLoadFailed(true); return of([] as DpContract[]); })),
-      producerDetails: (this.producerProfiles.profiles().size > 0 ? of([...this.producerProfiles.profiles().values()]) : this.producerProfiles.load()).pipe(catchError(() => of([] as ProducerDetails[])))
+      // Every producer's details, read only when none are held yet; the prompts read them through ProducerProfiles.
+      producerDetails: (this.producerProfiles.profiles().size > 0 ? of([] as ProducerDetails[]) : this.producerProfiles.load()).pipe(catchError(() => of([] as ProducerDetails[])))
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         if (queryGen !== this._queryGenId) return; // Superseded by a newer query
         this.customers.set(data.customers);
-        this._mergeProducerDetails(data.producerDetails);
         this.contracts.set(data.contracts);
         this.tickets.set(data.tickets);
         this.appState.setTicketsLoadFailed(ticketFetchFailed && data.tickets.length === 0);
@@ -2434,8 +2394,7 @@ export class BuildListComponent {
     const allCustomers = this.customers();
     const matchesTerm = (c: Customer) =>
       c.name.toLowerCase().includes(lower) ||
-      (c.scoularId || '').toLowerCase().includes(lower) ||
-      (c.farm || '').toLowerCase().includes(lower);
+      (c.scoularId || '').toLowerCase().includes(lower);
 
     this.memberInResultsMatches.set(
       allCustomers

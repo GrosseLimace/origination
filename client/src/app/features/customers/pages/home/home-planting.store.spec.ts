@@ -5,7 +5,7 @@ import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import type { Customer, PlantingIntention, ProducerDetails } from '@models';
-import { ProducerProfilesFake, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
+import { ProducerProfilesFake, producerProfile, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
 import { HomeBackgroundFailures } from './home-background-failures';
 import { HomePageState } from './home-page.state';
 import { HomePlantingStore } from './home-planting.store';
@@ -13,7 +13,7 @@ import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 const pi = (id: number, customerId = 1, over: Partial<PlantingIntention> = {}) =>
   ({ id, customerId, customerName: 'P', tradeUnit: 'TU1', plantingYear: 2027, crop: 'CORN', acres: 10, ...over }) as PlantingIntention;
-const P1 = { id: 1, scoularId: 'S-1', name: 'P1', commodities: ['Corn'] } as Customer;
+const P1 = { id: 1, scoularId: 'S-1', name: 'P1' } as Customer;
 
 describe('HomePlantingStore', () => {
   let store: HomePlantingStore;
@@ -31,12 +31,15 @@ describe('HomePlantingStore', () => {
       updatePlantingIntention: vi.fn((id: number, d: { crop: string }) => of(pi(id, 1, { crop: d.crop }))),
       deletePlantingIntention: vi.fn(() => of(undefined)),
       retagPlantingIntentions: vi.fn(() => of({ moved: 1 })),
-      saveProducerDetails: vi.fn((id: number) => of({ id, customerId: id, customerName: 'P1' } as ProducerDetails)),
+      // Answers with what was saved, as the server does.
+      saveProducerDetails: vi.fn((id: number, body: { commodities?: string | null }) =>
+        of({ id, customerId: id, customerName: 'P1', commodities: body.commodities ?? undefined } as ProducerDetails)),
     };
     appState = { setPlantingIntentions: vi.fn() };
     toast = { success: vi.fn(), error: vi.fn() };
     failures = { report: vi.fn() };
-    profiles = producerProfilesFake();
+    // P1's saved details: they grow corn.
+    profiles = producerProfilesFake([producerProfile(1, { commodities: 'Corn' })]);
     TestBed.configureTestingModule({
       providers: [
         HomePageState, HomePlantingStore,
@@ -114,9 +117,8 @@ describe('HomePlantingStore', () => {
 
       store.addPlantingIntention({ crop: ' SOYBEANS ', acres: 1, plantingYear: 2027, tradeUnit: 'TU1' });
       expect(api['saveProducerDetails']).toHaveBeenCalledWith(1, expect.objectContaining({ commodities: 'Corn,SOYBEANS' }));
-      expect(page.selectedCustomer()?.commodities).toEqual(['Corn', 'SOYBEANS']);
-      expect(page.customers()[0].commodities).toEqual(['Corn', 'SOYBEANS']);
-      expect(profiles.profileOf(1)).toBeDefined();
+      // The new crop shows wherever the producer's details are read.
+      expect(profiles.profileOf(1)?.commodities).toBe('Corn,SOYBEANS');
     });
 
     it('add, edit and delete keep the trade unit\'s list and the shared copy in step', () => {

@@ -13,8 +13,8 @@ function customer(
   profile: Partial<ProducerDetails> = {},
 ): Customer {
   return withProfile({
-    id, name, farm: '', location: '', phone: '', email: '',
-    totalAcres: 0, linkedProducerIds: [], eSignEnabled: false,
+    id, name, location: '', phone: '', email: '',
+    eSignEnabled: false,
   } as Customer, { grainOnFarm, ...profile });
 }
 

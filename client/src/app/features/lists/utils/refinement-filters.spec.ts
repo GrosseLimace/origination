@@ -11,8 +11,8 @@ const DAY = 86400000;
 
 function customer(id: number, over: Partial<Customer> = {}): Customer {
   return {
-    id, name: `P${id}`, scoularId: `C${id}`, farm: '', location: '', phone: '', email: '', totalAcres: 0,
-    linkedProducerIds: [], eSignEnabled: false, achEnabled: false, ...over,
+    id, name: `P${id}`, scoularId: `C${id}`, location: '', phone: '', email: '', 
+    eSignEnabled: false, achEnabled: false, ...over,
   };
 }
 

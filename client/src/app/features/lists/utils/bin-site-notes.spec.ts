@@ -9,8 +9,8 @@ const profiles = new Map<number, ProducerDetails>();
 const customer = (id: number, ...sites: string[]): Customer => {
   profiles.set(id, producerProfile(id, { binSites: sites.map((name, i) => ({ siteKey: `${id}-${i}`, name })) }));
   return {
-    id, name: `P${id}`, scoularId: `C${id}`, farm: '', location: '', phone: '', email: '', totalAcres: 0,
-    linkedProducerIds: [], eSignEnabled: false, achEnabled: false,
+    id, name: `P${id}`, scoularId: `C${id}`, location: '', phone: '', email: '', 
+    eSignEnabled: false, achEnabled: false,
   };
 };
 

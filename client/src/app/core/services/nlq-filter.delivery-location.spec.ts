@@ -6,8 +6,8 @@ import { Customer, Ticket } from '@models';
  *  name-search can't interfere. */
 function customer(id: number, name: string, scoularId: string): Customer {
   return {
-    id, name, scoularId, farm: '', location: '', phone: '', email: '',
-    totalAcres: 0, linkedProducerIds: [], eSignEnabled: false,
+    id, name, scoularId, location: '', phone: '', email: '',
+    eSignEnabled: false,
   } as Customer;
 }
 

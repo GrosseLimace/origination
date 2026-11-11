@@ -3,8 +3,8 @@ import { Commodity, Contract, Customer, DashboardPlantingEstimate, PlantingInten
 import { evaluatePlantingCoverage, PlantingCoverageInput } from './planting-coverage';
 
 const customer = (id: number): Customer => ({
-  id, name: `P${id}`, scoularId: `C${id}`, farm: '', location: '', phone: '', email: '', totalAcres: 0,
-  linkedProducerIds: [], eSignEnabled: false, achEnabled: false,
+  id, name: `P${id}`, scoularId: `C${id}`, location: '', phone: '', email: '', 
+  eSignEnabled: false, achEnabled: false,
 });
 const contract = (over: Partial<Contract>): Contract => ({
   id: 1, customerId: 1, ctrmCustomerId: 'C1', sourceContractId: 'P1', farmId: 'F', contractNumber: '1', contractPrefixType: 'P',

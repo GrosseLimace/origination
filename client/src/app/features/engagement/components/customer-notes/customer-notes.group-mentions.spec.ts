@@ -9,6 +9,7 @@ import { Customer, MentionCatalog, Note } from '@models';
 import { TeamsDirectoryService } from '../../data-access/teams-directory.service';
 import type { GraphTeamsChannel } from '@models';
 import { SelectedProducerEngagementFake, provideSelectedProducerEngagement, selectedProducerEngagementFake } from '@testing/selected-producer-engagement.fake';
+import { provideProducerProfiles } from '@testing/producer-profiles.fake';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 
 /** What Graph reports the signed-in user's own teams contain. "Grain Desk" is already registered
@@ -65,6 +66,7 @@ describe('CustomerNotesComponent — group mentions', () => {
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
         provideSelectedProducerEngagement(engagement = selectedProducerEngagementFake()),
         SelectedCustomerContext,
+        provideProducerProfiles(),
       ],
     });
     TestBed.overrideComponent(CustomerNotesComponent, {

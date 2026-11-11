@@ -7,6 +7,7 @@ import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { ProducerProfiles } from '@core/context/producer-profiles';
+import { profileCommodities } from '@shared/utils/producer-profile';
 import type { Customer, PlantingIntention } from '@models';
 import { HomeBackgroundFailures } from './home-background-failures';
 import { HomePageState } from './home-page.state';
@@ -205,7 +206,8 @@ export class HomePlantingStore {
    */
   private _ensureCommodityOnProducerDetails(customer: Customer, cropCode: string): void {
     if (!cropCode) return;
-    const existing = customer.commodities ?? [];
+    const profile = this.producerProfiles.profileOf(customer.id);
+    const existing = profileCommodities(profile);
     const codeUpper = cropCode.trim().toUpperCase();
     const alreadyPresent = existing.some(c => c.trim().toUpperCase() === codeUpper);
     if (alreadyPresent) return;
@@ -214,22 +216,16 @@ export class HomePlantingStore {
     this.apiService.saveProducerDetails(customer.id, {
       scoularId: customer.scoularId ?? null,
       customerName: customer.name,
-      totalAcres: customer.totalAcres ?? null,
-      primaryContact: customer.primaryContact ?? null,
-      primaryPhone: customer.primaryPhone ?? null,
+      totalAcres: profile?.totalAcres ?? null,
+      primaryContact: profile?.primaryContact ?? null,
+      primaryPhone: profile?.primaryPhone ?? null,
       commodities: updated.join(','),
-      linkedProducerIds: (customer.linkedProducerIds ?? []).join(','),
+      linkedProducerIds: profile?.linkedProducerIds ?? '',
       // grainOnFarm intentionally omitted — this save isn't editing grain on farm, and the server
       // preserves the existing rows when it is absent (a cached copy could be older than a teammate's edit).
     }).subscribe({
-      next: (savedDetails) => {
-        // Reflect the new commodity in local state so the UI updates without a refresh.
-        const updatedCustomer = { ...customer, commodities: updated };
-        this.page.selectedCustomer.set(updatedCustomer);
-        this.page.customers.update(arr => arr.map(c => c.id === customer.id ? updatedCustomer : c));
-        // Keep the producer-details map in sync — same pattern as handleSaveCustomer.
-        this.producerProfiles.put(savedDetails);
-      },
+      // The new commodity shows wherever the producer's details are read, without a refresh.
+      next: (savedDetails) => this.producerProfiles.put(savedDetails),
       error: () => { /* non-blocking — intention saved successfully */ }
     });
   }

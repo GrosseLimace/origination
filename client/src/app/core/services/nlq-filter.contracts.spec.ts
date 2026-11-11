@@ -15,8 +15,8 @@ import { Customer, Contract } from '@models';
  *  (Alpha/Bravo/…) so the engine's name-search path can't accidentally match query words. */
 function customer(id: number, name: string, scoularId: string): Customer {
   return {
-    id, name, scoularId, farm: '', location: '', phone: '', email: '',
-    totalAcres: 0, linkedProducerIds: [], eSignEnabled: false,
+    id, name, scoularId, location: '', phone: '', email: '',
+    eSignEnabled: false,
   } as Customer;
 }
 

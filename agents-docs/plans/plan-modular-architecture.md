@@ -1064,7 +1064,7 @@ Where it differs from the row above:
 
 **Phase 4 is in progress** on `feature_ModularArchitecture-Phase4`, cut from `feature_ModularArchitecture`, in reviewed steps. Step 11 turns this list into the phase's record, like Phase 2's and Phase 3's above.
 
-Done, in 19 commits (2026-11-09 to 2026-11-10):
+Done, in 20 commits (2026-11-09 to 2026-11-10):
 1. The customer-screen slot types in the manifest (`2dbec000`).
 2. Module stores cleared on sign-out and idle timeout again (`a31f1483`). Customers' own store, API client and preload (`e8c357f9`).
 3. The selected producer's activity moved out of the home page (`dbca0d0f`) and read through `SelectedProducerActivity` (`437956e7`). The contracts and tickets tables became the Contracts module's profile tabs (`8e24bb19`).
@@ -1073,14 +1073,11 @@ Done, in 19 commits (2026-11-09 to 2026-11-10):
 6. The profile header's producer details (`42cfa900`) and the producer's performance panels (`9c316abc`) became Producers panels.
 7. Print with the Producer Summary Report (`e2d2f5e9`), and Edit with the Edit Producer Details dialog (`c6fe0dcd`), moved whole into Producers. See "Decided in Phase 4" in §5.2.
 8. The calculator launcher moved into the home page's `floating` slot (`2d69f12c`). Add to List became a Lists panel in the `toolbar` slot, before Print, needing `saved-lists:read:own` and `saved-lists:write:own`. It reads the lists, whether they failed to load, and the save from `SavedListMembership`, which the home page's `HomeSavedListsStore` implements, and the profile dropped the dropdown, its staging logic, three inputs and an output (`49f18332`). 8c is in step 10.
-9. Part a: every producer's details have one copy, Producers' `ProducerProfileStore`, which core declares as `ProducerProfiles` and the composition root provides. Producers' preload reads them, and the home page again on each visit, only for users with `producer-details:read`; `AppStateService` no longer holds them. Producers' panels and screens, Build a List with its filters, result rows and bin-site notes, and the NLQ engine (through its context) read a producer's details from it rather than off the customer. Part b is below.
+9. The `Customer` → producer profile split, in two parts.
+   - Part a: every producer's details have one copy, Producers' `ProducerProfileStore`, which core declares as `ProducerProfiles` and the composition root provides. Producers' preload reads them, and the home page again on each visit, only for users with `producer-details:read`; `AppStateService` no longer holds them. Producers' panels and screens, Build a List with its filters, result rows and bin-site notes, and the NLQ engine (through its context) read a producer's details from it rather than off the customer (`76280638`).
+   - Part b: a customer is just a customer, on both ends. The home page (the linked-producer walk and linked group, the commodity auto-saves, the edit save), the customer list, the profile and the Notes card read through `ProducerProfiles`, and nothing lays the details over a customer any more: `applyProducerDetails` and Build a List's copy of it are gone. `Customer` shed `totalAcres`, `linkedProducerIds`, `grainOnFarm`, `binSites`, `binSitesModifiedAt`, `contacts`, `primaryContact`, `primaryPhone`, `commodities` and `farm`; `CustomerResponse` and the entity `Farm`, `FarmIds`, `TotalAcres` and `LinkedProducerIds`; and `customers/linked-to` returns plain customers, so `GetLinkFieldsAsync` went too. `Model_HasNoChangesWithoutAMigration` shows the database didn't change. The NLQ engine's farm-name filter matches the customer's name, and the profile's dead farm line went, with the `header-panel` mark that only it read.
 
 Left:
-- **9b. A customer is just a customer, on both ends.**
-  - The home page, the linked-producer walk, the customer list and the Notes card read through `ProducerProfiles`. `applyProducerDetails` and Build a List's copy of it go, and with them Build a List's writing back of the customers it copied the details onto, which the dashboard read.
-  - `Customer` sheds `totalAcres`, `linkedProducerIds`, `grainOnFarm`, `binSites`, `binSitesModifiedAt`, `contacts`, `primaryContact`, `primaryPhone`, `commodities` and `farm`, and the spec fixtures lose them.
-  - `CustomerResponse` and the entity drop `Farm`, `FarmIds`, `TotalAcres` and `LinkedProducerIds`, and `customers/linked-to` returns plain customers. `Model_HasNoChangesWithoutAMigration` confirms the database doesn't change.
-  - The NLQ engine's farm-name filter matches the customer's name.
 - **Found and decided for step 9 (2026-11-10):**
   - **The server never sent the producer fields.** `CustomerResponse`'s `TotalAcres`, `FarmIds`, `LinkedProducerIds` and `Farm` come from entity properties EF ignores and nothing in Customers writes, so they always went out as `0`, `[]`, `[]` and `""`. Only Producers' `customers/linked-to` set acres and links on top. The SPA put the producer fields on its customers itself, from producer details: on the home page, in Build a List and in the customer list.
   - **`farm` is dead on both ends,** and the NLQ farm-name filter that reads it could only ever return no one.

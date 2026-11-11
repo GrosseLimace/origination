@@ -10,8 +10,8 @@ import {
 } from './result-rows';
 
 const customer = (id: number, over: Partial<Customer> = {}): Customer => ({
-  id, name: `P${id}`, scoularId: `C${id}`, farm: '', location: '', phone: '', email: '', totalAcres: 0,
-  linkedProducerIds: [], eSignEnabled: false, achEnabled: false, ...over,
+  id, name: `P${id}`, scoularId: `C${id}`, location: '', phone: '', email: '', 
+  eSignEnabled: false, achEnabled: false, ...over,
 });
 const contract = (id: number, ctrmCustomerId: string | undefined, over: Partial<Contract> = {}) =>
   ({ id, ctrmCustomerId, commodityCode: 'YC', ...over }) as Contract;

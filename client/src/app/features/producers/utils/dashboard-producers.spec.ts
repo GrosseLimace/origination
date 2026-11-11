@@ -16,8 +16,8 @@ const COMMODITIES = new Map<string, Commodity>([
 
 function customer(over: Partial<Customer>): Customer {
   return {
-    id: 0, name: '', farm: '', location: '', phone: '', email: '', totalAcres: 0,
-    linkedProducerIds: [], eSignEnabled: false, achEnabled: false, ...over,
+    id: 0, name: '', location: '', phone: '', email: '', 
+    eSignEnabled: false, achEnabled: false, ...over,
   };
 }
 
@@ -37,8 +37,8 @@ function contract(over: Partial<Contract>): Contract {
   };
 }
 
-const ALPHA = customer({ id: 1, scoularId: 'ALPHA', name: 'Alpha Farms', totalAcres: 400 });
-const BRAVO = customer({ id: 2, scoularId: 'BRAVO', name: 'Bravo Ag', totalAcres: 300 });
+const ALPHA = customer({ id: 1, scoularId: 'ALPHA', name: 'Alpha Farms' });
+const BRAVO = customer({ id: 2, scoularId: 'BRAVO', name: 'Bravo Ag' });
 
 describe('buildProducersWithIntentionsRows', () => {
   const rows = buildProducersWithIntentionsRows(
@@ -112,7 +112,7 @@ describe('buildProducersWithoutIntentionsRows', () => {
       pi({ customerId: 2, crop: 'SB', acres: 10, tradeUnit: '3811' }), // another trade unit
       pi({ customerId: 3, crop: 'SB', acres: 10, plantingYear: 2025 }), // another year
     ],
-    customers: [ALPHA, BRAVO, customer({ id: 3, scoularId: 'CHARLIE', name: 'Charlie Grain', totalAcres: 100 })],
+    customers: [ALPHA, BRAVO, customer({ id: 3, scoularId: 'CHARLIE', name: 'Charlie Grain' })],
     year: 2026,
     cropFilter: '',
     tradeUnitSet: new Set(['2090']),

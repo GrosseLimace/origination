@@ -51,11 +51,4 @@ public interface IProducerDetailsRepository
     /// <summary>The customers that link to the producer with this CTRM code (incoming rows in dbo.CustomerLink).
     /// Empty when no customer has that code.</summary>
     Task<List<long>> GetCustomerIdsLinkingToAsync(string scoularId, CancellationToken cancellationToken);
-
-    /// <summary>For each of <paramref name="customerIds"/> that has either: its total acres, and the CTRM codes
-    /// of the producers it links to.</summary>
-    Task<Dictionary<long, ProducerLinkFields>> GetLinkFieldsAsync(IReadOnlyCollection<long> customerIds, CancellationToken cancellationToken);
 }
-
-/// <summary>The producer fields a linked customer carries: total acres (null when unknown) and the CTRM codes it links to.</summary>
-public sealed record ProducerLinkFields(int? TotalAcres, List<string> LinkedProducerIds);

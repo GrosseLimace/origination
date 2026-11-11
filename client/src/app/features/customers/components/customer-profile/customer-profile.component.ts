@@ -7,6 +7,8 @@ import { formatPhoneDisplay } from '@shared/utils/phone';
 import { resolveCustomerAddress, formatAddressLine, googleMapsSearchUrl } from '@shared/utils/address';
 import { SelectedProducerProduction } from '@core/context/selected-producer-production';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
+import { ProducerProfiles } from '@core/context/producer-profiles';
+import { profileCommodities } from '@shared/utils/producer-profile';
 import { CustomerTab } from '@core/modules/module-manifest';
 import { ModuleRegistry } from '@core/modules/module-registry';
 import { CustomerContributionComponent } from '@core/modules/customer-contribution.component';
@@ -92,6 +94,8 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
   private readonly registry = inject(ModuleRegistry);
   private readonly context = inject(SelectedCustomerContext);
   private readonly injector = inject(Injector);
+  /** Every producer's saved details: the commodities on this producer's profile. */
+  private readonly producerProfiles = inject(ProducerProfiles);
 
   constructor() {
     effect(() => {
@@ -303,7 +307,7 @@ export class CustomerProfileComponent implements SelectedProducerProduction {
   /** Commodity codes the producer deals in: their tickets' and those on their profile. */
   readonly commodityCodes = computed(() => {
     const ticketCommodities = [...new Set(this.tickets().map(t => t.productCode || '').filter(Boolean))];
-    const userCommodities = this.customer()?.commodities || [];
+    const userCommodities = profileCommodities(this.producerProfiles.profileOf(this.customer().id));
     return [...new Set([...ticketCommodities, ...userCommodities])].sort();
   });
 

@@ -7,8 +7,14 @@ import { ProducerProfilesFake, producerProfile, producerProfilesFake, providePro
 import { HomePageState } from './home-page.state';
 import { HomeLinkedProducersStore } from './home-linked-producers.store';
 
-const customer = (id: number, linked: string[] = [], over: Partial<Customer> = {}) =>
-  ({ id, scoularId: `S-${id}`, name: `P${id}`, linkedProducerIds: linked, ...over }) as Customer;
+/** Every producer's saved details, as the walk reads their links; made fresh for each test. */
+let profiles: ProducerProfilesFake;
+
+/** A producer, whose saved details link to `linked`. */
+const customer = (id: number, linked: string[] = [], over: Partial<Customer> = {}) => {
+  if (linked.length > 0) profiles.put(producerProfile(id, { linkedProducerIds: linked.join(',') }));
+  return ({ id, scoularId: `S-${id}`, name: `P${id}`, ...over }) as Customer;
+};
 
 describe('HomeLinkedProducersStore', () => {
   let store: HomeLinkedProducersStore;
@@ -18,7 +24,6 @@ describe('HomeLinkedProducersStore', () => {
   /** The graph the stub API serves: who each source id is, and who links to it. */
   let bySource: Map<string, Customer>;
   let linkedTo: Map<string, Customer[]>;
-  let profiles: ProducerProfilesFake;
 
   beforeEach(() => {
     bySource = new Map();
@@ -52,13 +57,14 @@ describe('HomeLinkedProducersStore', () => {
     expect(onWalked.mock.calls.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('applies known producer details to what it fetches', () => {
-    bySource.set('S-90', customer(90));
-    profiles.set([producerProfile(90, { customerName: 'P90', totalAcres: 640 })]);
+  // Their details stay in ProducerProfiles, where every piece of the screen reads them.
+  it('keeps the producers it fetches as the API gives them', () => {
+    const fetched = customer(90);
+    bySource.set('S-90', fetched);
 
     store.fetchMissingLinkedProducers(customer(1, ['S-90']), onWalked);
 
-    expect(store.crossTradeUnitCustomers()[0].totalAcres).toBe(640);
+    expect(store.crossTradeUnitCustomers()).toEqual([fetched]);
   });
 
   it('walks a producer once until forgetWalks', () => {

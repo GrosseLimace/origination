@@ -3,8 +3,7 @@ import { SelectedCustomerContext } from '@core/context/selected-customer-context
 import { OrganicPanelState, isOrganicProducer } from './organic-panel.state';
 
 /**
- * What the Organic badge opens, under the producer's name: their NOP ID. Open, it carries header-panel, which the
- * profile spaces the line below by.
+ * What the Organic badge opens, under the producer's name: their NOP ID.
  */
 @Component({
   selector: 'app-organic-panel',

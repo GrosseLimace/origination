@@ -11,7 +11,7 @@ import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
-import { ProducerProfilesFake, producerProfilesFake, profilesOf, provideProducerProfiles, withProfile } from '@testing/producer-profiles.fake';
+import { ProducerFixture, ProducerProfilesFake, producerProfilesFake, profilesOf, provideProducerProfiles, withFixtureProfile } from '@testing/producer-profiles.fake';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 import { NlqFilterContext, NlqFilterResult, NlqFilterService } from '@core/services/nlq-filter.service';
 import { Contract, Customer, NoteLastContact, ProducerDetails, QueryLibraryItem, RefinementFilters, SavedList, Ticket } from '@models';
@@ -39,15 +39,11 @@ const DAY = 24 * 60 * 60 * 1000;
  *  givenCustomers serves from the details read alongside them. */
 function makeCustomer(
   { totalAcres, commodities, linkedProducerIds, contacts, primaryContact, primaryPhone, binSites, binSitesModifiedAt, grainOnFarm, ...over }:
-    Partial<Customer> & Pick<Customer, 'id' | 'name'>,
+    Partial<Customer> & Pick<Customer, 'id' | 'name'> & ProducerFixture,
 ): Customer {
-  return withProfile({
-    scoularId: `C${over.id}`, farm: '', location: '', phone: '', email: '', totalAcres: 0,
-    linkedProducerIds: [], eSignEnabled: false, achEnabled: false, ...over,
-  }, {
-    totalAcres, commodities: commodities?.join(','), linkedProducerIds: linkedProducerIds?.join(','),
-    contacts, primaryContact, primaryPhone, binSites, binSitesModifiedAt, grainOnFarm,
-  });
+  return withFixtureProfile<Customer>({
+    scoularId: `C${over.id}`, location: '', phone: '', email: '', eSignEnabled: false, achEnabled: false, ...over,
+  }, { totalAcres, commodities, linkedProducerIds, contacts, primaryContact, primaryPhone, binSites, binSitesModifiedAt, grainOnFarm });
 }
 
 const ALPHA = makeCustomer({ id: 1, name: 'Alpha Acres', location: 'Pratt', stateProvince: 'KS' });

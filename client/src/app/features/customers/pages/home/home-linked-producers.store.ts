@@ -5,7 +5,7 @@ import { catchError, takeUntil } from 'rxjs/operators';
 import { CustomersApiService } from '../../data-access/customers-api.service';
 import { ProducerProfiles } from '@core/context/producer-profiles';
 import type { Customer } from '@models';
-import { applyProducerDetails } from '@shared/utils/apply-producer-details';
+import { profileLinkedIds } from '@shared/utils/producer-profile';
 import { HomePageState } from './home-page.state';
 
 /**
@@ -39,19 +39,13 @@ export class HomeLinkedProducersStore {
     this._linkedFetchDone.clear();
   }
 
-  /** Applies ProducerDetails enrichment onto a freshly-fetched Customer. */
-  private _enrichCustomer(fetched: Customer): Customer {
-    const pd = this.producerProfiles.profileOf(fetched.id);
-    return pd ? applyProducerDetails(fetched, pd) : fetched;
-  }
-
   /**
    * Fetches every producer transitively linked to `customer` (forward + reverse) and
    * populates `crossTradeUnitCustomersById` with the full group so `getLinkedGroup()` can
    * surface the whole chain — e.g. if A→B and A→C, viewing B still shows C via A.
    *
-   * BFS walks the graph one hop at a time; each newly discovered customer's own links
-   * are fetched recursively. `visited` guards against cycles. `MAX_GROUP_SIZE` is a
+   * BFS walks the graph one hop at a time; each newly discovered customer's own links (from their saved details, which
+   * ProducerProfiles holds for every producer) are fetched recursively. `visited` guards against cycles. `MAX_GROUP_SIZE` is a
    * safety cap in case a customer is part of an unexpectedly large link web. `onWalked` runs each
    * time a level of the walk lands (the page uses it to top up the notes cache for the new members).
    */
@@ -65,7 +59,7 @@ export class HomeLinkedProducersStore {
     if (this._linkedFetchDone.has(customer.id)) return;
     visited.add(customer.id);
 
-    const linkedIds = customer.linkedProducerIds || [];
+    const linkedIds = profileLinkedIds(this.producerProfiles.profileOf(customer.id));
     const allCustomers = [...this.page.customers(), ...this.crossTradeUnitCustomersById().values()];
     const missing = linkedIds.filter(sourceId =>
       !allCustomers.some(c => c.scoularId === sourceId)
@@ -97,11 +91,11 @@ export class HomeLinkedProducersStore {
         const next = new Map(current);
         for (const fetched of outgoing) {
           if (!fetched) continue;
-          if (!next.has(fetched.id)) next.set(fetched.id, this._enrichCustomer(fetched));
+          if (!next.has(fetched.id)) next.set(fetched.id, fetched);
         }
         for (const fetched of incoming) {
           if (!fetched || fetched.id === customer.id) continue;
-          if (!next.has(fetched.id)) next.set(fetched.id, this._enrichCustomer(fetched));
+          if (!next.has(fetched.id)) next.set(fetched.id, fetched);
         }
         return next;
       });

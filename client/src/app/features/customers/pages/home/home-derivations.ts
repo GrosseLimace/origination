@@ -63,14 +63,13 @@ export function readFailureMessage(err: unknown): string {
 // ── Linked producers ────────────────────────────────────────────────────────
 
 /**
- * Returns every producer transitively linked to `customer` — both forward (customers
- * in `customer.linkedProducerIds`) and reverse (customers whose own `linkedProducerIds`
- * includes `customer.scoularId`) — walked until the connected component is
- * exhausted. Prevents infinite loops with a visited set. Caps at 50 members to avoid
- * worst-case fanout. Only producers in `all` can be found; one not loaded yet is silently
- * excluded until it is.
+ * Returns every producer transitively linked to `customer` — both forward (the producers `customer`'s links name)
+ * and reverse (producers whose own links include `customer.scoularId`) — walked until the connected component is
+ * exhausted. `linkedIdsOf` gives a producer's links: the producer codes their saved details link to. Prevents infinite
+ * loops with a visited set. Caps at 50 members to avoid worst-case fanout. Only producers in `all` can be found; one
+ * not loaded yet is silently excluded until it is.
  */
-export function linkedGroupOf(customer: Customer, all: Customer[]): Customer[] {
+export function linkedGroupOf(customer: Customer, all: Customer[], linkedIdsOf: (c: Customer) => readonly string[]): Customer[] {
   const MAX_GROUP_SIZE = 50;
   const bySourceId = new Map<string, Customer>();
   for (const c of all) {
@@ -84,8 +83,8 @@ export function linkedGroupOf(customer: Customer, all: Customer[]): Customer[] {
   while (queue.length > 0 && visited.size < MAX_GROUP_SIZE) {
     const cur = queue.shift()!;
 
-    // Forward: follow each id in the current customer's linkedProducerIds
-    for (const sourceId of cur.linkedProducerIds || []) {
+    // Forward: follow each producer code the current customer links to
+    for (const sourceId of linkedIdsOf(cur)) {
       const neighbor = bySourceId.get(sourceId);
       if (neighbor && !visited.has(neighbor.id)) {
         visited.add(neighbor.id);
@@ -94,12 +93,12 @@ export function linkedGroupOf(customer: Customer, all: Customer[]): Customer[] {
       }
     }
 
-    // Reverse: find anyone whose linkedProducerIds mentions the current customer
+    // Reverse: find anyone whose links mention the current customer
     const curSource = cur.scoularId || '';
     if (curSource) {
       for (const other of all) {
         if (visited.has(other.id)) continue;
-        if ((other.linkedProducerIds || []).includes(curSource)) {
+        if (linkedIdsOf(other).includes(curSource)) {
           visited.add(other.id);
           result.set(other.id, other);
           queue.push(other);

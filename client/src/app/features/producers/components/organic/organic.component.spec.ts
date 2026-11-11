@@ -73,7 +73,6 @@ describe('The Organic badge and panel', () => {
     render();
 
     expect(badge()!.getAttribute('aria-expanded')).toBe('true');
-    expect(panel()!.classList).toContain('header-panel');
     expect(text(panel())).toContain('1234567890');
 
     badge()!.click();

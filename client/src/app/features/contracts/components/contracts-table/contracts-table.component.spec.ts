@@ -38,8 +38,8 @@ const screenContext = (customer: Customer): ScreenContextFake =>
 
 function makeCustomer(over: Partial<Customer> = {}): Customer {
   return {
-    id: 42, scoularId: 'SAMPFRM', name: 'Sample Farms', farm: 'Sample Farms', location: 'Pratt, KS',
-    phone: '', email: '', totalAcres: 0, linkedProducerIds: [], eSignEnabled: false, achEnabled: false, ...over,
+    id: 42, scoularId: 'SAMPFRM', name: 'Sample Farms', location: 'Pratt, KS',
+    phone: '', email: '', eSignEnabled: false, achEnabled: false, ...over,
   };
 }
 

@@ -34,25 +34,19 @@ public class LinkedProducersServiceTests
             Mock.Of<ILogger<ProducerDetailsService>>());
     }
 
+    // Their acres and links are their producer details, which the client reads on their own; nothing goes on top.
     [Fact]
-    public async Task GetLinkedToAsync_PutsEachCustomersAcresAndLinksOnWhatTheCustomersModuleReturns()
+    public async Task GetLinkedToAsync_IsTheActiveCustomersTheCustomersModuleReturns()
     {
         _repositoryMock.Setup(r => r.GetCustomerIdsLinkingToAsync("S1", It.IsAny<CancellationToken>())).ReturnsAsync([2, 3, 4]);
         // Customer 4 is inactive, so the Customers module leaves it out.
         _customersMock
             .Setup(c => c.GetActiveAsync(It.Is<IReadOnlyCollection<long>>(ids => ids.Order().SequenceEqual(new long[] { 2, 3, 4 })), It.IsAny<CancellationToken>()))
             .ReturnsAsync([new CustomerResponse { Id = 2, Name = "Two" }, new CustomerResponse { Id = 3, Name = "Three" }]);
-        _repositoryMock
-            .Setup(r => r.GetLinkFieldsAsync(It.Is<IReadOnlyCollection<long>>(ids => ids.Order().SequenceEqual(new long[] { 2, 3 })), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Dictionary<long, ProducerLinkFields> { [2] = new(1200, ["S1", "S9"]) });
 
         var linked = await _sut.GetLinkedToAsync("S1", CancellationToken.None);
 
         Assert.Equal([2L, 3L], linked.Select(c => c.Id));
-        Assert.Equal(1200, linked[0].TotalAcres);
-        Assert.Equal(["S1", "S9"], linked[0].LinkedProducerIds);
-        Assert.Equal(0, linked[1].TotalAcres);
-        Assert.Empty(linked[1].LinkedProducerIds);
         Assert.Equal("Two", linked[0].Name);
     }
 

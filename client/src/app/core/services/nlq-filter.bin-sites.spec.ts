@@ -13,7 +13,7 @@ const site = (lat: number): ProducerBinSiteItem => ({ name: null, latitude: lat,
 /** A customer, with its bin sites in its saved details. */
 function customer(id: number, over: { binSites?: ProducerBinSiteItem[] } = {}): Customer {
   return withProfile({
-    id, name: `Farm ${id}`, farm: '', location: '', totalAcres: 0, linkedProducerIds: [], eSignEnabled: false,
+    id, name: `Farm ${id}`, location: '', eSignEnabled: false,
     email: '', phone: '',
   } as Customer, over);
 }

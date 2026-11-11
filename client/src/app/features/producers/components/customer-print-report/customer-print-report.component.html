@@ -32,9 +32,6 @@
             <div [style.background]="accentLight()" style="border-radius: 8px; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
               <div>
                 <div style="font-size: 20px; font-weight: 700; color: #111;">{{ customer().name }}</div>
-                @if (customer().farm) {
-                  <div style="font-size: 13px; color: #4b5563; margin-top: 2px;">{{ customer().farm }}</div>
-                }
               </div>
               <div style="display: flex; gap: 20px; font-size: 11px; color: #4b5563;">
                 <div>

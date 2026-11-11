@@ -5,8 +5,8 @@ import { dashboardCropKey, formatAcres, formatK, getFormattedLocation, getInitia
 
 function customer(over: Partial<Customer>): Customer {
   return {
-    id: 1, name: '', farm: '', location: '', phone: '', email: '', totalAcres: 0,
-    linkedProducerIds: [], eSignEnabled: false, achEnabled: false, ...over,
+    id: 1, name: '', location: '', phone: '', email: '', 
+    eSignEnabled: false, achEnabled: false, ...over,
   };
 }
 

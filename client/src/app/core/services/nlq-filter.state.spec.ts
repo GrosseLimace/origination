@@ -8,8 +8,8 @@ import { Customer } from '@models';
  *  where the trade unit merchandises — the two can legitimately differ. */
 function customer(id: number, name: string, extendedStateProvince?: string, stateProvince?: string): Customer {
   return {
-    id, name, farm: '', location: '', phone: '', email: '',
-    totalAcres: 0, linkedProducerIds: [], eSignEnabled: false,
+    id, name, location: '', phone: '', email: '',
+    eSignEnabled: false,
     extendedStateProvince, stateProvince,
   } as Customer;
 }
@@ -56,5 +56,20 @@ describe('NlqFilterService — state field precedence matches the refine-panel c
     const blank = customer(1, 'Alpha Farms');
     const ids = svc.parseAndFilter('producers in Iowa', ctx([blank])).customers.map(c => c.id);
     expect(ids).toEqual([]);
+  });
+});
+
+// A producer's farm is the producer: the customer record has no farm name of its own (the one it had was never filled
+// in, so this filter used to match no one).
+describe('NlqFilterService — a farm named in the prompt matches the producer\'s name', () => {
+  let svc: NlqFilterService;
+  beforeEach(() => { svc = new NlqFilterService(); });
+
+  it('"farm named …" and "on … farm" find the producers whose name has it', () => {
+    const all = [customer(1, 'Alpha Acres'), customer(2, 'Bravo Ridge Farms'), customer(3, 'Charlie Ridge Farms')];
+    const ids = (q: string) => svc.parseAndFilter(q, ctx(all)).customers.map(c => c.id).sort((a, b) => a - b);
+
+    expect(ids('farm named bravo')).toEqual([2]);
+    expect(ids('producers on ridge farm')).toEqual([2, 3]);
   });
 });

@@ -8,6 +8,7 @@ import { ToastService } from '@core/services/toast.service';
 import { Customer, MentionCatalog, Note, NoteMention } from '@models';
 import { TeamsDirectoryService } from '../../data-access/teams-directory.service';
 import { SelectedProducerEngagementFake, provideSelectedProducerEngagement, selectedProducerEngagementFake } from '@testing/selected-producer-engagement.fake';
+import { producerProfile, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { permissionStub, providePermissions } from '@testing/permission.stub';
 import { PermissionId } from '@core/access/permission-ids.generated';
@@ -40,6 +41,9 @@ describe('CustomerNotesComponent — note search filter + highlight', () => {
   let ref: ComponentRef<CustomerNotesComponent>;
   let fixture: ComponentFixture<CustomerNotesComponent>;
 
+  // Every producer's saved details, which give a note's bin-site names.
+  const profiles = producerProfilesFake();
+
   const notes: Note[] = [
     makeNote({ id: 1, customerId: 100, content: 'Talked about corn pricing', createdAt: new Date('2026-01-03') }),
     makeNote({ id: 2, customerId: 100, content: 'Soybean delivery scheduled', createdAt: new Date('2026-01-02') }),
@@ -56,6 +60,7 @@ describe('CustomerNotesComponent — note search filter + highlight', () => {
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
         provideSelectedProducerEngagement(engagement = selectedProducerEngagementFake()),
         SelectedCustomerContext,
+        provideProducerProfiles(profiles),
       ],
     });
     // happy-dom + JIT can't fetch templateUrl; blank the template — the filter/segment logic is class-level.
@@ -134,6 +139,16 @@ describe('CustomerNotesComponent — note search filter + highlight', () => {
     expect(segs.map(s => s.text).join('')).toBe('Sold Wheat to the co-op');            // nothing lost
   });
 
+  // The producer's bin sites are their saved details, not part of the customer.
+  it("noteViewSegments marks the names of the producer's bin sites, from their saved details, as kind=bin", () => {
+    const note = makeNote({ customerId: 100, content: 'Hauled to North Bins today' });
+    expect(component.noteViewSegments(note).some(s => s.kind === 'bin')).toBe(false);
+
+    profiles.set([producerProfile(100, { binSites: [{ name: 'North Bins' }] })]);
+
+    expect(component.noteViewSegments(note).filter(s => s.kind === 'bin').map(s => s.text)).toEqual(['North Bins']);
+  });
+
   it('noteViewSegments marks @mentions as kind=mention', () => {
     component.noteSearch.set('');
     const note = makeNote({
@@ -169,6 +184,7 @@ describe('CustomerNotesComponent — degraded mention catalog', () => {
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
         provideSelectedProducerEngagement(engagement = selectedProducerEngagementFake()),
         SelectedCustomerContext,
+        provideProducerProfiles(),
       ],
     });
     TestBed.overrideComponent(CustomerNotesComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
@@ -201,6 +217,7 @@ describe('CustomerNotesComponent — degraded notice in the rendered picker', ()
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
         provideSelectedProducerEngagement(engagement = selectedProducerEngagementFake()),
         SelectedCustomerContext,
+        provideProducerProfiles(),
         // The rendered add-note form needs notes:write.
         providePermissions(permissionStub(['notes:write'])),
       ],
@@ -265,6 +282,7 @@ describe('CustomerNotesComponent — write controls', () => {
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
         provideSelectedProducerEngagement(engagement),
         SelectedCustomerContext,
+        provideProducerProfiles(),
         providePermissions(permissionStub(granted)),
       ],
     });

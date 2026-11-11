@@ -11,11 +11,15 @@ import { provideSelectedProducerActivity } from '@testing/selected-producer-acti
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { SelectedProducerProduction } from '@core/context/selected-producer-production';
 import { providePermissions } from '@testing/permission.stub';
+import { producerProfile, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
+
+/** The profiles the describes below that don't set their own read: none. */
+const profiles = producerProfilesFake();
 
 function makeCustomer(over: Partial<Customer> = {}): Customer {
   return {
-    id: 1, scoularId: 'CUST1', name: 'Test Farm', farm: 'Test Farm LLC', location: 'Omaha, NE',
-    phone: '', email: '', totalAcres: 0, linkedProducerIds: [], eSignEnabled: false, ...over,
+    id: 1, scoularId: 'CUST1', name: 'Test Farm', location: 'Omaha, NE',
+    phone: '', email: '', eSignEnabled: false, ...over,
   };
 }
 
@@ -36,6 +40,7 @@ describe('CustomerProfileComponent — crop year scoping', () => {
         { provide: ApiService, useValue: {} },
         { provide: ThemeService, useValue: {} },
         provideSelectedProducerActivity(),
+        provideProducerProfiles(profiles),
         SelectedCustomerContext,
         providePermissions(),
         { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {} } },
@@ -93,6 +98,8 @@ describe('CustomerProfileComponent — crop year scoping', () => {
 // they read the producer's intentions, crop year, stored grain and DP contracts from it, and their add / edit /
 // delete come back out as the profile's outputs.
 describe('CustomerProfileComponent — as the SelectedProducerProduction', () => {
+  // Producer 42's saved details: the commodities on their profile.
+  const profiles = producerProfilesFake([producerProfile(42, { commodities: 'HRW,YSB' })]);
   let component: CustomerProfileComponent;
   let ref: ComponentRef<CustomerProfileComponent>;
   let production: SelectedProducerProduction;
@@ -106,6 +113,7 @@ describe('CustomerProfileComponent — as the SelectedProducerProduction', () =>
         { provide: ApiService, useValue: {} },
         { provide: ThemeService, useValue: {} },
         provideSelectedProducerActivity(),
+        provideProducerProfiles(profiles),
         SelectedCustomerContext,
         providePermissions(),
         { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {} } },
@@ -127,7 +135,7 @@ describe('CustomerProfileComponent — as the SelectedProducerProduction', () =>
 
   it('offers the commodity codes from the producer\'s tickets and their profile, once each, sorted', () => {
     ref.setInput('tickets', [{ productCode: 'YSB' }, { productCode: 'YC' }, { productCode: '' }, { productCode: 'YC' }] as Ticket[]);
-    ref.setInput('customer', makeCustomer({ id: 42, commodities: ['HRW', 'YSB'] }));
+    ref.setInput('customer', makeCustomer({ id: 42 }));
 
     expect(production.commodityCodes()).toEqual(['HRW', 'YC', 'YSB']);
   });
@@ -192,6 +200,7 @@ describe('CustomerProfileComponent — address map link', () => {
         { provide: ApiService, useValue: {} },
         { provide: ThemeService, useValue: {} },
         provideSelectedProducerActivity(),
+        provideProducerProfiles(profiles),
         SelectedCustomerContext,
         providePermissions(),
         { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {}, ...tracking } },
@@ -265,6 +274,7 @@ describe('CustomerProfileComponent — header slots and ScoularView recipients (
         { provide: ApiService, useValue: {} },
         { provide: ThemeService, useValue: {} },
         provideSelectedProducerActivity(),
+        provideProducerProfiles(profiles),
         SelectedCustomerContext,
         providePermissions(),
         { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {} } },
@@ -308,17 +318,6 @@ describe('CustomerProfileComponent — header slots and ScoularView recipients (
     expect(slot('summary').parentElement!.className).toContain('gap-8');
     expect(squash(slot('summary').previousElementSibling!.textContent)).toContain('Contact and Locations');
     expect(slot('summary').nextElementSibling!.querySelector('.rounded-full')).not.toBeNull();
-  });
-
-  it('marks the open eSign panel as a header panel, which the farm line below takes more room from', () => {
-    ref.setInput('customer', makeCustomer({ eSignEnabled: true, scoularViewRecipients: 'Al 402-555-0001' }));
-    fixture.detectChanges();
-    component.showESignRecipients.set(true);
-    fixture.detectChanges();
-
-    const farmLine = Array.from(host().querySelectorAll('p')).find(p => p.textContent?.trim() === 'Test Farm LLC')!;
-    expect(squash(host().querySelector('.header-panel')?.textContent)).toContain('ScoularView Recipients');
-    expect(farmLine.className).toContain('group-has-[.header-panel]/name:mt-3');
   });
 
   it('splits the ScoularView recipients on the commas between complete entries', () => {

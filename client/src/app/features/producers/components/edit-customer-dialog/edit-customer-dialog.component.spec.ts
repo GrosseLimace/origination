@@ -12,7 +12,7 @@ import { MAX_BIN_SITES } from '@shared/utils/coordinates';
 import { CustomersApiService } from '@features/customers';
 import { PermissionId } from '@core/access/permission-ids.generated';
 import { CustomerScreenSources, customerScreenSources } from '@testing/customer-screen-sources';
-import { producerProfile, profilesOf, withProfile } from '@testing/producer-profiles.fake';
+import { ProducerFixture, producerProfile, profilesOf, withFixtureProfile } from '@testing/producer-profiles.fake';
 import { ProducerEditingFake, producerEditingFake, provideProducerEditing } from '@testing/producer-editing.fake';
 import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
 
@@ -24,15 +24,13 @@ import { PermissionStub, permissionStub, providePermissions } from '@testing/per
 /** The producer the dialog edits. Their acres, commodities, links, contacts, bin sites and grain on farm are their
  *  saved details, which open() hands to ProducerProfiles with them. */
 function makeCustomer(
-  { totalAcres, commodities, linkedProducerIds, contacts, primaryContact, primaryPhone, binSites, grainOnFarm, ...over }: Partial<Customer> = {},
+  { totalAcres, commodities, linkedProducerIds, contacts, primaryContact, primaryPhone, binSites, grainOnFarm, ...over }:
+    Partial<Customer> & ProducerFixture = {},
 ): Customer {
-  return withProfile({
-    id: 42, scoularId: 'SAMPFRM', name: 'Sample Farms', farm: '', location: '',
-    phone: '', email: '', totalAcres: 0, linkedProducerIds: [], eSignEnabled: false, ...over,
-  }, {
-    totalAcres, commodities: commodities?.join(','), linkedProducerIds: linkedProducerIds?.join(','),
-    contacts, primaryContact, primaryPhone, binSites, grainOnFarm,
-  });
+  return withFixtureProfile<Customer>({
+    id: 42, scoularId: 'SAMPFRM', name: 'Sample Farms', location: '',
+    phone: '', email: '', eSignEnabled: false, achEnabled: false, ...over,
+  }, { totalAcres, commodities, linkedProducerIds, contacts, primaryContact, primaryPhone, binSites, grainOnFarm });
 }
 
 function makeIntention(over: Partial<PlantingIntention> = {}): PlantingIntention {

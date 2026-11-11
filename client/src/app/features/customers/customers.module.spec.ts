@@ -16,8 +16,8 @@ import { customersModule, preloadCustomers } from './customers.module';
 
 function customer(id: number): Customer {
   return {
-    id, scoularId: `C${id}`, name: `Farm ${id}`, farm: `Farm ${id}`, location: 'Pratt, KS',
-    phone: '', email: '', totalAcres: 0, linkedProducerIds: [], eSignEnabled: false, achEnabled: false,
+    id, scoularId: `C${id}`, name: `Farm ${id}`, location: 'Pratt, KS',
+    phone: '', email: '', eSignEnabled: false, achEnabled: false,
   };
 }
 

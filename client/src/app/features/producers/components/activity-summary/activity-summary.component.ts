@@ -158,7 +158,6 @@ export class ActivitySummaryComponent {
     const customerName = customer.name || 'This customer';
     const profile = this.profiles.profileOf(customer.id);
     const acres = profile?.totalAcres || 0;
-    const farm = customer.farm || '';
     const primaryContact = (profile?.primaryContact || '').trim();
     const commodities = profileCommodities(profile);
     const linkedGroup = this._getLinkedGroup();
@@ -178,12 +177,8 @@ export class ActivitySummaryComponent {
 
     // Opening sentence — who they are
     let opening = subject;
-    if (acres > 0 && farm && farm !== 'Unknown Farm') {
-      opening += ` operates ${this._formatQuantity(acres, 'acres')} at ${farm}`;
-    } else if (acres > 0) {
+    if (acres > 0) {
       opening += ` operates ${this._formatQuantity(acres, 'acres')}`;
-    } else if (farm && farm !== 'Unknown Farm') {
-      opening += ` farms at ${farm}`;
     }
     if (commStr) opening += `, primarily growing ${commStr}`;
     parts.push(opening + '.');

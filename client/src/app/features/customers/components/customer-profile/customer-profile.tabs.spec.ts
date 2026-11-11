@@ -10,9 +10,10 @@ import { CustomerTab, ModuleManifest } from '@core/modules/module-manifest';
 import { APP_MODULES } from '@core/modules/module-registry';
 import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
 import { provideSelectedProducerActivity } from '@testing/selected-producer-activity.fake';
+import { provideProducerProfiles } from '@testing/producer-profiles.fake';
 import { CustomerProfileComponent } from './customer-profile.component';
 
-const producer = { id: 1, scoularId: 'CUST1', name: 'Test Farm', farm: '', location: '', phone: '', email: '', totalAcres: 0, linkedProducerIds: [], eSignEnabled: false, achEnabled: false } as Customer;
+const producer = { id: 1, scoularId: 'CUST1', name: 'Test Farm', location: '', phone: '', email: '', eSignEnabled: false, achEnabled: false } as Customer;
 const component = () => Promise.resolve(class {});
 
 /** A module contributing three tabs, listed out of order. */
@@ -38,6 +39,7 @@ describe("CustomerProfileComponent: the tab strip, with the modules' tabs", () =
         { provide: APP_MODULES, useValue: modules },
         providePermissions(access),
         provideSelectedProducerActivity(),
+        provideProducerProfiles(),
         { provide: CUSTOMER_SCREEN_SOURCE, useValue: { customer, link } },
         SelectedCustomerContext,
       ],

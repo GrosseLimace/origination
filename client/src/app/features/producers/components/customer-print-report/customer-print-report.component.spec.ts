@@ -10,7 +10,7 @@ import { PermissionId } from '@core/access/permission-ids.generated';
 import { SelectedProducerActivityFake, provideSelectedProducerActivity, selectedProducerActivityFake } from '@testing/selected-producer-activity.fake';
 import { SelectedProducerProductionFake, provideSelectedProducerProduction, selectedProducerProductionFake } from '@testing/selected-producer-production.fake';
 import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
-import { ProducerProfilesFake, producerProfilesFake, profilesOf, provideProducerProfiles, withProfile } from '@testing/producer-profiles.fake';
+import { ProducerFixture, ProducerProfilesFake, producerProfilesFake, profilesOf, provideProducerProfiles, withFixtureProfile } from '@testing/producer-profiles.fake';
 
 // Behaviour safety net for the Producer Summary Report dialog. Pins, through its customer and the shared data it
 // reads, the sidebar checkboxes and the rendered preview:
@@ -48,11 +48,10 @@ function daysFromNow(n: number): Date {
 
 /** The customer the report is for. Their acres, bin sites and grain on farm are their saved details (1,200 acres by
  *  default), which setCustomer hands to ProducerProfiles with them. */
-function makeCustomer({ totalAcres = 1200, binSites, grainOnFarm, ...over }: Partial<Customer> = {}): Customer {
-  return withProfile({
-    id: 42, scoularId: 'SAMPFRM', name: 'Sample Farms', farm: 'Sample Farm Co', location: 'Pratt',
-    stateProvince: 'KS', phone: '316-555-0100', email: 'sample@example.com', totalAcres: 0,
-    linkedProducerIds: [], eSignEnabled: false, achEnabled: false, ...over,
+function makeCustomer({ totalAcres = 1200, binSites, grainOnFarm, ...over }: Partial<Customer> & ProducerFixture = {}): Customer {
+  return withFixtureProfile<Customer>({
+    id: 42, scoularId: 'SAMPFRM', name: 'Sample Farms', location: 'Pratt',
+    stateProvince: 'KS', phone: '316-555-0100', email: 'sample@example.com', eSignEnabled: false, achEnabled: false, ...over,
   }, { totalAcres, binSites, grainOnFarm });
 }
 
@@ -316,7 +315,7 @@ describe('CustomerPrintReportComponent', () => {
     fixture.detectChanges();
 
     expect(headerLines()).toEqual(['Producer Summary Report', 'October 13, 2026', 'Prepared by Caden Egr']);
-    expect(bannerName()).toEqual(['Sample Farms', 'Sample Farm Co']);
+    expect(bannerName()).toEqual(['Sample Farms']);
     expect(bannerField('Location')).toBe('Pratt, KS');
     expect(bannerField('Phone')).toBe('316-555-0199');            // blank phone → extended primary phone
     expect(bannerField('Email')).toBe('alt@example.com');         // blank e-mail → supplemental e-mail
@@ -885,7 +884,7 @@ describe('CustomerPrintReportComponent', () => {
       openWithEverything();
 
       expect(sidebarHeadings()).toEqual(['Originator']);
-      expect(bannerName()).toEqual(['Sample Farms', 'Sample Farm Co']);
+      expect(bannerName()).toEqual(['Sample Farms']);
       expect(sectionTitles()).toEqual([]);
       expect(printedSectionTitles(printed())).toEqual([]);
     });

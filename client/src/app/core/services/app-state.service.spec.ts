@@ -9,12 +9,9 @@ import { Customer } from '@models';
 const mockCustomer: Customer = {
   id: 1,
   name: 'Test Farm',
-  farm: 'Test Farm LLC',
   location: 'Omaha, NE',
   phone: '402-555-0100',
   email: 'test@farm.com',
-  totalAcres: 500,
-  linkedProducerIds: [],
   eSignEnabled: false,
 };
 

@@ -52,8 +52,8 @@ const CONVERSIONS: CommodityConversion[] = [{ commodityCode: 'SB', lbsPerUnit: 6
 
 function makeCustomer(over: Partial<Customer>): Customer {
   return {
-    id: 0, name: '', farm: '', location: '', phone: '', email: '', totalAcres: 0,
-    linkedProducerIds: [], eSignEnabled: false, achEnabled: false, ...over,
+    id: 0, name: '', location: '', phone: '', email: '', 
+    eSignEnabled: false, achEnabled: false, ...over,
   };
 }
 

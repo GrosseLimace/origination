@@ -6,9 +6,9 @@ import { SelectedProducerActivity } from '@core/context/selected-producer-activi
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ProducerProfiles } from '@core/context/producer-profiles';
+import { profileCommodities, profileLinkedIds } from '@shared/utils/producer-profile';
 import type { Contract, ContractPricingLine, Customer, DpContract, StoredGrain, Ticket } from '@models';
 import { environment } from '@env/environment';
-import { CustomerStore } from '../../data-access/customer.store';
 import { commodityCodesFrom, linkedGroupOf, producerContractsAndTickets, readFailureMessage } from './home-derivations';
 import { mergeProducerRows } from './merge-producer-rows';
 import { HomeLinkedProducersStore } from './home-linked-producers.store';
@@ -26,7 +26,6 @@ import { HomePageState } from './home-page.state';
 export class HomeProducerActivityStore implements SelectedProducerActivity {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
-  private readonly customerStore = inject(CustomerStore);
   private readonly page = inject(HomePageState);
   /** Every producer's details, kept by the Producers module. */
   private readonly producerProfiles = inject(ProducerProfiles);
@@ -137,7 +136,8 @@ export class HomeProducerActivityStore implements SelectedProducerActivity {
    * cache (see HomeComponent.getLinkedGroup).
    */
   private linkedGroup(customer: Customer): Customer[] {
-    return linkedGroupOf(customer, [...this.page.customers(), ...this.linked.crossTradeUnitCustomersById().values()]);
+    return linkedGroupOf(customer, [...this.page.customers(), ...this.linked.crossTradeUnitCustomersById().values()],
+      c => profileLinkedIds(this.producerProfiles.profileOf(c.id)));
   }
 
   /** Hydrate customerPricingLines for the selected producer. Always called on
@@ -538,7 +538,7 @@ export class HomeProducerActivityStore implements SelectedProducerActivity {
     const sourceCommodities = commodityCodesFrom(customerTickets, this.allCustomerContracts());
     if (sourceCommodities.length === 0) return;
 
-    const storedCommodities = customer.commodities || [];
+    const storedCommodities = profileCommodities(this.producerProfiles.profileOf(customer.id));
     const hasNew = sourceCommodities.some(tc => !storedCommodities.includes(tc));
     if (!hasNew) return;
 
@@ -566,28 +566,14 @@ export class HomeProducerActivityStore implements SelectedProducerActivity {
       // preserves the existing rows when it is absent (a cached copy could be older than a teammate's edit).
     }).subscribe({
       next: (pd) => {
+        // The saved commodities are the producer's details, which every screen reads from ProducerProfiles.
         this.producerProfiles.put(pd);
-        const updatedCustomer = { ...customer, commodities: merged };
-        const customers = this.page.customers();
-        const index = customers.findIndex(c => c.id === customer.id);
-        if (index >= 0) {
-          const updated = [...customers];
-          updated[index] = updatedCustomer;
-          this.page.customers.set(updated);
-          // Mirror into the shared cache too. This local signal duplicates appState.customers, and
-          // every other write site pushes both; this one didn't — so build-list and insights
-          // kept serving the pre-merge commodity list until the next full
-          // trade-unit reload happened to overwrite it.
-          this.customerStore.setCustomers(updated);
-        }
-        if (this.page.selectedCustomer()?.id === customer.id) this.page.selectedCustomer.set(updatedCustomer);
         this._autoSaveInFlight.delete(customer.id);
-        // A deferred call arrived while this save was in flight — re-run once, now serialized, with
-        // the freshly-merged customer so commodities from the later callback (e.g. contracts that
-        // arrived after tickets) still get persisted.
+        // A deferred call arrived while this save was in flight — re-run once, now serialized, against the
+        // freshly-saved commodities so those from the later callback (e.g. contracts that arrived after tickets)
+        // still get persisted.
         if (this._autoSavePending.delete(customer.id)) {
-          const latest = this.page.customers().find(c => c.id === customer.id) || updatedCustomer;
-          this._autoSaveCommodities(latest, this.allCustomerTickets());
+          this._autoSaveCommodities(customer, this.allCustomerTickets());
         }
       },
       error: () => {
