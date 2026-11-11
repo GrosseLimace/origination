@@ -20,7 +20,7 @@ import { providePermissions } from '@testing/permission.stub';
  *  - a contracts failure is RECORDED (outage banner) while the page still loads with [],
  *  - a today's-tickets TIMEOUT is "pending", not "failed"; a real error is "failed",
  *  - re-selecting the same trade units in another order does not reload; forceReload does,
- *  - a TU change drops the lazily-loaded ticket / note / DP caches,
+ *  - a TU change drops the lazily-loaded note cache,
  *  - every module's preload runs with the selected trade units, and is cancelled by the next selection.
  */
 
@@ -29,8 +29,7 @@ const NOW = new Date('2026-10-13T12:00:00');
 
 type Api = Record<
   | 'getCommodityConversions' | 'getNotesLastContact'
-  | 'getMyReminders' | 'getPlantingIntentions' | 'getStoredGrain' | 'getDpContracts'
-  | 'getCommodities' | 'getHarvestWindows',
+  | 'getMyReminders' | 'getCommodities' | 'getHarvestWindows',
   ReturnType<typeof vi.fn<(...args: unknown[]) => Observable<unknown>>>
 >;
 
@@ -71,9 +70,6 @@ describe('DataPreloadService', () => {
       getCommodityConversions: vi.fn(() => of<CommodityConversion[]>([])),
       getNotesLastContact: vi.fn(() => of([])),
       getMyReminders: vi.fn(() => of([])),
-      getPlantingIntentions: vi.fn(() => of([])),
-      getStoredGrain: vi.fn(() => of([])),
-      getDpContracts: vi.fn(() => of([])),
       getCommodities: vi.fn(() => of([])),
       getHarvestWindows: vi.fn(() => of([])),
     };
@@ -117,19 +113,21 @@ describe('DataPreloadService', () => {
     create();
     signIn();
 
-    expect(api.getPlantingIntentions).not.toHaveBeenCalled();
+    expect(api.getNotesLastContact).not.toHaveBeenCalled();
     expect(modulePreload).not.toHaveBeenCalled();
   });
 
-  it('loads every dataset for the selected trade units into app state', () => {
+  // (The trade units' own data is the modules': their customers, contracts, tickets, planting, stored grain and DP.)
+  it('loads the shared datasets into app state once trade units are selected', () => {
+    api.getCommodities.mockReturnValue(of([{ code: 'YC' }]));
     create();
     selectTradeUnits(['1085', '2190']);
     signIn();
 
-    for (const fn of [api.getPlantingIntentions, api.getStoredGrain, api.getDpContracts]) {
-      expect(fn).toHaveBeenCalledWith(['1085', '2190']);
+    for (const fn of [api.getNotesLastContact, api.getCommodities, api.getHarvestWindows]) {
+      expect(fn).toHaveBeenCalledTimes(1);
     }
-    expect(appState.dpContractsLoaded()).toBe(true);
+    expect(appState.commodities()).toEqual([{ code: 'YC' }]);
   });
 
   it('does not reload when the same trade units are re-selected in a different order', () => {
@@ -190,25 +188,23 @@ describe('DataPreloadService', () => {
   });
 
   it('a failing secondary read does not stop the others', () => {
-    api.getStoredGrain.mockReturnValue(throwError(() => new Error('500')));
+    api.getCommodities.mockReturnValue(throwError(() => new Error('500')));
     api.getHarvestWindows.mockReturnValue(throwError(() => new Error('500')));
     create();
     selectTradeUnits(['1085']);
     signIn();
 
-    expect(appState.storedGrain()).toEqual([]);
-    expect(appState.dpContractsLoaded()).toBe(true);
-    expect(api.getPlantingIntentions).toHaveBeenCalled();
+    expect(appState.commodities()).toEqual([]);
+    expect(api.getNotesLastContact).toHaveBeenCalled();
+    expect(modulePreload).toHaveBeenCalledWith(['1085']);
   });
 
   // Each of these used to resolve a failure to [] with nothing recorded, so the screens showed
   // "no producers", "Never contacted" and the like for an outage.
   describe('records which trade-unit reads failed, so an empty result is not shown as "none"', () => {
     const cases: [string, keyof Api, () => boolean][] = [
-      ['DP contracts', 'getDpContracts', () => appState.dpContractsLoadFailed()],
       ['last-contact dates', 'getNotesLastContact', () => appState.noteLastContactsLoadFailed()],
       ['follow-ups', 'getMyReminders', () => appState.myRemindersLoadFailed()],
-      ['planting intentions', 'getPlantingIntentions', () => appState.plantingIntentionsLoadFailed()],
       ['harvest windows', 'getHarvestWindows', () => appState.harvestWindowsLoadFailed()],
     ];
 
@@ -219,7 +215,7 @@ describe('DataPreloadService', () => {
       signIn();
 
       expect(failed()).toBe(true);
-      expect(appState.dpContractsLoaded()).toBe(true);
+      expect(modulePreload).toHaveBeenCalledWith(['1085']);
     });
 
     it.each(cases)('%s: cleared when the next load succeeds, even if it is empty', (_name, call, failed) => {
@@ -275,9 +271,10 @@ describe('DataPreloadService', () => {
     selectTradeUnits(['1085']);
     signIn();
 
-    expect(appState.dpContractsLoaded()).toBe(true);
+    expect(api.getHarvestWindows).toHaveBeenCalledTimes(1);
 
     selectTradeUnits(['2190']);
-    expect(api.getDpContracts).toHaveBeenLastCalledWith(['2190']);
+    expect(api.getHarvestWindows).toHaveBeenCalledTimes(2);
+    expect(modulePreload).toHaveBeenLastCalledWith(['2190']);
   });
 });

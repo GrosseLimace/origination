@@ -8,6 +8,8 @@ import { Observable, Subject, of, throwError } from 'rxjs';
 import { ApiService } from '@core/services/api.service';
 import { ContractStore, ContractsApiService } from '@features/contracts';
 import { AppStateService } from '@core/services/app-state.service';
+import { ProducerStore } from '../../data-access/producer.store';
+import { ProducersApiService } from '../../data-access/producers-api.service';
 import { DashboardCacheEntry, DashboardStore } from '../../data-access/dashboard.store';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
@@ -17,9 +19,11 @@ import { CommodityChipClassPipe } from '@shared/pipes/commodity-chip-class.pipe'
 import { makeMsalServiceMock } from '@testing/msal.mocks';
 import { producerProfile, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
 import {
-  Commodity, CommodityConversion, Contract, Customer, DashboardActualHarvest, DashboardMarketShare,
-  DashboardPlantingEstimate, DashboardSummary, NoteLastContact, PlantingIntention, ProducerDetails, StoredGrain,
+  Commodity, CommodityConversion, Contract, Customer, DashboardPlantingEstimate, NoteLastContact, PlantingIntention, ProducerDetails, StoredGrain,
 } from '@models';
+import { DashboardActualHarvest } from '../../models/dashboard-actual-harvest.model';
+import { DashboardMarketShare } from '../../models/dashboard-market-share.model';
+import { DashboardSummary } from '../../models/dashboard-summary.model';
 
 import { DashboardComponent } from './dashboard.component';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
@@ -159,7 +163,8 @@ const APP_CONTRACTS: Contract[] = [
 @Component({ selector: 'app-trade-unit-selector', standalone: true, template: '' })
 class TradeUnitSelectorStub {}
 
-/** The AppStateService members the dashboard reads, as real signals so its computeds/effects react. */
+/** The members the dashboard reads of the stores it reads (AppStateService, ContractStore, DashboardStore, ProducerStore
+ *  and TradeUnitContext), as real signals so its computeds/effects react. */
 function makeAppState() {
   const selectedTradeUnits = signal<string[]>([TU]);
   const commodities = signal<Commodity[]>([]);
@@ -246,9 +251,13 @@ describe('DashboardComponent', () => {
         // The trade units' contracts and their loading flags are ContractStore's; this stub has them.
         { provide: ContractStore, useValue: appState },
         { provide: DashboardStore, useValue: appState },
+        // So are the trade units' planting and stored grain, which are ProducerStore's.
+        { provide: ProducerStore, useValue: appState },
         { provide: TradeUnitContext, useValue: appState },
         // The contract and ticket calls are Contracts' API client's; this stub answers them.
         { provide: ContractsApiService, useExisting: ApiService },
+        // So are the planting, stored grain, DP and dashboard calls, which are Producers'.
+        { provide: ProducersApiService, useExisting: ApiService },
         { provide: ApiService, useValue: api },
         { provide: ToastService, useValue: toast },
         { provide: UsageTrackingService, useValue: usage },

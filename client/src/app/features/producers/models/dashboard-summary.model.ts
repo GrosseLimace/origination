@@ -1,4 +1,4 @@
-import { DashboardPlantingEstimate } from './dashboard-planting-estimate.model';
+import { DashboardPlantingEstimate } from '@models';
 import { DashboardMarketShare } from './dashboard-market-share.model';
 import { DashboardActualHarvest } from './dashboard-actual-harvest.model';
 

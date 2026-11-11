@@ -4,11 +4,14 @@ import { catchError, switchMap, take, tap } from 'rxjs/operators';
 import { PermissionService } from '@core/access/permission.service';
 import { SelectedProducerProduction } from '@core/context/selected-producer-production';
 import { ModuleManifest } from '@core/modules/module-manifest';
-import { ApiService } from '@core/services/api.service';
-import { PlantingIntention } from '@models';
+import { DpContract, PlantingIntention, StoredGrain } from '@models';
 import { dpContractCount } from './utils/dp-aggregate';
+import { mergeIncomingById } from './utils/production-reads';
 import { DashboardStore } from './data-access/dashboard.store';
 import { ProducerProfileStore } from './data-access/producer-profile.store';
+import { ProducerStore } from './data-access/producer.store';
+import { ProducersApiService } from './data-access/producers-api.service';
+import { YieldEstimateStore } from './data-access/yield-estimate.store';
 
 /**
  * Pre-fetches the Planting Dashboard's summary for the current year, so the dashboard renders without its own round
@@ -16,7 +19,7 @@ import { ProducerProfileStore } from './data-access/producer-profile.store';
  */
 export function preloadDashboardSummary(tradeUnits: readonly string[]): Observable<unknown> {
   const store = inject(DashboardStore);
-  const api = inject(ApiService);
+  const api = inject(ProducersApiService);
   const permissions = inject(PermissionService);
   store.clearDashboardCache();
   store.clearPreloadedDashboardSummary();
@@ -39,13 +42,48 @@ export function preloadDashboardSummary(tradeUnits: readonly string[]): Observab
 }
 
 /**
- * What Producers loads for a new trade-unit selection: the Planting Dashboard's summary, and every producer's details,
- * which the customer screen, Build a List and the dashboard read. A failed read of the details leaves the last ones in
- * place.
+ * The trade units' planting intentions, stored grain and DP contracts, into ProducerStore, and their yield estimates
+ * for this year and last. The stored grain and DP held for the previous trade units drop first, with the last read's
+ * failures; a producer's own reads that land before these are kept (the trade units' rows win a tie). Planting stays
+ * until the new read replaces it. A failed planting or DP read is recorded, so it doesn't read as "none".
+ */
+export function preloadProduction(tradeUnits: readonly string[]): Observable<unknown> {
+  const api = inject(ProducersApiService);
+  const store = inject(ProducerStore);
+  const units = [...tradeUnits];
+  store.setStoredGrain([]);
+  // The DP set and its loaded flag drop now, or a DP query between the trade-unit change and this read landing runs
+  // against the previous trade units' rows.
+  store.clearDpContractsCache();
+  store.clearLoadFailures();
+  const year = new Date().getFullYear();
+  inject(YieldEstimateStore).load([year, year - 1]);
+
+  const planting$ = api.getPlantingIntentions(units).pipe(
+    catchError(() => { store.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); }),
+    tap(rows => store.setPlantingIntentions(rows ?? [])),
+  );
+  const storedGrain$ = api.getStoredGrain(units).pipe(
+    catchError(() => of([] as StoredGrain[])),
+    tap(rows => store.setStoredGrain(mergeIncomingById(rows ?? [], store.storedGrain()))),
+  );
+  // The [] fallback still marks DP loaded (so no DP prompt waits forever), which makes a failure read as "no
+  // producers hold DP" unless it is recorded.
+  const dpContracts$ = api.getDpContracts(units).pipe(
+    catchError(() => { store.setDpContractsLoadFailed(true); return of([] as DpContract[]); }),
+    tap(rows => store.setDpContracts(mergeIncomingById(rows ?? [], store.dpContracts()))),
+  );
+  return merge(planting$, storedGrain$, dpContracts$);
+}
+
+/**
+ * What Producers loads for a new trade-unit selection: the Planting Dashboard's summary, every producer's details, and
+ * the trade units' production (see preloadProduction), which the customer screen, Build a List, the saved lists and
+ * the dashboard read. A failed read of the details leaves the last ones in place.
  */
 export function preloadProducers(tradeUnits: readonly string[]): Observable<unknown> {
   const profiles = inject(ProducerProfileStore);
-  return merge(preloadDashboardSummary(tradeUnits), profiles.load().pipe(catchError(() => EMPTY)));
+  return merge(preloadDashboardSummary(tradeUnits), profiles.load().pipe(catchError(() => EMPTY)), preloadProduction(tradeUnits));
 }
 
 /**
@@ -195,7 +233,7 @@ export const producersModule: ModuleManifest = {
       component: () => import('./components/edit-customer-dialog/edit-producer-button.component').then(m => m.EditProducerButtonComponent),
     },
   ],
-  // A producer's own production. Each reads it from the profile's SelectedProducerProduction.
+  // A producer's own production. Each reads it from SelectedProducerProduction (ProducerProductionStore).
   customerTabs: [
     {
       id: 'planting',

@@ -1,5 +1,8 @@
 import { Injectable, inject, signal } from '@angular/core';
-import { Customer, Contract, PlantingIntention, StoredGrain, Commodity, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary } from '@models';
+import { Customer, Contract, PlantingIntention, StoredGrain, Commodity, DashboardPlantingEstimate } from '@models';
+import { DashboardMarketShare } from '../models/dashboard-market-share.model';
+import { DashboardActualHarvest } from '../models/dashboard-actual-harvest.model';
+import { DashboardSummary } from '../models/dashboard-summary.model';
 import { SessionReset } from '@core/auth/session-reset.service';
 
 export interface DashboardCacheEntry {

@@ -21,6 +21,7 @@ import { SelectedCustomerContext } from '@core/context/selected-customer-context
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { ProducerEdit, ProducerEditing } from '@core/context/producer-editing';
 import { ProducerProfiles } from '@core/context/producer-profiles';
+import { ProducersApiService } from '../../data-access/producers-api.service';
 
 /** One bin-site row as edited: every field is the text in its input. Capacity holds the grouped
  *  display text ("50,000"). */
@@ -83,6 +84,7 @@ const binSiteRowHasData = (r: BinSiteEditRow): boolean =>
 })
 export class EditCustomerDialogComponent {
   private readonly apiService = inject(ApiService);
+  private readonly producersApi = inject(ProducersApiService);
   /** Every producer's saved details: this producer's open the form, and the others' say who links to them. */
   private readonly profiles = inject(ProducerProfiles);
   private readonly destroyRef = inject(DestroyRef);
@@ -946,7 +948,7 @@ export class EditCustomerDialogComponent {
       return;
     }
     this.isCheckingPlantingIntentions.set(true);
-    this.apiService.getPlantingIntentionsByCustomer(customer.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.producersApi.getPlantingIntentionsByCustomer(customer.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: rows => {
         const byTu = new Map<string, { count: number; acres: number; years: number[] }>();
         for (const row of rows) {

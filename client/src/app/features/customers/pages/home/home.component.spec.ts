@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { WritableSignal, signal } from '@angular/core';
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Params, Router } from '@angular/router';
 import { MsalService } from '@azure/msal-angular';
@@ -15,10 +15,10 @@ import {
   ProducerFixture, ProducerProfilesFake, producerProfilesFake, profilesOf, provideProducerProfiles, withFixtureProfile,
 } from '@testing/producer-profiles.fake';
 import { SelectedProducerActivityFake, provideSelectedProducerActivity, selectedProducerActivityFake } from '@testing/selected-producer-activity.fake';
-import { TradeUnitContracts } from '@core/context/trade-unit-contracts';
+import { SelectedProducerProductionFake, provideSelectedProducerProduction, selectedProducerProductionFake } from '@testing/selected-producer-production.fake';
 import { OutlookCalendarService } from '@core/services/outlook-calendar.service';
 import { environment } from '@env/environment';
-import { Commodity, CommodityConversion, Contract, ContractPricingLine, Customer, DashboardPlantingEstimate, DpContract, Note, NoteLastContact, PlantingIntention, ProducerDetails, Reminder, ReminderDue, StoredGrain, Ticket } from '@models';
+import { Commodity, CommodityConversion, Contract, ContractPricingLine, Customer, Note, NoteLastContact, ProducerDetails, Reminder, ReminderDue, Ticket } from '@models';
 
 import { HomeComponent } from './home.component';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
@@ -106,44 +106,6 @@ function ticket(id: number, customerCode: string, over: Partial<Ticket> = {}): T
   };
 }
 
-function intention(id: number, customerId: number): PlantingIntention {
-  return {
-    id,
-    customerId,
-    customerName: `Producer ${customerId}`,
-    customerCode: `S-${customerId}`,
-    tradeUnit: 'TU1',
-    plantingYear: 2027,
-    crop: 'CORN',
-    acres: 100,
-    createdAt: '2026-10-01T00:00:00Z',
-    createdBy: 'tester',
-  };
-}
-
-function grain(id: string, customerId: number): StoredGrain {
-  return {
-    id,
-    receiptNumber: id,
-    customerId,
-    customerCode: `S-${customerId}`,
-    crop: 'CORN',
-    quantity: 1000,
-    grossQuantity: 1000,
-    storageStartDate: new Date('2026-09-01'),
-    storageRate: 0.05,
-    bin: '1',
-    receivableAmount: 0,
-    storageDays: 10,
-    chargedFromDate: null,
-    chargedThruDate: null,
-    locationCity: 'Omaha',
-    locationState: 'NE',
-    bushels: 1000,
-    dateReceived: new Date('2026-09-01'),
-  };
-}
-
 function details(customerId: number, over: Partial<ProducerDetails> = {}): ProducerDetails {
   return {
     id: customerId,
@@ -191,14 +153,10 @@ function makeApi() {
   return {
     getCustomers: vi.fn((_tu?: string[]): Observable<Customer[]> => of([])),
     getContracts: vi.fn((_tu?: string[]): Observable<Contract[]> => of([])),
-    getPlantingIntentions: vi.fn((_tu?: string[]): Observable<PlantingIntention[]> => of([])),
-    getStoredGrain: vi.fn((_tu?: string[]): Observable<StoredGrain[]> => of([])),
-    getDpContracts: vi.fn((_tu?: string[]): Observable<DpContract[]> => of([])),
     getAllProducerDetails: vi.fn((): Observable<ProducerDetails[]> => of([])),
     getProducerDetails: vi.fn((id: number): Observable<ProducerDetails> => of(details(id))),
     // Answers with what was saved, as the server does.
     saveProducerDetails: vi.fn((id: number, body?: Partial<ProducerDetails>): Observable<ProducerDetails> => of(details(id, body))),
-    getDashboardPlantingEstimates: vi.fn((_key: string, _year: number): Observable<DashboardPlantingEstimate[]> => of([])),
     getCommodities: vi.fn((): Observable<Commodity[]> => of([])),
     getNotes: vi.fn((): Observable<Note[]> => of([])),
     getNotesLastContact: vi.fn((): Observable<NoteLastContact[]> => of([])),
@@ -213,12 +171,9 @@ function makeApi() {
     getCustomerBySourceId: vi.fn((_sourceId: string): Observable<Customer | null> => of(null)),
     getCustomersLinkedTo: vi.fn((_sourceId: string): Observable<Customer[]> => of([])),
     getCustomerById: vi.fn((id: number): Observable<Customer> => of(customer(id))),
-    getPlantingIntentionsByCustomer: vi.fn((_id: number): Observable<PlantingIntention[]> => of([])),
     getPricingLinesByCustomer: vi.fn((_scoularId: string): Observable<ContractPricingLine[]> => of([])),
     getContractsByCustomer: vi.fn((_id: number, _scoularId?: string): Observable<Contract[]> => of([])),
     getTicketsByCustomer: vi.fn((_id: number, _scoularId?: string): Observable<Ticket[]> => of([])),
-    getStoredGrainByCustomer: vi.fn((_id: number): Observable<StoredGrain[]> => of([])),
-    getDpContractsByCustomer: vi.fn((_id: number): Observable<DpContract[]> => of([])),
   };
 }
 type ApiStub = ReturnType<typeof makeApi>;
@@ -231,35 +186,24 @@ function makeAppState() {
     selectedCustomer: signal<Customer | null>(null),
     customers: signal<Customer[]>([]),
     contracts: signal<Contract[]>([]),
-    plantingIntentions: signal<PlantingIntention[]>([]),
     notes: signal<Note[]>([]),
     notesLoaded: signal(false),
     noteLastContacts: signal<NoteLastContact[]>([]),
     myReminders: signal<ReminderDue[]>([]),
-    storedGrain: signal<StoredGrain[]>([]),
-    dpContracts: signal<DpContract[]>([]),
-    dpContractsLoaded: signal(false),
     commodities: signal<Commodity[]>([]),
     commodityConversions: signal<CommodityConversion[]>([]),
     pricingLines: signal<ContractPricingLine[]>([]),
     selectCustomer: vi.fn((c: Customer | null) => s.selectedCustomer.set(c)),
     setCustomers: vi.fn((v: Customer[]) => s.customers.set(v)),
     setContracts: vi.fn((v: Contract[]) => s.contracts.set(v)),
-    setPlantingIntentions: vi.fn((v: PlantingIntention[]) => s.plantingIntentions.set(v)),
     setNotes: vi.fn((v: Note[]) => { s.notes.set(v); s.notesLoaded.set(true); }),
     setNoteLastContacts: vi.fn((v: NoteLastContact[]) => s.noteLastContacts.set(v)),
     setMyReminders: vi.fn((v: ReminderDue[]) => s.myReminders.set(v)),
-    setStoredGrain: vi.fn((v: StoredGrain[]) => s.storedGrain.set(v)),
-    setDpContracts: vi.fn((v: DpContract[]) => { s.dpContracts.set(v); s.dpContractsLoaded.set(true); }),
-    mergeCustomerDpContracts: vi.fn((customerId: number, rows: DpContract[]) =>
-      s.dpContracts.update(e => [...e.filter(d => d.customerId !== customerId), ...rows])),
     setPricingLines: vi.fn((v: ContractPricingLine[]) => s.pricingLines.set(v)),
     customersLoadFailed: signal(false),
     noteLastContactsLoadFailed: signal(false),
-    plantingIntentionsLoadFailed: signal(false),
     setCustomersLoadFailed: vi.fn((v: boolean) => s.customersLoadFailed.set(v)),
     setNoteLastContactsLoadFailed: vi.fn((v: boolean) => s.noteLastContactsLoadFailed.set(v)),
-    setPlantingIntentionsLoadFailed: vi.fn((v: boolean) => s.plantingIntentionsLoadFailed.set(v)),
   };
   return s;
 }
@@ -267,7 +211,8 @@ type AppStateStub = ReturnType<typeof makeAppState>;
 
 interface Harness {
   activity: SelectedProducerActivityFake;
-  tradeUnitContracts: { contracts: WritableSignal<Contract[]> };
+  /** The selected producer's production: the Producers module's, which the page tells who is selected. */
+  production: SelectedProducerProductionFake;
   fixture: ComponentFixture<HomeComponent>;
   c: HomeComponent;
   api: ApiStub;
@@ -314,12 +259,12 @@ function setup(opts: SetupOptions = {}): Harness {
   // The selected producer's contracts, tickets and pricing lines are the Contracts module's; the page tells it who is
   // selected and reads them back.
   const activity = selectedProducerActivityFake();
-  const tradeUnitContracts = { contracts: signal<Contract[]>([]) };
+  const production = selectedProducerProductionFake();
 
   TestBed.configureTestingModule({
     providers: [
       provideSelectedProducerActivity(activity),
-      { provide: TradeUnitContracts, useValue: tradeUnitContracts },
+      provideSelectedProducerProduction(production),
       { provide: CustomersApiService, useExisting: ApiService },
       { provide: ApiService, useValue: api },
       { provide: CustomerStore, useExisting: AppStateService },
@@ -349,7 +294,7 @@ function setup(opts: SetupOptions = {}): Harness {
   const fixture = TestBed.createComponent(HomeComponent);
   fixture.detectChanges();
   return {
-    fixture, c: fixture.componentInstance, api, app, toast, outlook, router, access, profiles, activity, tradeUnitContracts,
+    fixture, c: fixture.componentInstance, api, app, toast, outlook, router, access, profiles, activity, production,
     flush: () => fixture.detectChanges(),
   };
 }
@@ -386,58 +331,27 @@ describe('HomeComponent', () => {
 
   // ── Selecting a producer ─────────────────────────────────────────────────
   describe('selecting a producer', () => {
-    it("tells the Contracts module who is selected, and loads their stored grain, DP contracts and planting intentions into the per-customer views", () => {
-      const h = setup({
-        arrange: api => {
-          api.getStoredGrainByCustomer.mockReturnValue(of([grain('G1', 1)]));
-          api.getPlantingIntentionsByCustomer.mockReturnValue(of([intention(30, 1)]));
-        },
-      });
+    it('tells the Contracts and Producers modules who is selected', () => {
+      const h = setup();
 
       h.c.handleSelectCustomer(A);
 
       expect(h.c.selectedCustomer()?.id).toBe(1);
       expect(h.app.selectCustomer).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
       expect(h.activity.select).toHaveBeenLastCalledWith(expect.objectContaining({ id: 1 }));
-      expect(h.c.customerStoredGrain().map(x => x.id)).toEqual(['G1']);
-      expect(h.c.customerPlantingIntentions().map(x => x.id)).toEqual([30]);
-      expect(h.c.isLoadingStoredGrain()).toBe(false);
-      expect(h.c.isLoadingDpContracts()).toBe(false);
+      // Their planting from what was read before, on the newest crop year: no deep link asked for one.
+      expect(h.production.select).toHaveBeenLastCalledWith(expect.objectContaining({ id: 1 }), { plantingYear: null });
       expect(h.c.customerCodeMap().get(1)).toBe('S-1');
     });
 
-    it('ignores a slow stored-grain response for the previously selected producer', () => {
-      const aGrain = new Subject<StoredGrain[]>();
-      const h = setup({
-        arrange: api => api.getStoredGrainByCustomer.mockImplementation(id =>
-          id === 1 ? aGrain.asObservable() : of([grain('GB', 2)])),
-      });
-
-      h.c.handleSelectCustomer(A);
-      h.c.handleSelectCustomer(B);
-      aGrain.next([grain('GA', 1)]);
-
-      expect(h.c.selectedCustomer()?.id).toBe(2);
-      expect(h.c.customerStoredGrain().map(g => g.id)).toEqual(['GB']);
-      expect(h.c.storedGrain().some(g => g.id === 'GA')).toBe(false);
-    });
-
-    it('keeps the newest linked producer\'s planting intentions when an older request lands late (request-id guard)', () => {
-      // handleSelectLinkedCustomer's planting fetch is not cancelled by the selection subject, so the
-      // request-id counter is the only thing stopping B's late answer overwriting C's.
-      const bIntentions = new Subject<PlantingIntention[]>();
-      const h = setup({
-        arrange: api => api.getPlantingIntentionsByCustomer.mockImplementation(id =>
-          id === 2 ? bIntentions.asObservable() : of([intention(300 + id, id)])),
-      });
+    it("a linked producer's selection reads their planting again", () => {
+      const h = setup();
 
       h.c.handleSelectCustomer(A);
       h.c.handleSelectLinkedCustomer(2);
-      h.c.handleSelectLinkedCustomer(3);
-      bIntentions.next([intention(200, 2)]);
 
-      expect(h.c.selectedCustomer()?.id).toBe(3);
-      expect(h.c.customerPlantingIntentions().map(p => p.id)).toEqual([303]);
+      expect(h.c.selectedCustomer()?.id).toBe(2);
+      expect(h.production.select).toHaveBeenLastCalledWith(expect.objectContaining({ id: 2 }), { plantingYear: null, reread: true });
     });
 
     it('applies deep-link context from the query string and keeps it, while a manual click resets it', () => {
@@ -448,6 +362,7 @@ describe('HomeComponent', () => {
       expect(h.c.pendingTab()).toBe('tickets');
       expect(h.c.pendingTicketCrop()).toBe('CORN');
       expect(h.c.pendingPlantingYear()).toBe(2027);
+      expect(h.production.select).toHaveBeenLastCalledWith(expect.objectContaining({ id: 2 }), { plantingYear: 2027 });
 
       h.c.handleSelectCustomer(A);
 
@@ -483,7 +398,22 @@ describe('HomeComponent', () => {
       expect(h.c.selectedCustomer()).toBeNull();
       expect(h.app.selectedCustomer()).toBeNull();
       expect(h.activity.select).toHaveBeenLastCalledWith(null);
+      expect(h.production.select).toHaveBeenLastCalledWith(null);
       expect(h.router.navigate).toHaveBeenCalledWith([], { queryParams: {}, replaceUrl: true });
+    });
+
+    // The page is built again on every visit; the producer picked before is still selected.
+    it('coming back to the page re-selects the producer, reading their planting again', () => {
+      const h = setup({
+        arrange: (_api, app) => {
+          app.customers.set([A, B]);
+          app.selectedCustomer.set(A);
+        },
+      });
+
+      expect(h.c.selectedCustomer()?.id).toBe(1);
+      expect(h.activity.select).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
+      expect(h.production.select).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }), { reread: true });
     });
   });
 
@@ -505,19 +435,16 @@ describe('HomeComponent', () => {
       expect(h.c.loading()).toBe(false);
     });
 
-    it('drops per-producer caches so re-selecting a producer refetches its rows for the new scope', () => {
+    // Each module forgets its own reads of the producers on a trade-unit change.
+    it('drops the selection for the Contracts and Producers modules too', () => {
       const h = setup();
       h.c.handleSelectCustomer(A);
-      expect(callsFor(h.api.getStoredGrainByCustomer, 1)).toBe(1);
 
       h.app.selectedTradeUnits.set(['TU1', 'TU2']);
       h.flush();
-      h.c.handleSelectCustomer(A);
 
-      expect(callsFor(h.api.getStoredGrainByCustomer, 1)).toBe(2);
-      expect(callsFor(h.api.getPlantingIntentionsByCustomer, 1)).toBe(2);
-      // The selection is dropped with the old trade units, for the Contracts module too.
-      expect(h.activity.select).toHaveBeenCalledWith(null);
+      expect(h.activity.select).toHaveBeenLastCalledWith(null);
+      expect(h.production.select).toHaveBeenLastCalledWith(null);
     });
 
     it('does not reload when the same trade units arrive in a different order', () => {
@@ -632,36 +559,33 @@ describe('HomeComponent', () => {
   // ── Background-failure toast throttle ────────────────────────────────────
   describe('background-failure toast throttle', () => {
     it('one transient failure produces exactly one toast naming what failed', () => {
-      const h = setup({ arrange: api => api.getStoredGrain.mockReturnValue(throwError(() => httpError(500))) });
+      const h = setup({ arrange: api => api.getAllProducerDetails.mockReturnValue(throwError(() => httpError(500))) });
 
       expect(h.toast.error).toHaveBeenCalledTimes(1);
-      expect(h.toast.error.mock.calls[0][0]).toContain('load stored grain');
+      expect(h.toast.error.mock.calls[0][0]).toContain('load producer details');
     });
 
-    it('six sources failing at once produce a single toast', () => {
+    it('several sources failing at once produce a single toast', () => {
       const fail = () => throwError(() => httpError(503));
       const h = setup({
         arrange: api => {
           api.getAllProducerDetails.mockReturnValue(fail());
-          api.getStoredGrain.mockReturnValue(fail());
-          api.getDpContracts.mockReturnValue(fail());
           api.getNotesLastContact.mockReturnValue(fail());
           api.getProducerDetails.mockReturnValue(fail());
-          api.getPlantingIntentionsByCustomer.mockReturnValue(fail());
         },
       });
       h.c.handleSelectCustomer(A);
 
-      // Six distinct sources reported (all logged in dev)...
+      // Three distinct sources reported (all logged in dev)...
       const reported = new Set(vi.mocked(console.error).mock.calls.map(args => String(args[0])));
-      expect(reported.size).toBe(6);
+      expect(reported.size).toBe(3);
       // ...but the user is told once.
       expect(h.toast.error).toHaveBeenCalledTimes(1);
     });
 
     it('the same source stays quiet for five minutes after it has spoken', () => {
       const h = setup({
-        arrange: api => api.getPlantingIntentionsByCustomer.mockReturnValue(throwError(() => httpError(500))),
+        arrange: api => api.getProducerDetails.mockReturnValue(throwError(() => httpError(500))),
       });
 
       h.c.handleSelectCustomer(A);
@@ -679,26 +603,27 @@ describe('HomeComponent', () => {
     it('a different source still waits out the 60-second global quiet period', () => {
       const h = setup({
         arrange: api => {
-          api.getPlantingIntentionsByCustomer.mockReturnValue(throwError(() => httpError(500)));
           api.getProducerDetails.mockReturnValue(throwError(() => httpError(500)));
+          // A linked producer from another trade unit.
+          api.getCustomerById.mockReturnValue(throwError(() => httpError(500)));
         },
       });
 
-      // Both fail on the click; producer details reports first and speaks, planting is held back.
+      // Producer details fail on the click and speak.
       h.c.handleSelectCustomer(A);
       expect(h.toast.error).toHaveBeenCalledTimes(1);
       expect(h.toast.error.mock.calls[0][0]).toContain('refresh producer details');
 
       vi.advanceTimersByTime(30_000);
-      h.c.handleSelectCustomer(B); // inside 60s: nothing new from either
+      h.c.handleSelectLinkedCustomer(90); // inside 60s: the linked producer's failure is held back
       expect(h.toast.error).toHaveBeenCalledTimes(1);
 
       // Past 60s: the held-back source was never marked as having spoken, so it may speak now,
       // while producer details is still inside its own five minutes.
       vi.advanceTimersByTime(31_000);
-      h.c.handleSelectCustomer(C);
+      h.c.handleSelectLinkedCustomer(91);
       expect(h.toast.error).toHaveBeenCalledTimes(2);
-      expect(h.toast.error.mock.calls[1][0]).toContain('load planting intentions');
+      expect(h.toast.error.mock.calls[1][0]).toContain('load the selected producer');
     });
   });
 
@@ -775,121 +700,35 @@ describe('HomeComponent', () => {
     });
   });
 
-  // ── Planting intentions (characterisation, written against the pre-extraction page) ──
+  // ── Planting intentions: the Producers module's, which a trade-unit save asks to move ──
   describe('planting intentions', () => {
-    /** The planting write calls are not in the shared API stub; add them to the same object the page holds. */
-    function withPlantingApi(h: Harness) {
-      return Object.assign(h.api, {
-        createPlantingIntention: vi.fn((d: { customerId: number; crop: string }): Observable<PlantingIntention> =>
-          of({ ...intention(700, d.customerId), crop: d.crop })),
-        updatePlantingIntention: vi.fn((id: number, d: { crop: string; acres: number }): Observable<PlantingIntention> =>
-          of({ ...intention(id, 1), crop: d.crop, acres: d.acres })),
-        deletePlantingIntention: vi.fn((_id: number): Observable<void> => of(undefined)),
-        retagPlantingIntentions: vi.fn((_c: number, _f: string, _t: string): Observable<{ moved: number }> => of({ moved: 2 })),
-        assignTradeUnits: vi.fn((id: number, _codes: string[]): Observable<Customer> => of(customer(id))),
-      });
-    }
-    const add = { crop: 'SOYBEANS', acres: 80, plantingYear: 2027, tradeUnit: 'TU1' };
-
-    it('adding updates the producer\'s views, the trade-unit list and the cache, and records the crop on the producer', () => {
-      const h = setup({ arrange: api => api.getPlantingIntentionsByCustomer.mockReturnValue(of([intention(30, 1)])) });
-      const api = withPlantingApi(h);
-      h.c.handleSelectCustomer(A);
-
-      h.c.addPlantingIntention(add);
-
-      expect(api.createPlantingIntention).toHaveBeenCalledWith(expect.objectContaining({ customerId: 1, customerCode: 'S-1', crop: 'SOYBEANS' }));
-      expect(h.c.customerPlantingIntentions().map(p => p.id)).toEqual([30, 700]);
-      expect(h.c.allCustomerPlantingIntentions().map(p => p.id)).toEqual([30, 700]);
-      expect(h.app.plantingIntentions().map(p => p.id)).toContain(700);
-      expect(h.toast.success).toHaveBeenCalledWith('Planting intention added');
-      expect(h.api.saveProducerDetails).toHaveBeenCalledWith(1, expect.objectContaining({ commodities: 'SOYBEANS' }));
-      expect(h.profiles.profileOf(1)?.commodities).toBe('SOYBEANS');
-
-      // The cache was updated too: a re-click shows the added row without another read.
-      h.c.handleSelectCustomer(B);
-      h.c.handleSelectCustomer(A);
-      expect(callsFor(h.api.getPlantingIntentionsByCustomer, 1)).toBe(1);
-      expect(h.c.customerPlantingIntentions().map(p => p.id)).toEqual([30, 700]);
+    const save = (over: Record<string, unknown>) => ({
+      customerId: 1, acres: 0, commodities: [], primaryContact: '', primaryPhone: '', contacts: [], binSites: [],
+      linkedProducerIds: [], removedIncomingIds: [], eSignEnabled: false, tradeUnitCodes: ['TU2'], reconcileTradeUnits: true,
+      grainOnFarm: [], intentionMoves: [{ from: 'TU1', to: 'TU2' }], ...over,
     });
 
-    it('refuses an add with no producer selected', () => {
+    it("a trade-unit save moves the producer's intentions off a removed trade unit, once the trade units are saved", () => {
       const h = setup();
-      const api = withPlantingApi(h);
-      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-      h.c.addPlantingIntention(add);
-      expect(api.createPlantingIntention).not.toHaveBeenCalled();
-      expect(h.toast.error).toHaveBeenCalledWith('Select a producer before adding a planting intention.');
-    });
-
-    it('editing and deleting update every view and the cache; a crop already on the producer is not re-saved', () => {
-      const h = setup({ arrange: api => api.getPlantingIntentionsByCustomer.mockReturnValue(of([intention(30, 1), intention(31, 1)])) });
-      withPlantingApi(h);
-      const corn = customer(1, { commodities: ['corn'] });
-      h.c.handleSelectCustomer(corn);
-
-      h.c.editPlantingIntention({ intentionId: 30, crop: 'CORN', acres: 55, plantingYear: 2027 });
-      expect(h.c.customerPlantingIntentions().find(p => p.id === 30)?.acres).toBe(55);
-      expect(h.api.saveProducerDetails).not.toHaveBeenCalledWith(1, expect.objectContaining({ commodities: expect.any(String) }));
-
-      h.c.deletePlantingIntention(31);
-      expect(h.c.customerPlantingIntentions().map(p => p.id)).toEqual([30]);
-      expect(h.c.allCustomerPlantingIntentions().map(p => p.id)).toEqual([30]);
-      expect(h.toast.success).toHaveBeenCalledWith('Planting intention deleted');
-
-      h.c.handleSelectCustomer(B);
-      h.c.handleSelectCustomer(corn);
-      expect(h.c.customerPlantingIntentions().map(p => [p.id, p.acres])).toEqual([[30, 55]]);
-    });
-
-    it('a cached re-click is not overwritten by an older read landing late', () => {
-      const late = new Subject<PlantingIntention[]>();
-      const h = setup({ arrange: api => api.getPlantingIntentionsByCustomer.mockReturnValue(of([intention(30, 1)])) });
-      h.c.handleSelectCustomer(A);                 // A cached
-      h.api.getPlantingIntentionsByCustomer.mockReturnValue(late.asObservable());
-      h.c.handleSelectLinkedCustomer(2);            // B read in flight, not cancelled by a selection
-      h.c.handleSelectCustomer(A);                 // A restored from cache
-
-      late.next([intention(200, 2)]);
-
-      expect(h.c.customerPlantingIntentions().map(p => p.id)).toEqual([30]);
-    });
-
-    it('moving intentions off a removed trade unit says so and reloads the producer\'s rows everywhere', () => {
-      const h = setup({ arrange: api => api.getPlantingIntentionsByCustomer.mockReturnValue(of([intention(30, 1)])) });
-      const api = withPlantingApi(h);
+      const assign = vi.fn((id: number, _codes: string[]): Observable<Customer> => of(customer(id)));
+      Object.assign(h.api, { assignTradeUnits: assign });
       h.c.handleSelectCustomer(A);
-      h.api.getPlantingIntentionsByCustomer.mockReturnValue(of([{ ...intention(30, 1), tradeUnit: 'TU2' }]));
 
-      h.c.handleSaveCustomer({
-        customerId: 1, acres: 0, commodities: [], primaryContact: '', primaryPhone: '', contacts: [], binSites: [],
-        linkedProducerIds: [], removedIncomingIds: [], eSignEnabled: false, tradeUnitCodes: ['TU2'], reconcileTradeUnits: true,
-        grainOnFarm: [], intentionMoves: [{ from: 'TU1', to: 'TU2' }],
-      });
+      h.c.handleSaveCustomer(save({}));
 
       // Third argument: the producer code, sent only for an onboarding candidate (plan E4); an
       // existing producer's save carries none.
-      expect(api.assignTradeUnits).toHaveBeenCalledWith(1, ['TU2'], undefined);
-      expect(api.retagPlantingIntentions).toHaveBeenCalledWith(1, 'TU1', 'TU2');
-      expect(h.toast.success).toHaveBeenCalledWith('Moved 2 planting intentions to TU2.');
-      expect(h.c.customerPlantingIntentions()[0].tradeUnit).toBe('TU2');
-      expect(h.app.plantingIntentions().find(p => p.id === 30)?.tradeUnit).toBe('TU2');
+      expect(assign).toHaveBeenCalledWith(1, ['TU2'], undefined);
+      expect(h.production.movePlantingIntentions).toHaveBeenCalledWith(1, [{ from: 'TU1', to: 'TU2' }]);
     });
 
-    it('a failed move names the trade units and moves nothing', () => {
+    it('a details-only save moves them too', () => {
       const h = setup();
-      const api = withPlantingApi(h);
-      api.retagPlantingIntentions.mockReturnValue(throwError(() => new Error('500')));
       h.c.handleSelectCustomer(A);
 
-      h.c.handleSaveCustomer({
-        customerId: 1, acres: 0, commodities: [], primaryContact: '', primaryPhone: '', contacts: [], binSites: [],
-        linkedProducerIds: [], removedIncomingIds: [], eSignEnabled: false, tradeUnitCodes: [], reconcileTradeUnits: false,
-        grainOnFarm: [], intentionMoves: [{ from: 'TU1', to: 'TU2' }],
-      });
+      h.c.handleSaveCustomer(save({ tradeUnitCodes: [], reconcileTradeUnits: false }));
 
-      expect(h.toast.error).toHaveBeenCalledWith('Couldn\'t move planting intentions from TU1 to TU2 — they\'re still recorded against TU1.');
-      expect(h.toast.success).not.toHaveBeenCalledWith(expect.stringContaining('Moved'));
+      expect(h.production.movePlantingIntentions).toHaveBeenCalledWith(1, [{ from: 'TU1', to: 'TU2' }]);
     });
   });
 
@@ -1153,11 +992,6 @@ describe('HomeComponent', () => {
       expect(h.toast.error).toHaveBeenCalled();
     });
 
-    it('records a failed planting read', () => {
-      const h = setup({ arrange: api => api.getPlantingIntentions.mockReturnValue(fail()) });
-      expect(h.app.plantingIntentionsLoadFailed()).toBe(true);
-      expect(h.c.isLoadingPlanting()).toBe(false);
-    });
   });
 });
 
@@ -1275,29 +1109,6 @@ describe("HomeComponent — the producer's saved details", () => {
     customerId, acres: 0, commodities: [], primaryContact: '', primaryPhone: '', contacts: [], binSites: [],
     linkedProducerIds: [], removedIncomingIds: [], eSignEnabled: false, tradeUnitCodes: [],
     reconcileTradeUnits: false, grainOnFarm: [],
-  });
-
-  it("saves the commodities of the producer's tickets that their saved details don't list yet", () => {
-    const a = customer(1, { commodities: ['YC'] });
-    const h = setup({ customers: [a, B] });
-
-    h.c.handleSelectCustomer(a);
-    h.activity.tickets.set([ticket(20, 'S-1', { productCode: 'SB' })]);
-    h.flush();
-
-    expect(h.api.saveProducerDetails).toHaveBeenCalledWith(1, expect.objectContaining({ commodities: 'SB,YC' }));
-    expect(h.profiles.profileOf(1)?.commodities).toBe('SB,YC');
-  });
-
-  it('saves nothing when their saved details already list every commodity on their tickets', () => {
-    const a = customer(1, { commodities: ['SB', 'YC'] });
-    const h = setup({ customers: [a, B] });
-
-    h.c.handleSelectCustomer(a);
-    h.activity.tickets.set([ticket(20, 'S-1', { productCode: 'SB' })]);
-    h.flush();
-
-    expect(h.api.saveProducerDetails).not.toHaveBeenCalled();
   });
 
   it("removing an incoming link saves the other producer's links, from their saved details, without this one", () => {

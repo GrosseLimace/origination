@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
-import { AppStateService } from './app-state.service';
-import { DpContract } from '@models';
+import { SessionReset } from '@core/auth/session-reset.service';
+import { DpContract, PlantingIntention, StoredGrain } from '@models';
+import { ProducerStore } from './producer.store';
 
 function dpRow(over: Partial<DpContract> = {}): DpContract {
   return {
@@ -24,12 +25,11 @@ function dpRow(over: Partial<DpContract> = {}): DpContract {
  * units". It must not survive a trade-unit change: leaving it set made Build A List filter a new TU's
  * producers against the previous TU's DP rows and honestly report "no producers match".
  */
-describe('AppStateService — DP cache invalidation', () => {
-  let svc: AppStateService;
+describe('ProducerStore — DP cache invalidation', () => {
+  let svc: ProducerStore;
 
   beforeEach(() => {
-    TestBed.configureTestingModule({ providers: [AppStateService] });
-    svc = TestBed.inject(AppStateService);
+    svc = TestBed.inject(ProducerStore);
   });
 
   it('starts not-loaded', () => {
@@ -100,5 +100,47 @@ describe('AppStateService — DP cache invalidation', () => {
 
     expect(svc.dpContractsLoaded()).toBe(false);
     expect(svc.dpContracts()).toEqual([]);
+  });
+});
+
+describe('ProducerStore — the trade units\' planting and stored grain, and the reads\' failures', () => {
+  let store: ProducerStore;
+
+  beforeEach(() => {
+    store = TestBed.inject(ProducerStore);
+  });
+
+  it('holds what it is given', () => {
+    store.setPlantingIntentions([{ id: 7 } as PlantingIntention]);
+    store.setStoredGrain([{ id: 'g3' } as StoredGrain]);
+
+    expect(store.plantingIntentions().map(pi => pi.id)).toEqual([7]);
+    expect(store.storedGrain().map(row => row.id)).toEqual(['g3']);
+  });
+
+  it('records a failed planting or DP read until the next trade-unit read starts', () => {
+    store.setPlantingIntentionsLoadFailed(true);
+    store.setDpContractsLoadFailed(true);
+    expect([store.plantingIntentionsLoadFailed(), store.dpContractsLoadFailed()]).toEqual([true, true]);
+
+    store.clearLoadFailures();
+
+    expect([store.plantingIntentionsLoadFailed(), store.dpContractsLoadFailed()]).toEqual([false, false]);
+  });
+
+  it('drops everything at sign-out', () => {
+    store.setPlantingIntentions([{ id: 7 } as PlantingIntention]);
+    store.setStoredGrain([{ id: 'g3' } as StoredGrain]);
+    store.setDpContracts([dpRow()]);
+    store.setPlantingIntentionsLoadFailed(true);
+    store.setDpContractsLoadFailed(true);
+
+    TestBed.inject(SessionReset).reset();
+
+    expect(store.plantingIntentions()).toEqual([]);
+    expect(store.storedGrain()).toEqual([]);
+    expect(store.dpContracts()).toEqual([]);
+    expect(store.dpContractsLoaded()).toBe(false);
+    expect([store.plantingIntentionsLoadFailed(), store.dpContractsLoadFailed()]).toEqual([false, false]);
   });
 });

@@ -8,6 +8,7 @@ import { BuildListComponent } from './build-list.component';
 import { ApiService } from '@core/services/api.service';
 import { ContractsApiService } from '@features/contracts';
 import { AppStateService } from '@core/services/app-state.service';
+import { ProducersApiService } from '@features/producers';
 import { DataPreloadService } from '@core/context/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
@@ -102,6 +103,8 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
         { provide: SavedListsApiService, useExisting: ApiService },
         // The contract and ticket calls are Contracts' API client's; this stub answers them.
         { provide: ContractsApiService, useExisting: ApiService },
+        // So are the planting, stored grain, DP and dashboard calls, which are Producers'.
+        { provide: ProducersApiService, useExisting: ApiService },
         { provide: ApiService, useValue: api },
         { provide: DataPreloadService, useValue: {} },
         { provide: ToastService, useValue: { info: vi.fn(), error: vi.fn(), success: vi.fn() } },

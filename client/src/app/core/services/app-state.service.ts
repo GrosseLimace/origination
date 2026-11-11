@@ -1,5 +1,5 @@
 import { Injectable, inject, signal } from '@angular/core';
-import { Customer, PlantingIntention, Note, NoteLastContact, ReminderDue, StoredGrain, DpContract, Commodity, CommodityConversion, HarvestWindow } from '@models';
+import { Customer, Note, NoteLastContact, ReminderDue, Commodity, CommodityConversion, HarvestWindow } from '@models';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { SessionReset } from '@core/auth/session-reset.service';
 
@@ -13,21 +13,15 @@ export class AppStateService {
   private readonly _selectedCustomer = signal<Customer | null>(null);
   private readonly _allProducersMode = signal(false);
   private readonly _searchQuery = signal<string>('');
-  private readonly _plantingIntentions = signal<PlantingIntention[]>([]);
   private readonly _notes = signal<Note[]>([]);
   private readonly _noteLastContacts = signal<NoteLastContact[]>([]);
   private readonly _myReminders = signal<ReminderDue[]>([]);
-  private readonly _storedGrain = signal<StoredGrain[]>([]);
-  private readonly _dpContracts = signal<DpContract[]>([]);
-  private readonly _dpContractsLoaded = signal(false);
   private readonly _commodities = signal<Commodity[]>([]);
   private readonly _commodityConversions = signal<CommodityConversion[]>([]);
   private readonly _harvestWindows = signal<HarvestWindow[]>([]);
   private readonly _notesLoaded = signal(false);
-  private readonly _dpContractsLoadFailed = signal(false);
   private readonly _noteLastContactsLoadFailed = signal(false);
   private readonly _myRemindersLoadFailed = signal(false);
-  private readonly _plantingIntentionsLoadFailed = signal(false);
   private readonly _harvestWindowsLoadFailed = signal(false);
   private readonly _commodityConversionsLoadFailed = signal(false);
 
@@ -47,7 +41,6 @@ export class AppStateService {
   readonly searchQuery = this._searchQuery.asReadonly();
 
   // Data cache - persists across navigation
-  readonly plantingIntentions = this._plantingIntentions.asReadonly();
   /** Full TU-wide note set — a LAZY cache for NLQ/saved-list consumers only (see notesLoaded).
    *  No longer eagerly bulk-loaded on page load / TU change; badges use noteLastContacts. */
   readonly notes = this._notes.asReadonly();
@@ -58,14 +51,6 @@ export class AppStateService {
    *  Private per user (the API only returns the caller's), and tiny: one row per scheduled
    *  follow-up, no reminder text. Preloaded on TU change alongside noteLastContacts. */
   readonly myReminders = this._myReminders.asReadonly();
-  readonly storedGrain = this._storedGrain.asReadonly();
-  readonly dpContracts = this._dpContracts.asReadonly();
-  /** True once a DP fetch has COMPLETED for the current trade units, regardless of row count.
-   *  Callers must gate on this rather than `dpContracts().length > 0`: a trade unit with genuinely
-   *  zero DP positions is indistinguishable from "not fetched yet" by length alone, which makes a
-   *  query flash "no producers found" while the fetch is still in flight. Same reason
-   *  `ticketsLoaded` exists. Reset on trade-unit change. */
-  readonly dpContractsLoaded = this._dpContractsLoaded.asReadonly();
   readonly commodities = this._commodities.asReadonly();
   readonly commodityConversions = this._commodityConversions.asReadonly();
   readonly harvestWindows = this._harvestWindows.asReadonly();
@@ -83,10 +68,6 @@ export class AppStateService {
   }
 
   // Update data cache
-  setPlantingIntentions(plantingIntentions: PlantingIntention[]): void {
-    this._plantingIntentions.set(plantingIntentions);
-  }
-
   setNotes(notes: Note[]): void {
     this._notes.set(notes);
     this._notesLoaded.set(true);
@@ -98,29 +79,6 @@ export class AppStateService {
 
   setMyReminders(rows: ReminderDue[]): void {
     this._myReminders.set(rows);
-  }
-
-  setStoredGrain(storedGrain: StoredGrain[]): void {
-    this._storedGrain.set(storedGrain);
-  }
-
-  /** TU-WIDE load: replaces the set and marks DP loaded for the current trade units. Only call this
-   *  from a fetch that covers the whole trade-unit scope. */
-  setDpContracts(dpContracts: DpContract[]): void {
-    this._dpContracts.set(dpContracts);
-    this._dpContractsLoaded.set(true);
-  }
-
-  /**
-   * PER-PRODUCER merge — swaps in one producer's DP rows and leaves everyone else's alone.
-   *
-   * Deliberately does NOT set dpContractsLoaded: one producer's rows are not a trade-unit-wide load.
-   * Claiming otherwise made TU-wide consumers (Build A List) believe DP was fully loaded after a
-   * single producer was opened, then filter every producer against that partial set and report
-   * "no producers match".
-   */
-  mergeCustomerDpContracts(customerId: number, rows: DpContract[]): void {
-    this._dpContracts.update(existing => [...existing.filter(d => d.customerId !== customerId), ...rows]);
   }
 
   setCommodities(commodities: Commodity[]): void {
@@ -135,14 +93,6 @@ export class AppStateService {
     this._harvestWindows.set(windows);
   }
 
-  /** Drops the DP set + its loaded flag. Must run on TU change: without it, dpContractsLoaded stays
-   *  true from the PREVIOUS trade unit, so a DP query runs against the prior TU's rows and reports
-   *  "no producers match" for producers that do hold DP. */
-  clearDpContractsCache(): void {
-    this._dpContracts.set([]);
-    this._dpContractsLoaded.set(false);
-  }
-
   // True once the full TU-wide note set has been loaded into `notes` (via setNotes). NLQ/
   // saved-list consumers gate their lazy fetch on this instead of `notes().length === 0`,
   // because notes are no longer eagerly bulk-loaded — an emptiness check would misfire for
@@ -154,23 +104,14 @@ export class AppStateService {
     this._notesLoaded.set(false);
   }
 
-  /** Same, for the trade-unit-wide DP read. The [] fallback still flips dpContractsLoaded (so a DP
-   *  prompt never waits forever), so without this a failure answers "no producers hold DP". */
-  readonly dpContractsLoadFailed = this._dpContractsLoadFailed.asReadonly();
-  setDpContractsLoadFailed(failed: boolean): void { this._dpContractsLoadFailed.set(failed); }
-
-  /** Same, for the last-contact aggregate. Without it every producer reads "Never contacted" and the
-   *  recency prompts ("not contacted in 30 days") match everyone. */
+  /** Set when the last-contact aggregate's read failed, as opposed to returning nothing. Without it every producer
+   *  reads "Never contacted" and the recency prompts ("not contacted in 30 days") match everyone. */
   readonly noteLastContactsLoadFailed = this._noteLastContactsLoadFailed.asReadonly();
   setNoteLastContactsLoadFailed(failed: boolean): void { this._noteLastContactsLoadFailed.set(failed); }
 
   /** Same, for the signed-in user's follow-ups: follow-up badges vanish and follow-up prompts match no one. */
   readonly myRemindersLoadFailed = this._myRemindersLoadFailed.asReadonly();
   setMyRemindersLoadFailed(failed: boolean): void { this._myRemindersLoadFailed.set(failed); }
-
-  /** Same, for the trade-unit planting intentions behind the dashboard and planting prompts. */
-  readonly plantingIntentionsLoadFailed = this._plantingIntentionsLoadFailed.asReadonly();
-  setPlantingIntentionsLoadFailed(failed: boolean): void { this._plantingIntentionsLoadFailed.set(failed); }
 
   /** Same, for the harvest windows behind contract pacing, which otherwise reads "No contract data available". */
   readonly harvestWindowsLoadFailed = this._harvestWindowsLoadFailed.asReadonly();
@@ -184,10 +125,8 @@ export class AppStateService {
 
   /** A new trade-unit load is starting: the previous load's failures no longer describe anything. */
   clearLoadFailures(): void {
-    this._dpContractsLoadFailed.set(false);
     this._noteLastContactsLoadFailed.set(false);
     this._myRemindersLoadFailed.set(false);
-    this._plantingIntentionsLoadFailed.set(false);
     this._harvestWindowsLoadFailed.set(false);
   }
 
@@ -201,13 +140,9 @@ export class AppStateService {
     this.tradeUnitContext.clear();
     this._selectedCustomer.set(null);
     this._searchQuery.set('');
-    this._plantingIntentions.set([]);
     this.clearNotesCache();
     this._noteLastContacts.set([]);
     this._myReminders.set([]);
-    this._storedGrain.set([]);
-    this._dpContracts.set([]);
-    this._dpContractsLoaded.set(false);
     this._commodities.set([]);
     this.sessionReset.reset();
   }

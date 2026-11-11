@@ -12,7 +12,10 @@ import { AppStateService } from '@core/services/app-state.service';
 import { ContractStore, ContractsApiService } from '@features/contracts';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, Commodity } from '@models';
+import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, Commodity } from '@models';
+import { DashboardMarketShare } from '../../models/dashboard-market-share.model';
+import { DashboardActualHarvest } from '../../models/dashboard-actual-harvest.model';
+import { DashboardSummary } from '../../models/dashboard-summary.model';
 import { buildLbsPerBushelMap } from '../../utils/production-coverage';
 import { TradeUnitSelectorComponent } from '@core/layout/trade-unit-selector/trade-unit-selector.component';
 import { commodityRowClass } from '@shared/utils/commodity-color';
@@ -36,6 +39,8 @@ import {
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { ProducerProfiles } from '@core/context/producer-profiles';
 import { DashboardCacheEntry, DashboardStore } from '../../data-access/dashboard.store';
+import { ProducerStore } from '../../data-access/producer.store';
+import { ProducersApiService } from '../../data-access/producers-api.service';
 
 @Component({
   selector: 'app-dashboard',
@@ -47,6 +52,8 @@ import { DashboardCacheEntry, DashboardStore } from '../../data-access/dashboard
 export class DashboardComponent {
   private readonly apiService = inject(ApiService);
   private readonly appStateService = inject(AppStateService);
+  private readonly producerStore = inject(ProducerStore);
+  private readonly producersApi = inject(ProducersApiService);
   /** The trade units' contracts and tickets, kept by the Contracts module. */
   private readonly contractStore = inject(ContractStore);
   private readonly contractsApi = inject(ContractsApiService);
@@ -63,7 +70,7 @@ export class DashboardComponent {
   // Read directly from appState — DataPreloadService populates these on TU change
   readonly customers = this.customerStore.customers;
   readonly contracts = this.contractStore.contracts;
-  readonly plantingIntentions = this.appStateService.plantingIntentions;
+  readonly plantingIntentions = this.producerStore.plantingIntentions;
 
   // Crop-year contracts from base.Contract (open + closed). Loaded reactively when the
   // user changes the selected planting year or trade unit selection. Used by the
@@ -80,7 +87,7 @@ export class DashboardComponent {
   // outage, not "none". Read-only here: the loaders (DataPreloadService and others) record them.
   /** Planting intentions failed to load: "No planting data" would be false. */
   readonly plantingIntentionsUnavailable = computed(() =>
-    this.appStateService.plantingIntentionsLoadFailed() && this.plantingIntentions().length === 0);
+    this.producerStore.plantingIntentionsLoadFailed() && this.plantingIntentions().length === 0);
   /** Unit conversions failed to load: contracts dropped from bushel totals were dropped for that
    *  reason, not because of their unit. */
   readonly conversionsUnavailable = computed(() =>
@@ -101,7 +108,7 @@ export class DashboardComponent {
   );
   readonly storedGrain = computed(() => {
     const customerIds = new Set(this.customerStore.customers().map(c => c.id));
-    return this.appStateService.storedGrain().filter(s => customerIds.has(s.customerId));
+    return this.producerStore.storedGrain().filter(s => customerIds.has(s.customerId));
   });
   allCommodities = signal<Commodity[]>([]);
 
@@ -506,7 +513,7 @@ export class DashboardComponent {
     effect(() => {
       this.customerStore.customers();
       this.contractStore.contracts();
-      this.appStateService.plantingIntentions();
+      this.producerStore.plantingIntentions();
       this.allCommodities();
       const ready = this._dataReady();
       untracked(() => {
@@ -552,7 +559,7 @@ export class DashboardComponent {
   reloadPlantingIntentions(): void {
     // If appState already has planting intentions, skip re-fetching them — just refresh
     // the 3 dashboard-specific APIs (estimates, shares, harvest) which are year-specific.
-    if (this.appStateService.plantingIntentions().length > 0) {
+    if (this.producerStore.plantingIntentions().length > 0) {
       this._loadDashboardData();
       return;
     }
@@ -567,16 +574,16 @@ export class DashboardComponent {
     forkJoin({
       // The same trade-unit-wide read the preload does, so it records the same flag: a failure
       // here must not read as "no planting intentions" on this page or any other.
-      pi: this.apiService.getPlantingIntentions(this.selectedTradeUnits).pipe(
-        tap(() => this.appStateService.setPlantingIntentionsLoadFailed(false)),
-        catchError(() => { this.appStateService.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); }),
+      pi: this.producersApi.getPlantingIntentions(this.selectedTradeUnits).pipe(
+        tap(() => this.producerStore.setPlantingIntentionsLoadFailed(false)),
+        catchError(() => { this.producerStore.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); }),
       ),
-      summary: key ? this.apiService.getDashboardSummary(key, year)
+      summary: key ? this.producersApi.getDashboardSummary(key, year)
         .pipe(catchError(() => of(emptySummary))) : of(emptySummary),
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: ({ pi, summary }) => {
         if (requestId !== this._loadRequestId) return; // discard stale response
-        this.appStateService.setPlantingIntentions(pi);
+        this.producerStore.setPlantingIntentions(pi);
         this.savedYieldEstimates.set(summary.estimates);
         this.savedMarketShares.set(summary.marketShares);
         this.savedActualHarvest.set(summary.actualHarvest);
@@ -667,7 +674,7 @@ export class DashboardComponent {
     const emptySummary: DashboardSummary = { estimates: [], marketShares: [], actualHarvest: [] };
     const summary$ = summaryReady
       ? of(preloadedSummary! as DashboardSummary)
-      : this.apiService.getDashboardSummary(key, year).pipe(catchError(() => of(emptySummary)));
+      : this.producersApi.getDashboardSummary(key, year).pipe(catchError(() => of(emptySummary)));
 
     forkJoin({
       commodities: commodities$,
@@ -724,7 +731,7 @@ export class DashboardComponent {
     const requestId = ++this._loadRequestId;
 
     this._localLoading.set(true);
-    this.apiService.getDashboardSummary(key, year)
+    this.producersApi.getDashboardSummary(key, year)
       .pipe(
         catchError(() => of<DashboardSummary>({ estimates: [], marketShares: [], actualHarvest: [] })),
         takeUntilDestroyed(this.destroyRef)
@@ -803,7 +810,7 @@ export class DashboardComponent {
       this._calculateYieldRows();
       return;
     }
-    this.apiService.getDashboardPlantingEstimates(key, this.selectedPlantingYear())
+    this.producersApi.getDashboardPlantingEstimates(key, this.selectedPlantingYear())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -825,7 +832,7 @@ export class DashboardComponent {
       this._calculateCategoryRows();
       return;
     }
-    this.apiService.getDashboardMarketShares(key, this.selectedPlantingYear())
+    this.producersApi.getDashboardMarketShares(key, this.selectedPlantingYear())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -846,7 +853,7 @@ export class DashboardComponent {
       this.savedActualHarvest.set([]);
       return;
     }
-    this.apiService.getDashboardActualHarvest(key, this.selectedPlantingYear() - 1)
+    this.producersApi.getDashboardActualHarvest(key, this.selectedPlantingYear() - 1)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -888,10 +895,10 @@ export class DashboardComponent {
     }));
 
     const yield$ = yieldPayload.length > 0
-      ? this.apiService.upsertDashboardPlantingEstimates(yieldPayload)
+      ? this.producersApi.upsertDashboardPlantingEstimates(yieldPayload)
       : of(null);
     const share$ = sharePayload.length > 0
-      ? this.apiService.upsertDashboardMarketShares(sharePayload)
+      ? this.producersApi.upsertDashboardMarketShares(sharePayload)
       : of(null);
 
     this.estimatesSaving.set(true);
@@ -1013,7 +1020,7 @@ export class DashboardComponent {
       .filter(item => !isNaN(item.bushels) && item.bushels >= 0);
     if (items.length === 0) { this.cancelHarvestEdit(); return; }
     this.harvestSaving.set(true);
-    this.apiService.upsertDashboardActualHarvest(items).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.producersApi.upsertDashboardActualHarvest(items).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.harvestSaving.set(false);
         this.harvestEditMode.set(false);
@@ -1028,7 +1035,7 @@ export class DashboardComponent {
   }
 
   deleteHarvestRow(id: number): void {
-    this.apiService.deleteDashboardActualHarvest(id)
+    this.producersApi.deleteDashboardActualHarvest(id)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => this.loadActualHarvest(),
@@ -1041,7 +1048,7 @@ export class DashboardComponent {
     if (!this.newHarvestCrop() || isNaN(bushels) || bushels < 0) return;
     const key = this.tradeUnitKey();
     this.harvestSaving.set(true);
-    this.apiService.upsertDashboardActualHarvest([{
+    this.producersApi.upsertDashboardActualHarvest([{
       tradeUnitKey: key,
       cropCategory: this.newHarvestCrop(),
       plantingYear: this.selectedPlantingYear() - 1,

@@ -6,12 +6,13 @@ import { CustomerProfileComponent } from './customer-profile.component';
 import { ApiService } from '@core/services/api.service';
 import { ThemeService } from '@core/services/theme.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Contract, Customer, DpContract, PlantingIntention, StoredGrain, Ticket } from '@models';
+import { Customer } from '@models';
 import { provideSelectedProducerActivity } from '@testing/selected-producer-activity.fake';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { SelectedProducerProduction } from '@core/context/selected-producer-production';
 import { providePermissions } from '@testing/permission.stub';
-import { producerProfile, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
+import { producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
+import { provideSelectedProducerProduction, selectedProducerProductionFake } from '@testing/selected-producer-production.fake';
 
 /** The profiles the describes below that don't set their own read: none. */
 const profiles = producerProfilesFake();
@@ -23,23 +24,17 @@ function makeCustomer(over: Partial<Customer> = {}): Customer {
   };
 }
 
-/**
- * The profile surfaces only the two most recent crop years. Producers accumulate seasons forever,
- * and the Planting tab plus the Growth Opportunity year picker must agree on which ones exist.
- */
-describe('CustomerProfileComponent — crop year scoping', () => {
-  let component: CustomerProfileComponent;
-  let ref: ComponentRef<CustomerProfileComponent>;
-
-  const intention = (id: number, plantingYear: number) =>
-    ({ id, customerId: 42, plantingYear, crop: 'YC', acres: 100 }) as PlantingIntention;
-
-  beforeEach(() => {
+// The Planting, Storage and DP Contracts tabs rendered inside it read the producer's production from the Producers
+// module, through core (ProducerProductionStore's spec covers it): the profile holds none of it.
+describe('CustomerProfileComponent — the producer\'s production', () => {
+  it('provides none of its own, so what renders inside it reads the app\'s', () => {
+    const production = selectedProducerProductionFake();
     TestBed.configureTestingModule({
       providers: [
         { provide: ApiService, useValue: {} },
         { provide: ThemeService, useValue: {} },
         provideSelectedProducerActivity(),
+        provideSelectedProducerProduction(production),
         provideProducerProfiles(profiles),
         SelectedCustomerContext,
         providePermissions(),
@@ -50,139 +45,9 @@ describe('CustomerProfileComponent — crop year scoping', () => {
       set: { template: '', templateUrl: undefined, imports: [] },
     });
     const fixture = TestBed.createComponent(CustomerProfileComponent);
-    component = fixture.componentInstance;
-    ref = fixture.componentRef;
-    ref.setInput('customer', makeCustomer({ id: 42 }));
-  });
+    fixture.componentRef.setInput('customer', makeCustomer({ id: 42 }));
 
-  it('offers only the two most recent planting years', () => {
-    ref.setInput('plantingIntentions', [intention(1, 2025), intention(2, 2026), intention(3, 2027)]);
-    expect(component.plantingYearOptions()).toEqual([2027, 2026]);
-  });
-
-  it('drops intentions from years outside that window', () => {
-    ref.setInput('plantingIntentions', [intention(1, 2025), intention(2, 2026), intention(3, 2027)]);
-    expect(component.visiblePlantingIntentions().map(pi => pi.plantingYear).sort()).toEqual([2026, 2027]);
-  });
-
-  it('rolls the window forward when a newer year is added', () => {
-    ref.setInput('plantingIntentions', [intention(1, 2025), intention(2, 2026)]);
-    expect(component.plantingYearOptions()).toEqual([2026, 2025]);
-
-    // Adding 2027 pushes 2025 out of view.
-    ref.setInput('plantingIntentions', [intention(1, 2025), intention(2, 2026), intention(3, 2027)]);
-    expect(component.plantingYearOptions()).toEqual([2027, 2026]);
-    expect(component.visiblePlantingIntentions().some(pi => pi.plantingYear === 2025)).toBe(false);
-  });
-
-  it('falls back to contract crop years when no intentions exist', () => {
-    ref.setInput('plantingIntentions', []);
-    ref.setInput('contracts', [
-      { id: 1, cropYear: 2026 } as Contract,
-      { id: 2, cropYear: 2024 } as Contract,
-      { id: 3, cropYear: 2025 } as Contract,
-    ]);
-    expect(component.plantingYearOptions()).toEqual([2026, 2025]);
-  });
-
-  it('keeps a deep-linked older year visible so the picker never omits the active selection', () => {
-    ref.setInput('plantingIntentions', [intention(1, 2025), intention(2, 2026), intention(3, 2027)]);
-    component.selectPlantingYear(2025);
-
-    expect(component.availablePlantingYears).toEqual([2027, 2026, 2025]);
-    expect(component.visiblePlantingIntentions().some(pi => pi.plantingYear === 2025)).toBe(true);
-  });
-});
-
-// The profile is the SelectedProducerProduction for the Planting, Storage and DP Contracts tabs rendered inside it:
-// they read the producer's intentions, crop year, stored grain and DP contracts from it, and their add / edit /
-// delete come back out as the profile's outputs.
-describe('CustomerProfileComponent — as the SelectedProducerProduction', () => {
-  // Producer 42's saved details: the commodities on their profile.
-  const profiles = producerProfilesFake([producerProfile(42, { commodities: 'HRW,YSB' })]);
-  let component: CustomerProfileComponent;
-  let ref: ComponentRef<CustomerProfileComponent>;
-  let production: SelectedProducerProduction;
-
-  const intention = (id: number, plantingYear: number) =>
-    ({ id, customerId: 42, plantingYear, crop: 'YC', acres: 100 }) as PlantingIntention;
-
-  beforeEach(() => {
-    TestBed.configureTestingModule({
-      providers: [
-        { provide: ApiService, useValue: {} },
-        { provide: ThemeService, useValue: {} },
-        provideSelectedProducerActivity(),
-        provideProducerProfiles(profiles),
-        SelectedCustomerContext,
-        providePermissions(),
-        { provide: UsageTrackingService, useValue: { trackCallClick: () => {}, trackEmailClick: () => {}, postClickEvent: () => {} } },
-      ],
-    });
-    TestBed.overrideComponent(CustomerProfileComponent, {
-      set: { template: '', templateUrl: undefined, imports: [] },
-    });
-    const fixture = TestBed.createComponent(CustomerProfileComponent);
-    component = fixture.componentInstance;
-    ref = fixture.componentRef;
-    production = fixture.debugElement.injector.get(SelectedProducerProduction);
-    ref.setInput('customer', makeCustomer({ id: 42 }));
-  });
-
-  it('provides itself to what renders inside it', () => {
-    expect(production).toBe(component);
-  });
-
-  it('offers the commodity codes from the producer\'s tickets and their profile, once each, sorted', () => {
-    ref.setInput('tickets', [{ productCode: 'YSB' }, { productCode: 'YC' }, { productCode: '' }, { productCode: 'YC' }] as Ticket[]);
-    ref.setInput('customer', makeCustomer({ id: 42 }));
-
-    expect(production.commodityCodes()).toEqual(['HRW', 'YC', 'YSB']);
-  });
-
-  it('shares the year picker: the years it offers, the year picked, and the intentions in view', () => {
-    ref.setInput('plantingIntentions', [intention(1, 2024), intention(2, 2025), intention(3, 2026)]);
-
-    production.selectPlantingYear(2024);
-
-    expect(production.selectedPlantingYear()).toBe(2024);
-    expect(production.plantingYears()).toEqual([2026, 2025, 2024]);
-    expect(production.visiblePlantingIntentions().map(pi => pi.id)).toEqual([1, 2, 3]);
-  });
-
-  it('hands over the trade units, stored grain and DP contracts it is given, with their loading flags', () => {
-    const grain = [{ receiptNumber: '1' }] as StoredGrain[];
-    const dp = [{ id: 'a|2' }] as DpContract[];
-    ref.setInput('selectedTradeUnits', ['2190']);
-    ref.setInput('storedGrain', grain);
-    ref.setInput('dpContracts', dp);
-    ref.setInput('isLoadingPlanting', true);
-    ref.setInput('isLoadingStoredGrain', true);
-    ref.setInput('isLoadingDpContracts', true);
-
-    expect(production.tradeUnits()).toEqual(['2190']);
-    expect(production.storedGrain()).toBe(grain);
-    expect(production.dpContracts()).toBe(dp);
-    expect([production.isLoadingPlanting(), production.isLoadingStoredGrain(), production.isLoadingDpContracts()]).toEqual([true, true, true]);
-  });
-
-  it('passes an add, an edit and a delete up as its outputs', () => {
-    const added = vi.fn();
-    const edited = vi.fn();
-    const deleted = vi.fn();
-    component.onAddPlanting.subscribe(added);
-    component.onEditPlanting.subscribe(edited);
-    component.onDeletePlanting.subscribe(deleted);
-    const draft = { crop: 'YC', acres: 100, plantingYear: 2026, tradeUnit: '2190' };
-    const change = { intentionId: 7, crop: 'YC', acres: 120, plantingYear: 2026 };
-
-    production.addPlantingIntention(draft);
-    production.editPlantingIntention(change);
-    production.deletePlantingIntention(7);
-
-    expect(added).toHaveBeenCalledWith(draft);
-    expect(edited).toHaveBeenCalledWith(change);
-    expect(deleted).toHaveBeenCalledWith(7);
+    expect(fixture.debugElement.injector.get(SelectedProducerProduction)).toBe(production);
   });
 });
 

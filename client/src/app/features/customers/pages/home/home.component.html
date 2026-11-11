@@ -40,24 +40,9 @@
           <!-- Profile -->
           <app-customer-profile
             [customer]="customer"
-            [selectedTradeUnits]="selectedTradeUnits()"
-            [contracts]="customerContracts()"
-            [tickets]="customerTickets()"
-            [plantingIntentions]="customerPlantingIntentions()"
-            [storedGrain]="customerStoredGrain()"
-            [dpContracts]="customerDpContracts()"
-            [yieldEstimates]="yieldEstimates()"
-            [isLoadingEstimates]="isLoadingYieldData()"
-            [isLoadingPlanting]="isLoadingPlanting()"
-            [isLoadingStoredGrain]="isLoadingStoredGrain()"
-            [isLoadingDpContracts]="isLoadingDpContracts()"
-            (onAddPlanting)="addPlantingIntention($event)"
-            (onEditPlanting)="editPlantingIntention($event)"
-            (onDeletePlanting)="deletePlantingIntention($event)"
             [linkedCustomers]="getLinkedGroup(customer)"
             (onSelectLinkedCustomer)="handleSelectLinkedCustomer($event)"
             [openTab]="pendingTab()"
-            [openPlantingYear]="pendingPlantingYear()"
             (onContractsWideChange)="contractsWide.set($event)">
           </app-customer-profile>
         } @else {

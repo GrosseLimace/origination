@@ -107,17 +107,17 @@ a pure function, so it can be unit-tested and reused. Three things worth knowing
 ```mermaid
 flowchart LR
     UI[Home component]
-    UI -- "selectedTradeUnits change" --> Get[customersApi.getCustomers / apiService.getContracts / getTickets / getNotes / getStoredGrain / getPlantingIntentions / getSavedLists / getAllProducerDetails / getCommodities]
+    UI -- "selectedTradeUnits change" --> Get[customersApi.getCustomers / apiService.getNotesLastContact / getAllProducerDetails]
     Get --> CTL[Various controllers]
     CTL --> SVC[Module services<br/>Customers, Contracts, Engagement,<br/>Producers, Lists, Platform]
     SVC --> ODS[(ODS views<br/>vw_CurrentContracts, vw_CurrentTickets,<br/>vw_ContractPricing, vw_GNTA39D1)]
     SVC --> APP[(App DB tables<br/>Customer, CustomerTradeUnit, Notes, ProducerDetails,<br/>ProducerPlantingIntentions, SavedLists, Commodities)]
 
-    UI -- "customer click" --> ByCustomer[contractsApi.getContractsByCustomer / getTicketsByCustomer / apiService.getStoredGrainByCustomer / getPlantingIntentionsByCustomer / getProducerDetails / getPricingLinesByCustomer / customersApi.getCustomerById / getCustomersLinkedTo]
+    UI -- "customer click" --> ByCustomer[contractsApi.getContractsByCustomer / getTicketsByCustomer / getPricingLinesByCustomer / producersApi.getStoredGrainByCustomer / getDpContractsByCustomer / getPlantingIntentionsByCustomer / apiService.getProducerDetails / customersApi.getCustomerById / getCustomersLinkedTo]
     ByCustomer --> CTL
 ```
 
-When the trade-unit selector changes, the home component fires a parallel batch of bulk fetches for the new TU set. When a customer is selected, it fires per-customer fetches to enrich the profile.
+When the trade-unit selector changes, the home component reads the new trade units' customers and the last-contact summary; the modules' preloads read the rest (see [`Shared Infrastructure.md`](./Shared%20Infrastructure.md)). When a customer is selected, it tells the Contracts and Producers modules, which read the producer's contracts, tickets and pricing, and their planting, stored grain and DP, and it reads their details, notes, follow-ups and linked producers itself.
 
 ## Files
 
@@ -125,14 +125,14 @@ When the trade-unit selector changes, the home component fires a parallel batch 
 | --- | --- |
 | Component | `client/src/app/features/customers/pages/home/home.component.ts` |
 | Template | `client/src/app/features/customers/pages/home/home.component.html` |
-| Page stores (provided by the home component, one per visit) | `pages/home/home-*.store.ts` and `home-page.state.ts`: the selected producer's notes, follow-ups, planting intentions and linked producers, and `HomeProducerActivityStore` for their stored grain and DP contracts, their linked group's notes and the commodity auto-save. Their contracts, tickets and pricing lines are the Contracts module's (`SelectedProducerActivity`), which the page tells who is selected |
+| Page stores (provided by the home component, one per visit) | `pages/home/home-*.store.ts` and `home-page.state.ts`: the selected producer's notes, follow-ups and linked producers, and `HomeProducerActivityStore` for their linked group's notes and customer codes. Their contracts, tickets and pricing lines are the Contracts module's (`SelectedProducerActivity`), and their planting intentions, stored grain, DP contracts and crop year the Producers module's (`SelectedProducerProduction`), which the page tells who is selected |
 | Customer profile sub-component | `client/src/app/features/customers/components/customer-profile/customer-profile.component.ts` |
 | Customer list sub-component | `client/src/app/features/customers/components/customer-list/customer-list.component.ts` |
 | Saved-list picker (above the customer list) | The Lists module's `list-filter` panel: `features/lists/components/saved-list-filter/`, contributed in `lists.module.ts`, needing `saved-lists:read:own`. It narrows the list through the list's `CustomerListFilter`; the picked list and who it holds are Lists' `SavedListFilterStore`'s, so they outlast the page. A list is run once its data is loaded (the trade unit's tickets, stored grain, planting, contracts or DP, the full notes, as its query needs), and again when more of that arrives, when the roster grows or when the list changes. A new trade-unit selection keeps the pick while the list still applies to it. |
 | Notes and My follow-ups cards (right column) | The Engagement module's sidebar panels: `features/engagement/components/notes-panel/` and `follow-ups-panel/` (contributed in `engagement.module.ts`), framing `customer-notes/` and `customer-reminders/`. The home page's right column is `<app-customer-slot slot="sidebar">`. The cards read the producer's notes, follow-ups and actions from the page's `SelectedProducerEngagement` (`pages/home/home-engagement.ts`, over the page's notes and reminders stores), and show adding and changing them only to a user holding `notes:write` / `reminders:write:own` |
-| Per-tab tables | Open Contracts and Unapplied Tickets are the Contracts module's tabs: `features/contracts/components/contracts-table/`, `tickets-table/` (contributed in `contracts.module.ts`). Planting, Storage and DP Contracts are the Producers module's tabs: `features/producers/components/planting-intentions-table/` (with the field plan in `field-plan/`), `stored-grain-table/`, `dp-contracts-table/` (contributed in `producers.module.ts`). They read the producer's intentions, crop year, stored grain and DP contracts from the profile as `SelectedProducerProduction` (see [`Shared Infrastructure.md`](./Shared%20Infrastructure.md)) |
-| Profile header's producer details | The Producers module's header panels: `features/producers/components/organic/` (the Organic badge and its NOP ID panel), `producer-contacts/`, `bin-sites/`, `farm-details/` (Farm Details with its Grain on Farm table) and `contract-pace/` (Harvest Contract Pace), and the Producer Insights button (`producer-insights/producer-insights-toggle.component.ts`), contributed in `producers.module.ts`. The profile hosts them in its `badges`, `badge-panels`, `actions`, `contacts`, `locations` and `details` slots, and keeps the name, the eSign and ACH badges, the linked-producer picker, and the address, phone and email. They read the producer from `SelectedCustomerContext`, and Farm Details its commodity codes from the profile's `SelectedProducerProduction` |
-| Producer Insights panels and Activity Summary | The Producers module's `summary` panels: `features/producers/components/producer-insights/`, `contract-pacing-card/`, `growth-opportunity/` and `activity-summary/`. They read the producer's contracts and tickets from `SelectedProducerActivity`, notes from `SelectedProducerEngagement`, intentions, crop year, yield estimates and stored grain from the profile's `SelectedProducerProduction`, linked producers from `SelectedCustomerContext`, and closed contracts from `features/producers/data-access/contract-pacing-history.store.ts` |
+| Per-tab tables | Open Contracts and Unapplied Tickets are the Contracts module's tabs: `features/contracts/components/contracts-table/`, `tickets-table/` (contributed in `contracts.module.ts`). Planting, Storage and DP Contracts are the Producers module's tabs: `features/producers/components/planting-intentions-table/` (with the field plan in `field-plan/`), `stored-grain-table/`, `dp-contracts-table/` (contributed in `producers.module.ts`). They read the producer's intentions, crop year, stored grain and DP contracts from `SelectedProducerProduction`, the Producers module's `ProducerProductionStore` (see [`Shared Infrastructure.md`](./Shared%20Infrastructure.md)) |
+| Profile header's producer details | The Producers module's header panels: `features/producers/components/organic/` (the Organic badge and its NOP ID panel), `producer-contacts/`, `bin-sites/`, `farm-details/` (Farm Details with its Grain on Farm table) and `contract-pace/` (Harvest Contract Pace), and the Producer Insights button (`producer-insights/producer-insights-toggle.component.ts`), contributed in `producers.module.ts`. The profile hosts them in its `badges`, `badge-panels`, `actions`, `contacts`, `locations` and `details` slots, and keeps the name, the eSign and ACH badges, the linked-producer picker, and the address, phone and email. They read the producer from `SelectedCustomerContext`, and Farm Details its commodity codes from `SelectedProducerProduction` |
+| Producer Insights panels and Activity Summary | The Producers module's `summary` panels: `features/producers/components/producer-insights/`, `contract-pacing-card/`, `growth-opportunity/` and `activity-summary/`. They read the producer's contracts and tickets from `SelectedProducerActivity`, notes from `SelectedProducerEngagement`, intentions, crop year, yield estimates and stored grain from `SelectedProducerProduction`, linked producers from `SelectedCustomerContext`, and closed contracts from `features/producers/data-access/contract-pacing-history.store.ts` |
 | Add to List | The Lists module's `toolbar` panel, first of the header's buttons: `features/lists/components/add-to-list/`, contributed in `lists.module.ts`. It needs `saved-lists:read:own` and `saved-lists:write:own`, and its Team Lists tab also `saved-lists:read:team` and `saved-lists:write:team`. Ticks are staged until Save; Cancel, a click outside, Escape or another customer discards them. It reads the lists it offers, who each holds, whether they failed to load, and the save from Lists' `SavedListsStore` |
 | Print and the Producer Summary Report | The Producers module's `toolbar` panel: `features/producers/components/customer-print-report/` (`print-report-button.component.ts` and the report it opens), contributed in `producers.module.ts` and hosted between Add to List and Edit. The report reads the producer's contracts, tickets and pricing lines from `SelectedProducerActivity`, their planting intentions and stored grain from the profile's `SelectedProducerProduction`, and the commodities from `AppStateService`. A section or summary figure the user may not read is left out of the sidebar, the preview and the printed page: contracts, pricing lines and Total Contracted need `contracts:read`, Unapplied Tickets `tickets:read`, Planting Intentions `planting-intentions:read`, Grain in Storage `stored-grain:read`, and Total Acres and Bin Sites `producer-details:read` |
 | Edit and the Edit Producer Details dialog | The Producers module's `toolbar` panel after Print: `features/producers/components/edit-customer-dialog/` (`edit-producer-button.component.ts` and the dialog it opens), contributed in `producers.module.ts`. Edit needs `producer-details:read` and `producer-details:write`, since the dialog re-reads the producer's details and its save always writes them. Inside, Trade Units shows only with `customers:write`, and removing a trade unit offers to move its planting intentions only with `planting-intentions:read` and `planting-intentions:write` (without them the intentions stay where they are, as when they can't be read). The dialog reads the producer's tickets and contracts from `SelectedProducerActivity` and their linked producers from `SelectedCustomerContext`, and saves through the page's `ProducerEditing` (`core/context/producer-editing.ts`), which the home page provides: its roster and trade units for the link search, its saving flag, and its save (trade units first, then details and links, then the intention moves) |
@@ -147,24 +147,22 @@ Customers used to be read directly from `originations.vw_CurrentCustomers` via a
 
 ### API service methods called
 
-The customer calls are on `CustomersApiService` (`features/customers/data-access`), and the contract, ticket and pricing-line calls on the Contracts module's `ContractsApiService`, made by its stores rather than the page; the rest are still on `ApiService`.
+The customer calls are on `CustomersApiService` (`features/customers/data-access`), the contract, ticket and pricing-line calls on the Contracts module's `ContractsApiService`, and the planting, stored grain and DP calls on the Producers module's `ProducersApiService`, each made by its module's stores rather than the page; the rest are still on `ApiService`.
 
 Bulk on init / TU change:
 
 - `getCustomers(tradeUnits?)` (Customers' preload loads them first, into `CustomerStore`)
 - (The trade units' contracts and today's tickets are Contracts' preload's, into `ContractStore`; the page no longer reads them. Neither reads the full ticket set or the full notes, which the screens that need them read.)
-- `getStoredGrain(tradeUnits?)`
-- `getPlantingIntentions(tradeUnits?)`
+- (The trade units' planting intentions, stored grain and DP contracts, and their yield estimates for this year and last, are Producers' preload's, into `ProducerStore` and `YieldEstimateStore`.)
 - `getSavedLists()`
 - `getAllProducerDetails()`, through `ProducerProfiles.load()` (on each visit; the Producers preload reads them too, and a read already running is shared)
 - `getCommodities()`
-- `getDashboardPlantingEstimates(tu, year)` — per-TU yield estimates used by the Planting tab to show projected production; one call per year (`forkJoin`) covering planting intentions + contract crop years. The contract crop years come from `TradeUnitContracts` (`core/context`), which `ContractStore` implements, until the yield estimates move to Producers (Phase 4, step 10d).
 
-Per-customer on selection (the contracts, tickets and pricing lines by the Contracts module, which the page tells who is selected):
+Per-customer on selection (the contracts, tickets and pricing lines by the Contracts module, and the stored grain, DP contracts and planting intentions by the Producers module, once a producer for each trade-unit selection, which the page tells who is selected; the yield estimates of the producer's crop years by Producers too, `getDashboardPlantingEstimates(tu, year)`, a year at a time):
 
 - `getContractsByCustomer(customerId, scoularId?)`
 - `getTicketsByCustomer(customerId, scoularId?)`
-- `getStoredGrainByCustomer(customerId)`
+- `getStoredGrainByCustomer(customerId)`, `getDpContractsByCustomer(customerId)`
 - `getPlantingIntentionsByCustomer(customerId)`
 - `getProducerDetails(customerId)`
 - `getPricingLinesByCustomer(scoularId)` (only if `scoularId` exists)
@@ -174,7 +172,7 @@ Per-customer on selection (the contracts, tickets and pricing lines by the Contr
 
 Mutations:
 
-- `createPlantingIntention`, `updatePlantingIntention`, `deletePlantingIntention`
+- `createPlantingIntention`, `updatePlantingIntention`, `deletePlantingIntention`, and `retagPlantingIntentions` when an edit removes a trade unit (the Producers module's)
 - `saveProducerDetails`
 - `createNote`, `updateNote`, `toggleNotePin`, `deleteNote`
 
@@ -196,40 +194,48 @@ These are the contract that **Insights**, **Build a List**, and other screens us
 /?customerId=12345&contractId=999&tab=tickets&ticketCrop=CORN
 ```
 
-The pending values are stored in component signals (`pendingContractId`, `pendingTab`, `pendingTicketCrop`, `pendingPlantingYear`) and passed as inputs to `<app-customer-profile>`. The customer-profile component uses effects to apply the tab change, scroll to the contract row, etc.
+The pending values are stored in component signals (`pendingContractId`, `pendingTab`, `pendingTicketCrop`, `pendingPlantingYear`). The tab goes to `<app-customer-profile>` as an input, the contract and ticket crop reach the screen's pieces through `SelectedCustomerContext`, and the planting year goes to `SelectedProducerProduction.select`, which opens the producer on that year even when they have nothing for it. The customer-profile component uses effects to apply the tab change, scroll to the contract row, etc.
 
 ## State and caching
 
-- The home component reads heavily from `AppStateService`: `notes`, `storedGrain`, `plantingIntentions`, `selectedCustomer`, `selectedTradeUnits`; and the customers from `CustomerStore`. It also writes (`CustomerStore.setCustomers`, `setStoredGrain`, ...) after each successful fetch so other screens get the same cached data.
+- The home component reads from `AppStateService` (`noteLastContacts`, `myReminders`, `selectedCustomer`, ...), the trade units from `TradeUnitContext`, and the customers from `CustomerStore`. It also writes (`CustomerStore.setCustomers`, `AppStateService.selectCustomer`, ...) so other screens get the same data.
 - `DataPreloadService` may have already populated some of this on app load.
 - **Request deduplication** within the component: a `_customerRequestId` counter is incremented on every TU change. Stale responses with an outdated id are dropped to prevent the list from flipping back to the old TU's data when responses arrive out-of-order.
 
 ### The selected producer's contracts, tickets and pricing
 
-The Contracts module's `CustomerActivityStore` (`features/contracts/data-access`), which the composition root provides as `SelectedProducerActivity` (`core/context`). The home component tells it who is selected (`select`, and `select(null)` when the selection is cleared or the trade units change) and who the pointer rests on (`prefetch`), and exposes its signals to the template under the old names (`customerContracts`, `isLoadingContracts`, `contractsLoadError`, ...). The contracts and tickets tables read their data, loading and failure state and Retry from it, instead of through the profile's inputs. The page's own `HomeProducerActivityStore` keeps the producer's stored grain and DP contracts, their linked group's notes and the commodity auto-save, until Phase 4 moves them to Producers and Engagement.
+The Contracts module's `CustomerActivityStore` (`features/contracts/data-access`), which the composition root provides as `SelectedProducerActivity` (`core/context`). The home component tells it who is selected (`select`, and `select(null)` when the selection is cleared or the trade units change) and who the pointer rests on (`prefetch`), and exposes its signals to the template under the old names (`customerContracts`, `isLoadingContracts`, `contractsLoadError`, ...). The contracts and tickets tables read their data, loading and failure state and Retry from it, instead of through the profile's inputs. The page's own `HomeProducerActivityStore` keeps their linked group's notes and customer codes, until Phase 4 moves them to Engagement.
 
 - **Freshness:** a producer read once is shown from memory on the next click, and re-read silently behind the visible rows once it is older than 60 seconds (the server's own per-producer cache). Pricing lines follow the same rule, keyed by `scoularId`. A trade-unit change forgets every producer's reads.
 - **First click on the CTRM path** (`ctrmReadAheadEnabled`): a one-off silent re-read 4 seconds later picks up anything the server's warm trade-unit cache missed, and hovering over a producer prefetches their contracts, tickets and pricing (two producers at most at once), so the click renders from memory.
 - **Merging:** each producer's live contract rows are merged into the trade units' contracts (`ContractStore`), the shared cache Build a List and the Dashboard read; tickets stay in the store's own set of the selected producers' tickets. A refresh first takes back exactly the rows the previous read contributed (`merge-producer-rows.ts`), so a closed contract or a newly applied ticket doesn't linger.
 - **Failures:** a failed first read shows the server's message with Retry; a failed background refresh leaves the visible rows alone.
-- **Commodities:** when a producer's tickets or contracts arrive with commodities their profile doesn't list yet, the page's `HomeProducerActivityStore` saves them to the producer's details, one save per producer at a time.
+- **Commodities:** when a producer's tickets or contracts arrive with commodities their profile doesn't list yet, the Producers module's `ProducerProductionStore` saves them to the producer's details, one save per producer at a time.
+
+### The selected producer's planting, stored grain and DP
+
+The Producers module's `ProducerProductionStore` (`features/producers/data-access`), which the composition root provides as `SelectedProducerProduction` (`core/context`). The home component tells it who is selected: `select(customer, { plantingYear })` on a click or a deep link, `select(customer, { plantingYear, reread: true })` for a linked producer, `select(customer, { reread: true })` on the way back to the page, and `select(null)` when the selection is cleared or the trade units change. A trade-unit save asks it to move the producer's intentions off a removed trade unit (`movePlantingIntentions`). The Planting, Storage and DP tabs and the producer panels read everything from it; the page and the profile hold none of it.
+
+- **Planting intentions:** a producer's are read once and kept until the trade units change, so a later click shows them without a read; `reread` reads them again. An add, edit or delete updates the producer's view, what is kept and the trade units' planting (`ProducerStore`); a move reads the producer's intentions again into all three. A failed read stops the spinner and says so, at most once every five minutes.
+- **Stored grain and DP contracts:** read once per producer per trade-unit selection and merged into `ProducerStore`'s sets, where the tabs read the producer's rows. The producer's DP rows don't mark DP read for the trade units (Build a List would filter everyone against them).
+- **The crop year:** the newest of the two most recent years the producer has intentions for (their contracts' crop years when they have none), unless one was picked or a deep link asked for one, which is kept even with nothing for it. A new selection starts over. The yield estimates of the years offered are read for the trade units (`YieldEstimateStore`).
+- **Cancelling:** a new selection cancels what was still being read for the producer before.
 
 ### StoredGrain merge race (important)
 
-The trade-unit merge is in `HomeComponent._loadAllData`; the per-producer one in `HomeProducerActivityStore.loadStorageAndDp`.
+The trade-unit read is Producers' preload (`preloadProduction` in `features/producers/producers.module.ts`); the per-producer one is `ProducerProductionStore.loadStorageAndDp`. Both write `ProducerStore.storedGrain`, and the preload empties it first, as the stored grain held is the previous trade units'.
 
-The TU-level `getStoredGrain` fetch and the per-customer `getStoredGrainByCustomer` fetch both write to the same `storedGrain` signal. If they ran in the wrong order, the TU fetch would overwrite the per-customer merge and the customer's storage tab would go blank.
+The TU-level `getStoredGrain` fetch and the per-customer `getStoredGrainByCustomer` fetch both write to the same `storedGrain` set. If they ran in the wrong order, the TU fetch would overwrite the per-customer merge and the customer's storage tab would go blank.
 
 The fix is to **merge by record id**, not overwrite:
 
 ```ts
-const incoming = data ?? [];
-const existing = this.storedGrain();
-const seen = new Set(incoming.map(s => s.id));
-const merged = [...incoming, ...existing.filter(s => !seen.has(s.id))];
-this.storedGrain.set(merged);
-this.appState.setStoredGrain(merged);
+// mergeIncomingById (features/producers/utils/production-reads.ts): the trade units' rows first, then any row read
+// since for one producer that the trade units' read doesn't have.
+store.setStoredGrain(mergeIncomingById(rows ?? [], store.storedGrain()));
 ```
+
+DP contracts merge the same way.
 
 Per-customer fetch keeps existing records that aren't this customer's, then appends new ones for the customer:
 
@@ -283,11 +289,11 @@ The rules are North American: latitude 7 to 84 (north is positive) and longitude
 | Edit note | inline edit | `apiService.updateNote(noteId, content)` | Success / failure |
 | Pin note | pin icon | `apiService.toggleNotePin(noteId)` | (silent on success) |
 | Delete note | delete icon | `apiService.deleteNote(noteId)` | Success / failure |
-| Add planting intention | "Add" in planting tab | `apiService.createPlantingIntention(payload)` | Success / failure |
-| Edit / Delete planting intention | inline / delete icon | `apiService.updatePlantingIntention`, `deletePlantingIntention` | Success / failure |
+| Add planting intention | "Add" in planting tab | `SelectedProducerProduction.addPlantingIntention` → `producersApi.createPlantingIntention(payload)` | Success / failure |
+| Edit / Delete planting intention | inline / delete icon | `SelectedProducerProduction.editPlantingIntention` / `deletePlantingIntention` → `producersApi.updatePlantingIntention`, `deletePlantingIntention` | Success / failure |
 | Save producer details | "Save" in producer-details panel | `apiService.saveProducerDetails(customerId, data)` | Success / failure |
 
-All mutations refresh the relevant `appState` signal on success so other screens see the change immediately.
+All mutations refresh the store that holds what they changed on success, so other screens see the change immediately.
 
 ## Auth and feature flags
 
@@ -307,7 +313,7 @@ All mutations refresh the relevant `appState` signal on success so other screens
 | Symptom | Likely cause | First place to look |
 | --- | --- | --- |
 | Customer list is empty | TU selector empty or user has no entitled TUs | TU selector → `TradeUnitContext.selectedTradeUnits()`; check Network tab for `getCustomers` 200/empty vs 403 |
-| Selected producer's storage tab is empty even though storage exists in DB | StoredGrain merge race; or TU-fetch stale response wiping per-customer fetch | `HomeComponent._loadAllData` and `HomeProducerActivityStore.loadCustomerContractsAndTickets` — confirm the merge logic is still in place |
+| Selected producer's storage tab is empty even though storage exists in DB | StoredGrain merge race; or TU-fetch stale response wiping per-customer fetch | `preloadProduction` in `producers.module.ts` and `ProducerProductionStore.loadStorageAndDp` — confirm the merge logic is still in place |
 | Profile won't open from a deep link | `customerId` query param malformed, or producer not in any of the user's entitled TUs | Devtools console + `_selectCustomerById` flow; `getCustomerById` may return 404 |
 | Notes don't show "Last contacted" | The `lastContactedDate` computed reads `note.createdAt`, not `modifiedAt` (modify reflects pin/edits, not actual contact). See comments around `home.component.ts:91-95` |
 | Customer list flipped to wrong TU after fast TU change | `_customerRequestId` deduplication didn't match — verify the response handler is still gated on `requestId === this._customerRequestId` |

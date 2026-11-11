@@ -2,15 +2,15 @@ import { describe, it, expect } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { CustomerSearch } from '@core/context/customer-search';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
-import { TradeUnitContracts } from '@core/context/trade-unit-contracts';
+import { SelectedProducerProduction } from '@core/context/selected-producer-production';
 import { ProducerProfiles } from '@core/context/producer-profiles';
 import { ApiService } from '@core/services/api.service';
 import { providePermissions } from '@testing/permission.stub';
 import { appModuleProviders, appModules } from './app.modules';
-import { ContractStore } from './features/contracts/data-access/contract.store';
 import { CustomerActivityStore } from './features/contracts/data-access/customer-activity.store';
 import { CustomersApiService } from './features/customers/data-access/customers-api.service';
 import { ProducerProfileStore } from './features/producers/data-access/producer-profile.store';
+import { ProducerProductionStore } from './features/producers/data-access/producer-production.store';
 import { routes } from './app.routes';
 
 describe("the app's pages and links", () => {
@@ -72,10 +72,17 @@ describe('what core declares and a module implements', () => {
   });
 
   // The customer screen reads the selected producer's contracts, tickets and pricing lines without importing Contracts.
-  it("gives SelectedProducerActivity as the Contracts module's activity store, and TradeUnitContracts as its ContractStore", () => {
+  it("gives SelectedProducerActivity as the Contracts module's activity store", () => {
     TestBed.configureTestingModule({ providers: [appModuleProviders, providePermissions()] });
 
     expect(TestBed.inject(SelectedProducerActivity)).toBe(TestBed.inject(CustomerActivityStore));
-    expect(TestBed.inject(TradeUnitContracts)).toBe(TestBed.inject(ContractStore));
+  });
+
+  // The customer screen's production tabs and panels read the selected producer's production without importing
+  // Producers, and the home page tells it who is selected.
+  it("gives SelectedProducerProduction as the Producers module's production store", () => {
+    TestBed.configureTestingModule({ providers: [appModuleProviders, { provide: ApiService, useValue: {} }, providePermissions()] });
+
+    expect(TestBed.inject(SelectedProducerProduction)).toBe(TestBed.inject(ProducerProductionStore));
   });
 });

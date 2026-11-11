@@ -4,11 +4,14 @@ import { DashboardPlantingEstimate, DpContract, PlantingIntention, StoredGrain }
 import { SelectedProducerProduction } from '@core/context/selected-producer-production';
 
 /**
- * A SelectedProducerProduction for specs: writable signals a test sets directly, and a spy per action. Starts with no
+ * A SelectedProducerProduction for specs: writable signals a test sets directly, and a spy per action and for the
+ * selection. Starts with no
  * planting intentions, yield estimates, stored grain or DP contracts, nothing loading, and no crop year picked (0).
  */
 export function selectedProducerProductionFake() {
   return {
+    select: vi.fn(),
+    movePlantingIntentions: vi.fn(),
     plantingIntentions: signal<PlantingIntention[]>([]),
     visiblePlantingIntentions: signal<PlantingIntention[]>([]),
     isLoadingPlanting: signal(false),

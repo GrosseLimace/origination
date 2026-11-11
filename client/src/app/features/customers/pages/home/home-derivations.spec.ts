@@ -1,9 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type { Contract, Customer, DashboardPlantingEstimate, Note, PlantingIntention, Reminder, Ticket } from '@models';
-import {
-  commodityCodesFrom, lastContactFromNotes, linkedGroupOf, mergeIncomingById, mergeYieldEstimates,
-  sortNotes, sortReminders, yieldEstimateYears,
-} from './home-derivations';
+import type { Customer, Note, Reminder } from '@models';
+import { lastContactFromNotes, linkedGroupOf, sortNotes, sortReminders } from './home-derivations';
 
 function note(id: number, createdAt: string | Date, over: Partial<Note> = {}): Note {
   return {
@@ -90,38 +87,6 @@ describe('home derivations', () => {
     it('stops at 50 members', () => {
       const chain = Array.from({ length: 80 }, (_, i) => customer(i + 1, [`S-${i + 2}`]));
       expect(linkedGroupOf(chain[0], chain, linksOf).length).toBe(49);
-    });
-  });
-
-
-  describe('mergeIncomingById', () => {
-    it('puts incoming rows first and keeps only existing rows the incoming set does not replace', () => {
-      const merged = mergeIncomingById([{ id: 'b', v: 2 }, { id: 'c', v: 3 }], [{ id: 'a', v: 0 }, { id: 'b', v: 1 }]);
-      expect(merged).toEqual([{ id: 'b', v: 2 }, { id: 'c', v: 3 }, { id: 'a', v: 0 }]);
-    });
-  });
-
-  describe('commodityCodesFrom', () => {
-    it('lists distinct ticket product codes then contract commodity codes, skipping blanks', () => {
-      const tickets = [{ productCode: 'SB' }, { productCode: '' }, { productCode: 'C' }, { productCode: 'SB' }] as Ticket[];
-      const contracts = [{ commodityCode: 'C' }, { commodityCode: 'W' }, {}] as Contract[];
-      expect(commodityCodesFrom(tickets, contracts)).toEqual(['SB', 'C', 'W']);
-    });
-  });
-
-  describe('yield estimates', () => {
-    it('asks for this year, last year and every year an intention or contract carries', () => {
-      const intentions = [{ plantingYear: 2027 }, { plantingYear: 0 }] as PlantingIntention[];
-      const contracts = [{ cropYear: 2024 }, { cropYear: 2026 }] as Contract[];
-      expect(yieldEstimateYears(2026, intentions, contracts)).toEqual([2026, 2025, 2027, 2024]);
-    });
-
-    it('keeps one estimate per crop and year, the later batch winning', () => {
-      const est = (crop: string, year: number, y: number) =>
-        ({ id: 0, tradeUnitKey: 'TU1', crop, plantingYear: year, yieldEstimate: y }) as DashboardPlantingEstimate;
-      const merged = mergeYieldEstimates([[est('CORN', 2026, 180), est('CORN', 2025, 170)], [est('CORN', 2026, 190)]]);
-      expect(merged.map(e => `${e.crop}|${e.plantingYear}|${e.yieldEstimate}`))
-        .toEqual(['CORN|2026|190', 'CORN|2025|170']);
     });
   });
 });

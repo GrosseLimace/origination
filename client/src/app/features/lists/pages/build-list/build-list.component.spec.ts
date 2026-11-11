@@ -10,6 +10,7 @@ import { BuildListComponent } from './build-list.component';
 import { ApiService } from '@core/services/api.service';
 import { ContractsApiService } from '@features/contracts';
 import { AppStateService } from '@core/services/app-state.service';
+import { ProducerStore, ProducersApiService } from '@features/producers';
 import { DataPreloadService } from '@core/context/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
@@ -186,6 +187,8 @@ describe('BuildListComponent', () => {
         { provide: SavedListsApiService, useExisting: ApiService },
         // The contract and ticket calls are Contracts' API client's; this stub answers them.
         { provide: ContractsApiService, useExisting: ApiService },
+        // So are the planting, stored grain, DP and dashboard calls, which are Producers'.
+        { provide: ProducersApiService, useExisting: ApiService },
         { provide: ApiService, useValue: api },
         { provide: NlqFilterService, useValue: nlq },
         { provide: DataPreloadService, useValue: {} },
@@ -469,7 +472,7 @@ describe('BuildListComponent', () => {
       c.processQuery();
       TestBed.tick();
 
-      expect(appState.dpContractsLoadFailed()).toBe(true);
+      expect(TestBed.inject(ProducerStore).dpContractsLoadFailed()).toBe(true);
       expect(c.unavailableDataForQuery()).toEqual(['DP contracts']);
       const page = text();
       expect(page).toContain("Couldn't load DP contracts, so results below may be incomplete");
@@ -1170,7 +1173,7 @@ describe('BuildListComponent', () => {
         { id: 1, customerId: 1, crop: 'YC', acres: 400, plantingYear: 2026, type: 'Irrigated' },
         { id: 2, customerId: 3, crop: 'SB', acres: 900, plantingYear: 2027, type: 'Dryland' },
       ]) as never);
-      appState.setDpContracts([
+      TestBed.inject(ProducerStore).setDpContracts([
         { id: 'a', ticketKey: 't1', customerId: 2, crop: 'YC', quantity: 7000, bushels: 7000, storageDays: 120, receivableAmount: 300 },
         { id: 'b', ticketKey: 't2', customerId: 3, crop: 'SB', quantity: 100, bushels: 100, storageDays: 10, receivableAmount: 5 },
       ] as never);

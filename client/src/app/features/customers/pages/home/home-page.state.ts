@@ -1,6 +1,6 @@
 import { Injectable, signal } from '@angular/core';
 import { Subject } from 'rxjs';
-import type { Customer, DpContract, PlantingIntention, StoredGrain } from '@models';
+import type { Customer } from '@models';
 
 /**
  * The producer page's shared state: the signals more than one part of the page reads or writes.
@@ -16,12 +16,9 @@ export class HomePageState {
   /** The page's copy of the global trade-unit selection, updated when the page reacts to a change. */
   readonly selectedTradeUnits = signal<string[]>([]);
 
-  // The trade unit's pools the page loads (its contracts and tickets are the Contracts module's). storedGrain
-  // and dpContracts also take per-producer reads merged in.
+  // The trade unit's customers the page loads (their contracts and tickets are the Contracts module's; their
+  // planting, stored grain and DP the Producers module's).
   readonly customers = signal<Customer[]>([]);
-  readonly plantingIntentions = signal<PlantingIntention[]>([]);
-  readonly storedGrain = signal<StoredGrain[]>([]);
-  readonly dpContracts = signal<DpContract[]>([]);
 
   // Where a deep link (from Insights, the dashboard or a shared URL) asked the producer's profile to open. Set from
   // the URL's query parameters, cleared when the user picks a producer themselves.

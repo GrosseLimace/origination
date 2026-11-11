@@ -3,12 +3,12 @@ import { Subscription } from 'rxjs';
 import { SessionReset } from '@core/auth/session-reset.service';
 import { KeptCustomers } from '@core/context/customer-list-filter';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
-import { AppStateService } from '@core/services/app-state.service';
 import { ContractStore } from '@features/contracts';
 import { NlqFilterService } from '../nlq/nlq-filter.service';
 import { CustomerStore } from '@features/customers';
 import { SavedList } from '../models/saved-list.model';
 import { SavedListsStore } from './saved-lists.store';
+import { ProducerStore } from '@features/producers';
 
 /** What the customer list says while a saved list is worked out. */
 export const RUNNING_SAVED_LIST = 'Running saved list...';
@@ -26,7 +26,8 @@ export const RUNNING_SAVED_LIST = 'Running saved list...';
 export class SavedListFilterStore {
   private readonly lists = inject(SavedListsStore);
   private readonly customerStore = inject(CustomerStore);
-  private readonly appState = inject(AppStateService);
+  /** The trade units' planting intentions and stored grain, kept by the Producers module. */
+  private readonly producerStore = inject(ProducerStore);
   /** The trade units' contracts and tickets, kept by the Contracts module. */
   private readonly contractStore = inject(ContractStore);
   private readonly tradeUnits = inject(TradeUnitContext);
@@ -61,8 +62,8 @@ export class SavedListFilterStore {
     // More of what the list reads arrived after it was worked out: work it out again, for a list that reads it.
     effect(() => {
       const tickets = this.contractStore.tickets();
-      const storedGrain = this.appState.storedGrain();
-      const planting = this.appState.plantingIntentions();
+      const storedGrain = this.producerStore.storedGrain();
+      const planting = this.producerStore.plantingIntentions();
       untracked(() => {
         const list = this.picked();
         if (!list || this._ids() === null) return;

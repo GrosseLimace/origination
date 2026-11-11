@@ -6,7 +6,7 @@ import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
-import { NoteLastContact, ReminderDue, PlantingIntention, StoredGrain, DpContract, Commodity, CommodityConversion, HarvestWindow } from '@models';
+import { NoteLastContact, ReminderDue, Commodity, CommodityConversion, HarvestWindow } from '@models';
 import { environment } from '@env/environment';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { ModuleRegistry } from '@core/modules/module-registry';
@@ -61,14 +61,12 @@ export class DataPreloadService {
         if (tradeUnits.length === 0) return of(null);
 
         // A new trade-unit load: the last one's failures no longer describe anything. The modules' preloads (below)
-        // keep their own loading flags and failures: the customers', the contracts' and today's tickets'.
+        // keep their own loading flags and failures: the customers', the contracts' and today's tickets', and the
+        // trade units' planting and DP.
         this.appState.clearLoadFailures();
         // Same for the full note set: NLQ/saved-list consumers fetch it lazily when a note
         // query needs it. Badges use the noteLastContacts aggregate below instead.
         this.appState.clearNotesCache();
-        // DP too: it IS preloaded below, but the loaded flag must drop first or a DP query fired
-        // between the TU change and the preload landing would run against the prior TU's rows.
-        this.appState.clearDpContractsCache();
 
         // Last-contact aggregate instead of the full note download: tiny rows (one per
         // customer with notes, all trade units) that feed the list badges. Full note
@@ -98,29 +96,7 @@ export class DataPreloadService {
 
         // Secondary group — each result streams into AppState as it arrives.
         // Using merge (not forkJoin) so fast calls like getCommodities don't wait
-        // for slower calls like getPlantingIntentions to complete.
-        const plantingIntentions$ = this.apiService.getPlantingIntentions(tradeUnits).pipe(
-          tap(() => this.appState.setPlantingIntentionsLoadFailed(false)),
-          catchError(() => { this.appState.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); }),
-          tap(data => {
-            this.appState.setPlantingIntentions(data);
-          })
-        );
-        const storedGrain$ = this.apiService.getStoredGrain(tradeUnits).pipe(
-          catchError(() => of([] as StoredGrain[])),
-          tap(data => {
-            this.appState.setStoredGrain(data);
-          })
-        );
-        const dpContracts$ = this.apiService.getDpContracts(tradeUnits).pipe(
-          // The [] fallback still marks DP loaded (so no DP prompt waits forever), which makes a failure
-          // read as "no producers hold DP" unless it is recorded here.
-          tap(() => this.appState.setDpContractsLoadFailed(false)),
-          catchError(() => { this.appState.setDpContractsLoadFailed(true); return of([] as DpContract[]); }),
-          tap(data => {
-            this.appState.setDpContracts(data);
-          })
-        );
+        // for slower ones.
         const commodities$ = this.apiService.getCommodities().pipe(
           catchError(() => of([] as Commodity[])),
           tap(data => {
@@ -135,11 +111,11 @@ export class DataPreloadService {
           })
         );
         // Each module's own preload (the trade unit's customers; their contracts and today's tickets; Producers'
-        // dashboard summary and every producer's details; Lists' saved lists), cancelled with the rest by the next
-        // trade-unit change.
+        // dashboard summary, every producer's details, and the trade units' planting, stored grain, DP and yield
+        // estimates; Lists' saved lists), cancelled with the rest by the next trade-unit change.
         const modulePreloads = this.moduleRegistry.preloads(tradeUnits);
 
-        return merge(notes$, reminders$, plantingIntentions$, storedGrain$, dpContracts$, commodities$, harvestWindows$, ...modulePreloads);
+        return merge(notes$, reminders$, commodities$, harvestWindows$, ...modulePreloads);
       }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe();

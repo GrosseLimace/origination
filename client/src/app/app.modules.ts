@@ -2,12 +2,12 @@ import { Provider } from '@angular/core';
 import { CustomerSearch } from '@core/context/customer-search';
 import { ProducerProfiles } from '@core/context/producer-profiles';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
-import { TradeUnitContracts } from '@core/context/trade-unit-contracts';
+import { SelectedProducerProduction } from '@core/context/selected-producer-production';
 import { ModuleManifest } from '@core/modules/module-manifest';
-import { ContractStore } from './features/contracts/data-access/contract.store';
 import { CustomerActivityStore } from './features/contracts/data-access/customer-activity.store';
 import { CustomersApiService } from './features/customers/data-access/customers-api.service';
 import { ProducerProfileStore } from './features/producers/data-access/producer-profile.store';
+import { ProducerProductionStore } from './features/producers/data-access/producer-production.store';
 import { bidSheetModule } from './features/bid-sheet/bid-sheet.module';
 import { calculatorsModule } from './features/calculators/calculators.module';
 import { contractsModule } from './features/contracts/contracts.module';
@@ -48,6 +48,7 @@ export const appModuleProviders: Provider[] = [
   // The selected producer's contracts, tickets and pricing lines, which the customer screen reads and the home page
   // tells who is selected.
   { provide: SelectedProducerActivity, useExisting: CustomerActivityStore },
-  // The trade units' contracts, whose crop years the home page reads yield estimates for (until step 10d).
-  { provide: TradeUnitContracts, useExisting: ContractStore },
+  // The selected producer's planting intentions, stored grain, DP contracts and crop year, which the customer screen's
+  // production tabs and panels read and the home page tells who is selected.
+  { provide: SelectedProducerProduction, useExisting: ProducerProductionStore },
 ];

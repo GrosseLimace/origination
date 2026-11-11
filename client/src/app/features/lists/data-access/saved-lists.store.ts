@@ -18,6 +18,7 @@ import { QueryLibraryItem } from '../models/query-library.model';
 import { SavedList } from '../models/saved-list.model';
 import { filterSavedListsByTradeUnitOverlap } from '../utils/saved-list-trade-units';
 import { SavedListsApiService } from './saved-lists-api.service';
+import { ProducerStore, ProducersApiService } from '@features/producers';
 
 /** One change to a customer's membership of a saved list: added to it, or taken off it. */
 export interface SavedListMembershipChange {
@@ -47,6 +48,8 @@ export class SavedListsStore {
   private readonly api = inject(SavedListsApiService);
   private readonly appApi = inject(ApiService);
   private readonly appState = inject(AppStateService);
+  private readonly producerStore = inject(ProducerStore);
+  private readonly producersApi = inject(ProducersApiService);
   /** The trade units' contracts and tickets, kept by the Contracts module. */
   private readonly contractStore = inject(ContractStore);
   private readonly contractsApi = inject(ContractsApiService);
@@ -174,9 +177,9 @@ export class SavedListsStore {
       notes: this.appState.notes(),
       noteLastContacts: this.appState.noteLastContacts(),
       myReminders: this.appState.myReminders(),
-      plantingIntentions: this.appState.plantingIntentions(),
-      storedGrain: this.appState.storedGrain(),
-      dpContracts: this.appState.dpContracts(),
+      plantingIntentions: this.producerStore.plantingIntentions(),
+      storedGrain: this.producerStore.storedGrain(),
+      dpContracts: this.producerStore.dpContracts(),
       commodities: this.appState.commodities(),
       commodityConversions: this.appState.commodityConversions(),
       // So a list's "by me" filters work even where a note's author wasn't resolved to a name by the API.
@@ -222,8 +225,8 @@ export class SavedListsStore {
   }
 
   /**
-   * Reads, for the trade unit, what the list's query needs and isn't loaded yet, into AppStateService: stored grain,
-   * DP contracts, tickets, planting intentions, contracts, the full notes, and the query library for a list older than
+   * Reads, for the trade unit, what the list's query needs and isn't loaded yet, into the stores that hold it: stored
+   * grain, DP contracts, tickets, planting intentions, contracts, the full notes, and the query library for a list older than
    * the category hint. Emits once all of it has answered, failed reads included; a failed contract or ticket read is
    * recorded, so a list that needed them doesn't read as "nobody".
    */
@@ -232,22 +235,22 @@ export class SavedListsStore {
     const selected = this.tradeUnits.selectedTradeUnits();
     const tus = selected.length > 0 ? [...selected] : undefined;
     const reads: Observable<unknown>[] = [];
-    if (this.nlq.queryInvolvesStorage(query) && this.appState.storedGrain().length === 0) {
-      reads.push(this.appApi.getStoredGrain(tus).pipe(
-        tap(rows => this.appState.setStoredGrain(rows)), catchError(() => of(null))));
+    if (this.nlq.queryInvolvesStorage(query) && this.producerStore.storedGrain().length === 0) {
+      reads.push(this.producersApi.getStoredGrain(tus).pipe(
+        tap(rows => this.producerStore.setStoredGrain(rows)), catchError(() => of(null))));
     }
     // The loaded flag rather than the length: a producer's own rows can be there without the trade unit's, and a
     // trade unit with no DP at all would otherwise read again every time.
-    if (this.nlq.queryInvolvesDpContracts(query) && !this.appState.dpContractsLoaded()) {
-      reads.push(this.appApi.getDpContracts(tus).pipe(
-        tap(rows => this.appState.setDpContracts(rows)), catchError(() => of(null))));
+    if (this.nlq.queryInvolvesDpContracts(query) && !this.producerStore.dpContractsLoaded()) {
+      reads.push(this.producersApi.getDpContracts(tus).pipe(
+        tap(rows => this.producerStore.setDpContracts(rows)), catchError(() => of(null))));
     }
     if (this.nlq.queryInvolvesTickets(query) && !this.contractStore.ticketsLoaded()) {
       reads.push(this.ticketsRead(tus));
     }
-    if (this.nlq.queryInvolvesPlanting(query) && this.appState.plantingIntentions().length === 0) {
-      reads.push(this.appApi.getPlantingIntentions(tus).pipe(
-        tap(rows => this.appState.setPlantingIntentions(rows)), catchError(() => of(null))));
+    if (this.nlq.queryInvolvesPlanting(query) && this.producerStore.plantingIntentions().length === 0) {
+      reads.push(this.producersApi.getPlantingIntentions(tus).pipe(
+        tap(rows => this.producerStore.setPlantingIntentions(rows)), catchError(() => of(null))));
     }
     if (this.nlq.queryInvolvesContracts(query) && this.contractStore.contracts().length === 0) {
       reads.push(this.contractsApi.getContracts(tus).pipe(

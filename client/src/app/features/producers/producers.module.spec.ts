@@ -1,16 +1,21 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
-import { Observable, firstValueFrom, lastValueFrom, of, throwError } from 'rxjs';
+import { NEVER, Observable, Subject, firstValueFrom, lastValueFrom, of, throwError } from 'rxjs';
 import { defaultIfEmpty } from 'rxjs/operators';
-import { DashboardSummary, DpContract, PlantingIntention, StoredGrain } from '@models';
+import { DpContract, PlantingIntention, StoredGrain } from '@models';
+import { DashboardSummary } from './models/dashboard-summary.model';
 import { ApiService } from '@core/services/api.service';
 import { PermissionService } from '@core/access/permission.service';
+import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { DashboardStore } from './data-access/dashboard.store';
 import { ProducerProfileStore } from './data-access/producer-profile.store';
+import { ProducerStore } from './data-access/producer.store';
+import { ProducersApiService } from './data-access/producers-api.service';
+import { YieldEstimateStore } from './data-access/yield-estimate.store';
 import { permissionStub, providePermissions } from '@testing/permission.stub';
 import { producerProfile } from '@testing/producer-profiles.fake';
 import { provideSelectedProducerProduction, selectedProducerProductionFake } from '@testing/selected-producer-production.fake';
-import { newestSeasonIntentionCount, preloadDashboardSummary, producersModule } from './producers.module';
+import { newestSeasonIntentionCount, preloadDashboardSummary, preloadProduction, producersModule } from './producers.module';
 import { PlantingIntentionsTableComponent } from './components/planting-intentions-table/planting-intentions-table.component';
 import { StoredGrainTableComponent } from './components/stored-grain-table/stored-grain-table.component';
 import { DpContractsTableComponent } from './components/dp-contracts-table/dp-contracts-table.component';
@@ -46,7 +51,7 @@ describe('Producers preload: the Planting Dashboard summary', () => {
     api = { getDashboardSummary: vi.fn(() => of(summary)) };
     TestBed.configureTestingModule({
       providers: [
-        { provide: ApiService, useValue: api },
+        { provide: ProducersApiService, useValue: api },
         { provide: PermissionService, useValue: { loaded: () => of('loaded'), has: () => canRead } },
       ],
     });
@@ -91,7 +96,7 @@ describe('Producers preload: the Planting Dashboard summary', () => {
 });
 
 describe("Producers preload: every producer's details", () => {
-  let api: { getDashboardSummary: ReturnType<typeof vi.fn>; getAllProducerDetails: ReturnType<typeof vi.fn> };
+  let api: Record<'getDashboardSummary' | 'getAllProducerDetails' | 'getPlantingIntentions' | 'getStoredGrain' | 'getDpContracts' | 'getDashboardPlantingEstimates', ReturnType<typeof vi.fn>>;
 
   function run(): Promise<unknown> {
     return lastValueFrom(
@@ -103,9 +108,17 @@ describe("Producers preload: every producer's details", () => {
     api = {
       getDashboardSummary: vi.fn(() => of({ estimates: [], marketShares: [], actualHarvest: [] })),
       getAllProducerDetails: vi.fn(() => of([producerProfile(1, { totalAcres: 900 })])),
+      getPlantingIntentions: vi.fn(() => of([])),
+      getStoredGrain: vi.fn(() => of([])),
+      getDpContracts: vi.fn(() => of([])),
+      getDashboardPlantingEstimates: vi.fn(() => of([])),
     };
     TestBed.configureTestingModule({
-      providers: [{ provide: ApiService, useValue: api }, providePermissions(permissionStub(['planting-estimates:read', 'producer-details:read']))],
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: ProducersApiService, useValue: api },
+        providePermissions(permissionStub(['planting-estimates:read', 'producer-details:read'])),
+      ],
     });
   });
 
@@ -116,6 +129,13 @@ describe("Producers preload: every producer's details", () => {
     expect(TestBed.inject(ProducerProfileStore).profileOf(1)?.totalAcres).toBe(900);
   });
 
+  it("reads the trade units' production with them", async () => {
+    await run();
+
+    expect(api.getPlantingIntentions).toHaveBeenCalledWith(['2190']);
+    expect(TestBed.inject(ProducerStore).dpContractsLoaded()).toBe(true);
+  });
+
   // One module's outage must not stop another's preload, and the details read before stay.
   it('swallows a failed read, leaving the details it already held', async () => {
     await run();
@@ -123,6 +143,118 @@ describe("Producers preload: every producer's details", () => {
 
     await expect(run()).resolves.toBeDefined();
     expect(TestBed.inject(ProducerProfileStore).profileOf(1)?.totalAcres).toBe(900);
+  });
+});
+
+describe("Producers preload: the trade units' planting, stored grain, DP and yield estimates", () => {
+  const pi = (id: number, customerId = 1) => ({ id, customerId, plantingYear: 2026 }) as PlantingIntention;
+  const grain = (id: string, customerId = 1) => ({ id, customerId }) as StoredGrain;
+  const dp = (id: string, customerId = 1) => ({ id, customerId }) as DpContract;
+  let api: Record<'getPlantingIntentions' | 'getStoredGrain' | 'getDpContracts' | 'getDashboardPlantingEstimates', ReturnType<typeof vi.fn>>;
+  let store: ProducerStore;
+  let granted: string[];
+
+  function run(tradeUnits = ['2190', '1085']): Promise<unknown> {
+    TestBed.inject(TradeUnitContext).setTradeUnits(tradeUnits);
+    return lastValueFrom(TestBed.runInInjectionContext(() => preloadProduction(tradeUnits)).pipe(defaultIfEmpty('none')));
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-13T12:00:00'));
+    granted = ['planting-estimates:read'];
+    api = {
+      getPlantingIntentions: vi.fn(() => of([pi(1)])),
+      getStoredGrain: vi.fn(() => of([grain('g10')])),
+      getDpContracts: vi.fn(() => of([dp('a')])),
+      getDashboardPlantingEstimates: vi.fn((_key: string, year: number) => of([{ crop: 'YC', plantingYear: year }])),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ProducersApiService, useValue: api },
+        { provide: PermissionService, useValue: { loaded: () => of('loaded'), has: (p: string) => granted.includes(p) } },
+      ],
+    });
+    store = TestBed.inject(ProducerStore);
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  it('reads them for the trade units into ProducerStore, and marks DP loaded', async () => {
+    await run();
+
+    for (const call of [api.getPlantingIntentions, api.getStoredGrain, api.getDpContracts]) {
+      expect(call).toHaveBeenCalledWith(['2190', '1085']);
+    }
+    expect(store.plantingIntentions().map(row => row.id)).toEqual([1]);
+    expect(store.storedGrain().map(row => row.id)).toEqual(['g10']);
+    expect(store.dpContracts().map(row => row.id)).toEqual(['a']);
+    expect(store.dpContractsLoaded()).toBe(true);
+  });
+
+  it("drops the previous trade units' stored grain and DP at once, and keeps a producer's own rows read since", async () => {
+    store.setStoredGrain([grain('g90', 9)]);
+    store.setDpContracts([dp('old', 9)]);
+    const grainRead = new Subject<StoredGrain[]>();
+    const dpRead = new Subject<DpContract[]>();
+    api.getStoredGrain.mockReturnValue(grainRead);
+    api.getDpContracts.mockReturnValue(dpRead);
+    const done = run();
+
+    expect(store.storedGrain()).toEqual([]);
+    expect(store.dpContracts()).toEqual([]);
+    expect(store.dpContractsLoaded()).toBe(false);
+
+    // The selected producer's own reads land first.
+    store.setStoredGrain([grain('g20', 2)]);
+    store.mergeCustomerDpContracts(2, [dp('b', 2)]);
+    grainRead.next([grain('g10')]); grainRead.complete();
+    dpRead.next([dp('a')]); dpRead.complete();
+    await done;
+
+    expect(store.storedGrain().map(row => row.id)).toEqual(['g10', 'g20']);
+    expect(store.dpContracts().map(row => row.id)).toEqual(['a', 'b']);
+    expect(store.dpContractsLoaded()).toBe(true);
+  });
+
+  it('records a failed planting or DP read, so it does not read as "none", and DP still counts as read', async () => {
+    store.setPlantingIntentions([pi(5)]);
+    api.getPlantingIntentions.mockReturnValue(throwError(() => new Error('500')));
+    api.getDpContracts.mockReturnValue(throwError(() => new Error('500')));
+
+    await run();
+
+    expect(store.plantingIntentionsLoadFailed()).toBe(true);
+    expect(store.plantingIntentions()).toEqual([]);
+    expect(store.dpContractsLoadFailed()).toBe(true);
+    expect(store.dpContractsLoaded()).toBe(true);
+  });
+
+  it("clears the last read's failures as the next one starts", async () => {
+    store.setPlantingIntentionsLoadFailed(true);
+    store.setDpContractsLoadFailed(true);
+    api.getPlantingIntentions.mockReturnValue(NEVER);
+    api.getDpContracts.mockReturnValue(NEVER);
+
+    void run();
+
+    expect(store.plantingIntentionsLoadFailed()).toBe(false);
+    expect(store.dpContractsLoadFailed()).toBe(false);
+  });
+
+  it("reads this year's and last year's yield estimates for a user who may read them", async () => {
+    await run();
+
+    expect(api.getDashboardPlantingEstimates.mock.calls).toEqual([['1085,2190', 2026], ['1085,2190', 2025]]);
+    expect(TestBed.inject(YieldEstimateStore).estimates().map(e => e.plantingYear).sort()).toEqual([2025, 2026]);
+  });
+
+  it('reads no yield estimates for a user who may not', async () => {
+    granted = [];
+
+    await run();
+
+    expect(api.getDashboardPlantingEstimates).not.toHaveBeenCalled();
   });
 });
 

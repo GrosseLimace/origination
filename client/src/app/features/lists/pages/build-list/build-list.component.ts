@@ -60,6 +60,7 @@ import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { ProducerProfiles } from '@core/context/producer-profiles';
 import { profileCommodities, profileLinkedIds } from '@shared/utils/producer-profile';
 import { BuildListState, BuildListStore } from '../../data-access/build-list.store';
+import { ProducerStore, ProducersApiService } from '@features/producers';
 
 @Component({
   selector: 'app-build-list',
@@ -95,6 +96,8 @@ import { BuildListState, BuildListStore } from '../../data-access/build-list.sto
 export class BuildListComponent {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
+  private readonly producerStore = inject(ProducerStore);
+  private readonly producersApi = inject(ProducersApiService);
   /** The trade units' contracts and tickets, kept by the Contracts module. */
   private readonly contractStore = inject(ContractStore);
   private readonly contractsApi = inject(ContractsApiService);
@@ -405,8 +408,8 @@ export class BuildListComponent {
   readonly unavailableDataForQuery = computed(() => {
     const q = this.queryText();
     const missing: string[] = [];
-    if (this.appState.dpContractsLoadFailed() && this.nlqFilterService.queryInvolvesDpContracts(q)) missing.push('DP contracts');
-    if (this.appState.plantingIntentionsLoadFailed() && this.nlqFilterService.queryInvolvesPlanting(q)) missing.push('planting intentions');
+    if (this.producerStore.dpContractsLoadFailed() && this.nlqFilterService.queryInvolvesDpContracts(q)) missing.push('DP contracts');
+    if (this.producerStore.plantingIntentionsLoadFailed() && this.nlqFilterService.queryInvolvesPlanting(q)) missing.push('planting intentions');
     if (this.nlqFilterService.queryInvolvesContact(q)) {
       if (this.appState.noteLastContactsLoadFailed()) missing.push('last-contacted dates');
       if (this.appState.myRemindersLoadFailed()) missing.push('follow-ups');
@@ -739,23 +742,23 @@ export class BuildListComponent {
    *  spinner / disabled Apply / disabled Save — see _commitRefinements. */
   readonly refineDataPending = computed(() => this._pendingApplyCriteria() !== null);
   /** True once THIS page's local `dpContracts` signal has been hydrated for the current trade units.
-   *  Deliberately separate from appState.dpContractsLoaded: the TU preload fills appState while this
+   *  Deliberately separate from ProducerStore.dpContractsLoaded: the TU preload fills the store while this
    *  page's local copy is still empty, and the NLQ context reads the LOCAL copy — gating on the
-   *  appState flag alone let a query run against an empty array and report "no producers found". */
+   *  store's flag alone let a query run against an empty array and report "no producers found". */
   private _dpReady = signal(false);
   /** Guards the one-shot background DP fetch so overlapping queries don't each fire one. */
   private _dpFetchInFlight = false;
   /**
    * Keeps the local DP copy honest against the shared cache. Two cases this covers:
-   *  - the TU preload lands AFTER this page hydrated, so the local copy is empty while appState
+   *  - the TU preload lands AFTER this page hydrated, so the local copy is empty while ProducerStore
    *    has rows (adopt them);
-   *  - the trade unit changed, so appState dropped its cache while this page still holds the old
+   *  - the trade unit changed, so ProducerStore dropped its cache while this page still holds the old
    *    TU's rows (discard them, and stop reporting ready).
    * Without this the page can filter against stale or empty data and honestly report "no match".
    */
   private _dpCacheSyncEffect = effect(() => {
-    const loaded = this.appState.dpContractsLoaded();
-    const shared = this.appState.dpContracts();
+    const loaded = this.producerStore.dpContractsLoaded();
+    const shared = this.producerStore.dpContracts();
     untracked(() => {
       if (!loaded) {
         if (this.dpContracts().length > 0) this.dpContracts.set([]);
@@ -1315,13 +1318,13 @@ export class BuildListComponent {
       this.customers.set(cachedCustomers);
       this.contracts.set(this.contractStore.contracts());
       this.tickets.set(this.contractStore.tickets());
-      this.plantingIntentions.set(this.appState.plantingIntentions());
+      this.plantingIntentions.set(this.producerStore.plantingIntentions());
       this.notes.set(this.appState.notes());
-      this.storedGrain.set(this.appState.storedGrain());
-      this.dpContracts.set(this.appState.dpContracts());
+      this.storedGrain.set(this.producerStore.storedGrain());
+      this.dpContracts.set(this.producerStore.dpContracts());
       // Only "ready" if the shared cache was actually populated by a completed fetch — otherwise a
       // DP query must still wait (and show its spinner) rather than filter on an empty array.
-      this._dpReady.set(this.appState.dpContractsLoaded());
+      this._dpReady.set(this.producerStore.dpContractsLoaded());
       this.savedLists.set(this.savedListsStore.lists());
       // Don't set _ticketsReady from cache — ticket data may be stale or from a
       // different TU. The background refresh will set it when fresh tickets arrive.
@@ -1408,10 +1411,10 @@ export class BuildListComponent {
       contracts: this.contractsApi.getContracts(tuParam).pipe(
         tap(() => this.contractStore.setContractsLoadFailed(false)),
         catchError(() => { this.contractStore.setContractsLoadFailed(true); return of([] as Contract[]); })),
-      plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(
-        tap(() => this.appState.setPlantingIntentionsLoadFailed(false)),
-        catchError(() => { this.appState.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); })),
-      storedGrain: this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
+      plantingIntentions: this.producersApi.getPlantingIntentions(tuParam).pipe(
+        tap(() => this.producerStore.setPlantingIntentionsLoadFailed(false)),
+        catchError(() => { this.producerStore.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); })),
+      storedGrain: this.producersApi.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
       savedLists: this.savedListsApi.getSavedLists().pipe(
         tap(() => this.savedListsStore.setLoadFailed(false)),
         catchError(() => { this.savedListsStore.setLoadFailed(true); return of([] as SavedList[]); })),
@@ -1435,8 +1438,8 @@ export class BuildListComponent {
         // Write to appState so other pages and restore path can use it
         this.customerStore.setCustomers(this.customers());
         this.contractStore.setContracts(data.contracts);
-        this.appState.setPlantingIntentions(data.plantingIntentions);
-        this.appState.setStoredGrain(data.storedGrain);
+        this.producerStore.setPlantingIntentions(data.plantingIntentions);
+        this.producerStore.setStoredGrain(data.storedGrain);
         this.savedListsStore.setLists(data.savedLists);
 
         this.loading.set(false);
@@ -1792,8 +1795,8 @@ export class BuildListComponent {
     if (this._dpReady() || this._dpFetchInFlight) return;
     // The TU preload may already have filled the shared cache while this page's local copy is empty.
     // Adopt it rather than re-fetching the same rows.
-    if (this.appState.dpContractsLoaded()) {
-      this.dpContracts.set(this.appState.dpContracts());
+    if (this.producerStore.dpContractsLoaded()) {
+      this.dpContracts.set(this.producerStore.dpContracts());
       this._dpReady.set(true);
       return;
     }
@@ -1807,21 +1810,21 @@ export class BuildListComponent {
     const fetchedForTu = tu.join(',');
     const isStale = () => this.tradeUnitContext.selectedTradeUnits().join(',') !== fetchedForTu;
 
-    this.apiService.getDpContracts(tuParam).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.producersApi.getDpContracts(tuParam).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this._dpFetchInFlight = false;
         if (isStale()) return;
         this.dpContracts.set(data ?? []);
-        this.appState.setDpContracts(data ?? []);  // also flips dpContractsLoaded
-        this.appState.setDpContractsLoadFailed(false);
+        this.producerStore.setDpContracts(data ?? []);  // also flips dpContractsLoaded
+        this.producerStore.setDpContractsLoadFailed(false);
         this._dpReady.set(true);                   // re-triggers _dataReadyEffect to run the query
       },
       error: () => {
         this._dpFetchInFlight = false;
         if (isStale()) return;
         this.dpContracts.set([]);
-        this.appState.setDpContracts([]);          // loaded-but-empty, not "still loading"
-        this.appState.setDpContractsLoadFailed(true); // ...and says so, or a DP prompt answers "none"
+        this.producerStore.setDpContracts([]);          // loaded-but-empty, not "still loading"
+        this.producerStore.setDpContractsLoadFailed(true); // ...and says so, or a DP prompt answers "none"
         this._dpReady.set(true);
       }
     });
@@ -1986,16 +1989,16 @@ export class BuildListComponent {
       tickets: this.contractsApi.getTickets(tuParam).pipe(
         tap(() => this.contractStore.setTicketsLoadFailed(false)),
         catchError(() => { ticketFetchFailed = true; return of([] as Ticket[]); })),
-      plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(
-        tap(() => this.appState.setPlantingIntentionsLoadFailed(false)),
-        catchError(() => { this.appState.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); })),
+      plantingIntentions: this.producersApi.getPlantingIntentions(tuParam).pipe(
+        tap(() => this.producerStore.setPlantingIntentionsLoadFailed(false)),
+        catchError(() => { this.producerStore.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); })),
       notes: fetchingNotes
         ? this.apiService.getNotes().pipe(catchError(() => of([] as Note[])))
         : of(this.appState.notes()),
-      storedGrain: this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
-      dpContracts: this.apiService.getDpContracts(tuParam).pipe(
-        tap(() => this.appState.setDpContractsLoadFailed(false)),
-        catchError(() => { this.appState.setDpContractsLoadFailed(true); return of([] as DpContract[]); })),
+      storedGrain: this.producersApi.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
+      dpContracts: this.producersApi.getDpContracts(tuParam).pipe(
+        tap(() => this.producerStore.setDpContractsLoadFailed(false)),
+        catchError(() => { this.producerStore.setDpContractsLoadFailed(true); return of([] as DpContract[]); })),
       // Every producer's details, read only when none are held yet; the prompts read them through ProducerProfiles.
       producerDetails: (this.producerProfiles.profiles().size > 0 ? of([] as ProducerDetails[]) : this.producerProfiles.load()).pipe(catchError(() => of([] as ProducerDetails[])))
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -2012,7 +2015,7 @@ export class BuildListComponent {
         this.plantingIntentions.set(data.plantingIntentions);
         this.storedGrain.set(data.storedGrain);
         this.dpContracts.set(data.dpContracts);
-        this.appState.setDpContracts(data.dpContracts);
+        this.producerStore.setDpContracts(data.dpContracts);
         this._dpReady.set(true);
         this._ticketsReady.set(true);
         this._storageReady.set(true);
@@ -2544,7 +2547,7 @@ export class BuildListComponent {
         catchError(() => { this.contractStore.setContractsLoadFailed(true); return of([] as Contract[]); })
       ))),
       estimates: tuKey
-        ? forkJoin(years.map(y => this.apiService.getDashboardPlantingEstimates(tuKey, y).pipe(
+        ? forkJoin(years.map(y => this.producersApi.getDashboardPlantingEstimates(tuKey, y).pipe(
             catchError(() => of([] as DashboardPlantingEstimate[]))
           )))
         : of([] as DashboardPlantingEstimate[][]),

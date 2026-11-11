@@ -10,6 +10,7 @@ import { AppStateService } from '@core/services/app-state.service';
 import { Contract, Customer, PlantingIntention, Ticket } from '@models';
 import { MAX_BIN_SITES } from '@shared/utils/coordinates';
 import { CustomersApiService } from '@features/customers';
+import { ProducersApiService } from '../../data-access/producers-api.service';
 import { PermissionId } from '@core/access/permission-ids.generated';
 import { CustomerScreenSources, customerScreenSources } from '@testing/customer-screen-sources';
 import { ProducerFixture, producerProfile, profilesOf, withFixtureProfile } from '@testing/producer-profiles.fake';
@@ -78,6 +79,7 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
       providers: [
         ...sharedSources(),
         { provide: CustomersApiService, useExisting: ApiService },
+        { provide: ProducersApiService, useExisting: ApiService },
         {
           provide: ApiService,
           useValue: {
@@ -264,7 +266,7 @@ describe('EditCustomerDialogComponent — removing a trade unit with planting in
 
   it('still removes the trade unit when the intention lookup fails', () => {
     withMemberships(manual('2190'), manual('2210'));
-    TestBed.inject(ApiService).getPlantingIntentionsByCustomer = () => throwError(() => new Error('boom'));
+    TestBed.inject(ProducersApiService).getPlantingIntentionsByCustomer = () => throwError(() => new Error('boom'));
 
     component.removeTradeUnit('2210');
 
@@ -312,6 +314,7 @@ describe('EditCustomerDialogComponent — bin sites', () => {
       providers: [
         ...sharedSources(),
         { provide: CustomersApiService, useExisting: ApiService },
+        { provide: ProducersApiService, useExisting: ApiService },
         {
           provide: ApiService,
           useValue: {
@@ -860,6 +863,7 @@ describe('EditCustomerDialogComponent — rendering', () => {
       providers: [
         ...sharedSources(),
         { provide: CustomersApiService, useExisting: ApiService },
+        { provide: ProducersApiService, useExisting: ApiService },
         {
           provide: ApiService,
           useValue: {

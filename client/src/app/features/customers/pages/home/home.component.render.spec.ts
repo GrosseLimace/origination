@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ChangeDetectionStrategy, Component, Type, computed, inject, input, output, signal } from '@angular/core';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
+import { SelectedProducerProduction } from '@core/context/selected-producer-production';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
@@ -15,14 +16,14 @@ import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { providePermissions } from '@testing/permission.stub';
 import { SelectedProducerActivityFake, provideSelectedProducerActivity, selectedProducerActivityFake } from '@testing/selected-producer-activity.fake';
-import { TradeUnitContracts } from '@core/context/trade-unit-contracts';
+import { SelectedProducerProductionFake, provideSelectedProducerProduction, selectedProducerProductionFake } from '@testing/selected-producer-production.fake';
 import { ProducerProfilesFake, producerProfile, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
 import { OutlookCalendarService } from '@core/services/outlook-calendar.service';
 import { environment } from '@env/environment';
 import { CustomerSlotComponent } from '@core/modules/customer-slot.component';
 import { ModuleManifest } from '@core/modules/module-manifest';
 import { APP_MODULES } from '@core/modules/module-registry';
-import type { Contract, Customer, Note, NoteLastContact, PlantingIntention, Reminder, ReminderDue, StoredGrain } from '@models';
+import type { Contract, Customer, Note, NoteLastContact, PlantingIntention, Reminder, ReminderDue } from '@models';
 
 import { HomeComponent } from './home.component';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
@@ -67,35 +68,22 @@ class StubList {
 class StubProfile {
   readonly ids = ids;
   readonly customer = input.required<Customer>();
-  readonly selectedTradeUnits = input<unknown>();
-  readonly contracts = input<Contract[]>([]);
-  readonly tickets = input<{ id: number }[]>([]);
-  readonly plantingIntentions = input<PlantingIntention[]>([]);
-  readonly storedGrain = input<StoredGrain[]>([]);
-  readonly dpContracts = input<unknown>();
-  readonly yieldEstimates = input<unknown[]>([]);
-  readonly isLoadingEstimates = input<unknown>();
-  // Read from SelectedProducerActivity, as the real profile and its tables do.
+  // Read from SelectedProducerActivity, as the real profile's contracts and tickets tabs do.
   readonly activity = inject(SelectedProducerActivity);
+  readonly contracts = this.activity.contracts;
+  readonly tickets = this.activity.tickets;
   readonly isLoadingContracts = this.activity.isLoadingContracts;
   readonly contractsLoadError = this.activity.contractsLoadError;
-  readonly isLoadingPlanting = input<unknown>();
-  readonly isLoadingStoredGrain = input<unknown>();
-  readonly isLoadingDpContracts = input<unknown>();
-  readonly allCustomerTickets = input<unknown>();
-  readonly allCustomerPlantingIntentions = input<unknown>();
-  readonly allCustomerStoredGrain = input<unknown>();
-  readonly allCustomerDpContracts = input<unknown>();
+  // Read from SelectedProducerProduction, as the real profile's Planting and Storage tabs and panels do.
+  private readonly production = inject(SelectedProducerProduction);
+  readonly plantingIntentions = this.production.plantingIntentions;
+  readonly storedGrain = this.production.storedGrain;
+  readonly yieldEstimates = this.production.yieldEstimates;
   readonly linkedCustomers = input<Customer[]>([]);
   // The deep-linked contract reaches the screen's pieces through SelectedCustomerContext, as the contracts tab reads it.
   private readonly screen = inject(SelectedCustomerContext);
   readonly openContractId = computed(() => this.screen.link().contractId ?? null);
   readonly openTab = input<unknown>();
-  readonly openTicketCrop = input<unknown>();
-  readonly openPlantingYear = input<unknown>();
-  readonly onAddPlanting = output<unknown>();
-  readonly onEditPlanting = output<unknown>();
-  readonly onDeletePlanting = output<number>();
   readonly onSelectLinkedCustomer = output<number>();
   readonly onContractsWideChange = output<boolean>();
 }
@@ -176,13 +164,9 @@ function makeApi() {
   return {
     getCustomers: empty<Customer[]>(),
     getContracts: empty<Contract[]>(),
-    getPlantingIntentions: empty<PlantingIntention[]>(),
-    getStoredGrain: empty<StoredGrain[]>(),
-    getDpContracts: empty<unknown[]>(),
     getAllProducerDetails: empty<unknown[]>(),
     getProducerDetails: vi.fn((id: number) => of({ id, customerId: id, customerName: '' })),
     saveProducerDetails: vi.fn((id: number) => of({ id, customerId: id, customerName: '' })),
-    getDashboardPlantingEstimates: empty<unknown[]>(),
     getCommodities: empty<unknown[]>(),
     getNotes: empty<Note[]>(),
     getNotesLastContact: empty<NoteLastContact[]>(),
@@ -191,12 +175,9 @@ function makeApi() {
     getCustomerBySourceId: vi.fn((): Observable<Customer | null> => of(null)),
     getCustomersLinkedTo: empty<Customer[]>(),
     getCustomerById: vi.fn((id: number) => of(customer(id))),
-    getPlantingIntentionsByCustomer: empty<PlantingIntention[]>(),
     getPricingLinesByCustomer: empty<unknown[]>(),
     getContractsByCustomer: empty<Contract[]>(),
     getTicketsByCustomer: empty<unknown[]>(),
-    getStoredGrainByCustomer: empty<StoredGrain[]>(),
-    getDpContractsByCustomer: empty<unknown[]>(),
     createNote: vi.fn((customerId: number) => of(note(500, customerId, new Date()))),
   };
 }
@@ -208,24 +189,18 @@ function makeAppState() {
     selectedCustomer: signal<Customer | null>(null),
     customers: signal<Customer[]>([]),
     contracts: signal<Contract[]>([]),
-    plantingIntentions: signal<PlantingIntention[]>([]),
     notes: signal<Note[]>([]),
     notesLoaded: signal(false),
     noteLastContacts: signal<NoteLastContact[]>([]),
     myReminders: signal<ReminderDue[]>([]),
-    storedGrain: signal<StoredGrain[]>([]),
-    dpContracts: signal<unknown[]>([]),
-    dpContractsLoaded: signal(false),
     commodities: signal<unknown[]>([]),
     commodityConversions: signal<unknown[]>([]),
     pricingLines: signal<unknown[]>([]),
     selectCustomer: vi.fn((c: Customer | null) => s.selectedCustomer.set(c)),
     setCustomers: vi.fn((v: Customer[]) => s.customers.set(v)),
-    setContracts: vi.fn(), setPlantingIntentions: vi.fn(), setNotes: vi.fn(), setNoteLastContacts: vi.fn(),
-    setMyReminders: vi.fn(), setStoredGrain: vi.fn(), setDpContracts: vi.fn(),
-    mergeCustomerDpContracts: vi.fn(), setPricingLines: vi.fn(),
+    setContracts: vi.fn(), setNotes: vi.fn(), setNoteLastContacts: vi.fn(),
+    setMyReminders: vi.fn(), setPricingLines: vi.fn(),
     setCustomersLoadFailed: vi.fn(), setNoteLastContactsLoadFailed: vi.fn(),
-    setPlantingIntentionsLoadFailed: vi.fn(),
   };
   return s;
 }
@@ -238,6 +213,8 @@ describe('HomeComponent (rendered)', () => {
   let profiles: ProducerProfilesFake;
   /** The selected producer's contracts, tickets and pricing lines, which the Contracts module reads. */
   let activity: SelectedProducerActivityFake;
+  /** The selected producer's planting, stored grain and DP, which the Producers module reads. */
+  let production: SelectedProducerProductionFake;
   let queryParams: BehaviorSubject<Params>;
   const originalReadAhead = environment.ctrmReadAheadEnabled;
 
@@ -257,9 +234,9 @@ describe('HomeComponent (rendered)', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: CustomersApiService, useExisting: ApiService },
-        // The Contracts module's pieces, through core: the selected producer's activity and the trade units' contracts.
+        // The Contracts and Producers modules' pieces, through core: the selected producer's activity and production.
         provideSelectedProducerActivity(activity),
-        { provide: TradeUnitContracts, useValue: { contracts: signal([]) } },
+        provideSelectedProducerProduction(production),
         { provide: ApiService, useValue: api },
         { provide: CustomerStore, useExisting: AppStateService },
         { provide: AppStateService, useValue: app },
@@ -287,6 +264,7 @@ describe('HomeComponent (rendered)', () => {
 
   beforeEach(() => {
     activity = selectedProducerActivityFake();
+    production = selectedProducerProductionFake();
     queryParams = new BehaviorSubject<Params>({});
     environment.ctrmReadAheadEnabled = false;
   });
@@ -398,16 +376,13 @@ describe('HomeComponent (rendered)', () => {
     expect(text('list')).toContain('linked:90');
   });
 
-  it('a planting read that lands later shows on the profile', async () => {
-    const planting = new Subject<PlantingIntention[]>();
-    await render(a => {
-      a.getCustomers.mockReturnValue(of([A]));
-      a.getPlantingIntentionsByCustomer.mockReturnValue(planting);
-    });
+  it("the producer's planting, as the Producers module reads it after the click, shows on the profile", async () => {
+    await render(a => a.getCustomers.mockReturnValue(of([A])));
     list().selectCustomer.emit(A);
     await settle();
+    expect(production.select).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }), { plantingYear: null });
 
-    planting.next([{ id: 30 } as PlantingIntention]);
+    production.plantingIntentions.set([{ id: 30 } as PlantingIntention]);
     await settle();
     expect(text('profile')).toContain('planting:30');
   });

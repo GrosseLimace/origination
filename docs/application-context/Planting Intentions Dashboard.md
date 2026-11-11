@@ -45,8 +45,8 @@ A recent normalization pass also cleaned up plural/singular inconsistencies in t
 ```mermaid
 flowchart LR
     UI[Dashboard component]
-    Cached[(CustomerStore, ContractStore,<br/>AppStateService<br/>customers, contracts,<br/>plantingIntentions)]
-    Fresh[apiService.getDashboardSummary / Estimates / MarketShares / ActualHarvest /<br/>getContractsByCropYear / getCommodities]
+    Cached[(CustomerStore, ContractStore,<br/>ProducerStore<br/>customers, contracts,<br/>plantingIntentions, storedGrain)]
+    Fresh[producersApi.getDashboardSummary / Estimates / MarketShares / ActualHarvest /<br/>contractsApi.getContractsByCropYear / apiService.getCommodities]
     CTL[DashboardPlantingEstimatesController]
     SVC[DashboardService, Producers module<br/>ContractService for crop-year contracts]
     APP[(dbo.DashboardPlantingEstimates,<br/>dbo.DashboardMarketShares,<br/>dbo.DashboardActualHarvests,<br/>dbo.Commodities,<br/>dbo.ProducerPlantingIntentions)]
@@ -81,6 +81,8 @@ Every row in `dbo.ProducerPlantingIntentions` carries the trade unit it was reco
 
 ### API service methods called
 
+The dashboard's calls and the planting intentions are on the Producers module's `ProducersApiService` (`features/producers/data-access`); its summary, market-share and harvest models are Producers' own (`features/producers/models`).
+
 - `getDashboardSummary(tradeUnitKey, plantingYear)` — bundled fetch of estimates + market shares + actual harvest, used to render the dashboard quickly on entry.
 - `getDashboardPlantingEstimates(tradeUnitKey, plantingYear)` — refresh after edits.
 - `upsertDashboardPlantingEstimates(estimates)` — save yield estimates.
@@ -88,7 +90,7 @@ Every row in `dbo.ProducerPlantingIntentions` carries the trade unit it was reco
 - `getDashboardActualHarvest` / `upsertDashboardActualHarvest` / `deleteDashboardActualHarvest`.
 - `getContractsByCropYear(cropYear, tradeUnits?)` — historical contracts for the selected planting year.
 - `getCommodities()` — crop catalog.
-- Plus the cached signals: the customers from `CustomerStore`, the contracts and their loading flags from the Contracts module's `ContractStore` (`@features/contracts`), whose `ContractsApiService` also reads a crop year's contracts, and the planting intentions from `AppStateService`.
+- Plus the cached signals: the customers from `CustomerStore`, the contracts and their loading flags from the Contracts module's `ContractStore` (`@features/contracts`), whose `ContractsApiService` also reads a crop year's contracts, and the trade units' planting intentions and stored grain, with the planting read's failure flag, from the Producers module's `ProducerStore`, which Producers' preload fills (the dashboard reads the planting itself only when none has landed).
 
 ### Controller endpoints
 
@@ -126,10 +128,10 @@ Unique-ish constraints exist on `(TradeUnitKey, PlantingYear, Crop|CropCategory)
 
 | Action | Trigger | Payload | Method |
 | --- | --- | --- | --- |
-| Save yield estimates | Edit mode in By Crop tab → "Save" | `Array<{ tradeUnitKey, crop, plantingYear, yieldEstimate? }>` | `apiService.upsertDashboardPlantingEstimates` |
-| Save market share | "Set Season Targets" dialog → save | `Array<{ tradeUnitKey, cropCategory, plantingYear, marketSharePct? }>` | `apiService.upsertDashboardMarketShares` |
-| Save actual harvest row | Harvest tab edit → save | `Array<{ tradeUnitKey, cropCategory, plantingYear, bushels }>` | `apiService.upsertDashboardActualHarvest` |
-| Delete actual harvest row | Trash icon | `id` | `apiService.deleteDashboardActualHarvest` |
+| Save yield estimates | Edit mode in By Crop tab → "Save" | `Array<{ tradeUnitKey, crop, plantingYear, yieldEstimate? }>` | `producersApi.upsertDashboardPlantingEstimates` |
+| Save market share | "Set Season Targets" dialog → save | `Array<{ tradeUnitKey, cropCategory, plantingYear, marketSharePct? }>` | `producersApi.upsertDashboardMarketShares` |
+| Save actual harvest row | Harvest tab edit → save | `Array<{ tradeUnitKey, cropCategory, plantingYear, bushels }>` | `producersApi.upsertDashboardActualHarvest` |
+| Delete actual harvest row | Trash icon | `id` | `producersApi.deleteDashboardActualHarvest` |
 | Switch year | Prev / Next buttons | n/a | re-fetches contracts + summary for new year |
 | Switch tab | tab pill | n/a | `usageTracking.trackDashboardTabClick(tabKey)` |
 | Open producer profile | producer row | n/a | navigate to `/?customerId=...&tab=planting&year=...` |
@@ -153,7 +155,7 @@ The "system" username has historically been used for `Created/ModifiedBy` on das
 
 | Symptom | Likely cause | First place to look |
 | --- | --- | --- |
-| Stat cards say 0 acres / 0 producers | `selectedTradeUnits()` empty or `plantingIntentions` not yet loaded | TU selector + the loading flags (`CustomerStore.customersLoading`, `contractsLoading`, `todaysTicketsLoading`) |
+| Stat cards say 0 acres / 0 producers | `selectedTradeUnits()` empty or `ProducerStore.plantingIntentions` not yet loaded (Producers' preload) | TU selector + the loading flags (`CustomerStore.customersLoading`, `contractsLoading`, `todaysTicketsLoading`) |
 | Filter by Crop dropdown shows duplicate `WHEAT` and `Wheat` | A contract row in ODS still uses ALL CAPS that the title-case helper isn't catching, or a stale entry in the App DB. Remember Prod hasn't run the cleanup yet. | `availableCrops` computed; the SQL audit query under "Crop title-casing" |
 | Saved estimate disappears after refresh | Upsert hit a unique constraint and one row was overwritten. | Check `Created/ModifiedAt` columns; verify only one `(TradeUnitKey, Crop, PlantingYear)` row per crop |
 | "By Crop" tab shows different totals than "Producers" tab | Categorization mismatch (planting intentions use `category`, contracts use `commodityGroup` / `commodityDescription`). The `_toTitleCase` helper merges them, but only if both side's strings normalize to the same thing. | `availableCrops` computed; check both signal sources |

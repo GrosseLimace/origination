@@ -2,7 +2,6 @@ import { Injectable, inject, signal } from '@angular/core';
 import { Contract, Ticket } from '@models';
 import { SessionReset } from '@core/auth/session-reset.service';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
-import { TradeUnitContracts } from '@core/context/trade-unit-contracts';
 
 /**
  * The selected trade units' contracts and tickets, kept for the session so every screen shares one load: Build a
@@ -11,7 +10,7 @@ import { TradeUnitContracts } from '@core/context/trade-unit-contracts';
  * The selected producer's own reads (CustomerActivityStore) merge their live contracts in.
  */
 @Injectable({ providedIn: 'root' })
-export class ContractStore implements TradeUnitContracts {
+export class ContractStore {
   private readonly tradeUnitContext = inject(TradeUnitContext);
 
   private readonly _contracts = signal<Contract[]>([]);
