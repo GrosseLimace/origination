@@ -1,0 +1,20 @@
+<div class="justify-self-start w-fit">
+  <h3 class="text-xs @4xl/profile:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2.5">Harvest Contract Pace</h3>
+  @if (contractsLoadError() || historyFailed()) {
+    <!-- Pace compares this year against last. With either read missing, "no contract data"
+         would read as a producer who has contracted nothing. -->
+    <p class="text-sm text-amber-700 dark:text-amber-300 py-2">Contract data unavailable — pace cannot be shown.</p>
+  } @else if (harvestWindowsUnavailable()) {
+    <p class="text-sm text-amber-700 dark:text-amber-300 py-2">Harvest windows couldn't be loaded — pace cannot be shown.</p>
+  } @else if (direction() === 'none') {
+    <p class="text-sm text-gray-400 dark:text-gray-500 py-2">No contract data available.</p>
+  } @else {
+    <div class="block w-full rounded-lg border p-3 text-center cursor-pointer transition-opacity hover:opacity-80 select-none"
+         [class]="boxClass()"
+         (click)="panels.toggle()"
+         title="Click to {{ panels.open() ? 'hide' : 'show' }} Harvest Contract Pace details">
+      <div class="text-3xl font-bold leading-none">{{ arrow() }}</div>
+      <div class="text-xs mt-1 opacity-60">{{ year - 1 }} vs {{ year }}</div>
+    </div>
+  }
+</div>

@@ -1,9 +1,8 @@
-using System.Text.Json.Serialization;
-
 namespace GrainOriginatorPortal.Api.Modules.Customers.Models.Responses;
 
-/// <summary>Wire shape for a customer/producer. Entity-shaped (Decision 1); preserves the
-/// linkedProducerIds JSON name and the nested coordinates shape.</summary>
+/// <summary>Wire shape for a customer/producer. Entity-shaped (Decision 1); preserves the nested coordinates
+/// shape. A producer's acres, links, contacts, bin sites and grain on farm are their saved details, which the Producers
+/// module serves (<c>/api/producer-details</c>), not part of the customer.</summary>
 public record CustomerResponse
 {
     public long Id { get; init; }
@@ -26,12 +25,6 @@ public record CustomerResponse
     public string? ExtendedPostalCode { get; init; }
     public string? ExtendedStateProvince { get; init; }
     public string? ExtendedCountry { get; init; }
-    public int TotalAcres { get; init; }
-    public List<string> FarmIds { get; init; } = new();
-
-    [JsonPropertyName("linkedProducerIds")]
-    public List<string> LinkedProducerIds { get; init; } = new();
-
     public bool ESignEnabled { get; init; }
     public bool AchEnabled { get; init; }
     /// <summary>The producer's active trade-unit codes. Populated on list and search reads; empty on
@@ -40,7 +33,6 @@ public record CustomerResponse
     public string? ScoularViewRecipients { get; init; }
     public string? Guild { get; init; }
     public CoordinatesResponse? Coordinates { get; init; }
-    public string Farm { get; init; } = string.Empty;
     public string? IndustryCode1 { get; init; }
     public string? IndustryCode2 { get; init; }
     /// <summary>Real 10-digit NOP operation id, or null. Normalised on ingest, so the client can

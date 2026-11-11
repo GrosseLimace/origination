@@ -7,17 +7,24 @@ import { forkJoin, from, of, catchError, mergeMap, toArray, timeout, tap, Subjec
 import { MsalService } from '@azure/msal-angular';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
+import { CustomerStore, CustomersApiService } from '@features/customers';
+import { SavedListsApiService } from '../../data-access/saved-lists-api.service';
+import { SavedListsStore } from '../../data-access/saved-lists.store';
 import { AppStateService } from '@core/services/app-state.service';
-import { DataPreloadService } from '@core/services/data-preload.service';
+import { ContractStore, ContractsApiService } from '@features/contracts';
+import { DataPreloadService } from '@core/context/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { PermissionService } from '@core/access/permission.service';
 import { HasPermissionDirective } from '@core/access/has-permission.directive';
-import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, DpContract, SavedList, TeamMember, ProducerDetails, RefinementFilters, QueryLibraryItem, GrainOnFarmItem, DashboardPlantingEstimate, Commodity } from '@models';
-import { dpTotalBushels } from '@shared/utils/dp-aggregate';
+import { NlqFilterService, NlqFilterContext } from '../../nlq/nlq-filter.service';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, DpContract, ProducerDetails, GrainOnFarmItem, DashboardPlantingEstimate, Commodity } from '@models';
+import { RefinementFilters } from '../../models/refine-filters.model';
+import { SavedList, TeamMember } from '../../models/saved-list.model';
+import { QueryLibraryItem } from '../../models/query-library.model';
+import { dpTotalBushels } from '@features/producers';
 import { commodityChipClass } from '@shared/utils/commodity-color';
-import { plantingChips, plantingQueryScope, PlantingChip } from '@shared/utils/planting-chips';
+import { plantingChips, plantingQueryScope, PlantingChip } from '../../utils/planting-chips';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '@shared/components/card/card.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
@@ -28,7 +35,7 @@ import { TradeUnitSelectorComponent } from '@core/layout/trade-unit-selector/tra
 import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
-import { isGrainAndBinSitesCategory, binSiteGrainBreakdown, BinSiteGrainGroup, formatLastBid } from '@shared/utils/grain-on-farm';
+import { isGrainAndBinSitesCategory, binSiteGrainBreakdown, BinSiteGrainGroup, formatLastBid } from '@features/producers';
 import { binSiteNames, notesMentioningBinSites, splitByBinSiteNames, BIN_SITE_NAME_CLASS } from '@shared/utils/bin-site-mentions';
 import { countActiveRefinements, hasAnyRefinement, hiddenRefineFilters } from '../../utils/refine-panel';
 import { filterByRefinements, applyMemberOverrides, collapseLinkedComponents, RefinementFilterSources } from '../../utils/refinement-filters';
@@ -47,10 +54,14 @@ import { buildSavedListPayload, SavedListPayload } from '../../utils/saved-list-
 import { binNoteContentAny, planBinSiteNoteChunks } from '../../utils/bin-site-notes';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
-import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
+import { filterSavedListsByTradeUnitOverlap } from '../../utils/saved-list-trade-units';
 import { environment } from '@env/environment';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { ProducerProfiles } from '@core/context/producer-profiles';
+import { profileCommodities, profileLinkedIds } from '@shared/utils/producer-profile';
 import { BuildListState, BuildListStore } from '../../data-access/build-list.store';
+import { ProducerStore, ProducersApiService } from '@features/producers';
+import { EngagementStore, EngagementApiService } from '@features/engagement';
 
 @Component({
   selector: 'app-build-list',
@@ -86,6 +97,20 @@ import { BuildListState, BuildListStore } from '../../data-access/build-list.sto
 export class BuildListComponent {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
+  private readonly engagementStore = inject(EngagementStore);
+  private readonly engagementApi = inject(EngagementApiService);
+  private readonly producerStore = inject(ProducerStore);
+  private readonly producersApi = inject(ProducersApiService);
+  /** The trade units' contracts and tickets, kept by the Contracts module. */
+  private readonly contractStore = inject(ContractStore);
+  private readonly contractsApi = inject(ContractsApiService);
+  /** Every producer's details, kept by the Producers module; laid over the customers this page filters. */
+  private readonly producerProfiles = inject(ProducerProfiles);
+  private readonly customerStore = inject(CustomerStore);
+  private readonly customersApi = inject(CustomersApiService);
+  private readonly savedListsApi = inject(SavedListsApiService);
+  /** The user's saved lists and the query library, kept for the session with the rest of Lists' state. */
+  private readonly savedListsStore = inject(SavedListsStore);
   private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly buildListStore = inject(BuildListStore);
 
@@ -93,10 +118,10 @@ export class BuildListComponent {
    *  rather than a genuine answer. Every empty state on this screen has to check it: a CTRM timeout
    *  otherwise reads as "no producers found", which is indistinguishable from a real empty list. */
   readonly sourceLoadFailed = computed(() =>
-    this.appState.contractsLoadFailed() || this.appState.ticketsLoadFailed());
+    this.contractStore.contractsLoadFailed() || this.contractStore.ticketsLoadFailed());
 
   /** A read that timed out client-side rather than failing - the data is still coming. */
-  readonly sourceLoadPending = this.appState.sourceLoadPending;
+  readonly sourceLoadPending = this.contractStore.sourceLoadPending;
   private readonly dataPreloadService = inject(DataPreloadService);
   private readonly toastService = inject(ToastService);
   private readonly nlqFilterService = inject(NlqFilterService);
@@ -144,7 +169,7 @@ export class BuildListComponent {
   private _queryGenId = 0;
   // Key of the server-narrowed note slice currently in this.notes() for DISPLAY (encodes the
   // query generation + scope, e.g. `${gen}:content:beans|corn`, `${gen}:w:3`, `${gen}:pinned`).
-  // Scoped reads are LOCAL-only — they never warm appState.notes/notesLoaded (that cache means
+  // Scoped reads are LOCAL-only — they never warm EngagementStore.notes/notesLoaded (that cache means
   // "the full set"), so a partial slice can't leak to other consumers as if it were complete.
   private _loadedNoteScopeKey = signal<string>('');
   private _scopedNotesFetchInFlight = false;
@@ -177,7 +202,7 @@ export class BuildListComponent {
   // reselect to recover. Including waitingForTickets() clears it as soon as tickets land.
   private _dataReadyEffect = effect(() => {
     this.notes();
-    this.appState.notesLoaded();
+    this.engagementStore.notesLoaded();
     this._loadedNoteScopeKey();   // re-run when a scoped note slice lands
     this.storedGrain();
     this.dpContracts();
@@ -190,7 +215,7 @@ export class BuildListComponent {
     // _ticketsReady stays false), so without this dependency the effect never re-runs and the query hangs
     // on "Processing query..." exactly as it did before the guard was added.
     this.sourceLoadFailed();
-    this.appState.sourceLoadPending();   // tracked for the same reason: it flips after a query is staged
+    this.contractStore.sourceLoadPending();   // tracked for the same reason: it flips after a query is staged
     this._storageReady();
     if (this.queryText().trim() && (this.isProcessing() || this.waitingForTickets() || this.waitingForNotes() || this.waitingForDp()) && this.coreDataLoaded()) {
       untracked(() => {
@@ -201,7 +226,7 @@ export class BuildListComponent {
         // Found by the failure drill on 2026-08-27: with CTRM unreachable, the producer screen and the
         // dashboard both showed their error states correctly, but Build-a-List hung. The error banner
         // lives in the results branch, and a stalled query never reaches it.
-        if (this.sourceLoadFailed() || this.appState.sourceLoadPending()) {
+        if (this.sourceLoadFailed() || this.contractStore.sourceLoadPending()) {
           this.waitingForTickets.set(false);
           this.waitingForNotes.set(false);
           this.waitingForDp.set(false);
@@ -245,7 +270,7 @@ export class BuildListComponent {
     const staged = this._pendingApplyCriteria();
     // Tracked reads — re-run whenever any of these resolve so a pending commit can proceed.
     this._loadedNoteScopeKey();
-    this.appState.notesLoaded();
+    this.engagementStore.notesLoaded();
     this._ticketsReady();
     this._contractsReady();
     this._dpReady();
@@ -271,8 +296,8 @@ export class BuildListComponent {
   // appState. If appState has more tickets than our local copy, hydrate and re-run
   // any already-completed ticket-dependent query so the result picks up the new data.
   private _appStateTicketsEffect = effect(() => {
-    const appTickets = this.appState.tickets();
-    const appTicketsTu = this.appState.ticketsTradeUnitKey();
+    const appTickets = this.contractStore.tickets();
+    const appTicketsTu = this.contractStore.ticketsTradeUnitKey();
     // Only adopt tickets that belong to the trade units we're currently showing. A length-only
     // comparison would hydrate from the PREVIOUS trade unit during a switch: our local set is
     // already cleared for the new TU while appState still holds the old, larger one (the two
@@ -386,21 +411,21 @@ export class BuildListComponent {
   readonly unavailableDataForQuery = computed(() => {
     const q = this.queryText();
     const missing: string[] = [];
-    if (this.appState.dpContractsLoadFailed() && this.nlqFilterService.queryInvolvesDpContracts(q)) missing.push('DP contracts');
-    if (this.appState.plantingIntentionsLoadFailed() && this.nlqFilterService.queryInvolvesPlanting(q)) missing.push('planting intentions');
+    if (this.producerStore.dpContractsLoadFailed() && this.nlqFilterService.queryInvolvesDpContracts(q)) missing.push('DP contracts');
+    if (this.producerStore.plantingIntentionsLoadFailed() && this.nlqFilterService.queryInvolvesPlanting(q)) missing.push('planting intentions');
     if (this.nlqFilterService.queryInvolvesContact(q)) {
-      if (this.appState.noteLastContactsLoadFailed()) missing.push('last-contacted dates');
-      if (this.appState.myRemindersLoadFailed()) missing.push('follow-ups');
+      if (this.engagementStore.noteLastContactsLoadFailed()) missing.push('last-contacted dates');
+      if (this.engagementStore.myRemindersLoadFailed()) missing.push('follow-ups');
     }
     return missing;
   });
 
   /** The trade-unit producer read failed, so an empty trade unit is an outage, not an answer. */
-  readonly customersLoadFailed = this.appState.customersLoadFailed;
+  readonly customersLoadFailed = this.customerStore.customersLoadFailed;
 
   /** The saved-list read failed and nothing replaced it, so an empty library is not "none yet". */
   readonly savedListsLoadFailed = computed(() =>
-    this.appState.savedListsLoadFailed() && this.savedLists().length === 0);
+    this.savedListsStore.loadFailed() && this.savedLists().length === 0);
 
   /** The "Start with no producers" blank-start card — the deliberate opposite of "All
    *  producers". It always resolves to zero (see filterCustomers' early return), so the
@@ -422,6 +447,7 @@ export class BuildListComponent {
    *  inside displayedCustomers, so each signal is tracked only by the refinements that consult it. */
   private readonly _refineSources: RefinementFilterSources = {
     customers: () => this.customers(),
+    profileOf: c => this.producerProfiles.profileOf(c.id),
     notes: () => this.notes(),
     tickets: () => this.tickets(),
     plantingIntentions: () => this.plantingIntentions(),
@@ -533,7 +559,10 @@ export class BuildListComponent {
         for (const n of found.notes) max = Math.max(max, parseNoteTime(n.createdAt));
         lastMention.set(id, max);
       }
-      const changed = (c: Customer) => (c.binSitesModifiedAt ? Date.parse(c.binSitesModifiedAt) || 0 : 0);
+      const changed = (c: Customer) => {
+        const at = this.producerProfiles.profileOf(c.id)?.binSitesModifiedAt;
+        return at ? Date.parse(at) || 0 : 0;
+      };
       return [...list].sort((a, b) =>
         (lastMention.get(b.id) ?? 0) - (lastMention.get(a.id) ?? 0)
         || changed(b) - changed(a)
@@ -603,7 +632,7 @@ export class BuildListComponent {
   });
 
   /** Fallback chip source: the distinct commodity codes carried by the current results (plus the
-   *  grain-on-farm and DP crops those rows hold, which needn't appear in customer.commodities). */
+   *  grain-on-farm and DP crops those rows hold, which needn't appear in the producer's saved commodities). */
   private _cropsPresentInResults(): string[] {
     const codes = new Set<string>();
     const add = (raw: string | null | undefined) => {
@@ -611,7 +640,7 @@ export class BuildListComponent {
       if (trimmed) codes.add(trimmed.toUpperCase());
     };
     for (const c of this.filteredCustomers()) {
-      for (const crop of (c.commodities ?? [])) add(crop);
+      for (const crop of profileCommodities(this.producerProfiles.profileOf(c.id))) add(crop);
     }
     if (this.showDpFilters()) {
       const dpByCustomer = this._dpByCustomerId();
@@ -627,7 +656,7 @@ export class BuildListComponent {
   private _grainCropsInResults(): string[] {
     const codes = new Set<string>();
     for (const c of this.filteredCustomers()) {
-      for (const g of (c.grainOnFarm ?? [])) {
+      for (const g of (this.producerProfiles.profileOf(c.id)?.grainOnFarm ?? [])) {
         const code = (g.commodityCode || '').trim();
         if (code) codes.add(code.toUpperCase());
       }
@@ -716,23 +745,23 @@ export class BuildListComponent {
    *  spinner / disabled Apply / disabled Save — see _commitRefinements. */
   readonly refineDataPending = computed(() => this._pendingApplyCriteria() !== null);
   /** True once THIS page's local `dpContracts` signal has been hydrated for the current trade units.
-   *  Deliberately separate from appState.dpContractsLoaded: the TU preload fills appState while this
+   *  Deliberately separate from ProducerStore.dpContractsLoaded: the TU preload fills the store while this
    *  page's local copy is still empty, and the NLQ context reads the LOCAL copy — gating on the
-   *  appState flag alone let a query run against an empty array and report "no producers found". */
+   *  store's flag alone let a query run against an empty array and report "no producers found". */
   private _dpReady = signal(false);
   /** Guards the one-shot background DP fetch so overlapping queries don't each fire one. */
   private _dpFetchInFlight = false;
   /**
    * Keeps the local DP copy honest against the shared cache. Two cases this covers:
-   *  - the TU preload lands AFTER this page hydrated, so the local copy is empty while appState
+   *  - the TU preload lands AFTER this page hydrated, so the local copy is empty while ProducerStore
    *    has rows (adopt them);
-   *  - the trade unit changed, so appState dropped its cache while this page still holds the old
+   *  - the trade unit changed, so ProducerStore dropped its cache while this page still holds the old
    *    TU's rows (discard them, and stop reporting ready).
    * Without this the page can filter against stale or empty data and honestly report "no match".
    */
   private _dpCacheSyncEffect = effect(() => {
-    const loaded = this.appState.dpContractsLoaded();
-    const shared = this.appState.dpContracts();
+    const loaded = this.producerStore.dpContractsLoaded();
+    const shared = this.producerStore.dpContracts();
     untracked(() => {
       if (!loaded) {
         if (this.dpContracts().length > 0) this.dpContracts.set([]);
@@ -764,8 +793,8 @@ export class BuildListComponent {
   // query running against a silently-empty contracts array would otherwise read as "0 producers".
   // Both live on AppStateService rather than here: customer-list and the trade-unit preload hit the same
   // reads, and three private copies of these flags meant sourceLoadFailed missed most outages.
-  readonly contractsLoadFailed = this.appState.contractsLoadFailed;
-  readonly ticketsLoadFailed = this.appState.ticketsLoadFailed;
+  readonly contractsLoadFailed = this.contractStore.contractsLoadFailed;
+  readonly ticketsLoadFailed = this.contractStore.ticketsLoadFailed;
   showRefinePanel = signal(false);
   pendingRefinements = signal<RefinementFilters>({});
   appliedRefinements = signal<RefinementFilters>({});
@@ -819,7 +848,7 @@ export class BuildListComponent {
    *  STABLE sort key that doesn't shift as note bodies stream in for batched prompts. Absent from
    *  the map = the producer and its entire linked chain have never been contacted. */
   private readonly _lastContactTimeByCustomer = computed(() =>
-    lastContactTimeByCustomer(this.appState.noteLastContacts(), this.linkedProducerComponents(), this.customers()));
+    lastContactTimeByCustomer(this.engagementStore.noteLastContacts(), this.linkedProducerComponents(), this.customers()));
 
   /** Most recent note per customer — pre-indexed for O(1) template lookup. Derived from the
    *  aggregate-backed {@link _lastContactTimeByCustomer} (with linked rollup), so the badge agrees
@@ -845,7 +874,7 @@ export class BuildListComponent {
    *  collapse, codesByCustomerId, matchingNotesByCustomer, lastContactByCustomer) so chained
    *  links A→B→C are treated as one transitive group everywhere. See shared util for details. */
   readonly linkedProducerComponents = computed<Map<string, Set<string>>>(() => {
-    return buildLinkedProducerComponents(this.customers());
+    return buildLinkedProducerComponents(this.customers(), c => profileLinkedIds(this.producerProfiles.profileOf(c.id)));
   });
 
   /** True when the result list should render an inline note section per customer.
@@ -918,7 +947,7 @@ export class BuildListComponent {
 
   /** Crops per customer — merged from ProducerDetails, contracts, intentions. */
   readonly cropsByCustomer = computed(() => cropsByCustomer(
-    this._contractsByCustomer(), this.plantingIntentions(), this.tickets(), this.storedGrain(), this.customers()));
+    this._contractsByCustomer(), this.plantingIntentions(), this.tickets(), this.storedGrain(), this.customers(), this.producerProfiles.profiles()));
 
   // ── Query Library ──────────────────────────────────────────────────────
   queryLibrary = signal<QueryLibraryItem[]>([]);
@@ -1047,7 +1076,7 @@ export class BuildListComponent {
     for (const c of this.customers()) {
       const notes = byCustomer.get(c.id);
       if (!notes) continue;
-      const found = notesMentioningBinSites(notes, binSiteNames(c.binSites));
+      const found = notesMentioningBinSites(notes, binSiteNames(this.producerProfiles.profileOf(c.id)?.binSites));
       if (found) map.set(c.id, found);
     }
     return map;
@@ -1063,11 +1092,11 @@ export class BuildListComponent {
    */
   private _loadBinSiteNotes(): void {
     if (!this.binNotesActive() || this._binNotesFetchInFlight) return;
-    const chunks = planBinSiteNoteChunks(this.filteredCustomers(), this._binNoteFetchedKeys, BuildListComponent.BIN_NOTES_QUERY_BUDGET);
+    const chunks = planBinSiteNoteChunks(this.filteredCustomers(), this.producerProfiles.profiles(), this._binNoteFetchedKeys, BuildListComponent.BIN_NOTES_QUERY_BUDGET);
     if (chunks.length === 0) return;
 
     this._binNotesFetchInFlight = true;
-    const requests = chunks.map(ch => this.apiService.getNotes(undefined, {
+    const requests = chunks.map(ch => this.engagementApi.getNotes(undefined, {
       customerIds: ch.ids,
       contentAny: binNoteContentAny(ch, BuildListComponent.BIN_NOTES_QUERY_BUDGET),
     }).pipe(catchError(() => of([] as Note[]))));
@@ -1111,35 +1140,35 @@ export class BuildListComponent {
     this._initTradeUnits = this.tradeUnitContext.selectedTradeUnits().slice();
 
     // Load saved lists eagerly — they're user-scoped, not TU-dependent
-    const cachedSavedLists = this.appState.savedLists();
+    const cachedSavedLists = this.savedListsStore.lists();
     if (cachedSavedLists.length > 0) {
       this.savedLists.set(cachedSavedLists);
     } else {
       this.loadingSavedLists.set(true);
-      this.apiService.getSavedLists().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      this.savedListsApi.getSavedLists().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (lists) => {
           this.savedLists.set(lists);
-          this.appState.setSavedLists(lists);
-          this.appState.setSavedListsLoadFailed(false);
+          this.savedListsStore.setLists(lists);
+          this.savedListsStore.setLoadFailed(false);
           this.loadingSavedLists.set(false);
         },
         // The library panel says "Couldn't load your saved lists" from this, not "No saved lists yet".
-        error: () => { this.appState.setSavedListsLoadFailed(true); this.loadingSavedLists.set(false); }
+        error: () => { this.savedListsStore.setLoadFailed(true); this.loadingSavedLists.set(false); }
       });
     }
 
     // Load query library — populate the shared appState cache so other pages (home,
     // customer-list) can resolve a saved list's prompt category by queryText match
     // without each page fetching independently.
-    const cachedLibrary = this.appState.queryLibrary();
+    const cachedLibrary = this.savedListsStore.queryLibrary();
     if (cachedLibrary.length > 0) {
       this.queryLibrary.set(cachedLibrary);
       this.queryLibraryLoaded.set(true);
     } else {
-      this.apiService.getQueryLibrary().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      this.savedListsApi.getQueryLibrary().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (items) => {
           this.queryLibrary.set(items);
-          this.appState.setQueryLibrary(items);
+          this.savedListsStore.setQueryLibrary(items);
           this.queryLibraryLoaded.set(true);
         },
         error: err => { this.queryLibraryLoaded.set(true); if (!alreadyShown(err)) this.toastService.error('Failed to load query library'); }
@@ -1283,31 +1312,27 @@ export class BuildListComponent {
     this._restoreUIState();
 
     const currentTus = this.tradeUnitContext.selectedTradeUnits();
-    const cachedCustomers = this.appState.customers();
+    const cachedCustomers = this.customerStore.customers();
 
     // If appState already has customer data (loaded by home page or a previous visit),
     // use it immediately for fast display, then do a background refresh to fill in
     // any data the preload service hadn't finished (tickets, stored grain, etc.).
     if (currentTus.length > 0 && cachedCustomers.length > 0) {
       this.customers.set(cachedCustomers);
-      this.contracts.set(this.appState.contracts());
-      this.tickets.set(this.appState.tickets());
-      this.plantingIntentions.set(this.appState.plantingIntentions());
-      this.notes.set(this.appState.notes());
-      this.storedGrain.set(this.appState.storedGrain());
-      this.dpContracts.set(this.appState.dpContracts());
+      this.contracts.set(this.contractStore.contracts());
+      this.tickets.set(this.contractStore.tickets());
+      this.plantingIntentions.set(this.producerStore.plantingIntentions());
+      this.notes.set(this.engagementStore.notes());
+      this.storedGrain.set(this.producerStore.storedGrain());
+      this.dpContracts.set(this.producerStore.dpContracts());
       // Only "ready" if the shared cache was actually populated by a completed fetch — otherwise a
       // DP query must still wait (and show its spinner) rather than filter on an empty array.
-      this._dpReady.set(this.appState.dpContractsLoaded());
-      this.savedLists.set(this.appState.savedLists());
+      this._dpReady.set(this.producerStore.dpContractsLoaded());
+      this.savedLists.set(this.savedListsStore.lists());
       // Don't set _ticketsReady from cache — ticket data may be stale or from a
       // different TU. The background refresh will set it when fresh tickets arrive.
       // Ticket-dependent queries will wait via the "Loading delivery data..." path,
       // ensuring they always use fresh data.
-      if (this.appState.producerDetails().length > 0) {
-        this._mergeProducerDetails(this.appState.producerDetails());
-      }
-
       // Restore filtered results if we had a previous query for the same TUs
       const saved = this.buildListStore.buildListState();
       const savedTus = saved?.tradeUnits ?? [];
@@ -1383,20 +1408,22 @@ export class BuildListComponent {
     // background; the full note set is lazily fetched by _fetchAndFilter the first time a
     // query runs while it's missing, so page load never waits on the note download)
     forkJoin({
-      customers: this.apiService.getCustomers(tuParam).pipe(
-        tap(() => this.appState.setCustomersLoadFailed(false)),
-        catchError(() => { this.appState.setCustomersLoadFailed(true); return of([] as Customer[]); })),
-      contracts: this.apiService.getContracts(tuParam).pipe(
-        tap(() => this.appState.setContractsLoadFailed(false)),
-        catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })),
-      plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(
-        tap(() => this.appState.setPlantingIntentionsLoadFailed(false)),
-        catchError(() => { this.appState.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); })),
-      storedGrain: this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
-      savedLists: this.apiService.getSavedLists().pipe(
-        tap(() => this.appState.setSavedListsLoadFailed(false)),
-        catchError(() => { this.appState.setSavedListsLoadFailed(true); return of([] as SavedList[]); })),
-      producerDetails: this.apiService.getAllProducerDetails().pipe(catchError(() => of([] as ProducerDetails[])))
+      customers: this.customersApi.getCustomers(tuParam).pipe(
+        tap(() => this.customerStore.setCustomersLoadFailed(false)),
+        catchError(() => { this.customerStore.setCustomersLoadFailed(true); return of([] as Customer[]); })),
+      contracts: this.contractsApi.getContracts(tuParam).pipe(
+        tap(() => this.contractStore.setContractsLoadFailed(false)),
+        catchError(() => { this.contractStore.setContractsLoadFailed(true); return of([] as Contract[]); })),
+      plantingIntentions: this.producersApi.getPlantingIntentions(tuParam).pipe(
+        tap(() => this.producerStore.setPlantingIntentionsLoadFailed(false)),
+        catchError(() => { this.producerStore.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); })),
+      storedGrain: this.producersApi.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
+      savedLists: this.savedListsApi.getSavedLists().pipe(
+        tap(() => this.savedListsStore.setLoadFailed(false)),
+        catchError(() => { this.savedListsStore.setLoadFailed(true); return of([] as SavedList[]); })),
+      // Every producer's details, read again as each fresh load does, which the prompts and refines read through
+      // ProducerProfiles. A failed read leaves the details already held.
+      producerDetails: this.producerProfiles.load().pipe(catchError(() => of([] as ProducerDetails[])))
     }).pipe(takeUntil(this._cancelLoad$), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         // Ignore stale response from a previous TU's load
@@ -1408,18 +1435,15 @@ export class BuildListComponent {
         // Seed notes from the shared lazy cache when another consumer already loaded it
         // (home saved-list enrichment, customer-list NLQ). Otherwise leave local notes
         // as-is; _fetchAndFilter tops them up when a query actually needs them.
-        if (this.appState.notesLoaded()) this.notes.set(this.appState.notes());
+        if (this.engagementStore.notesLoaded()) this.notes.set(this.engagementStore.notes());
         this.storedGrain.set(data.storedGrain);
         this.savedLists.set(data.savedLists);
-        // Merge producer details into customer objects, then write to appState
-        if (data.producerDetails.length > 0) this.appState.setProducerDetails(data.producerDetails);
-        this._mergeProducerDetails(data.producerDetails);
         // Write to appState so other pages and restore path can use it
-        this.appState.setCustomers(this.customers());
-        this.appState.setContracts(data.contracts);
-        this.appState.setPlantingIntentions(data.plantingIntentions);
-        this.appState.setStoredGrain(data.storedGrain);
-        this.appState.setSavedLists(data.savedLists);
+        this.customerStore.setCustomers(this.customers());
+        this.contractStore.setContracts(data.contracts);
+        this.producerStore.setPlantingIntentions(data.plantingIntentions);
+        this.producerStore.setStoredGrain(data.storedGrain);
+        this.savedListsStore.setLists(data.savedLists);
 
         this.loading.set(false);
         this.coreDataLoaded.set(true);
@@ -1468,18 +1492,18 @@ export class BuildListComponent {
     // empty. On a genuine timeout/HTTP error we now mark ticketsLoadFailed so the results area
     // can show a retry panel instead of a misleading "no producers found" (mirrors contracts).
     let ticketFetchFailed = false;
-    this.apiService.getTickets(tuParam).pipe(
+    this.contractsApi.getTickets(tuParam).pipe(
       timeout(310000),
       tap(() => {
-        this.appState.setTicketsLoadFailed(false);
-        this.appState.setSourceLoadPending(false);
+        this.contractStore.setTicketsLoadFailed(false);
+        this.contractStore.setSourceLoadPending(false);
       }),
       // A TIMEOUT is not a failure. Whichever source answers, it keeps working and caches the result, so
       // a retry shortly after succeeds - which makes "could not be loaded" a false statement. Only a real
       // error arms the failed flag; a timeout says "still loading". The 310s bound above earns its keep on
       // the CTRM path too: a cold trade-unit walk has been measured at up to 211s.
       catchError((err) => {
-        if (err?.name === 'TimeoutError') this.appState.setSourceLoadPending(true);
+        if (err?.name === 'TimeoutError') this.contractStore.setSourceLoadPending(true);
         else ticketFetchFailed = true;
         return of([] as Ticket[]);
       }),
@@ -1489,54 +1513,18 @@ export class BuildListComponent {
       if (requestId !== this._loadRequestId) return;
       if (tickets.length > 0) {
         this.tickets.set(tickets);
-        this.appState.setTickets(tickets);
-      } else if (this.appState.tickets().length > 0) {
+        this.contractStore.setTickets(tickets);
+      } else if (this.contractStore.tickets().length > 0) {
         // Timeout fired locally but the TU-wide cache already has data (e.g. another lazy
         // consumer populated it). Hydrate local from appState so the build-list filter sees
         // the real tickets instead of [].
-        this.tickets.set(this.appState.tickets());
+        this.tickets.set(this.contractStore.tickets());
       }
       // Only flag a failure when nothing usable came back at all — the appState fallback
       // above means the data genuinely arrived (via another consumer), so that's a success.
-      this.appState.setTicketsLoadFailed(ticketFetchFailed && this.tickets().length === 0);
+      this.contractStore.setTicketsLoadFailed(ticketFetchFailed && this.tickets().length === 0);
       this._ticketsReady.set(true);
     });
-  }
-
-  /** Merge ProducerDetails into customer objects (commodities, acres, bin sites, etc.). */
-  private _mergeProducerDetails(details: ProducerDetails[]): void {
-    if (details.length === 0) return;
-    const detailsMap = new Map(details.map(d => [d.customerId, d]));
-    let changed = false;
-    const merged = this.customers().map(customer => {
-      const pd = detailsMap.get(customer.id);
-      if (pd) {
-        changed = true;
-        return {
-          ...customer,
-          totalAcres: pd.totalAcres ?? customer.totalAcres,
-          binSitesModifiedAt: pd.binSitesModifiedAt ?? customer.binSitesModifiedAt,
-          primaryContact: pd.primaryContact ?? customer.primaryContact,
-          primaryPhone: pd.primaryPhone ?? customer.primaryPhone,
-          // User-entered contact rows exist only on producer details (the customer record never
-          // carries them), and the has-email / has-phone refinements read them. Same rule as the
-          // shared applyProducerDetails.
-          contacts: pd.contacts ?? customer.contacts,
-          commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
-          // Per-commodity grain-on-farm (bushels on hand + $/bu target) — carried onto the customer
-          // so the NLQ engine can filter "grain on farm" / "target" prompts client-side.
-          grainOnFarm: pd.grainOnFarm ?? customer.grainOnFarm,
-          // Bin sites (lat/long) — carried over so "producers with bin sites" filters client-side.
-          binSites: pd.binSites ?? customer.binSites,
-          linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
-        };
-      }
-      return customer;
-    });
-    if (changed) {
-      this.customers.set([...merged]);
-      // cropsByCustomer computed auto-invalidates when customers() changes
-    }
   }
 
   private _restoreUIState(): void {
@@ -1667,7 +1655,7 @@ export class BuildListComponent {
       // Only auto-log if the request form isn't open (user hasn't clicked "Request a query")
       // to avoid double-logging when they submit the form.
       if (this.filteredLibrary().length === 0 && !this.showRequestForm()) {
-        this.apiService.logQuerySearch(text.trim())
+        this.savedListsApi.logQuerySearch(text.trim())
           .pipe(takeUntilDestroyed(this.destroyRef))
           .subscribe();
         this.usageTracking.postClickEvent('interaction', 'build-a-list', 'library-search-no-match', text.trim());
@@ -1681,7 +1669,7 @@ export class BuildListComponent {
     if (!text) return;
     // Cancel any pending auto-log so we don't double-log
     if (this._searchLogTimeout) { clearTimeout(this._searchLogTimeout); this._searchLogTimeout = null; }
-    this.apiService.logQuerySearch(text)
+    this.savedListsApi.logQuerySearch(text)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
         this.toastService.success('Request submitted — we\'ll review and add it to the library');
@@ -1794,7 +1782,7 @@ export class BuildListComponent {
   private _notesReadyForQuery(r: RefinementFilters = this.appliedRefinements()): boolean {
     const scope = this._noteScope(r);
     if (scope.mode === 'none' || scope.mode === 'batched') return true;
-    if (scope.mode === 'full') return this.appState.notesLoaded();
+    if (scope.mode === 'full') return this.engagementStore.notesLoaded();
     return this._loadedNoteScopeKey() === scope.key;
   }
 
@@ -1810,8 +1798,8 @@ export class BuildListComponent {
     if (this._dpReady() || this._dpFetchInFlight) return;
     // The TU preload may already have filled the shared cache while this page's local copy is empty.
     // Adopt it rather than re-fetching the same rows.
-    if (this.appState.dpContractsLoaded()) {
-      this.dpContracts.set(this.appState.dpContracts());
+    if (this.producerStore.dpContractsLoaded()) {
+      this.dpContracts.set(this.producerStore.dpContracts());
       this._dpReady.set(true);
       return;
     }
@@ -1825,21 +1813,21 @@ export class BuildListComponent {
     const fetchedForTu = tu.join(',');
     const isStale = () => this.tradeUnitContext.selectedTradeUnits().join(',') !== fetchedForTu;
 
-    this.apiService.getDpContracts(tuParam).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.producersApi.getDpContracts(tuParam).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this._dpFetchInFlight = false;
         if (isStale()) return;
         this.dpContracts.set(data ?? []);
-        this.appState.setDpContracts(data ?? []);  // also flips dpContractsLoaded
-        this.appState.setDpContractsLoadFailed(false);
+        this.producerStore.setDpContracts(data ?? []);  // also flips dpContractsLoaded
+        this.producerStore.setDpContractsLoadFailed(false);
         this._dpReady.set(true);                   // re-triggers _dataReadyEffect to run the query
       },
       error: () => {
         this._dpFetchInFlight = false;
         if (isStale()) return;
         this.dpContracts.set([]);
-        this.appState.setDpContracts([]);          // loaded-but-empty, not "still loading"
-        this.appState.setDpContractsLoadFailed(true); // ...and says so, or a DP prompt answers "none"
+        this.producerStore.setDpContracts([]);          // loaded-but-empty, not "still loading"
+        this.producerStore.setDpContractsLoadFailed(true); // ...and says so, or a DP prompt answers "none"
         this._dpReady.set(true);
       }
     });
@@ -1864,7 +1852,7 @@ export class BuildListComponent {
     // still counts (same reason batched mode omits TU), and the by-me set is small so it's free to
     // fetch all. Other scoped fetches (content / window / pinned) keep the TU scope.
     const tuParam = scope.opts.authorAny ? undefined : (tu.length > 0 ? tu : undefined);
-    this.apiService.getNotes(tuParam, scope.opts).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.engagementApi.getNotes(tuParam, scope.opts).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this._scopedNotesFetchInFlight = false;
         this.notes.set(data ?? []);            // DISPLAY only — do NOT warm the full-set cache
@@ -1913,7 +1901,7 @@ export class BuildListComponent {
     this._batchNotesFetchInFlight = true;
     // No trade-unit filter — like the full-set load and the last-contact aggregate, fetch ALL
     // notes for these customerIds so a linked producer's note in an unselected TU is never missed.
-    this.apiService.getNotes(undefined, { customerIds: ids }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.engagementApi.getNotes(undefined, { customerIds: ids }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this._batchNotesFetchInFlight = false;
         for (const id of ids) this._batchedNoteCustomerIds.add(id);
@@ -1935,24 +1923,24 @@ export class BuildListComponent {
    *  _dataReadyEffect to run the parked query. On error it marks the cache loaded (empty) so
    *  the spinner clears and the query proceeds rather than hanging. */
   private _ensureNotesLoaded(): void {
-    if (this.appState.notesLoaded()) {
+    if (this.engagementStore.notesLoaded()) {
       // Cache warm elsewhere (home/customer-list) — sync the local signal if we missed it.
-      if (this.notes().length !== this.appState.notes().length) this.notes.set(this.appState.notes());
+      if (this.notes().length !== this.engagementStore.notes().length) this.notes.set(this.engagementStore.notes());
       return;
     }
     if (this._notesFetchInFlight) return;
     this._notesFetchInFlight = true;
-    this.apiService.getNotes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.engagementApi.getNotes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this._notesFetchInFlight = false;
         const list = data ?? [];
-        this.appState.setNotes(list); // sets notesLoaded = true
+        this.engagementStore.setNotes(list); // sets notesLoaded = true
         this.notes.set(list);         // re-triggers _dataReadyEffect
       },
       error: () => {
         this._notesFetchInFlight = false;
         // Give up rather than strand the spinner — run against an empty set (genuine no-match).
-        this.appState.setNotes([]);
+        this.engagementStore.setNotes([]);
         this.notes.set([]);
       }
     });
@@ -1980,7 +1968,7 @@ export class BuildListComponent {
     // authors, or pinned flags (noteFilterActive). Recency filtering uses the last-contact
     // aggregate and non-note prompts never touch notes, so neither waits on the full set.
     // notesLoaded (not length) distinguishes "not fetched" from "TU genuinely has none".
-    const notesReady = !needsNotes || this.appState.notesLoaded();
+    const notesReady = !needsNotes || this.engagementStore.notesLoaded();
     if (tusMatch && this.coreDataLoaded() && this.customers().length > 0 && ticketsOk && storageOk && dpOk && notesOk && notesReady) {
       this._resolvePendingIncludes();
       // Async coverage queries own isProcessing until their fetch resolves (see _applyNlqFilter).
@@ -1992,45 +1980,45 @@ export class BuildListComponent {
     // Only hit the notes endpoint when this query/refine actually needs note content AND the
     // shared cache is cold — otherwise reuse (or skip) it. Non-note and recency-only prompts
     // never download the full set.
-    const fetchingNotes = needsNotes && !this.appState.notesLoaded();
+    const fetchingNotes = needsNotes && !this.engagementStore.notesLoaded();
     let ticketFetchFailed = false;
     forkJoin({
-      customers: this.apiService.getCustomers(tuParam).pipe(
-        tap(() => this.appState.setCustomersLoadFailed(false)),
-        catchError(() => { this.appState.setCustomersLoadFailed(true); return of([] as Customer[]); })),
-      contracts: this.apiService.getContracts(tuParam).pipe(
-        tap(() => this.appState.setContractsLoadFailed(false)),
-        catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })),
-      tickets: this.apiService.getTickets(tuParam).pipe(
-        tap(() => this.appState.setTicketsLoadFailed(false)),
+      customers: this.customersApi.getCustomers(tuParam).pipe(
+        tap(() => this.customerStore.setCustomersLoadFailed(false)),
+        catchError(() => { this.customerStore.setCustomersLoadFailed(true); return of([] as Customer[]); })),
+      contracts: this.contractsApi.getContracts(tuParam).pipe(
+        tap(() => this.contractStore.setContractsLoadFailed(false)),
+        catchError(() => { this.contractStore.setContractsLoadFailed(true); return of([] as Contract[]); })),
+      tickets: this.contractsApi.getTickets(tuParam).pipe(
+        tap(() => this.contractStore.setTicketsLoadFailed(false)),
         catchError(() => { ticketFetchFailed = true; return of([] as Ticket[]); })),
-      plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(
-        tap(() => this.appState.setPlantingIntentionsLoadFailed(false)),
-        catchError(() => { this.appState.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); })),
+      plantingIntentions: this.producersApi.getPlantingIntentions(tuParam).pipe(
+        tap(() => this.producerStore.setPlantingIntentionsLoadFailed(false)),
+        catchError(() => { this.producerStore.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); })),
       notes: fetchingNotes
-        ? this.apiService.getNotes().pipe(catchError(() => of([] as Note[])))
-        : of(this.appState.notes()),
-      storedGrain: this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
-      dpContracts: this.apiService.getDpContracts(tuParam).pipe(
-        tap(() => this.appState.setDpContractsLoadFailed(false)),
-        catchError(() => { this.appState.setDpContractsLoadFailed(true); return of([] as DpContract[]); })),
-      producerDetails: (this.appState.producerDetails().length > 0 ? of(this.appState.producerDetails()) : this.apiService.getAllProducerDetails()).pipe(catchError(() => of([] as ProducerDetails[])))
+        ? this.engagementApi.getNotes().pipe(catchError(() => of([] as Note[])))
+        : of(this.engagementStore.notes()),
+      storedGrain: this.producersApi.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
+      dpContracts: this.producersApi.getDpContracts(tuParam).pipe(
+        tap(() => this.producerStore.setDpContractsLoadFailed(false)),
+        catchError(() => { this.producerStore.setDpContractsLoadFailed(true); return of([] as DpContract[]); })),
+      // Every producer's details, read only when none are held yet; the prompts read them through ProducerProfiles.
+      producerDetails: (this.producerProfiles.profiles().size > 0 ? of([] as ProducerDetails[]) : this.producerProfiles.load()).pipe(catchError(() => of([] as ProducerDetails[])))
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         if (queryGen !== this._queryGenId) return; // Superseded by a newer query
         this.customers.set(data.customers);
-        this._mergeProducerDetails(data.producerDetails);
         this.contracts.set(data.contracts);
         this.tickets.set(data.tickets);
-        this.appState.setTicketsLoadFailed(ticketFetchFailed && data.tickets.length === 0);
+        this.contractStore.setTicketsLoadFailed(ticketFetchFailed && data.tickets.length === 0);
         this.notes.set(data.notes);
         // Warm the shared lazy cache so other consumers (home enrichment, customer-list
         // saved lists) and this page's next query skip the download.
-        if (fetchingNotes) this.appState.setNotes(data.notes);
+        if (fetchingNotes) this.engagementStore.setNotes(data.notes);
         this.plantingIntentions.set(data.plantingIntentions);
         this.storedGrain.set(data.storedGrain);
         this.dpContracts.set(data.dpContracts);
-        this.appState.setDpContracts(data.dpContracts);
+        this.producerStore.setDpContracts(data.dpContracts);
         this._dpReady.set(true);
         this._ticketsReady.set(true);
         this._storageReady.set(true);
@@ -2105,11 +2093,12 @@ export class BuildListComponent {
       ?? this.msalService.instance.getAllAccounts()[0];
     const context: NlqFilterContext = {
       customers: this.customers(),
+      producerProfiles: this.producerProfiles.profiles(),
       contracts: this.contracts(),
       tickets: this.tickets(),
       notes: this.notes(),
-      noteLastContacts: this.appState.noteLastContacts(),
-      myReminders: this.appState.myReminders(),
+      noteLastContacts: this.engagementStore.noteLastContacts(),
+      myReminders: this.engagementStore.myReminders(),
       plantingIntentions: this.plantingIntentions(),
       storedGrain: this.storedGrain(),
       dpContracts: this.dpContracts(),
@@ -2290,7 +2279,7 @@ export class BuildListComponent {
       if (this._loadedNoteScopeKey() !== scope.key) this._ensureNotesForQuery();
     } else if (scope.mode === 'full') {
       if (this._loadedNoteScopeKey() !== '') {
-        this.notes.set(this.appState.notes());
+        this.notes.set(this.engagementStore.notes());
         this._loadedNoteScopeKey.set('');
       }
       this._ensureNotesLoaded();
@@ -2423,8 +2412,7 @@ export class BuildListComponent {
     const allCustomers = this.customers();
     const matchesTerm = (c: Customer) =>
       c.name.toLowerCase().includes(lower) ||
-      (c.scoularId || '').toLowerCase().includes(lower) ||
-      (c.farm || '').toLowerCase().includes(lower);
+      (c.scoularId || '').toLowerCase().includes(lower);
 
     this.memberInResultsMatches.set(
       allCustomers
@@ -2441,7 +2429,7 @@ export class BuildListComponent {
     this._cancelMemberSearch$.next();
     this._memberSearchTimeout = setTimeout(() => {
       const tus = this.effectiveTradeUnits();
-      this.apiService.searchCustomers(term, tus.length > 0 ? tus : undefined)
+      this.customersApi.searchCustomers(term, tus.length > 0 ? tus : undefined)
         .pipe(takeUntil(this._cancelMemberSearch$), takeUntilDestroyed(this.destroyRef))
         .subscribe({
           next: (results) => {
@@ -2556,13 +2544,13 @@ export class BuildListComponent {
     // on where the user had browsed, and applied one year's yield to every year's acres.
     const tuKey = [...tuParam].sort().join(',');
     forkJoin({
-      contracts: forkJoin(years.map(y => this.apiService.getContractsByCropYear(y, tus).pipe(
+      contracts: forkJoin(years.map(y => this.contractsApi.getContractsByCropYear(y, tus).pipe(
         // Flagged rather than silently empty: this feeds the planting-coverage view, where [] reads as
         // "nobody has contracts for this crop year".
-        catchError(() => { this.appState.setContractsLoadFailed(true); return of([] as Contract[]); })
+        catchError(() => { this.contractStore.setContractsLoadFailed(true); return of([] as Contract[]); })
       ))),
       estimates: tuKey
-        ? forkJoin(years.map(y => this.apiService.getDashboardPlantingEstimates(tuKey, y).pipe(
+        ? forkJoin(years.map(y => this.producersApi.getDashboardPlantingEstimates(tuKey, y).pipe(
             catchError(() => of([] as DashboardPlantingEstimate[]))
           )))
         : of([] as DashboardPlantingEstimate[][]),
@@ -2631,8 +2619,8 @@ export class BuildListComponent {
     const payload = { name: this.newListName(), ...this._listPayload() };
 
     const request$ = this.activeSavedList()
-      ? this.apiService.updateSavedList(this.activeSavedList()!.id, payload)
-      : this.apiService.createSavedList(payload);
+      ? this.savedListsApi.updateSavedList(this.activeSavedList()!.id, payload)
+      : this.savedListsApi.createSavedList(payload);
 
     // Clear state immediately so navigating away before the API responds
     // doesn't leave stale results in the build list state cache.
@@ -2665,7 +2653,7 @@ export class BuildListComponent {
     this.teamMembers.set([]);
     this.showBuildForDialog.set(true);
     this.teamMembersLoading.set(true);
-    this.apiService.getTeamMembers(tus.join(',')).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.savedListsApi.getTeamMembers(tus.join(',')).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (members) => { this.teamMembers.set(members); this.teamMembersLoading.set(false); },
       error: err => { this.teamMembersLoading.set(false); if (!alreadyShown(err)) this.toastService.error('Failed to load team members'); }
     });
@@ -2726,7 +2714,7 @@ export class BuildListComponent {
     const tus = tradeUnitsCsv?.trim();
     if (!tus) return;
     this.teamMembersLoading.set(true);
-    this.apiService.getTeamMembers(tus).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.savedListsApi.getTeamMembers(tus).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (members) => { this.teamMembers.set(members); this.teamMembersLoading.set(false); },
       error: err => { this.teamMembersLoading.set(false); if (!alreadyShown(err)) this.toastService.error('Failed to load team members'); }
     });
@@ -2754,7 +2742,7 @@ export class BuildListComponent {
     const wasBuildFor = this.buildingForMembers().length > 0;
     this.assigning.set(true);
     this.usageTracking.postClickEvent('interaction', 'build-a-list', 'assign-list');
-    this.apiService.assignSavedList({ ...base, name, targetUserIds: targets })
+    this.savedListsApi.assignSavedList({ ...base, name, targetUserIds: targets })
       .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (created) => {
           this.assigning.set(false);
@@ -2797,12 +2785,12 @@ export class BuildListComponent {
     // user's own lists (savedLists) or, for a manager, a teammate's list (teamSavedLists).
     this.savedLists.update(lists => lists.filter(l => l.id !== listId));
     this.teamSavedLists.update(lists => lists.filter(l => l.id !== listId));
-    this.appState.setSavedLists(this.savedLists());
+    this.savedListsStore.setLists(this.savedLists());
     if (this.activeSavedList()?.id === listId) {
       this.activeSavedList.set(null);
     }
 
-    this.apiService.deleteSavedList(listId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.savedListsApi.deleteSavedList(listId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.toastService.info('List deleted');
       },
@@ -2815,10 +2803,10 @@ export class BuildListComponent {
   }
 
   private _refreshSavedLists(): void {
-    this.apiService.getSavedLists().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.savedListsApi.getSavedLists().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this.savedLists.set(data);
-        this.appState.setSavedLists(data);
+        this.savedListsStore.setLists(data);
       },
       error: err => { if (!alreadyShown(err)) this.toastService.error('Failed to refresh lists'); }
     });
@@ -2832,7 +2820,7 @@ export class BuildListComponent {
       this.teamSavedLists.set([]);
       return;
     }
-    this.apiService.getTeamSavedLists(tus.join(',')).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.savedListsApi.getTeamSavedLists(tus.join(',')).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => this.teamSavedLists.set(data),
       error: () => { /* supplementary view — leave the prior set in place */ }
     });
@@ -2949,7 +2937,7 @@ export class BuildListComponent {
 
   getLastContactInfo(customerId: number): { text: string; colorClass: string; daysAgo: number } {
     // The badges read only the last-contact aggregate; if that failed to load, "no row" means unknown.
-    const unknown = this.appState.noteLastContactsLoadFailed() && this.appState.noteLastContacts().length === 0;
+    const unknown = this.engagementStore.noteLastContactsLoadFailed() && this.engagementStore.noteLastContacts().length === 0;
     return this.lastContactByCustomer().get(customerId)
       ?? (unknown
         ? { text: 'Last contact unavailable', colorClass: 'text-gray-400 dark:text-gray-500', daysAgo: Infinity }
@@ -2962,7 +2950,7 @@ export class BuildListComponent {
 
   /** Per-crop grain on farm with bushels on hand, largest first — see grainOnFarmBreakdown (utils). */
   grainOnFarmBreakdown(customer: Customer): GrainOnFarmItem[] {
-    return grainOnFarmBreakdown(customer);
+    return grainOnFarmBreakdown(this.producerProfiles.profileOf(customer.id));
   }
 
   /** Storage receipts grouped by numeric customerId (StoredGrain joins on Customer.id, not scoularId). */
@@ -3059,7 +3047,7 @@ export class BuildListComponent {
     if (this.showGrainOnFarmFilters()) {
       // Only how many bin sites the producer has (a neutral chip — it is not a crop). The crops are in the
       // bin-site breakdown next to the name, so no per-crop chips here (user 2026-10-12: too much at once).
-      const sites = customer.binSites?.length ?? 0;
+      const sites = this.producerProfiles.profileOf(customer.id)?.binSites?.length ?? 0;
       return [{ text: sites > 0 ? `${sites} bin site${sites === 1 ? '' : 's'}` : 'No bin sites', colorKey: '', neutral: true }];
     }
     return [];
@@ -3128,12 +3116,18 @@ export class BuildListComponent {
   }
 
   hasBinSiteGrain(customer: Customer): boolean {
-    return hasBinSiteGrain(customer);
+    return hasBinSiteGrain(this.producerProfiles.profileOf(customer.id));
   }
 
-  /** The rows of a producer's breakdown — see binSiteGrainBreakdown in shared/utils/grain-on-farm. */
+  /** A producer's farm acres, from their saved details; 0 without any. */
+  acresOf(customer: Customer): number {
+    return this.producerProfiles.profileOf(customer.id)?.totalAcres ?? 0;
+  }
+
+  /** The rows of a producer's breakdown — see binSiteGrainBreakdown in features/producers/utils/grain-on-farm. */
   binSiteGrainBreakdown(customer: Customer): BinSiteGrainGroup[] {
-    return binSiteGrainBreakdown(customer.binSites, customer.grainOnFarm);
+    const profile = this.producerProfiles.profileOf(customer.id);
+    return binSiteGrainBreakdown(profile?.binSites, profile?.grainOnFarm);
   }
 
   /**

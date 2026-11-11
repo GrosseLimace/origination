@@ -10,7 +10,7 @@ import {
   TableComponent, TableHeaderComponent, TableBodyComponent,
   TableRowComponent, TableHeadComponent, TableCellComponent
 } from '@shared/components/table/table.component';
-import { UserUsageDetail, RecentActivity } from '@models';
+import { UserUsageDetail, RecentActivity } from '../../models/usage-dashboard.model';
 
 import {
   formatDayLabel, formatFeatureLabel, formatLastActive, formatSessionDuration,

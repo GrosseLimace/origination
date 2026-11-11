@@ -7,7 +7,7 @@ import { signal } from '@angular/core';
 import { UsageDashboardApiService } from '../../data-access/usage-dashboard-api.service';
 import { ToastService } from '@core/services/toast.service';
 import { PermissionService } from '@core/access/permission.service';
-import { UsageDashboardUser, UsageManager } from '@models';
+import { UsageDashboardUser, UsageManager } from '../../models/usage-dashboard.model';
 
 import { UsageDashboardComponent } from './usage-dashboard.component';
 

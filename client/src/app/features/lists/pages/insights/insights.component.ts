@@ -5,7 +5,9 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { debounceTime, filter, pairwise, take } from 'rxjs/operators';
 import { AppStateService } from '@core/services/app-state.service';
-import { DataPreloadService } from '@core/services/data-preload.service';
+import { ContractStore } from '@features/contracts';
+import { CustomerStore } from '@features/customers';
+import { DataPreloadService } from '@core/context/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket } from '@models';
@@ -143,6 +145,9 @@ function expandSearchTermWithAliases(term: string): string[] {
 })
 export class InsightsComponent {
   private readonly appState = inject(AppStateService);
+  /** The trade units' contracts and tickets, kept by the Contracts module. */
+  private readonly contractStore = inject(ContractStore);
+  private readonly customerStore = inject(CustomerStore);
   private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly dataPreloadService = inject(DataPreloadService);
   private readonly toastService = inject(ToastService);
@@ -150,25 +155,27 @@ export class InsightsComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly usageTracking = inject(UsageTrackingService);
 
-  // Read directly from appState — DataPreloadService populates these on TU change
-  readonly customers = this.appState.customers;
-  readonly contracts = this.appState.contracts;
-  readonly todaysTickets = this.appState.todaysTickets;
+  // Read directly from the shared caches — the trade-unit load populates these on TU change
+  readonly customers = this.customerStore.customers;
+  readonly contracts = this.contractStore.contracts;
+  readonly todaysTickets = this.contractStore.todaysTickets;
   readonly commodities = this.appState.commodities;
   // Page shell waits only on customers (needed to group every category). Once customers are
   // in, the three cards render and each shows its OWN skeleton until its data arrives.
-  readonly isLoading = computed(() => this.appState.customersLoading());
+  readonly isLoading = computed(() => this.customerStore.customersLoading());
   // Per-category loading so a slow dataset only spins its own card:
   //   - Spot Loads is ticket-derived → waits on today's tickets (the slow ODS scan).
   //   - Unconfirmed Contracts + Unshipped Bushels are contract-derived → wait on contracts.
   // So when contracts land first, those two render while Spot Loads keeps spinning.
   isCategoryLoading(category: InsightCategory): boolean {
     return category === 'SpotLoads'
-      ? this.appState.todaysTicketsLoading()
-      : this.appState.contractsLoading();
+      ? this.contractStore.todaysTicketsLoading()
+      : this.contractStore.contractsLoading();
   }
   isBackgroundRefreshing = signal(false);
-  private readonly _dataLoading$ = toObservable(this.appState.dataLoading);
+  /** True until the core data (customers, contracts and today's tickets) has all arrived. */
+  private readonly _dataLoading$ = toObservable(computed(() =>
+    this.customerStore.customersLoading() || this.contractStore.contractsLoading() || this.contractStore.todaysTicketsLoading()));
   loadedAt = signal<Date | null>(null);
 
   expandedCategories = signal(new Set<InsightCategory>());

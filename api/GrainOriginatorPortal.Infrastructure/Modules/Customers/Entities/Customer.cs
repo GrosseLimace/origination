@@ -37,13 +37,8 @@ public class Customer
     public string? ExtendedStateProvince { get; set; }
     public string? ExtendedCountry { get; set; }
 
-    // Additional fields
-    public int TotalAcres { get; set; }
-    public List<string> FarmIds { get; set; } = new();
-
-    [JsonPropertyName("linkedProducerIds")]
-    public List<string> LinkedProducerIds { get; set; } = new();
-
+    // Additional fields. A producer's acres and links are their saved details (ProducerDetails, CustomerLink), which the
+    // Producers module serves; the customer doesn't carry them.
     public bool ESignEnabled { get; set; }
     public string? ScoularViewRecipients { get; set; }  // Comma-separated "Name | email/phone", populated from dbo.eSignEnrollment
     public string? Guild { get; set; }                   // Guild name, populated from dbo.eSignEnrollment
@@ -68,7 +63,6 @@ public class Customer
     public Coordinates? Coordinates { get; set; }
 
     // ODS metadata fields
-    public string Farm { get; set; } = string.Empty;
     public string? IndustryCode1 { get; set; } // Used to filter producer customers (PR)
     public string? IndustryCode2 { get; set; }  // 'OR' marks a certified-organic operation
     public string? NopIdNumber { get; set; }    // National Organic Program operation id ('0' placeholders normalised to null)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BarchartCatalogLocation } from '@models';
+import { BarchartCatalogLocation } from '../models/barchart.model';
 import { barchartDisplayName, barchartSaveName, barchartSiteLabel, isScoularListing } from './barchart-location-name';
 
 function location(overrides: Partial<BarchartCatalogLocation> = {}): BarchartCatalogLocation {

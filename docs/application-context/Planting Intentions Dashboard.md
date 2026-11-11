@@ -45,8 +45,8 @@ A recent normalization pass also cleaned up plural/singular inconsistencies in t
 ```mermaid
 flowchart LR
     UI[Dashboard component]
-    Cached[(AppStateService<br/>customers, contracts,<br/>plantingIntentions)]
-    Fresh[apiService.getDashboardSummary / Estimates / MarketShares / ActualHarvest /<br/>getContractsByCropYear / getCommodities]
+    Cached[(CustomerStore, ContractStore,<br/>ProducerStore<br/>customers, contracts,<br/>plantingIntentions, storedGrain)]
+    Fresh[producersApi.getDashboardSummary / Estimates / MarketShares / ActualHarvest /<br/>contractsApi.getContractsByCropYear / apiService.getCommodities]
     CTL[DashboardPlantingEstimatesController]
     SVC[DashboardService, Producers module<br/>ContractService for crop-year contracts]
     APP[(dbo.DashboardPlantingEstimates,<br/>dbo.DashboardMarketShares,<br/>dbo.DashboardActualHarvests,<br/>dbo.Commodities,<br/>dbo.ProducerPlantingIntentions)]
@@ -63,10 +63,10 @@ flowchart LR
 Every row in `dbo.ProducerPlantingIntentions` carries the trade unit it was recorded **for**. A producer on two trade units (say Pratt and Tribune) plants different acres for each, so:
 
 - **Saving.** The Planting tab's Add/Edit dialogs offer the *producer's own* active trade units (`GET /api/customers/{id}/trade-units`), not the header filter. One option → filled in read-only; several → the originator picks, preselected when exactly one of them is selected in the header. The API (`PlantingIntentionService.ResolveTradeUnitAsync`) keeps the choice only if it is one of the producer's active `CustomerTradeUnit` rows (400 otherwise); with no choice it defaults to the producer's first trade unit by code. This is a data-integrity rule, not an access check (AR-01/AR-02). An existing row's trade unit can be changed in the Edit dialog.
-- **Counting here.** Every acre figure on this page (`filteredIntentionsForYear`, `acresTrend`, `availableCrops`, `producersWithoutIntentionsRows`, `_calculateYieldRows`) keeps the producer-membership check **and** requires the row's trade unit to be in scope (`shared/utils/planting-trade-unit-filter.ts`). Tribune therefore shows only Tribune acres; Pratt + Tribune together counts each row once. The Producers tab row shows the trade units of the rows it is summing.
+- **Counting here.** Every acre figure on this page (`filteredIntentionsForYear`, `acresTrend`, `availableCrops`, `producersWithoutIntentionsRows`, `_calculateYieldRows`) keeps the producer-membership check **and** requires the row's trade unit to be in scope (`features/producers/utils/planting-trade-unit-filter.ts`). Tribune therefore shows only Tribune acres; Pratt + Tribune together counts each row once. The Producers tab row shows the trade units of the rows it is summing.
 - **Not counting here.** The producer profile, Build-A-List / prompts, print report and growth-opportunity card still show the producer's whole farm; they use the same `GET /api/plantingintentions?tradeUnits=` endpoint, whose "customers in the trade unit → all their rows" semantics are unchanged.
 - **Losing a trade unit.** Removing a trade unit does not unplant the acres, so the producer-details dialog asks where they should count instead. When the removed trade unit has intentions against it, the dialog shows the count, acres and crop years and offers the producer's remaining trade units; choosing one calls `POST /api/plantingintentions/retag` on Save, which moves every row in one statement. Declining leaves them where they are. Only trade units that are *already* active memberships are offered as destinations, so a move can never race an assignment made in the same dialog. **This cannot cover every case**: the nightly `CustomerSyncService` deactivates a sync-sourced membership as soon as it leaves `originations.vw_CustomerTradeUnits`, with no user present to ask. We deliberately do **not** lock a trade unit that has planting intentions — membership reflects whether the producer trades there (a CTRM fact), our intentions are a forward-looking note, and historical rows would otherwise lock a trade unit permanently.
-- **Legacy and stranded rows.** Before this rule the API stamped whichever membership SQL returned first, so rows of multi-trade-unit producers may be tagged arbitrarily. A blank-tagged row still counts under membership (pre-fix behaviour). A row tagged to a trade unit the producer has since left counts on no single-territory view until re-tagged; it stays on the profile, and the Edit dialog lists that tag as "(no longer assigned)" so it can be corrected. Whether such rows should instead fall back to the producer's remaining trade unit is an open business question — the switch point is the one helper in `shared/utils/planting-trade-unit-filter.ts`. `scripts/planting-intentions-trade-unit-audit.sql` (read-only) lists ambiguous, orphaned and blank rows for the business to review.
+- **Legacy and stranded rows.** Before this rule the API stamped whichever membership SQL returned first, so rows of multi-trade-unit producers may be tagged arbitrarily. A blank-tagged row still counts under membership (pre-fix behaviour). A row tagged to a trade unit the producer has since left counts on no single-territory view until re-tagged; it stays on the profile, and the Edit dialog lists that tag as "(no longer assigned)" so it can be corrected. Whether such rows should instead fall back to the producer's remaining trade unit is an open business question — the switch point is the one helper in `features/producers/utils/planting-trade-unit-filter.ts`. `scripts/planting-intentions-trade-unit-audit.sql` (read-only) lists ambiguous, orphaned and blank rows for the business to review.
 
 ## Files
 
@@ -81,6 +81,8 @@ Every row in `dbo.ProducerPlantingIntentions` carries the trade unit it was reco
 
 ### API service methods called
 
+The dashboard's calls and the planting intentions are on the Producers module's `ProducersApiService` (`features/producers/data-access`); its summary, market-share and harvest models are Producers' own (`features/producers/models`).
+
 - `getDashboardSummary(tradeUnitKey, plantingYear)` — bundled fetch of estimates + market shares + actual harvest, used to render the dashboard quickly on entry.
 - `getDashboardPlantingEstimates(tradeUnitKey, plantingYear)` — refresh after edits.
 - `upsertDashboardPlantingEstimates(estimates)` — save yield estimates.
@@ -88,7 +90,7 @@ Every row in `dbo.ProducerPlantingIntentions` carries the trade unit it was reco
 - `getDashboardActualHarvest` / `upsertDashboardActualHarvest` / `deleteDashboardActualHarvest`.
 - `getContractsByCropYear(cropYear, tradeUnits?)` — historical contracts for the selected planting year.
 - `getCommodities()` — crop catalog.
-- Plus the cached signals from `AppStateService` for `customers`, `contracts`, `plantingIntentions`.
+- Plus the cached signals: the customers from `CustomerStore`, the contracts and their loading flags from the Contracts module's `ContractStore` (`@features/contracts`), whose `ContractsApiService` also reads a crop year's contracts, and the trade units' planting intentions and stored grain, with the planting read's failure flag, from the Producers module's `ProducerStore`, which Producers' preload fills (the dashboard reads the planting itself only when none has landed), and, for the producers without intentions, when each was last contacted, from the Engagement module's `EngagementStore` (`@features/engagement`).
 
 ### Controller endpoints
 
@@ -126,10 +128,10 @@ Unique-ish constraints exist on `(TradeUnitKey, PlantingYear, Crop|CropCategory)
 
 | Action | Trigger | Payload | Method |
 | --- | --- | --- | --- |
-| Save yield estimates | Edit mode in By Crop tab → "Save" | `Array<{ tradeUnitKey, crop, plantingYear, yieldEstimate? }>` | `apiService.upsertDashboardPlantingEstimates` |
-| Save market share | "Set Season Targets" dialog → save | `Array<{ tradeUnitKey, cropCategory, plantingYear, marketSharePct? }>` | `apiService.upsertDashboardMarketShares` |
-| Save actual harvest row | Harvest tab edit → save | `Array<{ tradeUnitKey, cropCategory, plantingYear, bushels }>` | `apiService.upsertDashboardActualHarvest` |
-| Delete actual harvest row | Trash icon | `id` | `apiService.deleteDashboardActualHarvest` |
+| Save yield estimates | Edit mode in By Crop tab → "Save" | `Array<{ tradeUnitKey, crop, plantingYear, yieldEstimate? }>` | `producersApi.upsertDashboardPlantingEstimates` |
+| Save market share | "Set Season Targets" dialog → save | `Array<{ tradeUnitKey, cropCategory, plantingYear, marketSharePct? }>` | `producersApi.upsertDashboardMarketShares` |
+| Save actual harvest row | Harvest tab edit → save | `Array<{ tradeUnitKey, cropCategory, plantingYear, bushels }>` | `producersApi.upsertDashboardActualHarvest` |
+| Delete actual harvest row | Trash icon | `id` | `producersApi.deleteDashboardActualHarvest` |
 | Switch year | Prev / Next buttons | n/a | re-fetches contracts + summary for new year |
 | Switch tab | tab pill | n/a | `usageTracking.trackDashboardTabClick(tabKey)` |
 | Open producer profile | producer row | n/a | navigate to `/?customerId=...&tab=planting&year=...` |
@@ -153,7 +155,7 @@ The "system" username has historically been used for `Created/ModifiedBy` on das
 
 | Symptom | Likely cause | First place to look |
 | --- | --- | --- |
-| Stat cards say 0 acres / 0 producers | `selectedTradeUnits()` empty or `plantingIntentions` not yet loaded | TU selector + `dataLoading()` |
+| Stat cards say 0 acres / 0 producers | `selectedTradeUnits()` empty or `ProducerStore.plantingIntentions` not yet loaded (Producers' preload) | TU selector + the loading flags (`CustomerStore.customersLoading`, `contractsLoading`, `todaysTicketsLoading`) |
 | Filter by Crop dropdown shows duplicate `WHEAT` and `Wheat` | A contract row in ODS still uses ALL CAPS that the title-case helper isn't catching, or a stale entry in the App DB. Remember Prod hasn't run the cleanup yet. | `availableCrops` computed; the SQL audit query under "Crop title-casing" |
 | Saved estimate disappears after refresh | Upsert hit a unique constraint and one row was overwritten. | Check `Created/ModifiedAt` columns; verify only one `(TradeUnitKey, Crop, PlantingYear)` row per crop |
 | "By Crop" tab shows different totals than "Producers" tab | Categorization mismatch (planting intentions use `category`, contracts use `commodityGroup` / `commodityDescription`). The `_toTitleCase` helper merges them, but only if both side's strings normalize to the same thing. | `availableCrops` computed; check both signal sources |

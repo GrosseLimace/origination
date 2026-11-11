@@ -23,6 +23,7 @@
       "@shared/*": ["./src/app/shared/*"],
       "@features/bid-sheet": ["./src/app/features/bid-sheet/index.ts"],
       "@features/calculators": ["./src/app/features/calculators/index.ts"],
+      "@features/contracts": ["./src/app/features/contracts/index.ts"],
       "@features/customers": ["./src/app/features/customers/index.ts"],
       "@features/engagement": ["./src/app/features/engagement/index.ts"],
       "@features/help": ["./src/app/features/help/index.ts"],

@@ -1,20 +1,31 @@
+import { SavedListsApiService } from '../../data-access/saved-lists-api.service';
+import { SavedListsStore } from '../../data-access/saved-lists.store';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { MsalService } from '@azure/msal-angular';
 import { Observable, Subject, of, throwError } from 'rxjs';
+import { map, tap } from 'rxjs/operators';
 import { BuildListComponent } from './build-list.component';
 import { ApiService } from '@core/services/api.service';
+import { ContractsApiService } from '@features/contracts';
 import { AppStateService } from '@core/services/app-state.service';
-import { DataPreloadService } from '@core/services/data-preload.service';
+import { ProducerStore, ProducersApiService } from '@features/producers';
+import { EngagementApiService, EngagementStore } from '@features/engagement';
+import { DataPreloadService } from '@core/context/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
+import { ProducerFixture, ProducerProfilesFake, producerProfilesFake, profilesOf, provideProducerProfiles, withFixtureProfile } from '@testing/producer-profiles.fake';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
-import { NlqFilterContext, NlqFilterResult, NlqFilterService } from '@core/services/nlq-filter.service';
-import { Contract, Customer, NoteLastContact, QueryLibraryItem, RefinementFilters, SavedList, Ticket } from '@models';
+import { NlqFilterContext, NlqFilterResult, NlqFilterService } from '../../nlq/nlq-filter.service';
+import { Contract, Customer, NoteLastContact, ProducerDetails, Ticket } from '@models';
+import { RefinementFilters } from '../../models/refine-filters.model';
+import { QueryLibraryItem } from '../../models/query-library.model';
+import { SavedList } from '../../models/saved-list.model';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { BuildListStore } from '../../data-access/build-list.store';
+import { CustomersApiService } from '@features/customers';
 
 // Behaviour safety net for the Build a List page ahead of its OnPush conversion and decomposition.
 // Everything is driven through public methods / signals / computeds and the REAL rendered template,
@@ -32,11 +43,15 @@ import { BuildListStore } from '../../data-access/build-list.store';
 const NOW = new Date('2026-10-13T12:00:00');
 const DAY = 24 * 60 * 60 * 1000;
 
-function makeCustomer(over: Partial<Customer> & Pick<Customer, 'id' | 'name'>): Customer {
-  return {
-    scoularId: `C${over.id}`, farm: '', location: '', phone: '', email: '', totalAcres: 0,
-    linkedProducerIds: [], eSignEnabled: false, achEnabled: false, ...over,
-  };
+/** A producer. Their acres, commodities, links, contacts, bin sites and grain on farm are their saved details, which
+ *  givenCustomers serves from the details read alongside them. */
+function makeCustomer(
+  { totalAcres, commodities, linkedProducerIds, contacts, primaryContact, primaryPhone, binSites, binSitesModifiedAt, grainOnFarm, ...over }:
+    Partial<Customer> & Pick<Customer, 'id' | 'name'> & ProducerFixture,
+): Customer {
+  return withFixtureProfile<Customer>({
+    scoularId: `C${over.id}`, location: '', phone: '', email: '', eSignEnabled: false, achEnabled: false, ...over,
+  }, { totalAcres, commodities, linkedProducerIds, contacts, primaryContact, primaryPhone, binSites, binSitesModifiedAt, grainOnFarm });
 }
 
 const ALPHA = makeCustomer({ id: 1, name: 'Alpha Acres', location: 'Pratt', stateProvince: 'KS' });
@@ -92,7 +107,7 @@ function makeApi() {
     getPlantingIntentions: vi.fn(() => of([])),
     getStoredGrain: vi.fn(() => of([])),
     getSavedLists: vi.fn((): Observable<SavedList[]> => of([SAVED_KS, SAVED_OTHER_TU])),
-    getAllProducerDetails: vi.fn(() => of([])),
+    getAllProducerDetails: vi.fn((): Observable<ProducerDetails[]> => of([])),
     getQueryLibrary: vi.fn((): Observable<QueryLibraryItem[]> => of(LIBRARY)),
     getPlantingCommodities: vi.fn(() => of([])),
     getUserTradeUnits: vi.fn(() => of([{ groupName: 'West', tradeUnitCodes: ['1000', '2000'], tradeUnits: [] }])),
@@ -148,6 +163,7 @@ describe('BuildListComponent', () => {
   let toast: { info: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn>; success: ReturnType<typeof vi.fn> };
   let usage: { postClickEvent: ReturnType<typeof vi.fn>; trackProfileOpened: ReturnType<typeof vi.fn> };
   let access: PermissionStub;
+  let profiles: ProducerProfilesFake;
   let appState: AppStateService;
   let fixture: ComponentFixture<BuildListComponent>;
 
@@ -160,11 +176,22 @@ describe('BuildListComponent', () => {
     toast = { info: vi.fn(), error: vi.fn(), success: vi.fn() };
     usage = { postClickEvent: vi.fn(), trackProfileOpened: vi.fn() };
     access = permissionStub();
+    // Every producer's details, read through the API stub and kept, as the Producers module's store does.
+    profiles = producerProfilesFake();
+    profiles.load.mockImplementation(() => api.getAllProducerDetails().pipe(tap(list => profiles.set(list ?? []))));
     TestBed.configureTestingModule({
       imports: [BuildListComponent],
       providers: [
         provideRouter([]),
         AppStateService,
+        { provide: CustomersApiService, useExisting: ApiService },
+        { provide: SavedListsApiService, useExisting: ApiService },
+        // The contract and ticket calls are Contracts' API client's; this stub answers them.
+        { provide: ContractsApiService, useExisting: ApiService },
+        // So are the planting, stored grain, DP and dashboard calls, which are Producers'.
+        { provide: ProducersApiService, useExisting: ApiService },
+        // And the notes and follow-ups calls, which are Engagement's.
+        { provide: EngagementApiService, useExisting: ApiService },
         { provide: ApiService, useValue: api },
         { provide: NlqFilterService, useValue: nlq },
         { provide: DataPreloadService, useValue: {} },
@@ -174,6 +201,7 @@ describe('BuildListComponent', () => {
         { provide: ToastService, useValue: toast },
         { provide: UsageTrackingService, useValue: usage },
         providePermissions(access),
+        provideProducerProfiles(profiles),
         {
           provide: MsalService,
           useValue: { instance: { getActiveAccount: () => ({ name: 'Pat Merchant', username: 'pat@scoular.com' }), getAllAccounts: () => [] } },
@@ -188,6 +216,12 @@ describe('BuildListComponent', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
+
+  /** The trade unit's producers the page reads, and their saved details, which it reads alongside them. */
+  function givenCustomers(customers: Observable<Customer[]>): void {
+    api.getCustomers.mockReturnValue(customers);
+    api.getAllProducerDetails.mockReturnValue(customers.pipe(map(list => [...profilesOf(list).values()])));
+  }
 
   function mount(): BuildListComponent {
     fixture = TestBed.createComponent(BuildListComponent);
@@ -224,7 +258,7 @@ describe('BuildListComponent', () => {
       expect(c.customers()).toHaveLength(3);
       expect(c.queryLibraryLoaded()).toBe(true);
       // The shared cache is warmed so other pages can resolve a saved list's category.
-      expect(appState.queryLibrary()).toEqual(LIBRARY);
+      expect(TestBed.inject(SavedListsStore).queryLibrary()).toEqual(LIBRARY);
 
       expect(c.groupedLibrary().map(g => g.category)).toEqual(['Contracts', 'Tickets', 'Producers']);
       expect(c.libraryCategories()).toEqual(['Saved Lists', 'Contracts', 'Producers', 'Tickets']);
@@ -246,7 +280,7 @@ describe('BuildListComponent', () => {
     });
 
     it('shows the "no producers" empty state for a trade unit with an empty roster', () => {
-      api.getCustomers.mockReturnValue(of([]));
+      givenCustomers(of([]));
       const c = mount();
 
       expect(c.coreDataLoaded()).toBe(true);
@@ -255,7 +289,7 @@ describe('BuildListComponent', () => {
     });
 
     it('a failed customers read lands as an empty roster, never a stuck spinner — and says it failed', () => {
-      api.getCustomers.mockReturnValue(throwError(() => new Error('500')));
+      givenCustomers(throwError(() => new Error('500')));
       const c = mount();
 
       expect(c.loading()).toBe(false);
@@ -267,7 +301,7 @@ describe('BuildListComponent', () => {
     });
 
     it('a genuinely empty trade unit still says "no producers found"', () => {
-      api.getCustomers.mockReturnValue(of([]));
+      givenCustomers(of([]));
       mount();
 
       expect(text()).toContain('No producers found for the selected trade units');
@@ -275,7 +309,7 @@ describe('BuildListComponent', () => {
     });
 
     it('an empty roster caused by a CTRM contract outage says so instead of "no producers"', () => {
-      api.getCustomers.mockReturnValue(of([]));
+      givenCustomers(of([]));
       api.getContracts.mockReturnValue(throwError(() => new Error('timeout')));
       const c = mount();
 
@@ -314,6 +348,8 @@ describe('BuildListComponent', () => {
       const [query, ctx] = nlq.parseAndFilter.mock.calls.at(-1)!;
       expect(query).toBe('All producers with contracts');
       expect(ctx.customers).toHaveLength(3);
+      // The prompts on acres, contacts, links, grain on farm and bin sites read every producer's saved details.
+      expect(ctx.producerProfiles).toBe(profiles.profiles());
       expect(ctx.currentUserUsername).toBe('pat@scoular.com');
       expect(usage.postClickEvent).toHaveBeenCalledWith('interaction', 'build-a-list', 'library-query-selected', '1');
 
@@ -439,7 +475,7 @@ describe('BuildListComponent', () => {
       c.processQuery();
       TestBed.tick();
 
-      expect(appState.dpContractsLoadFailed()).toBe(true);
+      expect(TestBed.inject(ProducerStore).dpContractsLoadFailed()).toBe(true);
       expect(c.unavailableDataForQuery()).toEqual(['DP contracts']);
       const page = text();
       expect(page).toContain("Couldn't load DP contracts, so results below may be incomplete");
@@ -447,8 +483,8 @@ describe('BuildListComponent', () => {
     });
 
     it('a contact prompt names the failed last-contact and follow-up loads', () => {
-      appState.setNoteLastContactsLoadFailed(true);
-      appState.setMyRemindersLoadFailed(true);
+      TestBed.inject(EngagementStore).setNoteLastContactsLoadFailed(true);
+      TestBed.inject(EngagementStore).setMyRemindersLoadFailed(true);
       const c = mount();
 
       c.queryText.set('Producers not contacted in 30 days');
@@ -459,7 +495,7 @@ describe('BuildListComponent', () => {
     });
 
     it('shows no missing-data panel when the prompt does not depend on the failed data', () => {
-      appState.setNoteLastContactsLoadFailed(true);
+      TestBed.inject(EngagementStore).setNoteLastContactsLoadFailed(true);
       const c = mount();
 
       c.selectLibraryQuery(LIB_CONTRACTS);
@@ -469,7 +505,7 @@ describe('BuildListComponent', () => {
     });
 
     it('row badges say "Last contact unavailable", not "Never contacted", when that load failed', () => {
-      appState.setNoteLastContactsLoadFailed(true);
+      TestBed.inject(EngagementStore).setNoteLastContactsLoadFailed(true);
       const c = mount();
 
       c.selectLibraryQuery(LIB_ALL);
@@ -547,7 +583,7 @@ describe('BuildListComponent', () => {
     });
 
     it('prefers the extended state over the merchandising one for chips and filtering', () => {
-      api.getCustomers.mockReturnValue(of([...ROSTER, makeCustomer({ id: 4, name: 'Delta Dairy', stateProvince: 'KS', extendedStateProvince: 'CO' })]));
+      givenCustomers(of([...ROSTER, makeCustomer({ id: 4, name: 'Delta Dairy', stateProvince: 'KS', extendedStateProvince: 'CO' })]));
       const c = mount();
       c.selectLibraryQuery(LIB_ALL);
 
@@ -593,7 +629,7 @@ describe('BuildListComponent', () => {
         { customerId: 1, customerCode: 'C1', lastNoteAt: new Date(NOW.getTime() - 3 * DAY) },
         { customerId: 3, customerCode: 'C3', lastNoteAt: new Date(NOW.getTime() - 45 * DAY) },
       ];
-      appState.setNoteLastContacts(lastContacts);
+      TestBed.inject(EngagementStore).setNoteLastContacts(lastContacts);
       const c = mount();
       c.selectLibraryQuery(LIB_ALL);
 
@@ -747,7 +783,7 @@ describe('BuildListComponent', () => {
       const c = mount();
       c.selectedCategory.set('Saved Lists');
 
-      expect(appState.savedListsLoadFailed()).toBe(true);
+      expect(TestBed.inject(SavedListsStore).loadFailed()).toBe(true);
       expect(text()).toContain("Couldn't load your saved lists");
       expect(text()).not.toContain('No saved lists yet');
     });
@@ -888,7 +924,7 @@ describe('BuildListComponent', () => {
       expect(api.deleteSavedList).toHaveBeenCalledWith(10);
       expect(c.showDeleteDialog()).toBe(false);
       expect(c.savedLists().map(l => l.id)).toEqual([11]);
-      expect(appState.savedLists().map(l => l.id)).toEqual([11]);
+      expect(TestBed.inject(SavedListsStore).lists().map(l => l.id)).toEqual([11]);
       expect(c.activeSavedList()).toBeNull();
       expect(toast.info).toHaveBeenCalledWith('List deleted');
     });
@@ -912,7 +948,7 @@ describe('BuildListComponent', () => {
       const c = mount();
       c.selectLibraryQuery(LIB_ALL);
       expect(c.hasGenerated()).toBe(true);
-      api.getCustomers.mockReturnValue(of([DELTA]));
+      givenCustomers(of([DELTA]));
 
       TestBed.inject(TradeUnitContext).setTradeUnits(['2000']);
       TestBed.tick();
@@ -1093,7 +1129,7 @@ describe('BuildListComponent', () => {
 
     it('has-email / has-phone also find a producer whose only email or phone is a contact saved in producer details', () => {
       // Contacts reach the page only through producer details; the customer record never has them.
-      api.getCustomers.mockReturnValue(of([
+      givenCustomers(of([
         makeCustomer({ id: 1, name: 'Alpha Acres' }),
         makeCustomer({ id: 2, name: 'Bravo Grain' }),
         makeCustomer({ id: 3, name: 'Charlie Farms' }),
@@ -1111,7 +1147,7 @@ describe('BuildListComponent', () => {
     });
 
     it('producer-level refinements: acres, contact details, linked producers, eSign and grain on farm', () => {
-      api.getCustomers.mockReturnValue(of([
+      givenCustomers(of([
         makeCustomer({ id: 1, name: 'Alpha Acres', totalAcres: 900, email: 'a@x.com', linkedProducerIds: ['C2'],
           grainOnFarm: [{ commodityCode: 'YC', bushelsOnHand: 8000, targetBushels: 4.5, grade: '15.5%' }] }),
         makeCustomer({ id: 2, name: 'Bravo Grain', totalAcres: 200, contacts: [{ name: 'Son', phone: '(555) 555-5555' }] as never,
@@ -1140,7 +1176,7 @@ describe('BuildListComponent', () => {
         { id: 1, customerId: 1, crop: 'YC', acres: 400, plantingYear: 2026, type: 'Irrigated' },
         { id: 2, customerId: 3, crop: 'SB', acres: 900, plantingYear: 2027, type: 'Dryland' },
       ]) as never);
-      appState.setDpContracts([
+      TestBed.inject(ProducerStore).setDpContracts([
         { id: 'a', ticketKey: 't1', customerId: 2, crop: 'YC', quantity: 7000, bushels: 7000, storageDays: 120, receivableAmount: 300 },
         { id: 'b', ticketKey: 't2', customerId: 3, crop: 'SB', quantity: 100, bushels: 100, storageDays: 10, receivableAmount: 5 },
       ] as never);
@@ -1159,7 +1195,7 @@ describe('BuildListComponent', () => {
     });
 
     it('note refinements aggregate a linked producer\'s notes and collapse the pair into one row', () => {
-      api.getCustomers.mockReturnValue(of([
+      givenCustomers(of([
         makeCustomer({ id: 1, name: 'Alpha Acres', linkedProducerIds: ['C2'] }),
         makeCustomer({ id: 2, name: 'Bravo Grain' }),
         makeCustomer({ id: 3, name: 'Charlie Farms' }),
@@ -1238,7 +1274,7 @@ describe('BuildListComponent', () => {
     });
 
     it('a "producers with notes" prompt loads note bodies per rendered batch, sorted by last contact', () => {
-      appState.setNoteLastContacts([
+      TestBed.inject(EngagementStore).setNoteLastContacts([
         { customerId: 1, customerCode: 'C1', lastNoteAt: new Date(NOW.getTime() - 9 * DAY) },
         { customerId: 2, customerCode: 'C2', lastNoteAt: new Date(NOW.getTime() - 2 * DAY) },
       ]);
@@ -1261,7 +1297,7 @@ describe('BuildListComponent', () => {
       TestBed.tick();
 
       expect(api.getNotes).toHaveBeenCalledWith();
-      expect(appState.notesLoaded()).toBe(true);
+      expect(TestBed.inject(EngagementStore).notesLoaded()).toBe(true);
     });
 
     // ── Harvest-window pacing ──
@@ -1391,7 +1427,7 @@ describe('BuildListComponent', () => {
     // ── Result rows: identity, crops, inline chips, linked producers, bin sites ──
 
     it('result rows show initials, the best location, and up to five de-duplicated crops from every source', () => {
-      api.getCustomers.mockReturnValue(of([
+      givenCustomers(of([
         makeCustomer({ id: 1, name: 'Alpha Acres', location: 'Pratt', stateProvince: 'KS', extendedCity: 'Dodge City', extendedStateProvince: 'KS',
           commodities: ['Corn', 'corn ', 'Soybeans'] }),
         makeCustomer({ id: 2, name: 'Bravo', location: 'Madrid', stateProvince: 'NE' }),
@@ -1506,7 +1542,7 @@ describe('BuildListComponent', () => {
       .filter((opts): opts is { customerIds: number[]; contentAny?: string[] } => !!opts?.customerIds);
 
     it('fetches notes naming each producer\'s bin sites, shows them, and puts the latest mention first', () => {
-      api.getCustomers.mockReturnValue(of([
+      givenCustomers(of([
         makeCustomer({ id: 1, name: 'Alpha Acres', binSites: [{ siteKey: 'n', name: 'North' }, { siteKey: 's', name: 'South' }] }),
         makeCustomer({ id: 2, name: 'Bravo Grain', binSites: [{ siteKey: 'o', name: 'Only' }] }),
         makeCustomer({ id: 3, name: 'Charlie Farms' }),
@@ -1533,7 +1569,7 @@ describe('BuildListComponent', () => {
       const many = Array.from({ length: 30 }, (_, i) => makeCustomer({ id: i + 1, name: `P${String(i + 1).padStart(2, '0')}`,
         binSites: [{ siteKey: `k${i}`, name: long(i) }] }));
       const huge = makeCustomer({ id: 99, name: 'Zed', binSites: Array.from({ length: 30 }, (_, i) => ({ siteKey: `h${i}`, name: long(100 + i) })) });
-      api.getCustomers.mockReturnValue(of([...many, huge]));
+      givenCustomers(of([...many, huge]));
       const c = mount();
       c.selectLibraryQuery(GOF);
       TestBed.tick();
@@ -1626,7 +1662,7 @@ describe('BuildListComponent', () => {
     });
 
     it('the linked-records prompt folds linked producers into one row with a linked panel', () => {
-      api.getCustomers.mockReturnValue(of([
+      givenCustomers(of([
         makeCustomer({ id: 1, name: 'Alpha Acres', linkedProducerIds: ['C2'] }),
         makeCustomer({ id: 2, name: 'Bravo Grain' }),
         makeCustomer({ id: 3, name: 'Charlie Farms' }),
@@ -1647,7 +1683,7 @@ describe('BuildListComponent', () => {
 
     it('grain-on-farm prompts list bin sites with a grain summary and a "show more" link', () => {
       const sites = ['North', 'South', 'East', 'West', 'Home'].map((name, i) => ({ siteKey: `k${i}`, name }));
-      api.getCustomers.mockReturnValue(of([
+      givenCustomers(of([
         makeCustomer({ id: 1, name: 'Alpha Acres', binSites: sites, grainOnFarm: [
           { binSiteKey: 'k0', commodityCode: 'YC', bushelsOnHand: 20000 },
           { binSiteKey: 'k0', commodityCode: 'SB', bushelsOnHand: 15000 },

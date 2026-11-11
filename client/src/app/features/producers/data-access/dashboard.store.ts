@@ -1,5 +1,9 @@
-import { Injectable, signal } from '@angular/core';
-import { Customer, Contract, PlantingIntention, StoredGrain, Commodity, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary } from '@models';
+import { Injectable, inject, signal } from '@angular/core';
+import { Customer, Contract, PlantingIntention, StoredGrain, Commodity, DashboardPlantingEstimate } from '@models';
+import { DashboardMarketShare } from '../models/dashboard-market-share.model';
+import { DashboardActualHarvest } from '../models/dashboard-actual-harvest.model';
+import { DashboardSummary } from '../models/dashboard-summary.model';
+import { SessionReset } from '@core/auth/session-reset.service';
 
 export interface DashboardCacheEntry {
   tradeUnitsKey: string;
@@ -27,6 +31,14 @@ export class DashboardStore {
 
   // Dashboard cache — keyed by trade unit so navigating back shows data instantly
   readonly dashboardCache = this._dashboardCache.asReadonly();
+
+  constructor() {
+    // Signing out or timing out drops both with the rest of the user's data.
+    inject(SessionReset).onReset(() => {
+      this.clearDashboardCache();
+      this.clearPreloadedDashboardSummary();
+    });
+  }
 
   setDashboardCache(entry: DashboardCacheEntry): void {
     this._dashboardCache.set(entry);

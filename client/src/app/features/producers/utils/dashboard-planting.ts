@@ -1,7 +1,9 @@
-import { Commodity, Contract, DashboardActualHarvest, DashboardMarketShare, DashboardPlantingEstimate, PlantingIntention } from '@models';
+import { Commodity, Contract, DashboardPlantingEstimate, PlantingIntention } from '@models';
+import { DashboardActualHarvest } from '../models/dashboard-actual-harvest.model';
+import { DashboardMarketShare } from '../models/dashboard-market-share.model';
 import { commodityColor } from '@shared/utils/commodity-color';
-import { plantingCategory } from '@shared/utils/planting-category';
-import { inSelectedTradeUnits } from '@shared/utils/planting-trade-unit-filter';
+import { plantingCategory } from './planting-category';
+import { inSelectedTradeUnits } from './planting-trade-unit-filter';
 import { dashboardCropKey, toTitleCase } from './dashboard-format';
 
 /**

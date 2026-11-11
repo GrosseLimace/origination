@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { Commodity, Contract } from '@models';
-import { buildLbsPerBushelMap } from '@shared/utils/production-coverage';
+import { buildLbsPerBushelMap } from './production-coverage';
 import {
   DASHBOARD_CHART_COLORS, buildContractCommodityLegend, buildContractCoverageRows, buildContractStatus,
   buildCropDistribution, buildHarvestTimeline, buildSalesOpportunities, contractedBushelsByCategory, filterContractsForYear,

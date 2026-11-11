@@ -5,8 +5,8 @@
  * Pure functions over a RefinementFilters / prompt text — moved out of BuildListComponent so the
  * page only wires them to its signals.
  */
-import { RefinementFilters } from '@models';
-import { activeGrainBinRefineCount } from '@shared/utils/grain-bin-refine';
+import { RefinementFilters } from '../models/refine-filters.model';
+import { activeGrainBinRefineCount } from './grain-bin-refine';
 
 /** Number of active refinements — drives the "(N filters applied)" badge. Empty / zero criteria
  *  don't count. */

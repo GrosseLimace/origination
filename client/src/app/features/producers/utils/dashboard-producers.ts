@@ -1,6 +1,7 @@
 import { Commodity, Contract, Customer, NoteLastContact, PlantingIntention, ProducerDetails } from '@models';
-import { commodityPlantingCategory, plantingCategory } from '@shared/utils/planting-category';
-import { inSelectedTradeUnits } from '@shared/utils/planting-trade-unit-filter';
+import { commodityPlantingCategory, plantingCategory } from './planting-category';
+import { inSelectedTradeUnits } from './planting-trade-unit-filter';
+import { profileLinkedIds } from '@shared/utils/producer-profile';
 import { dashboardCropKey } from './dashboard-format';
 
 /**
@@ -148,7 +149,7 @@ export function buildCustomerCropsById(
   }
 
   for (const customer of customers) {
-    const detailCrops = pdByCustomer.get(customer.id) ?? customer.commodities ?? [];
+    const detailCrops = pdByCustomer.get(customer.id) ?? [];
     const contractCrops = customer.scoularId
       ? (contractCropsBySrcId.get(customer.scoularId) ?? [])
       : [];
@@ -292,16 +293,17 @@ export function narrowProducerRowsToChip(
   });
 }
 
-/** Sorted copy. Acres falls back to the customer's farm acres for rows with no intention acres. */
+/** Sorted copy. Acres falls back to the producer's farm acres, from their saved details, for rows with no intention acres. */
 export function sortProducerRows(
   rows: ProducerTabRow[],
   sortKey: 'acres' | 'production',
   dir: 1 | -1,
+  profiles: ReadonlyMap<number, ProducerDetails>,
 ): ProducerTabRow[] {
   return [...rows].sort((a, b) => {
     if (sortKey === 'acres') {
-      const av = a.acres ?? a.customer?.totalAcres ?? 0;
-      const bv = b.acres ?? b.customer?.totalAcres ?? 0;
+      const av = a.acres ?? profiles.get(a.customerId)?.totalAcres ?? 0;
+      const bv = b.acres ?? profiles.get(b.customerId)?.totalAcres ?? 0;
       return (av - bv) * dir;
     }
     if (sortKey === 'production') return ((a.production ?? 0) - (b.production ?? 0)) * dir;
@@ -356,13 +358,14 @@ export function withoutIntentionsChipOptions(
 
 /**
  * Last-contacted info per customer — mirrors build-list's lastContactByCustomer.
- * Walks the last-contact aggregate (incl. linked producers, forward + reverse edges) to
+ * Walks the last-contact aggregate (incl. linked producers, forward + reverse edges, from their saved details) to
  * find the most recent. Fed by noteLastContacts — one MAX(CreatedAt) row per customer,
  * all trade units — instead of the full note download.
  */
 export function buildLastContactByCustomer(
   noteLastContacts: NoteLastContact[],
   customers: Customer[],
+  profiles: ReadonlyMap<number, ProducerDetails>,
 ): Map<number, LastContactInfo> {
   const map = new Map<number, LastContactInfo>();
   const parseUtc = (ts: string | Date) => {
@@ -381,12 +384,13 @@ export function buildLastContactByCustomer(
   const all = customers;
   const linkedById = new Map<number, string[]>();
   for (const c of all) {
-    if (c.linkedProducerIds?.length) linkedById.set(c.id, c.linkedProducerIds);
+    const linked = profileLinkedIds(profiles.get(c.id));
+    if (linked.length) linkedById.set(c.id, linked);
   }
   const incomingCodeLinks = new Map<string, Set<string>>();
   for (const c of all) {
     if (!c.scoularId) continue;
-    for (const linkedCode of (c.linkedProducerIds || [])) {
+    for (const linkedCode of (linkedById.get(c.id) ?? [])) {
       if (!incomingCodeLinks.has(linkedCode)) incomingCodeLinks.set(linkedCode, new Set());
       incomingCodeLinks.get(linkedCode)!.add(c.scoularId);
     }
@@ -397,7 +401,7 @@ export function buildLastContactByCustomer(
   for (const customer of all) {
     const codes = new Set<string>();
     if (customer.scoularId) codes.add(customer.scoularId);
-    for (const code of (linkedById.get(customer.id) ?? customer.linkedProducerIds ?? [])) codes.add(code);
+    for (const code of (linkedById.get(customer.id) ?? [])) codes.add(code);
     for (const code of (incomingCodeLinks.get(customer.scoularId || '') || [])) codes.add(code);
     let latestTime = 0;
     for (const code of codes) {

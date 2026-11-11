@@ -4,7 +4,7 @@ import { Observable, of, throwError } from 'rxjs';
 
 import { UsageDashboardApiService } from '../../data-access/usage-dashboard-api.service';
 import { ToastService } from '@core/services/toast.service';
-import { AccessUsers, ExcludedUser } from '@models';
+import { AccessUsers, ExcludedUser } from '../../models/usage-dashboard.model';
 
 import { ExcludedUsersPanelComponent } from './excluded-users-panel.component';
 

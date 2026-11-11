@@ -1,3 +1,4 @@
+import { SavedListsApiService } from '../../data-access/saved-lists-api.service';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
@@ -5,15 +6,22 @@ import { MsalService } from '@azure/msal-angular';
 import { Observable, Subject, of } from 'rxjs';
 import { BuildListComponent } from './build-list.component';
 import { ApiService } from '@core/services/api.service';
+import { ContractsApiService } from '@features/contracts';
 import { AppStateService } from '@core/services/app-state.service';
-import { DataPreloadService } from '@core/services/data-preload.service';
+import { ProducersApiService } from '@features/producers';
+import { EngagementApiService } from '@features/engagement';
+import { DataPreloadService } from '@core/context/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { providePermissions } from '@testing/permission.stub';
-import { Customer, QueryLibraryItem, SavedList } from '@models';
+import { provideProducerProfiles } from '@testing/producer-profiles.fake';
+import { Customer } from '@models';
+import { QueryLibraryItem } from '../../models/query-library.model';
+import { SavedList } from '../../models/saved-list.model';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { CustomerStore, CustomersApiService } from '@features/customers';
 
 /**
  * A trade-unit change reloads every dataset for the new selection. Until 2026-10-12 the prompt
@@ -92,11 +100,20 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
     TestBed.configureTestingModule({
       providers: [
         AppStateService,
+        { provide: CustomersApiService, useExisting: ApiService },
+        { provide: SavedListsApiService, useExisting: ApiService },
+        // The contract and ticket calls are Contracts' API client's; this stub answers them.
+        { provide: ContractsApiService, useExisting: ApiService },
+        // So are the planting, stored grain, DP and dashboard calls, which are Producers'.
+        { provide: ProducersApiService, useExisting: ApiService },
+        // And the notes and follow-ups calls, which are Engagement's.
+        { provide: EngagementApiService, useExisting: ApiService },
         { provide: ApiService, useValue: api },
         { provide: DataPreloadService, useValue: {} },
         { provide: ToastService, useValue: { info: vi.fn(), error: vi.fn(), success: vi.fn() } },
         { provide: UsageTrackingService, useValue: { postClickEvent: vi.fn() } },
         providePermissions(),
+        provideProducerProfiles(),
         { provide: MsalService, useValue: { instance: { getActiveAccount: () => null, getAllAccounts: () => [] } } },
         { provide: Router, useValue: { navigate: vi.fn() } },
         // No ?query= example link from the Help panel.
@@ -224,7 +241,7 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
     // for it - that bumps _queryGenId, the list's fetch is discarded as superseded, and the
     // hand-added producers it would have resolved never appear.
     const roster = [customer(1, 'Regular Farm'), customer(7, 'Hand-added Farm')];
-    appState.setCustomers(roster);
+    TestBed.inject(CustomerStore).setCustomers(roster);
     const c = mount();
     expect(c.coreDataLoaded()).toBe(true);
     expect(c.loading()).toBe(false);

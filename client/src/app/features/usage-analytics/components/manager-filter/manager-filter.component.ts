@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, input, model, output, sig
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
-import { UsageManager } from '@models';
+import { UsageManager } from '../../models/usage-dashboard.model';
 
 /**
  * Manager filter for the usage dashboard: a searchable dropdown over the org hierarchy's active

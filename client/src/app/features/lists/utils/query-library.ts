@@ -5,7 +5,8 @@
  *
  * Pure functions moved verbatim out of BuildListComponent; the page keeps the computeds.
  */
-import { QueryLibraryItem, SavedList } from '@models';
+import { QueryLibraryItem } from '../models/query-library.model';
+import { SavedList } from '../models/saved-list.model';
 
 /** Pattern display name map for user-facing feedback. */
 export const PATTERN_DISPLAY_NAMES: { [key: string]: string } = {

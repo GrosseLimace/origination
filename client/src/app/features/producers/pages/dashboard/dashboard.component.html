@@ -462,9 +462,6 @@
                                     <span class="text-gray-400 dark:text-gray-500 font-normal">({{ row.scoularId }})</span>
                                   }
                                 </div>
-                                @if (row.customer?.farm) {
-                                  <div class="text-sm text-gray-500 dark:text-gray-400">{{ row.customer?.farm }}</div>
-                                }
                                 <div class="flex items-center gap-2 mt-1 flex-wrap">
                                   @if (getFormattedLocation(row.customer)) {
                                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400">
@@ -473,11 +470,11 @@
                                     </svg>
                                     <span class="text-xs text-gray-400">{{ getFormattedLocation(row.customer) }}</span>
                                   }
-                                  @if (producerView() === 'with' && row.customer?.totalAcres) {
+                                  @if (producerView() === 'with' && farmAcresOf(row.customer)) {
                                     @if (getFormattedLocation(row.customer)) {
                                       <span class="text-gray-300 dark:text-gray-600">•</span>
                                     }
-                                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ row.customer?.totalAcres | number }} farm acres</span>
+                                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ farmAcresOf(row.customer) | number }} farm acres</span>
                                   }
                                   @if (showProducerTradeUnitColumn() && producerView() === 'with' && row.tradeUnit) {
                                     <span class="text-gray-300 dark:text-gray-600">•</span>

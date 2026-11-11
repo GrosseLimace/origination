@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 
-import { BidSheet } from '@models';
+import { BidSheet } from '../../models/bid-sheet.model';
 
 /**
  * The control that says which bid sheets are on screen.

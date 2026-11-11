@@ -6,7 +6,7 @@
  * the rows of the side panel (the location list and the open location's crop rows). The page keeps
  * the signals and feeds them in; nothing here reads state or calls the API.
  */
-import { BidSheetEntry, BidSheetLocation } from '@models';
+import { BidSheetEntry, BidSheetLocation } from '../models/bid-sheet.model';
 
 /** Status for a bid value vs the session reference. */
 export type BidStatus = 'reference' | 'beating' | 'matching' | 'none';

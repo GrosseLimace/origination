@@ -15,12 +15,14 @@ import { MsalService, MsalBroadcastService, MsalGuard } from '@azure/msal-angula
 import { makeMsalServiceMock, makeMsalBroadcastMock } from '@testing/msal.mocks';
 import { AppComponent } from './app.component';
 import { routes } from './app.routes';
+import { appModuleProviders, appModules } from './app.modules';
+import { APP_MODULES } from './core/modules/module-registry';
 import { By } from '@angular/platform-browser';
 import { HomeComponent } from './features/customers/pages/home/home.component';
 
 const customer = (id: number, name: string) => ({
-  id, name, scoularId: `C${id}`, farm: name, location: 'Omaha, NE', phone: '4025551234', email: 'a@b.com',
-  totalAcres: 500, linkedProducerIds: [], eSignEnabled: false, achEnabled: false, isActive: true,
+  id, name, scoularId: `C${id}`, location: 'Omaha, NE', phone: '4025551234', email: 'a@b.com',
+  eSignEnabled: false, achEnabled: false, isActive: true,
   merchandisingCity: 'Omaha', merchandisingStateProvince: 'NE', tradeUnits: ['1084'],
 });
 
@@ -45,12 +47,19 @@ function body(url: string): unknown {
       ctrmContractNumber: n === 1 ? 'PYC' + id + '1' : null, organizationCode: '1084', appliedNetQuantity: 1000 }));
   }
   if (url.includes('conversions')) return [{ commodityCode: 'YC', lbsPerUnit: 56 }];
+  if (url.includes('plantingintentions/customer/')) {
+    const id = Number(url.split('customer/')[1].split(/[?/]/)[0]);
+    return [{ id: id * 1000 + 1, customerId: id, customerName: 'P' + id, customerCode: 'C' + id, tradeUnit: '1084', plantingYear: 2026,
+      crop: 'YC', category: 'Corn', acres: 250, createdAt: '2026-01-01', createdBy: 'x' }];
+  }
   // Every read the pages below need, so each one renders instead of being sent home.
   if (url.includes('/me/permissions')) {
     return {
       userId: 'CEgr', roles: [], modules: [], segments: [],
       permissions: ['planting-estimates:read', 'query-library:read', 'saved-lists:read:own', 'customers:read', 'contracts:read',
-        'tickets:read', 'bid-sheets:read', 'recap-groups:read', 'usage-reports:read'],
+        'tickets:read', 'bid-sheets:read', 'recap-groups:read', 'usage-reports:read',
+        'notes:read', 'notes:write', 'reminders:read:own', 'reminders:write:own',
+        'planting-intentions:read', 'stored-grain:read', 'dp-contracts:read'],
     };
   }
   if (url.includes('/me')) return { userId: 'CEgr', displayName: 'Caden', roles: [] };
@@ -63,6 +72,13 @@ async function settle(fixture: { whenStable(): Promise<unknown> }, ms = 1500) {
   await Promise.race([fixture.whenStable(), new Promise(r => setTimeout(r, ms))]);
 }
 
+/** Settles until `ready` holds, or `ms` pass. A lazily loaded part can take longer than one settle while the whole suite
+ *  runs, so a check on it waits for it rather than for a fixed time. */
+async function settleUntil(fixture: { whenStable(): Promise<unknown> }, ready: () => boolean, ms = 15000) {
+  const deadline = Date.now() + ms;
+  while (!ready() && Date.now() < deadline) await settle(fixture, 500);
+}
+
 describe('NG0103 probe', () => {
   it('selects producers on Home without infinite change detection', async () => {
     errors.length = 0;
@@ -70,6 +86,9 @@ describe('NG0103 probe', () => {
       providers: [
         provideZonelessChangeDetection(),
         provideRouter(routes),
+        // The app's modules, as main.ts provides them: the customer profile's module tabs render from these.
+        { provide: APP_MODULES, useValue: appModules },
+        ...appModuleProviders,
         provideHttpClient(withInterceptors([req => of(new HttpResponse({ status: 200, body: body(req.urlWithParams) }))])),
         { provide: MsalService, useValue: makeMsalServiceMock({ name: 'Caden Egr', username: 'CEgr@scoular.com' }) },
         { provide: MsalBroadcastService, useValue: makeMsalBroadcastMock() },
@@ -91,6 +110,23 @@ describe('NG0103 probe', () => {
     if (other.length) console.log('[select] other errors:', [...new Set(other)].slice(0, 6));
     if (ng0103.length) console.log('[select] NG0103 x' + ng0103.length);
     expect(ng0103.length).toBe(0);
+    // The profile's tabs come from the modules: the Contracts module's Open Contracts tab and its table render.
+    const page = fixture.nativeElement as HTMLElement;
+    expect(page.textContent).toContain('Open Contracts');
+    expect(page.querySelector('app-contracts-table')).not.toBeNull();
+    // The right column comes from the modules too: the Engagement module's Notes card renders in the sidebar slot.
+    expect(page.querySelector('app-customer-notes')).not.toBeNull();
+    // The Producers module's tabs follow the Contracts ones. Its Planting tab loads in the profile and reads the
+    // producer's intentions from it.
+    const tabLabel = (b: HTMLButtonElement) => (b.textContent ?? '').trim().split(' (')[0];
+    const tabButtons = () => Array.from(page.querySelectorAll<HTMLButtonElement>('button'))
+      .filter(b => ['Open Contracts', 'Unapplied Tickets', 'Planting', 'Storage', 'DP Contracts'].includes(tabLabel(b)));
+    expect(tabButtons().map(tabLabel)).toEqual(['Open Contracts', 'Unapplied Tickets', 'Planting', 'Storage', 'DP Contracts']);
+    const errorsBefore = errors.length;
+    tabButtons().find(b => tabLabel(b) === 'Planting')!.click();
+    await settleUntil(fixture, () => !!page.querySelector('app-planting-intentions-table')?.textContent?.includes('250'));
+    expect(page.querySelector('app-planting-intentions-table')?.textContent).toContain('250');
+    expect(errors.slice(errorsBefore).map(e => String((e as Error)?.message ?? e).slice(0, 160))).toEqual([]);
   }, 60000);
 
   for (const url of ['/', '/build-list', '/insights', '/dashboard', '/bid-sheet', '/daily-digest', '/usage-dashboard', '/whats-new']) {
@@ -100,6 +136,9 @@ describe('NG0103 probe', () => {
         providers: [
           provideZonelessChangeDetection(),
           provideRouter(routes),
+        // The app's modules, as main.ts provides them: the customer profile's module tabs render from these.
+        { provide: APP_MODULES, useValue: appModules },
+        ...appModuleProviders,
           provideHttpClient(withInterceptors([req => of(new HttpResponse({ status: 200, body: body(req.url) }))])),
           { provide: MsalService, useValue: makeMsalServiceMock({ name: 'Caden Egr', username: 'CEgr@scoular.com' }) },
           { provide: MsalBroadcastService, useValue: makeMsalBroadcastMock() },

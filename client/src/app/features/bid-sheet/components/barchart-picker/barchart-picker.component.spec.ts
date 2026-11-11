@@ -5,7 +5,7 @@ import { of, throwError } from 'rxjs';
 import { BarchartPickerComponent } from './barchart-picker.component';
 import { BidSheetApiService } from '../../data-access/bid-sheet-api.service';
 import { ToastService } from '@core/services/toast.service';
-import { BarchartCatalogLocation, BarchartCoverage } from '@models';
+import { BarchartCatalogLocation, BarchartCoverage } from '../../models/barchart.model';
 
 const coverage: BarchartCoverage = {
   locationCount: 2894,

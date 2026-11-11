@@ -3,10 +3,12 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { InsightsComponent } from './insights.component';
 import { AppStateService } from '@core/services/app-state.service';
-import { DataPreloadService } from '@core/services/data-preload.service';
+import { ContractStore } from '@features/contracts';
+import { DataPreloadService } from '@core/context/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket } from '@models';
+import { CustomerStore } from '@features/customers';
 
 // Regression guard for the Spot Loads performance fix (GetTodaysTicketsAsync). The backend now
 // returns ONLY unapplied tickets on /api/tickets/today (it stopped running the slow applied-ticket
@@ -17,8 +19,8 @@ import { Customer, Contract, Ticket } from '@models';
 
 function makeCustomer(over: Partial<Customer> = {}): Customer {
   return {
-    id: 1, scoularId: 'CUST1', name: 'Test Farm', farm: 'Test Farm LLC', location: 'Omaha, NE',
-    phone: '', email: '', totalAcres: 0, linkedProducerIds: [], eSignEnabled: false, ...over,
+    id: 1, scoularId: 'CUST1', name: 'Test Farm', location: 'Omaha, NE',
+    phone: '', email: '', eSignEnabled: false, ...over,
   };
 }
 
@@ -64,9 +66,9 @@ describe('InsightsComponent — Spot Loads derivation', () => {
   const spotLoads = () => component.allInsights().filter(i => i.category === 'SpotLoads');
 
   it('flags an unapplied ticket with no covering contract as a spot load', () => {
-    appState.setCustomers([makeCustomer({ id: 1, scoularId: 'CUST1' })]);
-    appState.setContracts([]);
-    appState.setTodaysTickets([makeTicket({ id: 10, ticketNumber: 'T-10', isApplied: false })]);
+    TestBed.inject(CustomerStore).setCustomers([makeCustomer({ id: 1, scoularId: 'CUST1' })]);
+    TestBed.inject(ContractStore).setContracts([]);
+    TestBed.inject(ContractStore).setTodaysTickets([makeTicket({ id: 10, ticketNumber: 'T-10', isApplied: false })]);
 
     const loads = spotLoads();
     expect(loads.length).toBe(1);
@@ -74,9 +76,9 @@ describe('InsightsComponent — Spot Loads derivation', () => {
   });
 
   it('is invariant to applied tickets in the payload (backend no longer sends them)', () => {
-    appState.setCustomers([makeCustomer({ id: 1, scoularId: 'CUST1' })]);
-    appState.setContracts([]);
-    appState.setTodaysTickets([
+    TestBed.inject(CustomerStore).setCustomers([makeCustomer({ id: 1, scoularId: 'CUST1' })]);
+    TestBed.inject(ContractStore).setContracts([]);
+    TestBed.inject(ContractStore).setTodaysTickets([
       makeTicket({ id: 10, ticketNumber: 'T-10', isApplied: false }),
       // Applied rows used to arrive from the old SQL branch; the UI must ignore them, so whether
       // or not the API sends them the Spot Loads result is identical.
@@ -89,12 +91,12 @@ describe('InsightsComponent — Spot Loads derivation', () => {
   });
 
   it('does NOT flag an unapplied ticket covered by an open same-commodity contract', () => {
-    appState.setCustomers([makeCustomer({ id: 1, scoularId: 'CUST1' })]);
-    appState.setContracts([
+    TestBed.inject(CustomerStore).setCustomers([makeCustomer({ id: 1, scoularId: 'CUST1' })]);
+    TestBed.inject(ContractStore).setContracts([
       makeContract({ ctrmCustomerId: 'CUST1', commodityCode: 'YC',
         deliveryStart: new Date('2026-05-01'), deliveryEnd: new Date('2026-06-30') }),
     ]);
-    appState.setTodaysTickets([
+    TestBed.inject(ContractStore).setTodaysTickets([
       makeTicket({ id: 10, ticketNumber: 'T-10', productCode: 'YC', date: '2026-06-01', isApplied: false }),
     ]);
 

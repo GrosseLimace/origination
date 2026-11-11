@@ -12,11 +12,7 @@ import {
   TableComponent, TableHeaderComponent, TableBodyComponent,
   TableRowComponent, TableHeadComponent, TableCellComponent
 } from '@shared/components/table/table.component';
-import {
-  UsageDashboardSummary, UsageDashboardUser, UsageManager, DailyActive,
-  FeatureSessions, WeeklyTrend, ActivityBreakdown, UnderusedFeature,
-  QueryLibraryUsage, QuerySearchGap
-} from '@models';
+import { UsageDashboardSummary, UsageDashboardUser, UsageManager, DailyActive, FeatureSessions, WeeklyTrend, ActivityBreakdown, UnderusedFeature, QueryLibraryUsage, QuerySearchGap } from '../../models/usage-dashboard.model';
 
 import { SortIconComponent } from '../../components/sort-icon/sort-icon.component';
 import { ExcludedUsersPanelComponent } from '../../components/excluded-users-panel/excluded-users-panel.component';

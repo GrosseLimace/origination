@@ -79,7 +79,7 @@ keep their version either way.
 ## Where field-plan data is kept
 
 The client keeps fields, field seasons and program records in `FieldPlanStore`
-(`client/src/app/features/customers/components/field-plan/store/`). It loads one producer at a time and
+(`client/src/app/features/producers/components/field-plan/store/`). It loads one producer at a time and
 saves through `FIELD_PLAN_BACKEND`. That interface is the shape of the field-plan API: each method names its
 endpoint.
 
@@ -110,6 +110,8 @@ The proposed tables, rules and endpoints are written up for approval in
   - `FieldProgramRecord.Official` (JSON, nullable): the official result, kept apart from the estimate (see
     [Estimate vs confirmed (official) CI](#estimate-vs-confirmed-official-ci)). It may become its own table once its shape is known.
 - Access is the same as planting intentions: `field-plans:read` to see a producer's field plan and `field-plans:write` to change it, on any producer (accepted risks AR-01 to AR-03). The FD-CIC calculator needs `carbon-intensity:read`.
+  - In the app, the Planting tab shows and loads the field plan only for a user with `field-plans:read` and `carbon-intensity:read`, and "Update total" needs `planting-intentions:write`, since it opens the intention's Edit dialog.
+  - Without `field-plans:write` the field plan is read-only: its add, remove, copy, Confirm CI Score and Unlock controls are hidden, its inputs are disabled, and the 45Z documents can be viewed and downloaded but not uploaded, archived or restored. A confirmed field's review, report and ledger can still be opened and downloaded.
 - The server owns these rules:
   - a split is one producer's field (a split another producer holds is refused);
   - locking the harvest estimate, which rescores with `FdCicService` rather than trusting the client's number.

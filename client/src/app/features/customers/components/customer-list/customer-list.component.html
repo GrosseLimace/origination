@@ -8,7 +8,7 @@
           <!-- Title Row -->
           <div class="flex items-center justify-between">
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Producers</h3>
-            @if (searchInputValue || selectedListId() !== 'all' || selectedCustomer() || hasTradeUnitSelection()) {
+            @if (searchInputValue || filtered() || selectedCustomer() || hasTradeUnitSelection()) {
               <button
                 (click)="clearAll()"
                 type="button"
@@ -63,29 +63,19 @@
           </div>
         </div>
 
-        <!-- Saved Lists Filter — only shown after customers have loaded -->
-        @if (!loading() && getVisibleSavedLists().length > 0) {
-          <div class="py-2 border-b border-gray-200 dark:border-gray-700 px-4">
-            <select
-              [ngModel]="selectedListId()"
-              (ngModelChange)="selectedListId.set($event); onSavedListChange()"
-              class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-base text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
-            >
-              <option value="all">All Producers</option>
-              @for (list of getVisibleSavedLists(); track list.id) {
-                <option [value]="list.id" class="text-gray-900 dark:text-white">{{ list.name }}{{ selectedListId() === '' + list.id && (list.customerIds || []).length ? ' (' + (list.customerIds || []).length + ')' : '' }}</option>
-              }
-            </select>
-          </div>
-        }
+        <!-- The list-filter slot: the Lists module's saved-list picker. Hidden while the producers load, but kept, so
+             the filter it sets stays in place. -->
+        <div [class.hidden]="loading()">
+          <app-customer-slot slot="list-filter" />
+        </div>
 
         <!-- Customer List -->
         <div #scrollContainer class="divide-y divide-gray-200 dark:divide-gray-700 overflow-y-auto flex-1 min-h-0 max-h-[70dvh] lg:max-h-none"
         >
-          @if (savedListLoading()) {
+          @if (pendingMessage(); as message) {
             <div class="p-8 text-center">
               <div class="inline-block animate-spin rounded-full h-10 w-10 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green mb-3"></div>
-              <p class="text-gray-500 dark:text-gray-400 font-medium text-sm">Running saved list...</p>
+              <p class="text-gray-500 dark:text-gray-400 font-medium text-sm">{{ message }}</p>
             </div>
           } @else if (loading() && selectedTradeUnits.length > 0) {
             <div class="p-8 text-center">
@@ -153,13 +143,14 @@
                 (mouseleave)="onRowLeave()"
                 [class]="getCustomerItemClass(customer)"
               >
-                <!-- Row 1: Name and Acres -->
+                <!-- Row 1: the name, and the modules' tags -->
                 <div class="flex items-center justify-between gap-2">
                   <p class="text-[length:var(--text-fluid-md)] font-semibold text-gray-900 dark:text-white truncate flex-1 min-w-0">{{ customer.name }}</p>
                   @if (customer.isOnboardCandidate) {
                     <app-badge variant="warning" class="flex-shrink-0 whitespace-nowrap">Not added</app-badge>
                   } @else {
-                    <app-badge variant="secondary" class="flex-shrink-0 whitespace-nowrap">{{ customer.totalAcres | number }} acres</app-badge>
+                    <!-- The modules' tags beside the name: Producers' acres. -->
+                    <app-customer-row-slot slot="row-tags" [customer]="customer" />
                   }
                 </div>
                 @if (customer.scoularId) {
@@ -171,7 +162,6 @@
                      hierarchy and pushed the row past 200px so under three
                      producers fit on a laptop. -->
                 <div class="space-y-0.5 mt-1">
-                  <p class="text-[length:var(--text-fluid-sm)] text-gray-600 dark:text-gray-400 truncate">{{ customer.farm }}</p>
                   <div class="flex items-center gap-2 text-[length:var(--text-fluid-sm)] text-gray-500 dark:text-gray-400">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
@@ -196,27 +186,9 @@
                       <span class="truncate">{{ customer.email }}</span>
                     </div>
                   }
-                  <div class="flex items-center gap-2 text-[length:var(--text-fluid-sm)]" [class]="contactHistoryUnavailable() ? 'text-gray-400 dark:text-gray-500' : (lastContactCache().get(customer.id)?.cssClass || 'text-red-500')">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/>
-                      <line x1="16" x2="16" y1="2" y2="6"/>
-                      <line x1="8" x2="8" y1="2" y2="6"/>
-                      <line x1="3" x2="21" y1="10" y2="10"/>
-                    </svg>
-                    <!-- A failed last-contact load must not brand every producer "Never contacted". -->
-                    <span>{{ contactHistoryUnavailable() ? 'Last contact unavailable' : (lastContactCache().get(customer.id)?.text || 'Never contacted') }}</span>
-                  </div>
-                  <!-- Follow-up badge — only the signed-in user's own reminders, and only shown
-                       when they actually have one scheduled for this producer. -->
-                  @if (reminderCache().get(customer.id); as reminder) {
-                    <div class="flex items-center gap-2 text-[length:var(--text-fluid-sm)]" [class]="reminder.cssClass">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="12" cy="12" r="10"/>
-                        <polyline points="12 6 12 12 16 14"/>
-                      </svg>
-                      <span>{{ reminder.text }}</span>
-                    </div>
-                  }
+                  <!-- The modules' lines under the contact details: Engagement's last-contacted date and the user's
+                       soonest follow-up. The slot spaces them as the lines above. -->
+                  <app-customer-row-slot slot="row-details" [customer]="customer" class="space-y-0.5" />
                 </div>
               </div>
             }

@@ -6,7 +6,8 @@
  * (and passes the NLQ author matcher / keyword extractor in), so each computed still reads the
  * same signals it did.
  */
-import { Customer, Note, NoteLastContact, RefinementFilters } from '@models';
+import { Customer, Note, NoteLastContact } from '@models';
+import { RefinementFilters } from '../models/refine-filters.model';
 
 /** A matching note tagged with the customer it was placed on — "{Name} ({Code})", or "({Code})". */
 export type MatchedNote = Note & { viaName: string };

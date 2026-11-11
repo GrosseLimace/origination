@@ -1,11 +1,12 @@
 import { Coordinates } from './coordinates.model';
-import { GrainOnFarmItem, ProducerBinSiteItem, ProducerContactItem } from './producer-details.model';
+
+/** The kind of customer, which decides what the customer screen shows for it. Named as the API names them. */
+export type CustomerSegment = 'Producer' | 'Commercial';
 
 export interface Customer {
   id: number;             // Maps to bigint in C# API
   scoularId?: string; // Used to match with contract ctrmCustomerId
   name: string;
-  farm: string;
   location: string;
   stateProvince?: string; // State/province for location display
   addressLine1?: string;  // MerchandisingAddressLine1
@@ -24,9 +25,6 @@ export interface Customer {
   extendedPostalCode?: string;
   extendedStateProvince?: string;
   extendedCountry?: string;
-  totalAcres: number;
-  binSitesModifiedAt?: string | null; // when bin sites / grain on farm last changed (producer details)
-  linkedProducerIds: string[];
   eSignEnabled: boolean;
   achEnabled: boolean;             // base.Customer.PaymentMethod == 'H'
   /** The producer's active trade-unit codes. Carried on list and search results; absent on a
@@ -44,13 +42,8 @@ export interface Customer {
   guild?: string;                  // Guild name, from dbo.eSignEnrollment
   coordinates?: Coordinates;
 
-  // CustomerDetails fields (populated from app DB / ProducerDetails table)
-  grainOnFarm?: GrainOnFarmItem[]; // Per-commodity bushels on hand + target
-  commodities?: string[];     // e.g. ['Corn', 'Soybeans', 'Wheat']
-  primaryContact?: string;    // Derived from the primary contact row (kept for compat/search)
-  primaryPhone?: string;      // Derived from the primary contact row (kept for compat/search)
-  contacts?: ProducerContactItem[]; // User-entered contacts, primary first
-  binSites?: ProducerBinSiteItem[]; // User-entered bin sites, display order
+  // A producer's acres, links, contacts, commodities, bin sites and grain on farm are their saved details, not part of
+  // the customer: read them from ProducerProfiles (core/context/producer-profiles.ts).
 
   // Onboarding: true when a user manually added this producer (assigned trade units)
   // rather than the nightly sync. Used to distinguish ODS search candidates and to

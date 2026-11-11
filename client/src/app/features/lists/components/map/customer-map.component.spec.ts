@@ -17,9 +17,9 @@ import { Customer } from '@models';
 
 function makeCustomer(over: Partial<Customer> = {}): Customer {
   return {
-    id: 1, scoularId: 'SAMPFRM', name: 'Sample Farms', farm: 'Sample Farms', location: 'Pratt',
+    id: 1, scoularId: 'SAMPFRM', name: 'Sample Farms', location: 'Pratt',
     stateProvince: 'KS', postalCode: '67124',
-    phone: '', email: '', totalAcres: 0, linkedProducerIds: [], eSignEnabled: false, achEnabled: false, ...over,
+    phone: '', email: '', eSignEnabled: false, achEnabled: false, ...over,
   };
 }
 

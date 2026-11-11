@@ -8,7 +8,8 @@
  * coordination; nothing here reads state or has side effects.
  */
 import { moveItemInArray } from '@angular/cdk/drag-drop';
-import { BidSheetEntry, BidSheetLocation, Commodity } from '@models';
+import { Commodity } from '@models';
+import { BidSheetEntry, BidSheetLocation } from '../models/bid-sheet.model';
 import { bidLookupKey, MONTH_ABBREVIATIONS } from './bid-math';
 
 export interface EditBidsRow {

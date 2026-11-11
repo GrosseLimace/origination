@@ -22,7 +22,7 @@ import { PublicClientApplication, InteractionType, BrowserCacheLocation } from '
 // 4. App
 import { AppComponent } from './app/app.component';
 import { routes } from './app/app.routes';
-import { appModules } from './app/app.modules';
+import { appModuleProviders, appModules } from './app/app.modules';
 import { APP_MODULES } from './app/core/modules/module-registry';
 import { environment } from './environments/environment';
 import { GlobalErrorHandler } from './app/core/handlers/global-error.handler';
@@ -63,6 +63,7 @@ bootstrapApplication(AppComponent, {
     provideRouter(routes),
     // Every module, for ModuleRegistry.
     { provide: APP_MODULES, useValue: appModules },
+    ...appModuleProviders,
     // forbiddenInterceptor is the only place a 403 is shown; MsalInterceptor comes in through DI.
     provideHttpClient(withInterceptorsFromDi(), withInterceptors([forbiddenInterceptor])),
     {

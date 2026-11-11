@@ -12,7 +12,7 @@ export interface DpContract {
   /**
    * One PHYSICAL delivery, shared by every charge-type row for it. The view emits one row per charge
    * type (e.g. flat initial charge + accruing storage rate), each repeating the SAME quantity — so
-   * bushels must be counted once per ticketKey. Use the helpers in @shared/utils/dp-aggregate rather
+   * bushels must be counted once per ticketKey. Use the helpers in features/producers/utils/dp-aggregate rather
    * than reducing rows directly.
    */
   ticketKey: string;

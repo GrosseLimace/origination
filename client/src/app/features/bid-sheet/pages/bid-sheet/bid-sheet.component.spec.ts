@@ -9,7 +9,8 @@ import { RecapGroupsApiService } from '@features/engagement';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { BarchartCatalogBid, BarchartCatalogLocation, BarchartCatalogLocationDetail, BidSheet, BidSheetLocation, BidSheetLocationBid } from '@models';
+import { BarchartCatalogBid, BarchartCatalogLocation, BarchartCatalogLocationDetail } from '../../models/barchart.model';
+import { BidSheet, BidSheetLocation, BidSheetLocationBid } from '../../models/bid-sheet.model';
 
 import { BidSheetComponent } from './bid-sheet.component';
 

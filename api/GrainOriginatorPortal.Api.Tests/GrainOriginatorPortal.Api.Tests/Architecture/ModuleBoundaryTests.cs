@@ -37,8 +37,10 @@ public class ModuleBoundaryTests
         ["Customers"] = [],
         ["Contracts"] = ["Customers"],
         ["Engagement"] = ["Customers"],
-        ["Producers"] = ["Contracts", "Customers"],
-        ["Lists"] = ["Producers", "Contracts", "Customers"],
+        // The Planting Dashboard shows when each producer was last contacted.
+        ["Producers"] = ["Contracts", "Engagement", "Customers"],
+        // The list prompts filter on notes and follow-ups.
+        ["Lists"] = ["Producers", "Contracts", "Engagement", "Customers"],
         // A bid sheet can be shared with a Daily Recap group.
         ["BidSheet"] = ["Engagement"],
         // The usage dashboard names the customers, contracts and query-library prompts people used.

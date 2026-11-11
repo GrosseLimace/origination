@@ -4,7 +4,7 @@ import { Router } from '@angular/router';
 import { Observable, of, throwError } from 'rxjs';
 import type { Customer } from '@models';
 import { HelpTroubleshooterComponent } from './help-troubleshooter.component';
-import { ApiService } from '@core/services/api.service';
+import { CustomerSearch } from '@core/context/customer-search';
 import { AppStateService } from '@core/services/app-state.service';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { HelpPanelService } from '@core/help/help-panel.service';
@@ -34,7 +34,7 @@ async function renderTroubleshooter(options: { assigned?: boolean } = {}) {
     inputs: { tree: 'missing-producer', index: 0 },
     providers: provideTestEnvironment({
       extraProviders: [
-        { provide: ApiService, useValue: api },
+        { provide: CustomerSearch, useValue: api },
         { provide: UsageTrackingService, useValue: tracking },
         { provide: UserTradeUnitsService, useValue: { openPreferences } }
       ]

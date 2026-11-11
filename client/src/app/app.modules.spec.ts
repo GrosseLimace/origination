@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { appModules } from './app.modules';
+import { TestBed } from '@angular/core/testing';
+import { CustomerSearch } from '@core/context/customer-search';
+import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
+import { SelectedProducerProduction } from '@core/context/selected-producer-production';
+import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
+import { ProducerProfiles } from '@core/context/producer-profiles';
+import { ApiService } from '@core/services/api.service';
+import { providePermissions } from '@testing/permission.stub';
+import { appModuleProviders, appModules } from './app.modules';
+import { CustomerActivityStore } from './features/contracts/data-access/customer-activity.store';
+import { CustomersApiService } from './features/customers/data-access/customers-api.service';
+import { CustomerEngagementStore } from './features/engagement/data-access/customer-engagement.store';
+import { ProducerProfileStore } from './features/producers/data-access/producer-profile.store';
+import { ProducerProductionStore } from './features/producers/data-access/producer-production.store';
 import { routes } from './app.routes';
 
 describe("the app's pages and links", () => {
@@ -28,10 +41,58 @@ describe("the app's pages and links", () => {
     }
   });
 
+  // /api/me/permissions names the user's modules by AppPermissions' nested classes, in kebab case. A module named
+  // differently here would never be held, and its preload would never run.
+  it("name each module as the API does, and mark as SPA-only exactly those the API doesn't know", () => {
+    const apiModules = ['platform', 'customers', 'contracts', 'engagement', 'producers', 'lists', 'bid-sheet', 'usage-analytics'];
+
+    expect(appModules.filter(module => !module.spaOnly).map(module => module.id).filter(id => !apiModules.includes(id))).toEqual([]);
+    expect(appModules.filter(module => module.spaOnly).map(module => module.id).sort()).toEqual(['calculators', 'help', 'whats-new']);
+  });
+
   it('list each module once, and send every other path home', () => {
     const ids = appModules.map(module => module.id);
 
     expect(new Set(ids).size).toBe(ids.length);
     expect(routes.at(-1)).toEqual({ path: '**', redirectTo: '' });
+  });
+});
+
+describe('what core declares and a module implements', () => {
+  // Customers' home page and customer list read every producer's details without importing Producers.
+  it("gives ProducerProfiles as the Producers module's store", () => {
+    TestBed.configureTestingModule({ providers: [appModuleProviders, { provide: ApiService, useValue: {} }, providePermissions()] });
+
+    expect(TestBed.inject(ProducerProfiles)).toBe(TestBed.inject(ProducerProfileStore));
+  });
+
+  // Help's troubleshooter, in core, searches customers without importing Customers.
+  it("gives CustomerSearch as the Customers module's API client", () => {
+    TestBed.configureTestingModule({ providers: [appModuleProviders, providePermissions()] });
+
+    expect(TestBed.inject(CustomerSearch)).toBe(TestBed.inject(CustomersApiService));
+  });
+
+  // The customer screen reads the selected producer's contracts, tickets and pricing lines without importing Contracts.
+  it("gives SelectedProducerActivity as the Contracts module's activity store", () => {
+    TestBed.configureTestingModule({ providers: [appModuleProviders, providePermissions()] });
+
+    expect(TestBed.inject(SelectedProducerActivity)).toBe(TestBed.inject(CustomerActivityStore));
+  });
+
+  // The customer screen's production tabs and panels read the selected producer's production without importing
+  // Producers, and the home page tells it who is selected.
+  it("gives SelectedProducerProduction as the Producers module's production store", () => {
+    TestBed.configureTestingModule({ providers: [appModuleProviders, { provide: ApiService, useValue: {} }, providePermissions()] });
+
+    expect(TestBed.inject(SelectedProducerProduction)).toBe(TestBed.inject(ProducerProductionStore));
+  });
+
+  // The customer screen's Notes and My follow-ups cards and the producer panels read the selected customer's notes and
+  // the user's follow-ups without importing Engagement, and the home page tells it who is selected.
+  it("gives SelectedProducerEngagement as the Engagement module's customer store", () => {
+    TestBed.configureTestingModule({ providers: [appModuleProviders, providePermissions()] });
+
+    expect(TestBed.inject(SelectedProducerEngagement)).toBe(TestBed.inject(CustomerEngagementStore));
   });
 });

@@ -7,8 +7,8 @@
  * still owns the fetches, the spinner and the banners.
  */
 import { Commodity, CommodityConversion, Contract, Customer, DashboardPlantingEstimate, PlantingIntention } from '@models';
-import { buildLbsPerBushelMap, findYieldEstimate, sumInBushels } from '@shared/utils/production-coverage';
-import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
+import { buildLbsPerBushelMap, findYieldEstimate, sumInBushels } from '@features/producers';
+import { plantingCategory, commodityPlantingCategory } from '@features/producers';
 
 export interface PlantingCoverageInput {
   intentions: PlantingIntention[];

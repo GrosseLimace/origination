@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
-import { Commodity, Contract, DashboardActualHarvest, PlantingIntention } from '@models';
+import { Commodity, Contract, PlantingIntention } from '@models';
+import { DashboardActualHarvest } from '../models/dashboard-actual-harvest.model';
 import { commodityColor } from '@shared/utils/commodity-color';
 import {
   availableHarvestCropCategories, buildActualHarvestRows, buildActualMarketShareRows, buildAvailableCrops, buildCategoryRows,

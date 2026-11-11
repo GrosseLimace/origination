@@ -6,14 +6,16 @@
  * RefinementFilterSources — accessors rather than values, so when the page calls this inside its
  * computed each signal is still read (and tracked) only by the refinements that consult it.
  */
-import { CommodityConversion, Contract, Customer, DpContract, Note, PlantingIntention, RefinementFilters, StoredGrain, Ticket } from '@models';
-import { dpTotalBushels, dpTotalCharges } from '@shared/utils/dp-aggregate';
-import { buildLbsPerBushelMap, sumInBushels } from '@shared/utils/production-coverage';
-import { isIrrigated, isDryland, isDoubleCrop } from '@shared/utils/planting-chips';
+import { CommodityConversion, Contract, Customer, DpContract, Note, PlantingIntention, ProducerDetails, StoredGrain, Ticket } from '@models';
+import { RefinementFilters } from '../models/refine-filters.model';
+import { dpTotalBushels, dpTotalCharges } from '@features/producers';
+import { buildLbsPerBushelMap, sumInBushels } from '@features/producers';
+import { isIrrigated, isDryland, isDoubleCrop } from './planting-chips';
 import { buildCropSelection, matchesCropSelection, CropGroupLookup, CropSelection, MatchCropOptions } from '@shared/utils/crop-group-match';
-import { activeGrainBinRefineCount, applyGrainBinRefinements } from '@shared/utils/grain-bin-refine';
+import { activeGrainBinRefineCount, applyGrainBinRefinements } from './grain-bin-refine';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu } from '@shared/utils/contract-status';
-import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
+import { matchTicketViewModeFilters } from './ticket-view-filters';
+import { profileCommodities, profileLinkedIds } from '@shared/utils/producer-profile';
 
 /** The page data the refinements read. Each is called lazily, only when a refinement needs it. */
 export interface RefinementFilterSources {
@@ -28,6 +30,8 @@ export interface RefinementFilterSources {
   cropGroupLookup: () => CropGroupLookup;
   lastContactByCustomer: () => Map<number, { daysAgo: number }>;
   linkedProducerComponents: () => Map<string, Set<string>>;
+  /** A producer's saved details: acres, contacts, links, grain on farm and bin sites. */
+  profileOf: (c: Customer) => ProducerDetails | undefined;
   commodityConversions: () => CommodityConversion[];
   /** The signed-in account (MSAL), for the "contacted by me / someone else" refinements. */
   currentAccount: () => { name?: string; username?: string } | null | undefined;
@@ -256,7 +260,7 @@ export function filterByRefinements(list: Customer[], r: RefinementFilters, src:
   }
   // Customer size
   if (r.acresOver != null && r.acresOver > 0) {
-    list = list.filter(c => (c.totalAcres ?? 0) > r.acresOver!);
+    list = list.filter(c => (src.profileOf(c)?.totalAcres ?? 0) > r.acresOver!);
   }
 
   // Grain on farm (bushels on hand + $/bu target). Crop-scoped when crops are selected, so
@@ -265,7 +269,7 @@ export function filterByRefinements(list: Customer[], r: RefinementFilters, src:
       || r.grainTargetOver != null || r.grainTargetUnder != null || r.hasGrade
       || r.gradeOver != null || r.gradeUnder != null) {
     const grainRowsFor = (c: Customer) => {
-      const rows = c.grainOnFarm ?? [];
+      const rows = src.profileOf(c)?.grainOnFarm ?? [];
       return !selectedCrops.isEmpty
         ? rows.filter(g => !!g.commodityCode && matchesCrop(g.commodityCode, selectedCrops, GROUP_ONLY))
         : rows;
@@ -307,32 +311,32 @@ export function filterByRefinements(list: Customer[], r: RefinementFilters, src:
   // Grain filters use the same crop-scoped rows as the block above.
   if (activeGrainBinRefineCount(r) > 0) {
     list = applyGrainBinRefinements(list, r, c => {
-      const rows = c.grainOnFarm ?? [];
+      const rows = src.profileOf(c)?.grainOnFarm ?? [];
       return selectedCrops.isEmpty
         ? rows
         : rows.filter(g => !!g.commodityCode && matchesCrop(g.commodityCode, selectedCrops, GROUP_ONLY));
-    });
+    }, c => src.profileOf(c)?.binSites ?? []);
   }
 
   // Customer info
   if (r.hasPrimaryContact) {
-    list = list.filter(c => !!c.primaryContact?.trim());
+    list = list.filter(c => !!src.profileOf(c)?.primaryContact?.trim());
   }
   if (r.noPrimaryContact) {
-    list = list.filter(c => !c.primaryContact?.trim());
+    list = list.filter(c => !src.profileOf(c)?.primaryContact?.trim());
   }
   // User-entered contact rows count too — otherwise a producer whose only email/phone was typed
   // into Edit Producer Details (e.g. an insurance contact) reads as having none.
   if (r.hasEmail) {
     list = list.filter(c => !!c.email?.trim() || !!c.supplementalEmail?.trim()
-      || !!c.contacts?.some(ct => ct.email?.trim()));
+      || !!src.profileOf(c)?.contacts?.some(ct => ct.email?.trim()));
   }
   if (r.hasPhone) {
     list = list.filter(c => !!c.phone?.trim() || !!c.extendedPrimaryPhone?.trim()
-      || !!c.contacts?.some(ct => ct.phone?.trim()));
+      || !!src.profileOf(c)?.contacts?.some(ct => ct.phone?.trim()));
   }
   if (r.hasLinkedProducers) {
-    list = list.filter(c => (c.linkedProducerIds?.length ?? 0) > 0);
+    list = list.filter(c => profileLinkedIds(src.profileOf(c)).length > 0);
   }
   if (r.notEsignEnrolled) {
     list = list.filter(c => !c.eSignEnabled);
@@ -515,8 +519,8 @@ export function filterByRefinements(list: Customer[], r: RefinementFilters, src:
   if (!selectedCrops.isEmpty) {
     // Dimension-aware crop filter: when the prompt is about a specific dimension
     // (storage / tickets / planting / contracts), require the producer to have a
-    // crop match in THAT dimension's data — not in their generic c.commodities list.
-    // Falls back to c.commodities only when no dimension is in play.
+    // crop match in THAT dimension's data — not in their profile's generic commodities list.
+    // Falls back to the profile's commodities only when no dimension is in play.
     // Single source of dimension inference — see NlqFilterService.refineDimension(). Keeps
     // this block and applyRefinementFilters() (the saved-list / home-page copy) in sync by
     // construction rather than by copy-pasted flag lists.
@@ -576,11 +580,11 @@ export function filterByRefinements(list: Customer[], r: RefinementFilters, src:
     } else if (dim === 'Grain on Farm') {
       // Scope crop matching to the crops on the producer's grain-on-farm rows — any row they entered,
       // not their contract/ticket commodities.
-      list = list.filter(c => (c.grainOnFarm ?? []).some(g =>
+      list = list.filter(c => (src.profileOf(c)?.grainOnFarm ?? []).some(g =>
         !!g.commodityCode && matchesCrop(g.commodityCode, selectedCrops, GROUP_ONLY)
       ));
     } else {
-      list = list.filter(c => (c.commodities ?? []).some(crop => matchesCrop(crop, selectedCrops)));
+      list = list.filter(c => profileCommodities(src.profileOf(c)).some(crop => matchesCrop(crop, selectedCrops)));
     }
   }
   if (r.states && r.states.length > 0) {

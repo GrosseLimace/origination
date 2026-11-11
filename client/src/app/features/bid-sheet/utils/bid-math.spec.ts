@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BidSheetLocation, BidSheetLocationBid } from '@models';
+import { BidSheetLocation, BidSheetLocationBid } from '../models/bid-sheet.model';
 import {
   bidLookupKey,
   buildBidLookup,

@@ -7,7 +7,7 @@
  * writing the persisted print layout. The page owns the signals and the popup; nothing here reads
  * state or has side effects.
  */
-import { BidSheetEntry } from '@models';
+import { BidSheetEntry } from '../models/bid-sheet.model';
 import { lookupBid } from './bid-math';
 import { parsePrintLayoutStyle, PrintColumn, PrintCropGroup, PrintLayoutStyle, PrintLocation } from './print-layout';
 

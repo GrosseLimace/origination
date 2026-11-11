@@ -6,7 +6,7 @@
  * bid pills or name label) with its icon, click target and hover content. The page still owns
  * Leaflet: it spreads overlapping positions, creates the markers and binds their events.
  */
-import { BidSheetEntry, BidSheetLocation } from '@models';
+import { BidSheetEntry, BidSheetLocation } from '../models/bid-sheet.model';
 import { BidStatus, computeItemStatus, lookupBid, parseBid } from './bid-math';
 import {
   bidPillFill, bidPillsIcon, BidPillItem, dotIcon, EXPANDED_PIN_GREY, hoverIcon, MarkerIconOptions, nameLabelIcon, pinFill

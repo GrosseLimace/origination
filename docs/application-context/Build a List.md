@@ -36,7 +36,7 @@ This is where originators construct ad-hoc producer cohorts ("producers I haven'
 flowchart LR
     UI[Build a List component]
     NLQ[NlqFilterService.parseAndFilter / applyRefinementFilters]
-    State[(AppStateService<br/>customers, contracts, tickets, notes,<br/>storedGrain, plantingIntentions, commodities)]
+    State[(CustomerStore, ContractStore, ProducerStore, EngagementStore, AppStateService<br/>customers, contracts, tickets, notes,<br/>storedGrain, plantingIntentions, dpContracts, commodities)]
     Lib[apiService.getQueryLibrary]
     Saved[apiService.getSavedLists / saveList / updateList / deleteList]
 
@@ -51,7 +51,7 @@ flowchart LR
     SLC --> DB2[(dbo.SavedLists)]
 ```
 
-The screen does **not** make per-customer API calls — it operates entirely on the cached arrays in `AppStateService`. The library and saved-list endpoints are the only HTTP traffic during use.
+The screen does **not** make per-customer API calls — it operates entirely on the cached arrays in the shared stores (`CustomerStore`, `ContractStore`, `ProducerStore`, `EngagementStore`, `AppStateService`). The library and saved-list endpoints are the only HTTP traffic during use.
 
 ## Files
 
@@ -59,8 +59,8 @@ The screen does **not** make per-customer API calls — it operates entirely on 
 | --- | --- |
 | Component | `client/src/app/features/lists/pages/build-list/build-list.component.ts` |
 | Template | `client/src/app/features/lists/pages/build-list/build-list.component.html` |
-| NLQ engine | `client/src/app/core/services/nlq-filter.service.ts` |
-| Refine-filters model | `client/src/app/models/refine-filters.model.ts` |
+| NLQ engine | `client/src/app/features/lists/nlq/nlq-filter.service.ts` |
+| Refine-filters model | `client/src/app/features/lists/models/refine-filters.model.ts` |
 | Saved-list model | `client/src/app/models/saved-list.model.ts` |
 | Highlight pipe | `client/src/app/shared/pipes/highlight.pipe.ts` |
 | Library controller | `api/GrainOriginatorPortal.Api/Modules/Lists/Controllers/QueryLibraryController.cs` |
@@ -72,13 +72,13 @@ The screen does **not** make per-customer API calls — it operates entirely on 
 
 - `apiService.getQueryLibrary()` — on init.
 - `apiService.getSavedLists()` — on init.
-- `apiService.searchCustomers(term, tradeUnits?)` — debounced from Manage Members search input.
+- `customersApi.searchCustomers(term, tradeUnits?)` (`CustomersApiService`, from `@features/customers`) — debounced from Manage Members search input.
 - `apiService.saveList(payload)` / `updateList(id, payload)` / `deleteList(id)` — save dialog and saved-list actions.
 - `apiService.logQuerySearch({ searchText, matchedQueryId? })` — fired when a library search produces no match (data feeds the Usage Dashboard "Query search gaps" panel).
 
 ### State it reads / writes
 
-Reads (heavy) from `AppStateService`: `customers`, `contracts`, `tickets`, `notes`, `storedGrain`, `plantingIntentions`, `commodities`, `commodityConversions`, `producerDetails`, `dataLoading`; the trade-unit selection from `TradeUnitContext`. Its own query and results persist across navigation in `BuildListStore` (`features/lists/data-access`). Writes only when bulk-fetching is necessary; mostly read-only since DataPreloadService has already populated state.
+Reads (heavy) the trade units' `contracts` and `tickets`, with their failure flags, from the Contracts module's `ContractStore` (`@features/contracts`), and its contract and ticket reads go through `ContractsApiService`; the trade units' `plantingIntentions`, `storedGrain` and `dpContracts`, with the planting and DP reads' failure flags, from the Producers module's `ProducerStore` (`@features/producers`), and its planting, stored grain, DP and yield-estimate reads go through `ProducersApiService`; the notes (read for a prompt that needs them), the last-contact summary and the user's follow-ups, with their failure flags, from the Engagement module's `EngagementStore` (`@features/engagement`), whose `EngagementApiService` reads the notes; and from `AppStateService`: `commodities`, `commodityConversions`; every producer's details from `ProducerProfiles` (`core/context`), which its prompts, refinements and result rows read by customer id; the customers from `CustomerStore` (`@features/customers`), and reloads them through `CustomersApiService` when it needs to; the trade-unit selection from `TradeUnitContext`. Its own query and results persist across navigation in `BuildListStore` (`features/lists/data-access`). The user's saved lists and the query library are kept in Lists' `SavedListsStore` (the same one the home page's saved-list picker and Add to List read), and their calls are `SavedListsApiService`'s. Writes only when bulk-fetching is necessary; mostly read-only since DataPreloadService has already populated state.
 
 ## NLQ pipeline
 
@@ -90,7 +90,7 @@ Helpers: `queryInvolvesTickets`, `queryInvolvesStorage`, `queryInvolvesContact`,
 
 ## `RefinementFilters` model
 
-Defined in [`client/src/app/models/refine-filters.model.ts`](../../client/src/app/models/refine-filters.model.ts). Grouped by domain:
+Defined in [`client/src/app/features/lists/models/refine-filters.model.ts`](../../client/src/app/features/lists/models/refine-filters.model.ts). Grouped by domain:
 
 - **Contract status** — `noActiveContracts`, `hasUnsignedContracts`, `downHarvestPace`, `hasUnpricedContracts`, `hasOverdueContracts`, `noContractsAtAll`.
 - **Contract details** — `contractQuantityOver`, `contractsExpiringThisMonth`, `multipleCommoditiesContracted`.
@@ -140,20 +140,20 @@ already understands the phrasing. Pattern (see `20260810164128_AddNoContractsQue
 - **`Grain on Farm & Bin Sites`** (2026-10-09, migration `CombineGrainOnFarmAndBinSitePrompts`) holds every
   grain-on-farm AND bin-site prompt in one column — grain on farm is stored at a bin site. It was
   `Grain on Farm`, and the bin-site cards sat under `Producers`. The client treats the old name the same
-  (`isGrainAndBinSitesCategory`, `shared/utils/grain-on-farm.ts`) because a saved list keeps its prompt's
+  (`isGrainAndBinSitesCategory`, `features/producers/utils/grain-on-farm.ts`) because a saved list keeps its prompt's
   category in `Filters._promptCategory`. Its refine panel has a filter for every input (2026-10-09):
   **Bin Sites** — has / no sites, at least N sites, total capacity over N bu, site name contains, has / missing a
   map location; **Grain on Farm** — bushels on farm over, sold bushels over, has sold bushels, has / no target;
   **Target Price** over / under; **Last Bid** — has a last bid, over / under (signed; $0.00 counts); **Grade** —
   has, over / under; plus the Crops chips (scoped to grain rows). The newer ones (Sold, Last Bid, all bin-site
-  fields but has/no) live once in `shared/utils/grain-bin-refine.ts`, called by both refine copies, and
+  fields but has/no) live once in `features/lists/utils/grain-bin-refine.ts`, called by both refine copies, and
   each result row leads with a neutral "N bin sites" chip before the per-crop bushel chips.
   **Result rows** (2026-10-09): from a 1536px viewport (`2xl`) a row is name | **bin sites & grain** (fixed 31rem — the widest
   table measured 471px — so notes line up down the list) | **notes** | last contact; narrower, the notes sit under
   the bin sites in one middle column. The bin sites & grain table (text-sm, a crop-row separator) shows a line
   per bin site — name · capacity · map pin — with the grain stored there under it (Crop | Total | Sold | Grade |
   Target | Last Bid), "No grain on farm recorded" for an empty site and untied rows last; only the first 2 sites
-  show until "Show N more bin sites" (Show fewer). Built by `binSiteGrainBreakdown` (`shared/utils/grain-on-farm.ts`).
+  show until "Show N more bin sites" (Show fewer). Built by `binSiteGrainBreakdown` (`features/producers/utils/grain-on-farm.ts`).
   **Notes that mention a bin site** (2026-10-09): the row's middle column shows the producer's notes that name
   one of their saved bin sites — whole name, any case, not inside a longer word or number ("Bin 1" ≠ "bin 10")
   — in the same note stack note prompts use (pinned first, then newest; "+N earlier notes", See more), the site
@@ -197,7 +197,7 @@ interface SavedList {
 
 **Load** — `loadSavedList(list)` sets `queryText`, `pendingRefinements`/`appliedRefinements`, restores `manuallyExcludedCustomerIds`, and queues `_pendingIncludedIds` to be resolved into Customer objects when data loads.
 
-**`customerIds` is recomputed at load time**, not stored. In Build a List, the dedup pass ([Linked-producer entity view](#linked-producer-entity-view)) runs and the visible list is the deduped set. On the **home page customer list**, `_executeNlq` runs the same NLQ + filters but **without dedup**, so both A and B (linked) appear as separate rows.
+**`customerIds` is recomputed at load time**, not stored. In Build a List, the dedup pass ([Linked-producer entity view](#linked-producer-entity-view)) runs and the visible list is the deduped set. On the **home page customer list**, the saved-list picker (`SavedListsStore.resolve`) runs the same NLQ + filters but **without dedup**, so both A and B (linked) appear as separate rows.
 
 **Trade-unit visibility** — the dropdown's `visibleSavedLists` computed only shows lists whose `tradeUnits` CSV exactly matches the currently selected TUs. Saving a new list captures the current TU set into `tradeUnits`.
 
@@ -206,7 +206,7 @@ interface SavedList {
 Two-pane search:
 
 - **In-results matches** — filters `displayedCustomers()` by name/code/farm. Excludes already-excluded ids. Cap of 5 shown.
-- **Add candidates** — debounced 300 ms call to `apiService.searchCustomers`. Filters out anyone already in the results or already manually included.
+- **Add candidates** — debounced 300 ms call to `customersApi.searchCustomers`. Filters out anyone already in the results or already manually included.
 
 A `logicallyInResultsIds` computed considers a producer "in results" if they're either a deduped peer row or a linked producer reachable through a parent's expand panel. This makes Manage Members search labels match the user's mental model when the linked-producer entity view is on.
 
@@ -216,7 +216,7 @@ A `logicallyInResultsIds` computed considers a producer "in results" if they're 
 
 Gated on `linkedFeatureActive` = `noteFilterActive()` || queryText matches `/linked\s+(?:producer|record)/`. When active:
 
-- **Dedup pass** at the end of `displayedCustomers`: if customer X has `linkedProducerIds` that include another visible customer Y, Y is hidden. Mutual links tie-break on lower id. Manual include doesn't override dedup — adding A and B (linked) still shows them as one entity.
+- **Dedup pass** at the end of `displayedCustomers`: if customer X's saved details (`ProducerProfiles`) link to another visible customer Y, Y is hidden. Mutual links tie-break on lower id. Manual include doesn't override dedup — adding A and B (linked) still shows them as one entity.
 - A **"+N Linked Producers"** chip renders under the parent's location/acres line. Click expands a detail panel.
 - The detail panel shows each linked producer in the same compact identity layout (avatar, name, farm, location, acres). When notes are also active, each linked sub-row gets its own notes column with independent pagination.
 

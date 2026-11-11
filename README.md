@@ -36,9 +36,10 @@ GrainOriginatorPortal/
         ├── features/                       # one folder per module, with its <module>.module.ts manifest;
         │                                   #   others import it only through its index.ts
         │   ├── customers/                  # home page and the customer screen's components
+        │   ├── contracts/                  # the profile's Open Contracts and Unapplied Tickets tabs
         │   ├── producers/                  # Planting Intentions Dashboard
         │   ├── lists/                      # Build a List, Actionable Insights, the customer map
-        │   ├── engagement/                 # Daily Digest (recap groups)
+        │   ├── engagement/                 # Daily Digest (recap groups); the Notes and My follow-ups cards
         │   ├── bid-sheet/
         │   ├── usage-analytics/            # usage dashboard
         │   ├── calculators/  help/  whats-new/

@@ -5,7 +5,7 @@ import { Observable, of, throwError } from 'rxjs';
 
 import { UsageDashboardApiService } from '../../data-access/usage-dashboard-api.service';
 import { ToastService } from '@core/services/toast.service';
-import { RecentActivity, UserDailyActivity, UserUsageDetail } from '@models';
+import { RecentActivity, UserDailyActivity, UserUsageDetail } from '../../models/usage-dashboard.model';
 
 import { UserUsageDetailComponent } from './user-usage-detail.component';
 

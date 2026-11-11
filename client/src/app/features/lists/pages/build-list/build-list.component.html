@@ -1684,7 +1684,6 @@
                               {{ customer.name }} <span class="text-gray-400 dark:text-gray-500 font-normal">({{ customer.scoularId }})</span>
                             </div>
                           }
-                          <div class="text-sm text-gray-500 dark:text-gray-400" [ngClass]="fullName ? 'break-words' : 'truncate'">{{ customer.farm }}</div>
                           <!-- Location + the prompt's dimension chips (storage bu / planting acres /
                                grain on farm) inline on one wrapping row; other categories show total acres. -->
                           @let chips = resultChips(customer);
@@ -1703,7 +1702,7 @@
                               }
                             } @else {
                               <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
-                              <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ customer.totalAcres | number }} acres</span>
+                              <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ acresOf(customer) | number }} acres</span>
                             }
                           </div>
                           @if (linkedInfo) {
@@ -1886,7 +1885,6 @@
                                         class="font-medium text-gray-900 dark:text-white hover:text-scoular-green-accessible dark:hover:text-scoular-green hover:underline cursor-pointer text-left truncate block w-full">
                                   {{ linked.name }} <span class="text-gray-400 dark:text-gray-500 font-normal">({{ linked.scoularId }})</span>
                                 </button>
-                                <div class="text-sm text-gray-500 dark:text-gray-400 truncate">{{ linked.farm }}</div>
                                 @let linkedChips = resultChips(linked);
                                 <div class="flex items-center gap-2 mt-1 min-w-0" [class.flex-wrap]="wideIdentityColumn()">
                                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 shrink-0">
@@ -1903,7 +1901,7 @@
                                     }
                                   } @else {
                                     <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
-                                    <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ linked.totalAcres | number }} acres</span>
+                                    <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ acresOf(linked) | number }} acres</span>
                                   }
                                 </div>
                               </div>

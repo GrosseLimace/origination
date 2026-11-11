@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/angular';
 import userEvent from '@testing-library/user-event';
-import type { BidSheet } from '@models';
+import type { BidSheet } from '../../models/bid-sheet.model';
 import { SheetMultiSelectComponent } from './sheet-multi-select.component';
 
 const sheet = (id: number, name: string, over: Partial<BidSheet> = {}): BidSheet =>

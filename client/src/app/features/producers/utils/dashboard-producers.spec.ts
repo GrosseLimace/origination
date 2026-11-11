@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { Commodity, Contract, Customer, PlantingIntention } from '@models';
+import { producerProfile, profileMap } from '@testing/producer-profiles.fake';
 import {
   ProducerTabRow, applyProducerFilters, buildCustomerCropsById, buildLastContactByCustomer, buildProducersWithIntentionsRows,
   buildProducersWithoutIntentionsRows, narrowProducerRowsToChip, sortProducerRows, withIntentionsChipOptions,
@@ -15,8 +16,8 @@ const COMMODITIES = new Map<string, Commodity>([
 
 function customer(over: Partial<Customer>): Customer {
   return {
-    id: 0, name: '', farm: '', location: '', phone: '', email: '', totalAcres: 0,
-    linkedProducerIds: [], eSignEnabled: false, achEnabled: false, ...over,
+    id: 0, name: '', location: '', phone: '', email: '', 
+    eSignEnabled: false, achEnabled: false, ...over,
   };
 }
 
@@ -36,8 +37,8 @@ function contract(over: Partial<Contract>): Contract {
   };
 }
 
-const ALPHA = customer({ id: 1, scoularId: 'ALPHA', name: 'Alpha Farms', totalAcres: 400 });
-const BRAVO = customer({ id: 2, scoularId: 'BRAVO', name: 'Bravo Ag', totalAcres: 300 });
+const ALPHA = customer({ id: 1, scoularId: 'ALPHA', name: 'Alpha Farms' });
+const BRAVO = customer({ id: 2, scoularId: 'BRAVO', name: 'Bravo Ag' });
 
 describe('buildProducersWithIntentionsRows', () => {
   const rows = buildProducersWithIntentionsRows(
@@ -80,7 +81,7 @@ describe('buildProducersWithIntentionsRows', () => {
 });
 
 describe('buildCustomerCropsById', () => {
-  it('merges producer-detail crops (else the customer list) with contract crops, de-duplicated case-insensitively', () => {
+  it('merges producer-detail crops with contract crops, de-duplicated case-insensitively', () => {
     const map = buildCustomerCropsById(
       [{ customerId: 1, commodities: 'YC, sb ,' } as never, { customerId: 2, commodities: ' , ' } as never],
       [
@@ -92,14 +93,14 @@ describe('buildCustomerCropsById', () => {
       ],
       [
         ALPHA,
-        { ...BRAVO, commodities: ['YC'] },
+        BRAVO,
         customer({ id: 3, name: 'No crops' }),
       ],
     );
 
     expect([...map.entries()]).toEqual([
       [1, ['YC', 'sb', 'HRW']],
-      [2, ['YC', 'Milo']], // empty producer-detail list falls back to the customer's own commodities
+      [2, ['Milo']], // an empty producer-detail list adds nothing
     ]);
   });
 });
@@ -111,7 +112,7 @@ describe('buildProducersWithoutIntentionsRows', () => {
       pi({ customerId: 2, crop: 'SB', acres: 10, tradeUnit: '3811' }), // another trade unit
       pi({ customerId: 3, crop: 'SB', acres: 10, plantingYear: 2025 }), // another year
     ],
-    customers: [ALPHA, BRAVO, customer({ id: 3, scoularId: 'CHARLIE', name: 'Charlie Grain', totalAcres: 100 })],
+    customers: [ALPHA, BRAVO, customer({ id: 3, scoularId: 'CHARLIE', name: 'Charlie Grain' })],
     year: 2026,
     cropFilter: '',
     tradeUnitSet: new Set(['2090']),
@@ -191,16 +192,18 @@ describe('narrowProducerRowsToChip', () => {
 });
 
 describe('sortProducerRows', () => {
-  const r = (id: number, acres: number | undefined, production: number | null | undefined, totalAcres = 0): ProducerTabRow => ({
-    customerId: id, customerName: `P${id}`, scoularId: null, customer: customer({ id, totalAcres }), acres, production,
+  const r = (id: number, acres: number | undefined, production: number | null | undefined): ProducerTabRow => ({
+    customerId: id, customerName: `P${id}`, scoularId: null, customer: customer({ id }), acres, production,
     crops: [], plantingChips: [],
   });
 
   it('sorts by acres (farm acres standing in when a row has none) or production, in either direction', () => {
-    const rows = [r(1, 100, 5), r(2, undefined, null, 300), r(3, 200, 50)];
-    expect(sortProducerRows(rows, 'acres', -1).map(x => x.customerId)).toEqual([2, 3, 1]);
-    expect(sortProducerRows(rows, 'acres', 1).map(x => x.customerId)).toEqual([1, 3, 2]);
-    expect(sortProducerRows(rows, 'production', -1).map(x => x.customerId)).toEqual([3, 1, 2]);
+    const rows = [r(1, 100, 5), r(2, undefined, null), r(3, 200, 50)];
+    // Producer 2's saved details: 300 farm acres.
+    const farmAcres = profileMap(producerProfile(2, { totalAcres: 300 }));
+    expect(sortProducerRows(rows, 'acres', -1, farmAcres).map(x => x.customerId)).toEqual([2, 3, 1]);
+    expect(sortProducerRows(rows, 'acres', 1, farmAcres).map(x => x.customerId)).toEqual([1, 3, 2]);
+    expect(sortProducerRows(rows, 'production', -1, farmAcres).map(x => x.customerId)).toEqual([3, 1, 2]);
     expect(rows.map(x => x.customerId)).toEqual([1, 2, 3]); // a copy, not in place
   });
 });
@@ -234,13 +237,13 @@ describe('buildLastContactByCustomer', () => {
   it('describes recency in bands, by the latest note across linked producers in both directions', () => {
     const customers = [
       customer({ id: 1, scoularId: 'A' }),
-      customer({ id: 2, scoularId: 'B', linkedProducerIds: ['C'] }),
+      customer({ id: 2, scoularId: 'B' }),
       customer({ id: 3, scoularId: 'C' }),
       customer({ id: 4, scoularId: 'D' }),
       customer({ id: 5, scoularId: 'E' }),
       customer({ id: 6, scoularId: 'F' }),
       customer({ id: 7 }),
-      customer({ id: 8, scoularId: 'G', linkedProducerIds: ['H'] }),
+      customer({ id: 8, scoularId: 'G' }),
       customer({ id: 9, scoularId: 'H' }),
     ];
     const map = buildLastContactByCustomer([
@@ -252,7 +255,7 @@ describe('buildLastContactByCustomer', () => {
       { customerId: 6, customerCode: 'F', lastNoteAt: new Date(2026, 7, 1, 12) },
       { customerId: 8, customerCode: 'G', lastNoteAt: at(11) },
       { customerId: 0, lastNoteAt: at(13) }, // no code — ignored
-    ], customers);
+    ], customers, profileMap(producerProfile(2, { linkedProducerIds: 'C' }), producerProfile(8, { linkedProducerIds: 'H' })));
 
     expect(map.get(1)).toEqual({ text: 'Contacted today', colorClass: 'text-scoular-green', daysAgo: 0 });
     // B links to C, so C's note counts for B.
@@ -270,6 +273,7 @@ describe('buildLastContactByCustomer', () => {
     const map = buildLastContactByCustomer(
       [{ customerId: 1, customerCode: 'A', lastNoteAt: '2026-10-13T02:00:00' as unknown as Date }],
       [customer({ id: 1, scoularId: 'A' })],
+      new Map(),
     );
     const expectedDays = Math.round((new Date(2026, 9, 13).getTime() - (() => {
       const d = new Date('2026-10-13T02:00:00Z'); d.setHours(0, 0, 0, 0); return d.getTime();

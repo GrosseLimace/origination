@@ -2,7 +2,7 @@
  * Build a List: which customer-profile tab a result opens on, from the active prompt and
  * refinements. Pure function moved verbatim out of BuildListComponent.
  */
-import { RefinementFilters } from '@models';
+import { RefinementFilters } from '../models/refine-filters.model';
 
 export type ProfileFocusTab = 'dpContracts' | 'storage' | 'contracts' | 'tickets' | 'planting';
 

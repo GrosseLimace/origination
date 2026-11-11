@@ -1,10 +1,17 @@
-import { inject } from '@angular/core';
-import { EMPTY, Observable, of } from 'rxjs';
+import { computed, inject } from '@angular/core';
+import { EMPTY, Observable, merge, of } from 'rxjs';
 import { catchError, switchMap, take, tap } from 'rxjs/operators';
 import { PermissionService } from '@core/access/permission.service';
+import { SelectedProducerProduction } from '@core/context/selected-producer-production';
 import { ModuleManifest } from '@core/modules/module-manifest';
-import { ApiService } from '@core/services/api.service';
+import { DpContract, PlantingIntention, StoredGrain } from '@models';
+import { dpContractCount } from './utils/dp-aggregate';
+import { mergeIncomingById } from './utils/production-reads';
 import { DashboardStore } from './data-access/dashboard.store';
+import { ProducerProfileStore } from './data-access/producer-profile.store';
+import { ProducerStore } from './data-access/producer.store';
+import { ProducersApiService } from './data-access/producers-api.service';
+import { YieldEstimateStore } from './data-access/yield-estimate.store';
 
 /**
  * Pre-fetches the Planting Dashboard's summary for the current year, so the dashboard renders without its own round
@@ -12,7 +19,7 @@ import { DashboardStore } from './data-access/dashboard.store';
  */
 export function preloadDashboardSummary(tradeUnits: readonly string[]): Observable<unknown> {
   const store = inject(DashboardStore);
-  const api = inject(ApiService);
+  const api = inject(ProducersApiService);
   const permissions = inject(PermissionService);
   store.clearDashboardCache();
   store.clearPreloadedDashboardSummary();
@@ -32,6 +39,60 @@ export function preloadDashboardSummary(tradeUnits: readonly string[]): Observab
         )
       : EMPTY),
   );
+}
+
+/**
+ * The trade units' planting intentions, stored grain and DP contracts, into ProducerStore, and their yield estimates
+ * for this year and last. The stored grain and DP held for the previous trade units drop first, with the last read's
+ * failures; a producer's own reads that land before these are kept (the trade units' rows win a tie). Planting stays
+ * until the new read replaces it. A failed planting or DP read is recorded, so it doesn't read as "none".
+ */
+export function preloadProduction(tradeUnits: readonly string[]): Observable<unknown> {
+  const api = inject(ProducersApiService);
+  const store = inject(ProducerStore);
+  const units = [...tradeUnits];
+  store.setStoredGrain([]);
+  // The DP set and its loaded flag drop now, or a DP query between the trade-unit change and this read landing runs
+  // against the previous trade units' rows.
+  store.clearDpContractsCache();
+  store.clearLoadFailures();
+  const year = new Date().getFullYear();
+  inject(YieldEstimateStore).load([year, year - 1]);
+
+  const planting$ = api.getPlantingIntentions(units).pipe(
+    catchError(() => { store.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); }),
+    tap(rows => store.setPlantingIntentions(rows ?? [])),
+  );
+  const storedGrain$ = api.getStoredGrain(units).pipe(
+    catchError(() => of([] as StoredGrain[])),
+    tap(rows => store.setStoredGrain(mergeIncomingById(rows ?? [], store.storedGrain()))),
+  );
+  // The [] fallback still marks DP loaded (so no DP prompt waits forever), which makes a failure read as "no
+  // producers hold DP" unless it is recorded.
+  const dpContracts$ = api.getDpContracts(units).pipe(
+    catchError(() => { store.setDpContractsLoadFailed(true); return of([] as DpContract[]); }),
+    tap(rows => store.setDpContracts(mergeIncomingById(rows ?? [], store.dpContracts()))),
+  );
+  return merge(planting$, storedGrain$, dpContracts$);
+}
+
+/**
+ * What Producers loads for a new trade-unit selection: the Planting Dashboard's summary, every producer's details, and
+ * the trade units' production (see preloadProduction), which the customer screen, Build a List, the saved lists and
+ * the dashboard read. A failed read of the details leaves the last ones in place.
+ */
+export function preloadProducers(tradeUnits: readonly string[]): Observable<unknown> {
+  const profiles = inject(ProducerProfileStore);
+  return merge(preloadDashboardSummary(tradeUnits), profiles.load().pipe(catchError(() => EMPTY)), preloadProduction(tradeUnits));
+}
+
+/**
+ * How many of the intentions are for the newest crop year among them: the Planting tab's count, which answers "how
+ * many crops are planned for the season" rather than counting every year on record. With no crop year on any, all.
+ */
+export function newestSeasonIntentionCount(intentions: readonly PlantingIntention[]): number {
+  const newest = Math.max(0, ...intentions.map(intention => intention.plantingYear || 0));
+  return newest ? intentions.filter(intention => intention.plantingYear === newest).length : intentions.length;
 }
 
 export const producersModule: ModuleManifest = {
@@ -54,5 +115,176 @@ export const producersModule: ModuleManifest = {
       menu: 'main',
     },
   ],
-  preload: preloadDashboardSummary,
+  preload: preloadProducers,
+  customerPanels: [
+    {
+      // Each customer list row's acres, beside the producer's name, from their saved details.
+      slot: 'row-tags',
+      id: 'acres',
+      requires: ['producer-details:read'],
+      segments: ['Producer'],
+      order: 10,
+      component: () => import('./components/acres-badge/acres-badge.component').then(m => m.AcresBadgeComponent),
+    },
+    // The profile header's producer details, all from the producer's saved details (ProducerDetails).
+    {
+      slot: 'badges',
+      id: 'organic-badge',
+      requires: ['producer-details:read'],
+      segments: ['Producer'],
+      order: 30,
+      component: () => import('./components/organic/organic-badge.component').then(m => m.OrganicBadgeComponent),
+    },
+    {
+      // What the Organic badge opens: the producer's NOP ID.
+      slot: 'badge-panels',
+      id: 'organic-panel',
+      requires: ['producer-details:read'],
+      segments: ['Producer'],
+      order: 20,
+      component: () => import('./components/organic/organic-panel.component').then(m => m.OrganicPanelComponent),
+    },
+    {
+      slot: 'contacts',
+      id: 'contacts',
+      requires: ['producer-details:read'],
+      segments: ['Producer'],
+      order: 10,
+      component: () => import('./components/producer-contacts/producer-contacts.component').then(m => m.ProducerContactsComponent),
+    },
+    {
+      slot: 'locations',
+      id: 'bin-sites',
+      requires: ['producer-details:read'],
+      segments: ['Producer'],
+      order: 10,
+      component: () => import('./components/bin-sites/bin-sites.component').then(m => m.BinSitesComponent),
+    },
+    {
+      // Acres, commodities and the grain on the farm, with its Grain on Farm table.
+      slot: 'details',
+      id: 'farm-details',
+      requires: ['producer-details:read'],
+      segments: ['Producer'],
+      order: 20,
+      component: () => import('./components/farm-details/farm-details.component').then(m => m.FarmDetailsComponent),
+    },
+    // The producer's performance. The Producer Insights button and the Harvest Contract Pace box open and close the
+    // three Insights panels; the button needs what the Contract Pacing card does, so it never opens an empty space.
+    {
+      slot: 'actions',
+      id: 'insights-toggle',
+      requires: ['contracts:read', 'contract-pacing:read'],
+      segments: ['Producer'],
+      order: 10,
+      component: () => import('./components/producer-insights/producer-insights-toggle.component').then(m => m.ProducerInsightsToggleComponent),
+    },
+    {
+      slot: 'details',
+      id: 'contract-pace',
+      requires: ['contracts:read', 'contract-pacing:read'],
+      segments: ['Producer'],
+      order: 30,
+      component: () => import('./components/contract-pace/contract-pace.component').then(m => m.ContractPaceComponent),
+    },
+    {
+      slot: 'summary',
+      id: 'producer-insights',
+      requires: ['contracts:read', 'contract-pacing:read', 'notes:read'],
+      segments: ['Producer'],
+      order: 10,
+      component: () => import('./components/producer-insights/producer-insights.component').then(m => m.ProducerInsightsComponent),
+    },
+    {
+      slot: 'summary',
+      id: 'contract-pacing',
+      requires: ['contracts:read', 'contract-pacing:read'],
+      segments: ['Producer'],
+      order: 20,
+      component: () => import('./components/contract-pacing-card/contract-pacing-card.component').then(m => m.ContractPacingCardComponent),
+    },
+    {
+      slot: 'summary',
+      id: 'growth-opportunity',
+      requires: ['contracts:read', 'planting-intentions:read', 'notes:read', 'planting-estimates:read'],
+      segments: ['Producer'],
+      order: 30,
+      component: () => import('./components/growth-opportunity/growth-opportunity.component').then(m => m.GrowthOpportunityComponent),
+    },
+    {
+      // Always shown, under the Insights panels.
+      slot: 'summary',
+      id: 'activity-summary',
+      requires: ['contracts:read', 'tickets:read', 'contract-pacing:read', 'planting-intentions:read', 'stored-grain:read', 'notes:read'],
+      segments: ['Producer'],
+      order: 40,
+      component: () => import('./components/activity-summary/activity-summary.component').then(m => m.ActivitySummaryComponent),
+    },
+    {
+      // Print, and the Producer Summary Report it opens. The report needs only the customer; each of its sections and
+      // summary figures shows only to a user who may read it, so it asks for no permission of its own.
+      slot: 'toolbar',
+      id: 'print-report',
+      requires: [],
+      segments: ['Producer'],
+      order: 90,
+      component: () => import('./components/customer-print-report/print-report-button.component').then(m => m.PrintReportButtonComponent),
+    },
+    {
+      // Edit, and the Edit Producer Details dialog it opens, which re-reads the producer's details. Its save always
+      // writes them, so it needs producer-details:write; inside, Trade Units also needs customers:write, and moving
+      // planting intentions off a removed trade unit planting-intentions:write.
+      slot: 'toolbar',
+      id: 'edit-producer',
+      requires: ['producer-details:read', 'producer-details:write'],
+      segments: ['Producer'],
+      order: 100,
+      component: () => import('./components/edit-customer-dialog/edit-producer-button.component').then(m => m.EditProducerButtonComponent),
+    },
+  ],
+  // A producer's own production. Each reads it from SelectedProducerProduction (ProducerProductionStore).
+  customerTabs: [
+    {
+      id: 'planting',
+      requires: ['planting-intentions:read'],
+      segments: ['Producer'],
+      label: 'Planting',
+      shortLabel: 'Plan',
+      order: 30,
+      badge: () => {
+        const production = inject(SelectedProducerProduction);
+        return computed(() => newestSeasonIntentionCount(production.visiblePlantingIntentions()));
+      },
+      component: () => import('./components/planting-intentions-table/planting-intentions-table.component').then(m => m.PlantingIntentionsTableComponent),
+    },
+    {
+      id: 'storage',
+      requires: ['stored-grain:read'],
+      segments: ['Producer'],
+      label: 'Storage',
+      shortLabel: 'Stor',
+      order: 40,
+      // The crops in storage.
+      badge: () => {
+        const production = inject(SelectedProducerProduction);
+        return computed(() => new Set(production.storedGrain().map(grain => grain.crop || 'Unknown')).size);
+      },
+      component: () => import('./components/stored-grain-table/stored-grain-table.component').then(m => m.StoredGrainTableComponent),
+    },
+    {
+      id: 'dpContracts',
+      requires: ['dp-contracts:read'],
+      segments: ['Producer'],
+      label: 'DP Contracts',
+      shortLabel: 'DP',
+      order: 50,
+      // Distinct contracts, not commodities (as Storage counts) and not charge rows: 8 contracts across 2 commodities
+      // read as 8.
+      badge: () => {
+        const production = inject(SelectedProducerProduction);
+        return computed(() => dpContractCount(production.dpContracts()));
+      },
+      component: () => import('./components/dp-contracts-table/dp-contracts-table.component').then(m => m.DpContractsTableComponent),
+    },
+  ],
 };

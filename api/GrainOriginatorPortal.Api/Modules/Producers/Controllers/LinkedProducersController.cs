@@ -24,9 +24,9 @@ public class LinkedProducersController : ControllerBase
         _service = service;
     }
 
-    /// <summary>Gets the customers that link TO this one (incoming / reverse links), each with its total acres
-    /// and its own links. Used by the cross-customer search path so the customer profile can show bidirectional
-    /// linked producers even when no TU is selected.</summary>
+    /// <summary>Gets the customers that link TO this one (incoming / reverse links). Used by the cross-customer search
+    /// path so the customer profile can show bidirectional linked producers even when no TU is selected; their own
+    /// links and acres come with their producer details.</summary>
     [HttpGet("linked-to/{sourceId}")]
     [ProducesResponseType(typeof(List<CustomerResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<CustomerResponse>>> GetLinkedTo(string sourceId, CancellationToken cancellationToken = default)

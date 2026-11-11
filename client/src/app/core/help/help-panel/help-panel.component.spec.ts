@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { ApplicationRef, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { render, screen, fireEvent } from '@testing-library/angular';
-import type { HelpContent } from '@models';
+import type { HelpContent } from '../help.model';
 import { HelpPanelComponent } from './help-panel.component';
 import { HelpPanelService } from '@core/help/help-panel.service';
 import { HelpService } from '@core/help/help.service';

@@ -1,0 +1,749 @@
+
+    @if (isOpen() && customer()) {
+      <!-- Escape does not close: it would discard every unsaved edit, and Escape inside the
+           producer-search and commodity dropdowns would take the whole dialog with it. -->
+      <app-dialog [isOpen]="true" [scrollBody]="true" [closeOnEscape]="false" (close)="onCancel()">
+        <app-dialog-header>
+          <app-dialog-title>Edit Producer Details</app-dialog-title>
+          <app-dialog-description>Update farm details and manage associations for {{ customer()!.name }}</app-dialog-description>
+        </app-dialog-header>
+
+        <app-dialog-content>
+          <div class="flex flex-col gap-6">
+            <!-- Trade Units (onboarding / manual assignment), only for a user who may change them. -->
+            @if (canChangeTradeUnits()) {
+            <div class="space-y-3">
+              <button type="button" (click)="toggleSection('tradeUnits')" class="flex w-full items-center gap-2 text-left">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 transition-transform" [class.rotate-90]="isExpanded('tradeUnits')"><path d="m9 18 6-6-6-6"/></svg>
+                <h4 class="font-medium text-gray-900 dark:text-white">Trade Units</h4>
+              </button>
+              @if (isExpanded('tradeUnits')) {
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                  Trade units this producer appears on.
+                </p>
+
+              <!-- Loading / error / empty states make a transient membership-load failure visible
+                   and recoverable instead of rendering blank (which reads as "no trade units"). -->
+              @if (isLoadingCurrentTradeUnits()) {
+                <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 py-1">
+                  <svg class="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                  Loading trade units…
+                </div>
+              } @else if (currentTradeUnitsError()) {
+                <div class="flex items-center justify-between gap-2 rounded-md border border-red-300/70 dark:border-red-700/60 bg-red-50 dark:bg-red-900/20 px-2.5 py-1.5">
+                  <span class="text-xs text-red-700 dark:text-red-300">Couldn't load trade units.</span>
+                  <button type="button" (click)="retryLoadCurrentTradeUnits()"
+                    class="text-xs font-medium text-red-700 dark:text-red-300 underline underline-offset-2 hover:text-red-800 dark:hover:text-red-200">
+                    Retry
+                  </button>
+                </div>
+              }
+              <!-- Two-state coloring by REMOVABILITY (not by source): gray = locked (active, can't
+                   remove); amber = removable (a manual add OR a dormant sync TU). All chips flow on
+                   one wrapping line: gray (locked) first, then amber (removable). -->
+              @else if (activeLockedTradeUnits().length > 0 || dormantTradeUnits().length > 0 || selectedTuCodes().length > 0) {
+                <div class="flex flex-wrap gap-1.5">
+                  <!-- Active locked (sync-sourced): open contract/ticket here, not removable -->
+                  @for (code of activeLockedTradeUnits(); track code) {
+                    <span title="Added from an open contract or ticket — managed by the nightly sync"
+                      class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                      {{ code }}
+                    </span>
+                  }
+                  <!-- Dormant locked: sync-sourced but no open contract/ticket here, so removable.
+                       Removal is staged and committed on Save (server re-validates dormancy). -->
+                  @for (code of dormantTradeUnits(); track code) {
+                    <span title="No open contract or ticket in this trade unit — you can remove it (applied on Save). It returns automatically if the producer gets new activity here."
+                      class="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-full text-xs font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border border-amber-300/70 dark:border-amber-700/60">
+                      {{ code }}
+                      <button type="button" (click)="removeDormantTradeUnit(code)" title="Remove (dormant — no open activity here)"
+                        class="ml-0.5 p-0.5 rounded-full hover:bg-amber-200/60 dark:hover:bg-amber-800/40 text-amber-700 dark:text-amber-300">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                      </button>
+                    </span>
+                  }
+                  <!-- Manual (editable) — same amber "removable" styling as dormant; only the remove
+                       handler differs (manual reconcile vs dormant DELETE). -->
+                  @for (code of selectedTuCodes(); track code) {
+                    <span title="Manually assigned — you can remove it (applied on Save)."
+                      class="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-full text-xs font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border border-amber-300/70 dark:border-amber-700/60">
+                      {{ code }}
+                      <button type="button" (click)="removeTradeUnit(code)" title="Remove"
+                        class="ml-0.5 p-0.5 rounded-full hover:bg-amber-200/60 dark:hover:bg-amber-800/40 text-amber-700 dark:text-amber-300">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                      </button>
+                    </span>
+                  }
+                </div>
+              } @else {
+                <p class="text-xs text-gray-500 dark:text-gray-400 py-1">No trade units on this producer.</p>
+              }
+
+              <!-- Search + suggestions -->
+              <div class="relative">
+                <input
+                  type="text"
+                  [ngModel]="tuSearch()"
+                  (ngModelChange)="tuSearch.set($event)"
+                  [placeholder]="isLoadingTradeUnits() ? 'Loading trade units…' : 'Search trade units by code…'"
+                  [disabled]="isLoadingTradeUnits()"
+                  class="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green/40 focus:border-scoular-green"
+                />
+                @if (tuSearch().trim() && filteredTradeUnits().length > 0) {
+                  <div class="absolute z-10 mt-1 w-full max-h-52 overflow-y-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg">
+                    @for (tu of filteredTradeUnits(); track tu.code) {
+                      <button type="button" (click)="addTradeUnit(tu.code)"
+                        class="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                        <span class="font-medium">{{ tu.code }}</span>
+                        @if (tu.description) {
+                          <span class="text-gray-500 dark:text-gray-400 truncate">{{ tu.description }}</span>
+                        }
+                      </button>
+                    }
+                  </div>
+                }
+              </div>
+
+              @if (isCheckingPlantingIntentions()) {
+                <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 py-1">
+                  <svg class="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                  Checking planting intentions…
+                </div>
+              }
+
+              @if (isOnboardCandidate() && selectedTuCodes().length === 0) {
+                <p class="text-xs text-amber-600 dark:text-amber-400">
+                  This producer isn't in your tables yet — assign at least one trade unit and click <span class="font-medium">Save Changes</span> to add them.
+                </p>
+              }
+              }
+            </div>
+            }
+
+            @if (detailsLocked()) {
+              <p class="text-xs text-gray-500 dark:text-gray-400 italic">
+                Select a trade unit to edit farm details, commodities, and linked producers.
+              </p>
+            }
+
+            <!-- Everything below is locked until a candidate has at least one trade unit
+                 selected. A disabled fieldset natively disables every control inside it. -->
+            <fieldset [disabled]="detailsLocked()" [class.opacity-50]="detailsLocked()" class="flex flex-col gap-6 border-0 p-0 m-0 min-w-0">
+            <!-- Farm & Crops -->
+            <div class="space-y-4">
+              <button type="button" (click)="toggleSection('farm')" class="flex w-full items-center gap-2 text-left">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 transition-transform" [class.rotate-90]="isExpanded('farm')"><path d="m9 18 6-6-6-6"/></svg>
+                <h4 class="font-medium text-gray-900 dark:text-white">Farm &amp; Crops</h4>
+              </button>
+              @if (isExpanded('farm')) {
+
+              <!-- Contacts: name + label + phone + email per row; one starred primary. These are
+                   user-entered and kept alongside (not replacing) the pulled-in ODS phone/email. -->
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                    </svg>
+                    Contacts
+                  </label>
+                  <button type="button" (click)="addContactRow()"
+                    class="flex items-center gap-1 text-sm font-medium text-scoular-green-accessible hover:text-scoular-green transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    Add contact
+                  </button>
+                </div>
+
+                @if (editContacts().length > 0) {
+                  <!-- Header row -->
+                  <div class="grid grid-cols-[1.25rem_1.2fr_1fr_1.2fr_1.25rem] gap-2 items-center px-1">
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500" title="Primary">★</span>
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Name</span>
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Phone</span>
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Email</span>
+                    <span></span>
+                  </div>
+                  @for (row of editContacts(); track $index) {
+                    <div class="grid grid-cols-[1.25rem_1.2fr_1fr_1.2fr_1.25rem] gap-2 items-center">
+                      <button type="button" (click)="setPrimaryContactRow($index)"
+                        [title]="row.isPrimary ? 'Primary contact' : 'Make primary contact'"
+                        [attr.aria-pressed]="row.isPrimary"
+                        class="justify-self-center transition-colors"
+                        [class]="row.isPrimary ? 'text-scoular-green-accessible' : 'text-gray-300 dark:text-gray-600 hover:text-gray-400 dark:hover:text-gray-500'">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                          [attr.fill]="row.isPrimary ? 'currentColor' : 'none'"
+                          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/>
+                        </svg>
+                      </button>
+                      <input type="text" [ngModel]="row.name" (ngModelChange)="updateContactField($index, 'name', $event)"
+                        placeholder="Name" maxlength="200"
+                        class="w-full h-9 px-2.5 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                        [class]="!row.name.trim() && (row.phone.trim() || row.email.trim()) ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'" />
+                      <input type="tel" [ngModel]="row.phone" (ngModelChange)="onContactPhoneInput($index, $event)"
+                        placeholder="(___) ___-____" maxlength="14"
+                        class="w-full h-9 px-2.5 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                      <input type="email" [ngModel]="row.email" (ngModelChange)="updateContactField($index, 'email', $event)"
+                        placeholder="email@example.com" maxlength="255"
+                        class="w-full h-9 px-2.5 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                      <button type="button" (click)="removeContactRow($index)" title="Remove contact"
+                        class="text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors justify-self-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                      </button>
+                    </div>
+                  }
+                  @if (contactsInvalid()) {
+                    <p class="text-xs text-red-500 dark:text-red-400">Each contact needs a name.</p>
+                  }
+                } @else {
+                  <p class="text-xs text-gray-400 dark:text-gray-500 italic">No contacts added — use "Add contact" for people or numbers (Dad's cell, the shop line, an insurance email).</p>
+                }
+              </div>
+
+              <!-- Grain on Farm pieces shared by every bin site's block and the "not tied to a bin site"
+                   block below: the column header, one row, and a site's add-a-commodity picker. -->
+              <ng-template #grainHeaderTpl>
+                <div class="grid grid-cols-[repeat(6,minmax(0,1fr))_1.25rem] items-center gap-1.5 px-2">
+                  <span class="text-[0.7rem] font-medium text-gray-500 dark:text-gray-400">Commodity</span>
+                  <span class="text-[0.7rem] font-medium text-gray-500 dark:text-gray-400">Total bu</span>
+                  <span class="text-[0.7rem] font-medium text-gray-500 dark:text-gray-400">Sold bu</span>
+                  <span class="text-[0.7rem] font-medium text-gray-500 dark:text-gray-400">Grade</span>
+                  <span class="text-[0.7rem] font-medium text-gray-500 dark:text-gray-400">Target</span>
+                  <span class="text-[0.7rem] font-medium text-gray-500 dark:text-gray-400">Last bid</span>
+                  <span></span>
+                </div>
+              </ng-template>
+              <ng-template #grainRowTpl let-row>
+                <div class="grid grid-cols-[repeat(6,minmax(0,1fr))_1.25rem] items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-600 bg-gray-50/70 dark:bg-gray-700/40 px-2 py-1.5">
+                  <span class="min-w-0 flex items-center gap-1 text-sm font-semibold text-gray-800 dark:text-gray-200" [title]="grainRowTitle(row.commodityCode)">
+                    <span class="truncate">{{ row.commodityCode }}</span>
+                    @if (isLegacyGrainRow(row.commodityCode)) {
+                      <!-- Saved before Grain on Farm used codes: still valid, but a crop group. -->
+                      <span class="shrink-0 rounded px-1 text-[0.6rem] font-medium uppercase tracking-wide bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Group</span>
+                    }
+                  </span>
+                  <input type="text" inputmode="numeric" [(ngModel)]="row.bushelsOnHand" placeholder="Total"
+                    class="w-full h-8 px-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                  <input type="text" inputmode="numeric" [(ngModel)]="row.bushelsSold" placeholder="Sold"
+                    class="w-full h-8 px-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                  <input type="text" [(ngModel)]="row.grade" placeholder="Grade"
+                    class="w-full h-8 px-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                  <!-- Target and Last bid accept negatives (basis), so no inputmode — a numeric/decimal
+                       phone keypad has no minus key — and no "$" adornment, which reads wrong on "-0.35". -->
+                  <input type="text" [(ngModel)]="row.targetBushels" placeholder="Target"
+                    class="w-full h-8 px-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                  <input type="text" [(ngModel)]="row.lastBid" placeholder="Last bid"
+                    class="w-full h-8 px-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                  <button type="button" (click)="removeGrainRow(row.siteKey, row.commodityCode)" title="Remove {{ row.commodityCode }}" class="shrink-0 text-gray-400 hover:text-scoular-red transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                  </button>
+                </div>
+              </ng-template>
+              <ng-template #addGrainLinkTpl let-siteKey let-inBlock="inBlock">
+                <button type="button" (click)="openGrainForSite(siteKey)" [class.ml-3]="!inBlock"
+                  class="inline-flex items-center gap-1 text-xs font-medium text-scoular-green-accessible hover:text-scoular-green transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                  Add grain on farm
+                </button>
+              </ng-template>
+              <ng-template #grainPickerTpl let-siteKey>
+                <div class="flex items-center gap-2">
+                  <div class="relative flex-1 min-w-0">
+                    <button type="button" (click)="toggleGrainPicker(siteKey)" (blur)="closeGrainPickerDelayed()"
+                      (keydown)="onGrainPickerKeydown($event, siteKey)" aria-haspopup="listbox" [attr.aria-expanded]="grainPickerOpen() && grainPickerSite() === siteKey"
+                      class="w-full h-9 px-2 pr-7 flex items-center rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-left focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                      [class.text-gray-900]="grainPickerSite() === siteKey && !!newGrainCode()" [class.dark:text-white]="grainPickerSite() === siteKey && !!newGrainCode()"
+                      [class.text-gray-500]="grainPickerSite() !== siteKey || !newGrainCode()" [class.dark:text-gray-400]="grainPickerSite() !== siteKey || !newGrainCode()">
+                      <span class="truncate">{{ grainPickerLabelFor(siteKey) }}</span>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 transition-transform" [class.rotate-180]="grainPickerOpen() && grainPickerSite() === siteKey" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </button>
+                    @if (grainPickerOpen() && grainPickerSite() === siteKey) {
+                      <div role="listbox" class="absolute left-0 top-full z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                        @for (g of grainOptions(); track g.code) {
+                          <button type="button" role="option" tabindex="-1" [attr.id]="'grain-opt-' + $index" [attr.aria-selected]="g.code === newGrainCode()" (mousedown)="selectGrainOption(g.code)"
+                            class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white transition-colors"
+                            [class.bg-gray-100]="g.code === newGrainCode() || $index === grainPickerActive()" [class.dark:bg-gray-700]="g.code === newGrainCode() || $index === grainPickerActive()">
+                            {{ g.label }}
+                          </button>
+                        } @empty {
+                          <div class="px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
+                            {{ isLoadingCommodities() ? 'Loading commodities…' : 'No more commodities to add' }}
+                          </div>
+                        }
+                      </div>
+                    }
+                  </div>
+                  <button type="button" (click)="addGrainRow(siteKey)" [disabled]="grainPickerSite() !== siteKey || !newGrainCode()"
+                    class="shrink-0 inline-flex items-center gap-1 px-3 h-9 rounded-md text-sm font-medium bg-scoular-green-accessible text-white hover:bg-scoular-green disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    Add
+                  </button>
+                  <button type="button" (click)="cancelGrainPicker()"
+                    class="shrink-0 h-9 px-2 text-sm text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 transition-colors">
+                    Cancel
+                  </button>
+                </div>
+              </ng-template>
+
+              <!-- Bin sites: Name | Capacity | Lat/Long, as many as needed, each with its own Grain on Farm
+                   right under it. Shown at the bottom of Contact on the profile, with map links. -->
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
+                    </svg>
+                    Bin Sites
+                  </label>
+                  @if (editBinSites().length < maxBinSites) {
+                    <button type="button" (click)="addBinSiteRow()"
+                      class="flex items-center gap-1 text-sm font-medium text-scoular-green-accessible hover:text-scoular-green transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                      Add bin site
+                    </button>
+                  }
+                </div>
+
+                @if (editBinSites().length > 0) {
+                  <!-- Name | Capacity | Lat/Long | remove — one line per site. -->
+                  <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,0.75fr)_minmax(0,1.4fr)_1.25rem] gap-2 items-center px-1">
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Name <span class="text-red-500" aria-hidden="true">*</span></span>
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Capacity (bu)</span>
+                    <span class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">Latitude, Longitude</span>
+                    <span></span>
+                  </div>
+                  @for (row of editBinSites(); track $index) {
+                    <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,0.75fr)_minmax(0,1.4fr)_1.25rem] gap-2 items-center">
+                      <!-- Each input carries an inline × that empties it (shown only when it has a value). -->
+                      <div class="relative">
+                        <input type="text" [ngModel]="row.name" (ngModelChange)="updateBinSiteField($index, 'name', $event)"
+                          placeholder="Site Name" [attr.maxlength]="binSiteNameMaxLength" aria-label="Bin site name"
+                          [attr.aria-invalid]="binSiteNameMissing()[$index] ? true : null" [class]="binSiteNameMissing()[$index] ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'"
+                          class="w-full h-9 pl-2.5 pr-7 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                        @if (row.name) {
+                          <button type="button" (click)="clearBinSiteField($index, 'name')" title="Clear name" aria-label="Clear bin site name"
+                            class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                          </button>
+                        }
+                      </div>
+                      <!-- Capacity: digits only, grouped as typed. The placeholder is just "BU" — the column
+                           header names the field. -->
+                      <div class="min-w-0">
+                        <div class="relative">
+                          <input type="text" inputmode="numeric" [ngModel]="row.capacity" (ngModelChange)="onBinSiteCapacityInput($index, $event)"
+                            placeholder="BU" maxlength="11" aria-label="Bin site capacity in bushels"
+                            class="w-full h-9 pl-2.5 pr-7 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                          @if (row.capacity) {
+                            <button type="button" (click)="clearBinSiteField($index, 'capacity')" title="Clear capacity" aria-label="Clear bin site capacity"
+                              class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                            </button>
+                          }
+                        </div>
+                      </div>
+                      <!-- Free-hand entry: decimals, N/S/E/W letters or degrees-minutes-seconds. On blur a
+                           valid entry is rewritten as "lat, lng" so the user sees how it was read. -->
+                      <div class="relative">
+                        <input type="text" [ngModel]="row.coords" (ngModelChange)="updateBinSiteField($index, 'coords', $event)"
+                          (blur)="normalizeBinSiteCoords($index)"
+                          [placeholder]="coordinateExample" aria-label="Bin site latitude and longitude"
+                          [attr.aria-invalid]="binSiteCoordsInvalid()[$index] ? true : null"
+                          class="w-full h-9 pl-2.5 pr-7 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm font-mono text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                          [class]="binSiteCoordsInvalid()[$index] ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'" />
+                        @if (row.coords) {
+                          <button type="button" (click)="clearBinSiteField($index, 'coords')" title="Clear coordinates" aria-label="Clear bin site coordinates"
+                            class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                          </button>
+                        }
+                      </div>
+                      <button type="button" (click)="removeBinSiteRow($index)" title="Remove bin site"
+                        class="text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors justify-self-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                      </button>
+                    </div>
+                    @if (binSiteErrors()[$index]; as error) {
+                      <p class="text-xs text-red-500 dark:text-red-400">{{ error }}</p>
+                    }
+                    <!-- This site's Grain on Farm (user 2026-10-09). Collapsed when the dialog opens: a site
+                         with grain shows one toggle line, "▸ Grain on Farm — North Bins (2) · 42,500 bu";
+                         expanded, its rows. The commodity picker is on screen only while adding — "+ Add
+                         grain on farm" brings it up, and adding a crop (or Cancel) puts it away again. -->
+                    @let siteGrain = grainRowsFor(row.key);
+                    @let adding = grainPickerSite() === row.key;
+                    @if (siteGrain.length > 0) {
+                      <button type="button" (click)="toggleGrainForSite(row.key)" [attr.aria-expanded]="isGrainBlockOpen(row.key)"
+                        class="ml-3 flex max-w-full items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" class="shrink-0 transition-transform" [class.rotate-90]="isGrainBlockOpen(row.key)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                        <span class="truncate">Grain on Farm — {{ row.name.trim() || 'this site' }}</span>
+                        <span class="shrink-0 font-normal text-gray-500 dark:text-gray-400">({{ grainSummaryFor(row.key).count }}) · {{ grainSummaryFor(row.key).total | number }} bu</span>
+                      </button>
+                    } @else if (adding) {
+                      <div class="ml-3 flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" class="shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
+                        <span class="truncate">Grain on Farm — {{ row.name.trim() || 'this site' }}</span>
+                      </div>
+                    }
+                    @if ((siteGrain.length > 0 && isGrainBlockOpen(row.key)) || adding) {
+                      <div class="ml-3 pl-3 border-l-2 border-gray-200 dark:border-gray-600 space-y-1.5">
+                        @if (siteGrain.length > 0 && isGrainBlockOpen(row.key)) {
+                          <ng-container *ngTemplateOutlet="grainHeaderTpl" />
+                          @for (g of siteGrain; track g.commodityCode) {
+                            <ng-container *ngTemplateOutlet="grainRowTpl; context: { $implicit: g }" />
+                          }
+                        }
+                        @if (adding) {
+                          <ng-container *ngTemplateOutlet="grainPickerTpl; context: { $implicit: row.key }" />
+                        } @else {
+                          <ng-container *ngTemplateOutlet="addGrainLinkTpl; context: { $implicit: row.key, inBlock: true }" />
+                        }
+                      </div>
+                    } @else if (siteGrain.length === 0) {
+                      <ng-container *ngTemplateOutlet="addGrainLinkTpl; context: { $implicit: row.key, inBlock: false }" />
+                    }
+                  }
+                  <p class="text-xs text-gray-400 dark:text-gray-500">Paste straight from Google Maps (right-click the spot, click the coordinates) or type them — decimals, N/W letters or degrees-minutes-seconds all work, and nothing needs rounding. Must be in North America. Grain on farm uses the Planting Intentions commodity list; one the producer doesn't have is added to their Commodities.</p>
+                } @else {
+                  <p class="text-xs text-gray-400 dark:text-gray-500 italic">No bin sites added — use "Add bin site". Only the name is required; add the capacity and location when you have them.</p>
+                }
+              </div>
+
+              <!-- Grain on Farm saved before it belonged to a bin site (2026-10-09). Shown only while such
+                   rows exist; each can be moved onto a site, and nothing new is added here — new grain on
+                   farm goes under a bin site above. -->
+              @if (unlinkedGrainRows().length > 0) {
+                <div class="space-y-2">
+                  <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/>
+                    </svg>
+                    Grain on Farm — not tied to a bin site
+                  </label>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">Saved before grain on farm belonged to a bin site. Move each row to the site it's stored at.</p>
+                  <div class="space-y-1.5">
+                    <ng-container *ngTemplateOutlet="grainHeaderTpl" />
+                    @for (g of unlinkedGrainRows(); track g.commodityCode) {
+                      <ng-container *ngTemplateOutlet="grainRowTpl; context: { $implicit: g }" />
+                      <div class="flex items-center gap-2 pl-2">
+                        @if (grainMoveTargets(g.commodityCode).length > 0) {
+                          <select (change)="moveGrainRowToSite(g.commodityCode, $any($event.target).value)" [attr.aria-label]="'Move ' + g.commodityCode + ' to a bin site'"
+                            class="h-8 px-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-scoular-green">
+                            <option value="">Move {{ g.commodityCode }} to a bin site…</option>
+                            @for (t of grainMoveTargets(g.commodityCode); track t.key) {
+                              <option [value]="t.key">{{ t.name }}</option>
+                            }
+                          </select>
+                        } @else {
+                          <span class="text-xs text-gray-400 dark:text-gray-500">Add a named bin site above to move {{ g.commodityCode }} to it.</span>
+                        }
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+
+              <!-- Acres alone in half the row (Bin Capacity was removed 2026-10-09: capacity lives on each bin site). -->
+              <div class="grid grid-cols-2 gap-4">
+                <div class="space-y-2">
+                  <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="m10 11 11 .9a1 1 0 0 1 .8 1.1l-.665 4.158a1 1 0 0 1-.988.842H20"/>
+                      <path d="M16 18h-5"/><path d="M18 5a1 1 0 0 0-1 1v5.573"/>
+                      <path d="M3 4h8.129a1 1 0 0 1 .99.863L13 11.246"/>
+                      <path d="M4 11V4"/><path d="M7 15h.01"/><path d="M8 10.1V4"/>
+                      <circle cx="18" cy="18" r="2"/><circle cx="7" cy="15" r="5"/>
+                    </svg>
+                    Acres
+                  </label>
+                  <div class="relative">
+                    <input
+                      type="text"
+                      inputmode="numeric"
+                      [(ngModel)]="editAcres"
+                      placeholder="e.g., 1,200"
+                      maxlength="10"
+                      (focus)="clearZeroOnFocus('editAcres')"
+                      (blur)="normalizeNumericOnBlur('editAcres')"
+                      class="w-full h-10 px-3 pr-8 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                    />
+                    @if (editAcres && editAcres !== '0') {
+                      <button type="button" (click)="editAcres = ''" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                      </button>
+                    }
+                  </div>
+                </div>
+              </div>
+
+              <!-- Commodities -->
+              <div class="space-y-2">
+                <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M2 22 16 8"/>
+                    <path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
+                    <path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
+                    <path d="M11.47 4.53 13 3l1.53 1.53a3.5 3.5 0 0 1 0 4.94L13 11l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
+                    <path d="M20 2h2v2a4 4 0 0 1-4 4h-2V6a4 4 0 0 1 4-4Z"/>
+                    <path d="M11.47 17.47 13 19l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L5 19l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
+                    <path d="M15.47 13.47 17 15l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L9 15l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
+                    <path d="M19.47 9.47 21 11l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L13 11l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
+                  </svg>
+                  Commodities
+                </label>
+                @if (editCommodities().length > 0) {
+                  <div class="flex flex-wrap gap-1.5 mb-2">
+                    @for (commodity of editCommodities(); track commodity) {
+                      @if (isTicketCommodity(commodity)) {
+                        <!-- Ticket-derived: read-only, no remove -->
+                        <span class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-sm font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300" title="From tickets">
+                          {{ commodity }}
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opacity-40">
+                            <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                          </svg>
+                        </span>
+                      } @else {
+                        <!-- User-added: removable -->
+                        <span class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-sm font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-scoular-yellow">
+                          {{ commodity }}
+                          <button type="button" (click)="removeCommodity(commodity)" class="hover:text-scoular-yellow dark:hover:text-amber-200 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="M18 6L6 18"/><path d="M6 6l12 12"/>
+                            </svg>
+                          </button>
+                        </span>
+                      }
+                    }
+                  </div>
+                }
+                <div class="relative">
+                  <div class="relative">
+                    <input
+                      type="text"
+                      [ngModel]="newCommodity()"
+                      (ngModelChange)="newCommodity.set($event)"
+                      placeholder="Add commodities"
+                      maxlength="50"
+                      (input)="onCommoditySearch()"
+                      (keydown.enter)="selectFirstSuggestion()"
+                      (focus)="showSuggestions.set(true)"
+                      (blur)="hideSuggestionsDelayed()"
+                      class="w-full h-10 px-3 pr-8 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                    />
+                    @if (newCommodity()) {
+                      <button type="button" (mousedown)="clearCommoditySearch()" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                      </button>
+                    }
+                  </div>
+                  @if (newCommodity().trim() && isLoadingCommodities()) {
+                    <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
+                      Loading commodities...
+                    </div>
+                  }
+                  @if (showSuggestions() && filteredCommodities().length > 0) {
+                    <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                      @for (commodity of filteredCommodities(); track commodity.id) {
+                        <button
+                          type="button"
+                          class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white transition-colors"
+                          (mousedown)="selectCommodity(commodity)"
+                        >
+                          <span class="font-medium">{{ commodity.name }}</span>
+                          <span class="text-gray-400 dark:text-gray-500 ml-1.5">({{ commodity.code }})</span>
+                        </button>
+                      }
+                    </div>
+                  }
+                </div>
+              </div>
+
+              }
+            </div>
+
+            <!-- Link Producers -->
+            <div class="space-y-4">
+              <button type="button" (click)="toggleSection('links')" class="flex w-full items-center gap-2 text-left">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 transition-transform" [class.rotate-90]="isExpanded('links')"><path d="m9 18 6-6-6-6"/></svg>
+                <h4 class="font-medium text-gray-900 dark:text-white">Link Producers</h4>
+              </button>
+              @if (isExpanded('links')) {
+
+              <!-- Outgoing Links: always visible so they can be removed without a Primary Contact -->
+              @if (editLinkedProducerIds().length > 0) {
+                <div class="space-y-2">
+                  <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Linked To:</div>
+                  @for (producerId of editLinkedProducerIds(); track producerId) {
+                    @if (getProducerById(producerId); as producer) {
+                      <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
+                        <div>
+                          <div class="font-medium text-gray-900 dark:text-white">{{ producer.name }}</div>
+                          <div class="text-xs text-gray-500 dark:text-gray-400">{{ producer.scoularId || producer.location }}</div>
+                        </div>
+                        <button
+                          type="button"
+                          class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 text-scoular-red hover:text-scoular-red-accessible hover:bg-scoular-red/5 dark:hover:bg-scoular-red/20 h-8 w-8"
+                          (click)="removeLinkedProducer(producerId)"
+                          title="Unlink"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/>
+                          </svg>
+                        </button>
+                      </div>
+                    }
+                  }
+                </div>
+              }
+
+              <!-- Incoming Links: always visible so they can be removed without a Primary Contact -->
+              @if (getProducersLinkingToMe().length > 0) {
+                <div class="space-y-2">
+                  <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Linked From:</div>
+                  @for (producer of getProducersLinkingToMe(); track producer.id) {
+                    <div class="flex items-center justify-between p-3 bg-scoular-blue/5 dark:bg-scoular-blue/20 rounded-lg border border-scoular-blue/30 dark:border-scoular-blue-dark">
+                      <div>
+                        <div class="font-medium text-gray-900 dark:text-white">{{ producer.name }}</div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400">{{ producer.scoularId || producer.location }}</div>
+                      </div>
+                      <button
+                        type="button"
+                        class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 text-scoular-red hover:text-scoular-red-accessible hover:bg-scoular-red/5 dark:hover:bg-scoular-red/20 h-8 w-8"
+                        (click)="removeIncomingLink(producer.scoularId || producer.id.toString())"
+                        title="Unlink from {{ producer.name }}"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/>
+                        </svg>
+                      </button>
+                    </div>
+                  }
+                </div>
+              }
+
+              <!-- Search to add — requires a named primary contact -->
+              @if (!primaryContactName()) {
+                <p class="text-sm text-scoular-yellow dark:text-scoular-yellow">A Primary Contact is required to link additional producers.</p>
+              } @else {
+                <div class="space-y-2">
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Search to Link Producer</label>
+                  <div class="relative">
+                    <input
+                      type="text"
+                      [ngModel]="newProducerSearch()"
+                      (ngModelChange)="newProducerSearch.set($event)"
+                      placeholder="Search by name, ID, or producer code..."
+                      maxlength="100"
+                      (input)="onProducerSearch()"
+                      (focus)="showProducerSuggestions.set(true)"
+                      (blur)="hideProducerSuggestionsDelayed()"
+                      class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                    />
+                    @if (newProducerSearch()) {
+                      <button type="button" (mousedown)="newProducerSearch.set(''); filteredProducers.set([]); showProducerSuggestions.set(false)" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                      </button>
+                    }
+                    @if (newProducerSearch().trim() && isLoadingProducers()) {
+                      <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
+                        Loading producers...
+                      </div>
+                    }
+                    @if (showProducerSuggestions() && filteredProducers().length > 0) {
+                      <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                        @for (producer of filteredProducers(); track producer.id) {
+                          <button
+                            type="button"
+                            class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white transition-colors"
+                            (mousedown)="selectProducer(producer)"
+                          >
+                            <span class="font-medium">{{ producer.name }}</span>
+                            @if (producer.scoularId) {
+                              <span class="text-gray-400 dark:text-gray-500 ml-1.5">{{ producer.scoularId }}</span>
+                            }
+                          </button>
+                        }
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+              }
+            </div>
+            </fieldset>
+          </div>
+        </app-dialog-content>
+
+        <app-dialog-footer>
+          <button
+            type="button"
+            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-gray-300 dark:border-gray-600 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 h-10 px-4 py-2"
+            (click)="onCancel()"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-scoular-green-accessible text-white hover:bg-scoular-green-accessible h-10 px-4 py-2"
+            [disabled]="saving() || !hasChanges() || !canSave() || contactsInvalid() || binSitesInvalid()"
+            (click)="onSave()"
+          >
+            {{ saving() ? 'Saving…' : 'Save Changes' }}
+          </button>
+        </app-dialog-footer>
+      </app-dialog>
+
+      <!-- Removing a trade unit the producer has planting intentions for. The acres are still
+           being planted, so ask where they should count instead of stranding them on a trade unit
+           the producer has left (a stranded row counts on no single-trade-unit dashboard). -->
+      @if (tuRemovalPrompt(); as prompt) {
+        <div class="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50" (click)="cancelTradeUnitRemoval()">
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full p-6" (click)="$event.stopPropagation()">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Move this producer's planting intentions?</h3>
+            <p class="text-sm text-gray-600 dark:text-gray-300">
+              {{ prompt.count }} planting intention{{ prompt.count === 1 ? '' : 's' }} ({{ prompt.acres | number }} acres,
+              {{ prompt.years.length === 1 ? 'crop year ' : 'crop years ' }}{{ prompt.years.join(', ') }})
+              {{ prompt.count === 1 ? 'is' : 'are' }} recorded for trade unit {{ prompt.code }}.
+            </p>
+
+            @if (prompt.targets.length > 0) {
+              <div class="mt-4 space-y-2">
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Where should these acres count?</label>
+                <select
+                  [ngModel]="tuRemovalTarget()"
+                  (ngModelChange)="tuRemovalTarget.set($event)"
+                  class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                >
+                  @for (target of prompt.targets; track target) {
+                    <option [value]="target">Move to {{ target }}</option>
+                  }
+                  <option value="">Leave them on {{ prompt.code }}</option>
+                </select>
+                @if (!tuRemovalTarget()) {
+                  <p class="text-xs text-amber-600 dark:text-amber-400">
+                    Left on {{ prompt.code }}, these acres won't be counted on any trade unit's dashboard until someone re-tags them.
+                  </p>
+                }
+              </div>
+            } @else {
+              <p class="mt-4 text-xs text-amber-600 dark:text-amber-400">
+                This producer has no other trade unit to move them to, so the acres stay on {{ prompt.code }} and won't be
+                counted on any trade unit's dashboard. They remain on the producer's profile.
+              </p>
+            }
+
+            <div class="mt-6 flex justify-end gap-2">
+              <button type="button" (click)="cancelTradeUnitRemoval()"
+                class="inline-flex items-center justify-center rounded-md text-sm font-medium h-10 px-4 py-2 border border-gray-300 dark:border-gray-600 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100">
+                Keep {{ prompt.code }}
+              </button>
+              <button type="button" (click)="confirmTradeUnitRemoval()"
+                class="inline-flex items-center justify-center rounded-md text-sm font-medium h-10 px-4 py-2 bg-scoular-green-accessible text-white hover:bg-scoular-green">
+                {{ tuRemovalTarget() ? 'Remove and move acres' : 'Remove anyway' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      }
+    }

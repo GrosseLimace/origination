@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { Customer, Note, RefinementFilters } from '@models';
+import { Customer, Note } from '@models';
+import { RefinementFilters } from '../models/refine-filters.model';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 import {
   aggregateMatchingNotes, buildNoteFilterPredicate, indexMatchingNotesByCode, isNoteFilterActive, lastContactBadges,
@@ -10,8 +11,8 @@ const NOW = new Date('2026-10-13T12:00:00Z');
 const DAY = 86400000;
 
 const customer = (id: number, over: Partial<Customer> = {}): Customer => ({
-  id, name: `P${id}`, scoularId: `C${id}`, farm: '', location: '', phone: '', email: '', totalAcres: 0,
-  linkedProducerIds: [], eSignEnabled: false, achEnabled: false, ...over,
+  id, name: `P${id}`, scoularId: `C${id}`, location: '', phone: '', email: '', 
+  eSignEnabled: false, achEnabled: false, ...over,
 });
 const note = (id: number, over: Partial<Note> = {}): Note => ({
   id, customerId: 1, customerName: '', customerCode: 'C1', content: '', isPinned: false, createdBy: 'x',
@@ -93,7 +94,9 @@ describe('buildNoteFilterPredicate', () => {
 });
 
 describe('matching notes by code and by customer', () => {
-  const customers = [customer(1, { name: 'Alpha', linkedProducerIds: ['C2'] }), customer(2, { name: 'Bravo' }), customer(3)];
+  const customers = [customer(1, { name: 'Alpha' }), customer(2, { name: 'Bravo' }), customer(3)];
+  // Customer 1's saved details link to C2.
+  const linkedToC2 = (c: Customer) => (c.id === 1 ? ['C2'] : []);
   const notes = [
     note(1, { customerCode: 'C1', createdAt: '2026-10-10T00:00:00' as never }),
     note(2, { customerCode: 'C2', createdAt: '2026-10-12T00:00:00' as never }),
@@ -111,7 +114,7 @@ describe('matching notes by code and by customer', () => {
 
   it('aggregates over the linked component without duplicates', () => {
     const byCode = indexMatchingNotesByCode(() => true, customers, notes);
-    const byCustomer = aggregateMatchingNotes(byCode, customers, buildLinkedProducerComponents(customers));
+    const byCustomer = aggregateMatchingNotes(byCode, customers, buildLinkedProducerComponents(customers, linkedToC2));
     expect(byCustomer.get(1)!.map(n => n.id)).toEqual([3, 2, 1]);
     expect(byCustomer.get(2)!.map(n => n.id)).toEqual([3, 2, 1]);
     expect(byCustomer.has(3)).toBe(false);
@@ -120,13 +123,15 @@ describe('matching notes by code and by customer', () => {
 
 describe('last contact', () => {
   it('takes the latest aggregate row across the linked component', () => {
-    const customers = [customer(1, { linkedProducerIds: ['C2'] }), customer(2), customer(3), customer(4, { scoularId: undefined })];
+    const customers = [customer(1), customer(2), customer(3), customer(4, { scoularId: undefined })];
+    // Customer 1's saved details link to C2.
+    const linkedToC2 = (c: Customer) => (c.id === 1 ? ['C2'] : []);
     const times = lastContactTimeByCustomer([
       { customerId: 1, customerCode: 'C1', lastNoteAt: '2026-10-01T00:00:00' as never },
       { customerId: 2, customerCode: 'C2', lastNoteAt: '2026-10-05T00:00:00' as never },
       { customerId: 2, customerCode: 'C2', lastNoteAt: '2026-09-01T00:00:00' as never },
       { customerId: 9, lastNoteAt: '2026-10-10T00:00:00' as never },
-    ], buildLinkedProducerComponents(customers), customers);
+    ], buildLinkedProducerComponents(customers, linkedToC2), customers);
     expect([...times.entries()]).toEqual([[1, Date.UTC(2026, 9, 5)], [2, Date.UTC(2026, 9, 5)]]);
   });
 

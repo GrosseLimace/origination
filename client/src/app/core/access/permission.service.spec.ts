@@ -54,6 +54,30 @@ describe('PermissionService', () => {
     expect(svc.has('notes:write')).toBe(false);
   });
 
+  it('holds the modules /api/me/permissions lists, and none until it has answered', async () => {
+    httpGet.mockReturnValue(of({ ...response(['bid-sheets:read', 'notes:read']), modules: ['bid-sheet', 'engagement'] }));
+    inProgress$ = new Subject<InteractionStatus>();
+    TestBed.overrideProvider(MsalBroadcastService, { useValue: { inProgress$ } });
+    const svc = TestBed.inject(PermissionService);
+
+    expect(svc.holdsModule('bid-sheet')).toBe(false);
+
+    inProgress$.next(InteractionStatus.None);
+    await loadedWithin(svc);
+
+    expect(svc.holdsModule('bid-sheet')).toBe(true);
+    expect(svc.holdsModule('engagement')).toBe(true);
+    expect(svc.holdsModule('producers')).toBe(false);
+  });
+
+  it('holds no module when the load fails', async () => {
+    httpGet.mockReturnValue(throwError(() => new Error('500')));
+    const svc = start();
+
+    expect(await loadedWithin(svc)).toBe('failed');
+    expect(svc.holdsModule('customers')).toBe(false);
+  });
+
   it('holds a list of permissions only when it holds every one', async () => {
     const svc = start();
     await loadedWithin(svc);

@@ -8,7 +8,7 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 
 // Models
-import { HelpContent, HelpFaq } from '@models';
+import { HelpContent, HelpFaq } from './help.model';
 
 // Environment
 import { environment } from '../../../environments/environment';
