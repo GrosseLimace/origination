@@ -8,8 +8,8 @@
  */
 import { Commodity, Contract, Customer, DpContract, GrainOnFarmItem, PlantingIntention, ProducerDetails, StoredGrain, Ticket } from '@models';
 import { profileCommodities } from '@shared/utils/producer-profile';
-import { dpBreakdownByCrop } from '@shared/utils/dp-aggregate';
-import { BinSiteGrainGroup } from '@shared/utils/grain-on-farm';
+import { dpBreakdownByCrop } from '@features/producers';
+import { BinSiteGrainGroup } from '@features/producers';
 
 /** Inline per-crop figure on a Storage / DP result. `category` is the resolved crop name used for
  *  the shared chip color (the raw `crop` code is still what's displayed). */

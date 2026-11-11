@@ -9,8 +9,9 @@
  * selected, like the existing grain filters); bin-site filters act on the producer's sites, which the caller also
  * passes, from their saved details.
  */
-import { Customer, GrainOnFarmItem, ProducerBinSiteItem, RefinementFilters } from '@models';
-import { binSiteHasCoordinates } from './coordinates';
+import { Customer, GrainOnFarmItem, ProducerBinSiteItem } from '@models';
+import { RefinementFilters } from '../models/refine-filters.model';
+import { binSiteHasCoordinates } from '@shared/utils/coordinates';
 
 type GrainBinRefine = Pick<RefinementFilters,
   'grainSoldOver' | 'hasGrainSold' | 'hasLastBid' | 'lastBidOver' | 'lastBidUnder'

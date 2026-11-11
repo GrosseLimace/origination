@@ -1,5 +1,5 @@
 import { Injectable, inject, signal } from '@angular/core';
-import { RefinementFilters } from '@models';
+import { RefinementFilters } from '../models/refine-filters.model';
 import { QueryLibraryItem } from '../models/query-library.model';
 import { SavedList } from '../models/saved-list.model';
 import { SessionReset } from '@core/auth/session-reset.service';

@@ -1,6 +1,6 @@
 import { Commodity, Contract } from '@models';
-import { quantityInBushels, sumInBushels } from '@shared/utils/production-coverage';
-import { commodityPlantingCategory } from '@shared/utils/planting-category';
+import { quantityInBushels, sumInBushels } from './production-coverage';
+import { commodityPlantingCategory } from './planting-category';
 
 /**
  * Contract math behind the dashboard's Harvest & Contracts tab and its headline contract metrics.

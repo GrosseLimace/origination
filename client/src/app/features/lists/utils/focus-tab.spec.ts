@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { RefinementFilters } from '@models';
+import { RefinementFilters } from '../models/refine-filters.model';
 import { detectFocusTab } from './focus-tab';
 
 const dp = (q: string) => /\bdp\b/.test(q);

@@ -1,6 +1,6 @@
 import { Commodity, Contract, DashboardActualHarvest, DashboardMarketShare, DashboardPlantingEstimate, PlantingIntention } from '@models';
 import { commodityColor } from '@shared/utils/commodity-color';
-import { plantingCategory } from '@shared/utils/planting-category';
+import { plantingCategory } from './planting-category';
 import { inSelectedTradeUnits } from './planting-trade-unit-filter';
 import { dashboardCropKey, toTitleCase } from './dashboard-format';
 

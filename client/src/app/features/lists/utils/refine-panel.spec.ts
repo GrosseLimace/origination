@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { RefinementFilters } from '@models';
+import { RefinementFilters } from '../models/refine-filters.model';
 import { countActiveRefinements, hasAnyRefinement, hiddenRefineFilters } from './refine-panel';
 
 describe('countActiveRefinements', () => {

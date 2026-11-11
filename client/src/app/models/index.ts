@@ -16,7 +16,6 @@ export * from './dashboard-market-share.model';
 export * from './dashboard-actual-harvest.model';
 export * from './dashboard-summary.model';
 export * from './contract-pricing-line.model';
-export * from './refine-filters.model';
 export * from './commodity-conversion.model';
 export * from './harvest-window.model';
 export * from './whats-new.model';

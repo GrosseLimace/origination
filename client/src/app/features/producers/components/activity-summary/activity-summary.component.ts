@@ -10,7 +10,7 @@ import { ProducerProfiles } from '@core/context/producer-profiles';
 import { profileCommodities } from '@shared/utils/producer-profile';
 import { ContractPacingHistoryStore } from '../../data-access/contract-pacing-history.store';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
-import { buildLbsPerBushelMap, quantityInBushels, sumInBushels } from '@shared/utils/production-coverage';
+import { buildLbsPerBushelMap, quantityInBushels, sumInBushels } from '../../utils/production-coverage';
 import { parseServerTime } from '@shared/utils/server-time';
 
 /**

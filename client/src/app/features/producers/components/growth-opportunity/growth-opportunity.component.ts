@@ -6,7 +6,7 @@ import { SelectedProducerActivity } from '@core/context/selected-producer-activi
 import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
 import { SelectedProducerProduction } from '@core/context/selected-producer-production';
 import { ProducerInsightsPanels } from '../producer-insights/producer-insights-panels.state';
-import { buildProductionCoverage } from '@shared/utils/production-coverage';
+import { buildProductionCoverage } from '../../utils/production-coverage';
 
 /**
  * Growth Opportunity — how much of a producer's projected production Scoular has already contracted,

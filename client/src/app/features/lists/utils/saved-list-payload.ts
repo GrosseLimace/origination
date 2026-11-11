@@ -2,7 +2,7 @@
  * Build a List: the body saved for a list — shared by "Save list" and "Assign to team members",
  * which used to build it in two identical copies. Moved verbatim out of BuildListComponent.
  */
-import { RefinementFilters } from '@models';
+import { RefinementFilters } from '../models/refine-filters.model';
 
 export interface SavedListPayloadInput {
   query: string;

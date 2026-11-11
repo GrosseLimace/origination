@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { Commodity, Contract, Customer, DpContract, Note, PlantingIntention, ProducerDetails, RefinementFilters, StoredGrain, Ticket } from '@models';
+import { Commodity, Contract, Customer, DpContract, Note, PlantingIntention, ProducerDetails, StoredGrain, Ticket } from '@models';
+import { RefinementFilters } from '../models/refine-filters.model';
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 import { profileLinkedIds } from '@shared/utils/producer-profile';

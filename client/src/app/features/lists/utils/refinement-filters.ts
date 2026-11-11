@@ -6,14 +6,15 @@
  * RefinementFilterSources — accessors rather than values, so when the page calls this inside its
  * computed each signal is still read (and tracked) only by the refinements that consult it.
  */
-import { CommodityConversion, Contract, Customer, DpContract, Note, PlantingIntention, ProducerDetails, RefinementFilters, StoredGrain, Ticket } from '@models';
-import { dpTotalBushels, dpTotalCharges } from '@shared/utils/dp-aggregate';
-import { buildLbsPerBushelMap, sumInBushels } from '@shared/utils/production-coverage';
-import { isIrrigated, isDryland, isDoubleCrop } from '@shared/utils/planting-chips';
+import { CommodityConversion, Contract, Customer, DpContract, Note, PlantingIntention, ProducerDetails, StoredGrain, Ticket } from '@models';
+import { RefinementFilters } from '../models/refine-filters.model';
+import { dpTotalBushels, dpTotalCharges } from '@features/producers';
+import { buildLbsPerBushelMap, sumInBushels } from '@features/producers';
+import { isIrrigated, isDryland, isDoubleCrop } from './planting-chips';
 import { buildCropSelection, matchesCropSelection, CropGroupLookup, CropSelection, MatchCropOptions } from '@shared/utils/crop-group-match';
-import { activeGrainBinRefineCount, applyGrainBinRefinements } from '@shared/utils/grain-bin-refine';
+import { activeGrainBinRefineCount, applyGrainBinRefinements } from './grain-bin-refine';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu } from '@shared/utils/contract-status';
-import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
+import { matchTicketViewModeFilters } from './ticket-view-filters';
 import { profileCommodities, profileLinkedIds } from '@shared/utils/producer-profile';
 
 /** The page data the refinements read. Each is called lazily, only when a refinement needs it. */

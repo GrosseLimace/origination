@@ -9,7 +9,6 @@ import { tap } from 'rxjs/operators';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
-import { NlqFilterContext, NlqFilterResult, NlqFilterService } from '@core/services/nlq-filter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
 import {
@@ -264,29 +263,12 @@ function makeAppState() {
 }
 type AppStateStub = ReturnType<typeof makeAppState>;
 
-function noMatch(customers: Customer[]): NlqFilterResult {
-  return { customers, detectedState: null, matchedPatterns: [] };
-}
-
-function makeNlq() {
-  return {
-    queryNeedsFullNotes: vi.fn((_q: string) => false),
-    refineFiltersNeedFullNotes: vi.fn((_f: unknown) => false),
-    resolveUserReferences: vi.fn((q: string, _name?: string, _user?: string) => q),
-    parseAndFilter: vi.fn((_q: string, ctx: NlqFilterContext): NlqFilterResult => noMatch(ctx.customers)),
-    applyRefinementFilters: vi.fn((cs: Customer[]) => cs),
-    applyCustomerOverrides: vi.fn((ids: number[], included?: number[], excluded?: number[]) =>
-      [...new Set([...ids, ...(included ?? [])])].filter(id => !(excluded ?? []).includes(id))),
-  };
-}
-
 interface Harness {
   fixture: ComponentFixture<HomeComponent>;
   c: HomeComponent;
   api: ApiStub;
   app: AppStateStub;
   toast: { error: ReturnType<typeof vi.fn>; success: ReturnType<typeof vi.fn>; info: ReturnType<typeof vi.fn> };
-  nlq: ReturnType<typeof makeNlq>;
   outlook: { addToOutlook: ReturnType<typeof vi.fn> };
   router: { navigate: ReturnType<typeof vi.fn> };
   access: PermissionStub;
@@ -300,7 +282,7 @@ interface SetupOptions {
   customers?: Customer[];
   queryParams?: Params;
   /** Mutate the API/NLQ stubs before the component is constructed (constructor loads fire immediately). */
-  arrange?: (api: ApiStub, nlq: ReturnType<typeof makeNlq>, app: AppStateStub) => void;
+  arrange?: (api: ApiStub, app: AppStateStub) => void;
 }
 
 const A = customer(1);
@@ -314,13 +296,12 @@ function setup(opts: SetupOptions = {}): Harness {
   profiles.load.mockImplementation(() => api.getAllProducerDetails().pipe(tap(list => profiles.set(list ?? []))));
   liveProfiles = profiles;
   const app = makeAppState();
-  const nlq = makeNlq();
   const roster = opts.customers ?? [A, B, C];
   api.getCustomers.mockReturnValue(of(roster));
   // What the server holds: the roster's saved details, and a producer's own when it is read on its own.
   api.getAllProducerDetails.mockImplementation(() => of([...profilesOf(roster).values()]));
   api.getProducerDetails.mockImplementation((id: number) => of(profiles.profileOf(id) ?? details(id)));
-  opts.arrange?.(api, nlq, app);
+  opts.arrange?.(api, app);
 
   const toast = { error: vi.fn(), success: vi.fn(), info: vi.fn() };
   const outlook = { addToOutlook: vi.fn((_r: Reminder, _link: string): Observable<Reminder | null> => of(null)) };
@@ -335,7 +316,6 @@ function setup(opts: SetupOptions = {}): Harness {
       { provide: AppStateService, useValue: app },
       { provide: TradeUnitContext, useValue: app },
       { provide: ToastService, useValue: toast },
-      { provide: NlqFilterService, useValue: nlq },
       { provide: UsageTrackingService, useValue: { trackProfileOpened: vi.fn() } },
       providePermissions(access),
       provideProducerProfiles(profiles),
@@ -359,7 +339,7 @@ function setup(opts: SetupOptions = {}): Harness {
   const fixture = TestBed.createComponent(HomeComponent);
   fixture.detectChanges();
   return {
-    fixture, c: fixture.componentInstance, api, app, toast, nlq, outlook, router, access, profiles,
+    fixture, c: fixture.componentInstance, api, app, toast, outlook, router, access, profiles,
     flush: () => fixture.detectChanges(),
   };
 }
@@ -1310,7 +1290,7 @@ describe('HomeComponent', () => {
 
     it('keeps the badge feed in step with what a producer\'s fresh notes say', () => {
       const h = setup({
-        arrange: (api, _nlq, app) => {
+        arrange: (api, app) => {
           app.noteLastContacts.set([{ customerId: 1, lastNoteAt: new Date('2026-01-01T00:00:00Z') }]);
           api.getNotesByCustomer.mockReturnValue(of([newer]));
         },

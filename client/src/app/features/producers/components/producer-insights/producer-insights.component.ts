@@ -8,7 +8,7 @@ import { SelectedProducerActivity } from '@core/context/selected-producer-activi
 import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
 import { ContractPacingHistoryStore } from '../../data-access/contract-pacing-history.store';
 import { ProducerInsightsPanels } from './producer-insights-panels.state';
-import { buildLbsPerBushelMap, sumInBushels } from '@shared/utils/production-coverage';
+import { buildLbsPerBushelMap, sumInBushels } from '../../utils/production-coverage';
 
 /**
  * Producer Insights, under the profile header while the Producer Insights panels are open: the producer's eSign and

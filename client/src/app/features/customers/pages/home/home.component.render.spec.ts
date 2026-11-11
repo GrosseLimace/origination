@@ -12,7 +12,6 @@ import { BehaviorSubject, Observable, Subject, of } from 'rxjs';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
-import { NlqFilterService } from '@core/services/nlq-filter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { providePermissions } from '@testing/permission.stub';
 import { ProducerProfilesFake, producerProfile, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
@@ -259,16 +258,6 @@ describe('HomeComponent (rendered)', () => {
         { provide: AppStateService, useValue: app },
         { provide: TradeUnitContext, useValue: app },
         { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn(), info: vi.fn() } },
-        {
-          provide: NlqFilterService,
-          useValue: {
-            queryNeedsFullNotes: () => false, refineFiltersNeedFullNotes: () => false, resolveUserReferences: (q: string) => q,
-            parseAndFilter: (_q: string, ctx: { customers: Customer[] }) =>
-              ({ customers: ctx.customers, detectedState: null, matchedPatterns: ['all'] }),
-            applyRefinementFilters: (cs: Customer[]) => cs,
-            applyCustomerOverrides: (cs: number[]) => cs,
-          },
-        },
         { provide: UsageTrackingService, useValue: { trackProfileOpened: vi.fn() } },
         providePermissions(),
         provideProducerProfiles(profiles),

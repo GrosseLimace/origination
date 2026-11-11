@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { RefinementFilters, Ticket } from '@models';
+import { Ticket } from '@models';
+import { RefinementFilters } from '../models/refine-filters.model';
 import { matchTicketViewModeFilters } from './ticket-view-filters';
 
 /**

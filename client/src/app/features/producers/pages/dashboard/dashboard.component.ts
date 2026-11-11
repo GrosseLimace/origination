@@ -12,7 +12,7 @@ import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, Commodity } from '@models';
-import { buildLbsPerBushelMap } from '@shared/utils/production-coverage';
+import { buildLbsPerBushelMap } from '../../utils/production-coverage';
 import { TradeUnitSelectorComponent } from '@core/layout/trade-unit-selector/trade-unit-selector.component';
 import { commodityRowClass } from '@shared/utils/commodity-color';
 import { CommodityChipClassPipe } from '@shared/pipes/commodity-chip-class.pipe';

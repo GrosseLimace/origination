@@ -2,7 +2,7 @@ import { inject, Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, of } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
-import { RefinementFilters } from '@models';
+import { RefinementFilters } from '../models/refine-filters.model';
 import { environment } from '@env/environment';
 import { injectApiErrorHandler } from '@core/http/api-error-handler';
 import { dedupeRequests } from '@core/http/dedupe-requests';

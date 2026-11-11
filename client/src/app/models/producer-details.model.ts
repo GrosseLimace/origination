@@ -50,7 +50,7 @@ export interface GrainOnFarmItem {
   /** That site's name, for display (read only). */
   binSiteName?: string | null;
   /** Commodity code ("YC", "HRWW"), or a crop-group name ("Corn") on rows saved before
-   *  2026-09-23 — see shared/utils/grain-on-farm.ts. Read it through the crop matcher, never
+   *  2026-09-23 — see features/producers/utils/grain-on-farm.ts. Read it through the crop matcher, never
    *  compare it to a group string directly. */
   commodityCode: string;
   bushelsOnHand?: number;   // total bushels on the farm, sold or not

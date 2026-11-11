@@ -59,7 +59,6 @@ The shared data caches, built on Angular signals: the trade-unit-wide data the c
 | `notes` | `Note[]` | All notes for selected TUs |
 | `plantingIntentions` | `PlantingIntention[]` | App-DB rows |
 | `storedGrain` | `StoredGrain[]` | Computed in service from `ctrm.vw_GNTA39D1` |
-| `savedLists` | `SavedList[]` | User's saved Build-a-List queries |
 | `commodities`, `commodityConversions`, `harvestWindows` | reference | Crop catalog and lb-per-bushel conversions |
 | `pricingLines` | `ContractPricingLine[]` | Pricing lines for the selected producer — CTRM (live, inline on the contract) or ODS `vw_ContractPricing` per `Ctrm:Source` |
 | `allProducersMode` | `boolean` | Session-only "All Producers" selector mode — clears TU scope so the customer list searches every producer (incl. ODS producers with no contract/ticket) for onboarding. Never persisted. |
@@ -163,9 +162,9 @@ No page is switched on or off per environment: a module is turned off in one env
 
 ### `NlqFilterService`
 
-`client/src/app/core/services/nlq-filter.service.ts`
+`client/src/app/features/lists/nlq/nlq-filter.service.ts`
 
-Natural-language query parser used by Build a List (and a few other places). Public methods include:
+The Lists module's natural-language query engine, run by Build a List and by Lists' saved-list stores (the customer list's saved-list picker and Add to List). Nothing outside Lists runs it. The producer arithmetic it shares with the producer screens (grain on farm, production coverage, DP totals, planting categories) it reads from Producers' index, and the `RefinementFilters` model is Lists' (`features/lists/models`). Public methods include:
 
 - `parseAndFilter(query, context)` — returns `{ customers, matched: matchedPatterns }`
 - `applyRefinementFilters(customers, filters, contracts, notes)` — applies a `RefinementFilters` object

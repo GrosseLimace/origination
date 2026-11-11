@@ -6,7 +6,7 @@ import { SelectedProducerProduction } from '@core/context/selected-producer-prod
 import { ModuleManifest } from '@core/modules/module-manifest';
 import { ApiService } from '@core/services/api.service';
 import { PlantingIntention } from '@models';
-import { dpContractCount } from '@shared/utils/dp-aggregate';
+import { dpContractCount } from './utils/dp-aggregate';
 import { DashboardStore } from './data-access/dashboard.store';
 import { ProducerProfileStore } from './data-access/producer-profile.store';
 

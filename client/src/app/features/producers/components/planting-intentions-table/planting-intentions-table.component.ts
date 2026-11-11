@@ -12,7 +12,7 @@ import { ApiService } from '@core/services/api.service';
 import { CustomersApiService } from '@features/customers';
 import { ToastService } from '@core/services/toast.service';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
-import { plantingCategory, commodityPlantingCategory } from '@shared/utils/planting-category';
+import { plantingCategory, commodityPlantingCategory } from '../../utils/planting-category';
 import { environment } from '@env/environment';
 import { CropFieldsPanelComponent } from '../field-plan/crop-fields-panel.component';
 import { ProgramEnrollmentCardComponent } from '../field-plan/programs/program-enrollment-card.component';

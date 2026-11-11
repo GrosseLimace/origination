@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { Customer, Note, RefinementFilters } from '@models';
+import { Customer, Note } from '@models';
+import { RefinementFilters } from '../models/refine-filters.model';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 import {
   aggregateMatchingNotes, buildNoteFilterPredicate, indexMatchingNotesByCode, isNoteFilterActive, lastContactBadges,

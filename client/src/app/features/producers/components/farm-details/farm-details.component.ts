@@ -6,7 +6,7 @@ import { ProducerProfiles } from '@core/context/producer-profiles';
 import { AppStateService } from '@core/services/app-state.service';
 import { GrainOnFarmItem } from '@models';
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
-import { formatLastBid, grainOnFarmTitle, indexCommoditiesByCode } from '@shared/utils/grain-on-farm';
+import { formatLastBid, grainOnFarmTitle, indexCommoditiesByCode } from '../../utils/grain-on-farm';
 import { readCollapsed, writeCollapsed } from '../../utils/remembered-collapse';
 
 /** Where an explicit close of the Grain on Farm table is remembered. */

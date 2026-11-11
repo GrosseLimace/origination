@@ -6,7 +6,7 @@ import { SelectedCustomerContext } from '@core/context/selected-customer-context
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { APP_MODULES } from '@core/modules/module-registry';
 import { ApiService } from '@core/services/api.service';
-import { NlqFilterContext, NlqFilterService } from '@core/services/nlq-filter.service';
+import { NlqFilterContext, NlqFilterService } from './features/lists/nlq/nlq-filter.service';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 import { Customer, ProducerDetails } from '@models';
 import { permissionStub, providePermissions } from '@testing/permission.stub';

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { RefinementFilters } from '@models';
+import { RefinementFilters } from '../models/refine-filters.model';
 import { buildSavedListPayload, SavedListPayloadInput } from './saved-list-payload';
 
 const input = (over: Partial<SavedListPayloadInput> = {}): SavedListPayloadInput => ({

@@ -59,8 +59,8 @@ The screen does **not** make per-customer API calls — it operates entirely on 
 | --- | --- |
 | Component | `client/src/app/features/lists/pages/build-list/build-list.component.ts` |
 | Template | `client/src/app/features/lists/pages/build-list/build-list.component.html` |
-| NLQ engine | `client/src/app/core/services/nlq-filter.service.ts` |
-| Refine-filters model | `client/src/app/models/refine-filters.model.ts` |
+| NLQ engine | `client/src/app/features/lists/nlq/nlq-filter.service.ts` |
+| Refine-filters model | `client/src/app/features/lists/models/refine-filters.model.ts` |
 | Saved-list model | `client/src/app/models/saved-list.model.ts` |
 | Highlight pipe | `client/src/app/shared/pipes/highlight.pipe.ts` |
 | Library controller | `api/GrainOriginatorPortal.Api/Modules/Lists/Controllers/QueryLibraryController.cs` |
@@ -90,7 +90,7 @@ Helpers: `queryInvolvesTickets`, `queryInvolvesStorage`, `queryInvolvesContact`,
 
 ## `RefinementFilters` model
 
-Defined in [`client/src/app/models/refine-filters.model.ts`](../../client/src/app/models/refine-filters.model.ts). Grouped by domain:
+Defined in [`client/src/app/features/lists/models/refine-filters.model.ts`](../../client/src/app/features/lists/models/refine-filters.model.ts). Grouped by domain:
 
 - **Contract status** — `noActiveContracts`, `hasUnsignedContracts`, `downHarvestPace`, `hasUnpricedContracts`, `hasOverdueContracts`, `noContractsAtAll`.
 - **Contract details** — `contractQuantityOver`, `contractsExpiringThisMonth`, `multipleCommoditiesContracted`.
@@ -140,20 +140,20 @@ already understands the phrasing. Pattern (see `20260810164128_AddNoContractsQue
 - **`Grain on Farm & Bin Sites`** (2026-10-09, migration `CombineGrainOnFarmAndBinSitePrompts`) holds every
   grain-on-farm AND bin-site prompt in one column — grain on farm is stored at a bin site. It was
   `Grain on Farm`, and the bin-site cards sat under `Producers`. The client treats the old name the same
-  (`isGrainAndBinSitesCategory`, `shared/utils/grain-on-farm.ts`) because a saved list keeps its prompt's
+  (`isGrainAndBinSitesCategory`, `features/producers/utils/grain-on-farm.ts`) because a saved list keeps its prompt's
   category in `Filters._promptCategory`. Its refine panel has a filter for every input (2026-10-09):
   **Bin Sites** — has / no sites, at least N sites, total capacity over N bu, site name contains, has / missing a
   map location; **Grain on Farm** — bushels on farm over, sold bushels over, has sold bushels, has / no target;
   **Target Price** over / under; **Last Bid** — has a last bid, over / under (signed; $0.00 counts); **Grade** —
   has, over / under; plus the Crops chips (scoped to grain rows). The newer ones (Sold, Last Bid, all bin-site
-  fields but has/no) live once in `shared/utils/grain-bin-refine.ts`, called by both refine copies, and
+  fields but has/no) live once in `features/lists/utils/grain-bin-refine.ts`, called by both refine copies, and
   each result row leads with a neutral "N bin sites" chip before the per-crop bushel chips.
   **Result rows** (2026-10-09): from a 1536px viewport (`2xl`) a row is name | **bin sites & grain** (fixed 31rem — the widest
   table measured 471px — so notes line up down the list) | **notes** | last contact; narrower, the notes sit under
   the bin sites in one middle column. The bin sites & grain table (text-sm, a crop-row separator) shows a line
   per bin site — name · capacity · map pin — with the grain stored there under it (Crop | Total | Sold | Grade |
   Target | Last Bid), "No grain on farm recorded" for an empty site and untied rows last; only the first 2 sites
-  show until "Show N more bin sites" (Show fewer). Built by `binSiteGrainBreakdown` (`shared/utils/grain-on-farm.ts`).
+  show until "Show N more bin sites" (Show fewer). Built by `binSiteGrainBreakdown` (`features/producers/utils/grain-on-farm.ts`).
   **Notes that mention a bin site** (2026-10-09): the row's middle column shows the producer's notes that name
   one of their saved bin sites — whole name, any case, not inside a longer word or number ("Bin 1" ≠ "bin 10")
   — in the same note stack note prompts use (pinned first, then newest; "+N earlier notes", See more), the site

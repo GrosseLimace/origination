@@ -12,7 +12,7 @@ import { ToastService } from '@core/services/toast.service';
 import { formatPhoneProgressive } from '@shared/utils/phone';
 import { BIN_SITE_NAME_MAX_LENGTH, COORDINATE_EXAMPLE, MAX_BIN_SITES, MAX_BIN_SITE_CAPACITY, formatBinSiteCapacityInput, formatCoordinatePairFull, parseBinSiteCapacity, parseCoordinatePair } from '@shared/utils/coordinates';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
-import { buildGrainOnFarmOptions, indexCommoditiesByCode, isLegacyGrainGroup, grainOnFarmTitle } from '@shared/utils/grain-on-farm';
+import { buildGrainOnFarmOptions, indexCommoditiesByCode, isLegacyGrainGroup, grainOnFarmTitle } from '../../utils/grain-on-farm';
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
 import { AppStateService } from '@core/services/app-state.service';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
@@ -426,7 +426,7 @@ export class EditCustomerDialogComponent {
   // Numbers are kept as strings for the inputs and parsed on save (mirrors editAcres).
   // Codes are the same values as the Commodities chips. A row saved before 2026-09-23 may hold a
   // crop-group name instead ("Corn"); it round-trips untouched and is flagged in the template so
-  // the user can swap it for a code. See shared/utils/grain-on-farm.ts.
+  // the user can swap it for a code. See features/producers/utils/grain-on-farm.ts.
   editGrainOnFarm = signal<GrainEditRow[]>([]);
   newGrainCode = signal(''); // commodity code selected in the open site's "add" dropdown
 

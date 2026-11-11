@@ -25,7 +25,7 @@ export interface Commodity {
   /**
    * Crop label the planting-intention surfaces group this commodity under, or null/absent to use
    * `category`. Set for the organics ("Organic Soybeans" for YSBO). Resolve through
-   * plantingCategory() in shared/utils/planting-category.ts rather than reading it directly.
+   * plantingCategory() in features/producers/utils/planting-category.ts rather than reading it directly.
    */
   plantingCategory?: string | null;
 }

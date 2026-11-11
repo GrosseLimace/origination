@@ -4,7 +4,7 @@ import { SessionReset } from '@core/auth/session-reset.service';
 import { KeptCustomers } from '@core/context/customer-list-filter';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { AppStateService } from '@core/services/app-state.service';
-import { NlqFilterService } from '@core/services/nlq-filter.service';
+import { NlqFilterService } from '../nlq/nlq-filter.service';
 import { CustomerStore } from '@features/customers';
 import { SavedList } from '../models/saved-list.model';
 import { SavedListsStore } from './saved-lists.store';

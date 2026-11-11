@@ -9,7 +9,7 @@ import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
-import { NlqFilterContext, NlqFilterService } from '@core/services/nlq-filter.service';
+import { NlqFilterContext, NlqFilterService } from '../nlq/nlq-filter.service';
 import { ToastService } from '@core/services/toast.service';
 import { Contract, Customer, Note, Ticket } from '@models';
 import { CustomerStore } from '@features/customers';

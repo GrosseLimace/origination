@@ -1,4 +1,4 @@
-import { RefinementFilters } from '@models';
+import { RefinementFilters } from './refine-filters.model';
 
 export interface SavedList {
   id: number;

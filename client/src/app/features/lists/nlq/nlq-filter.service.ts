@@ -1,13 +1,14 @@
 import { Injectable } from '@angular/core';
-import { Customer, Contract, Ticket, Note, NoteLastContact, ReminderDue, PlantingIntention, StoredGrain, DpContract, ProducerDetails, RefinementFilters, Commodity, CommodityConversion } from '@models';
+import { Customer, Contract, Ticket, Note, NoteLastContact, ReminderDue, PlantingIntention, StoredGrain, DpContract, ProducerDetails, Commodity, CommodityConversion } from '@models';
+import { RefinementFilters } from '../models/refine-filters.model';
 import { isContractUnconfirmed, isContractCustomerConfirmed, isContractOverdueWithUnshippedBu, computeHarvestPacePct } from '@shared/utils/contract-status';
-import { buildLbsPerBushelMap, sumInBushels } from '@shared/utils/production-coverage';
-import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
-import { plantingQueryScope, isIrrigated, isDryland } from '@shared/utils/planting-chips';
-import { dpTotalBushels, dpTotalCharges, dpContractCount } from '@shared/utils/dp-aggregate';
+import { buildLbsPerBushelMap, sumInBushels } from '@features/producers';
+import { matchTicketViewModeFilters } from '../utils/ticket-view-filters';
+import { plantingQueryScope, isIrrigated, isDryland } from '../utils/planting-chips';
+import { dpTotalBushels, dpTotalCharges, dpContractCount } from '@features/producers';
 import { buildCropGroupLookup, buildCropSelection, matchesCropSelection } from '@shared/utils/crop-group-match';
-import { isGrainAndBinSitesCategory } from '@shared/utils/grain-on-farm';
-import { activeGrainBinRefineCount, applyGrainBinRefinements } from '@shared/utils/grain-bin-refine';
+import { isGrainAndBinSitesCategory } from '@features/producers';
+import { activeGrainBinRefineCount, applyGrainBinRefinements } from '../utils/grain-bin-refine';
 import { profileCommodities, profileLinkedIds } from '@shared/utils/producer-profile';
 
 export interface NlqFilterContext {

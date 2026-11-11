@@ -1,5 +1,5 @@
 import { Commodity, Contract, Customer, NoteLastContact, PlantingIntention, ProducerDetails } from '@models';
-import { commodityPlantingCategory, plantingCategory } from '@shared/utils/planting-category';
+import { commodityPlantingCategory, plantingCategory } from './planting-category';
 import { inSelectedTradeUnits } from './planting-trade-unit-filter';
 import { profileLinkedIds } from '@shared/utils/producer-profile';
 import { dashboardCropKey } from './dashboard-format';

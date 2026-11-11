@@ -7,7 +7,7 @@ import { Commodity, Contract, DashboardPlantingEstimate, Note, PlantingIntention
 import { CustomerScreenSources, customerScreenSources } from '@testing/customer-screen-sources';
 
 /**
- * The coverage arithmetic is tested in shared/utils/production-coverage.spec.ts. This covers what
+ * The coverage arithmetic is tested in features/producers/utils/production-coverage.spec.ts. This covers what
  * the component adds on top: the status pill thresholds and the action items — which replaced a
  * hardcoded sentence and an unreachable "revenue opportunity" line that could never render.
  */

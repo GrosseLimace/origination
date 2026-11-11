@@ -1076,7 +1076,7 @@ Where it differs from the row above:
 
 **Phase 4 is in progress** on `feature_ModularArchitecture-Phase4`, cut from `feature_ModularArchitecture`, in reviewed steps. Step 11 turns this list into the phase's record, like Phase 2's and Phase 3's above.
 
-Done, in 22 commits (2026-11-09 to 2026-11-10):
+Done, in 23 commits (2026-11-09 to 2026-11-10):
 1. The customer-screen slot types in the manifest (`2dbec000`).
 2. Module stores cleared on sign-out and idle timeout again (`a31f1483`). Customers' own store, API client and preload (`e8c357f9`).
 3. The selected producer's activity moved out of the home page (`dbca0d0f`) and read through `SelectedProducerActivity` (`437956e7`). The contracts and tickets tables became the Contracts module's profile tabs (`8e24bb19`).
@@ -1093,7 +1093,8 @@ Done, in 22 commits (2026-11-09 to 2026-11-10):
    - Part b, first commit: saved lists into Lists. The saved lists, the team's lists and the query library moved from `AppStateService` and `ApiService` into Lists' `SavedListsStore` and `SavedListsApiService`, loaded by a Lists `preload` (which loads the store's code when it runs: imported with the manifest, it put the NLQ engine in the initial bundle, 1.16 MB against the 1.1 MB budget), with the `saved-list` and `query-library` models and the `saved-list-trade-units` util. One resolve works out who a list holds against the trade unit's data, for both its users:
      - the customer list's new `list-filter` slot, where the saved-list picker is now a Lists panel, narrowing the list through the `CustomerListFilter` the list provides; the picked list and its run (the data it needs read first, run again as more arrives, as the roster grows or as the list changes, kept or dropped across a trade-unit change) are `SavedListFilterStore`'s;
      - Add to List, which now reads the store itself, so `SavedListMembership` and the home page's `HomeSavedListsStore` are gone.
-     The customer list and the home page hold no saved-list code; the customer list no longer reads the NLQ engine.
+     The customer list and the home page hold no saved-list code; the customer list no longer reads the NLQ engine (`f973a9b3`).
+   - Part b, second commit: the NLQ engine into Lists, in `features/lists/nlq/` with its ten specs, and the `refine-filters` model to Lists' models. `grain-bin-refine`, `ticket-view-filters` and `planting-chips` went to Lists' utils; `grain-on-farm`, `production-coverage`, `dp-aggregate` and `planting-category` to Producers' utils, which Producers' index now exports for Lists, its first public API. Nothing in core or `shared` runs the engine or reads the model, and the home page's specs no longer stub it.
 
 Left:
 - **Found and decided for step 9 (2026-11-10):**
@@ -1104,10 +1105,6 @@ Left:
   - **The customer list keeps showing acres** through `ProducerProfiles` until a Producers contribution to its rows, in step 10d's row slot.
   - **Two steps rather than five** (user 2026-11-10), each one reviewed commit.
 - **10. Clean-up, the rest.** Each module takes its own data, and what is left in `ApiService` and `AppStateService` is Platform's.
-  - **10b, second commit: the NLQ engine into Lists.** Only Lists runs it now.
-    - `core/services/nlq-filter.service.ts` and its specs move to Lists, with the `refine-filters` model it reads.
-    - The utils only Lists then uses move to Lists: `grain-bin-refine` and `ticket-view-filters` (both read Lists' `RefinementFilters`) and `planting-chips`.
-    - The producer utils Lists and Producers both use move to Producers, exported from its index: `grain-on-farm`, `production-coverage`, `dp-aggregate`, and `planting-category`, which `production-coverage` imports.
   - **10c. Contracts' and Producers' data into their own stores.**
     - Contracts gets a store, an API client and a `preload` for contracts, tickets (today's, and the trade unit's on demand) and pricing lines.
     - Producers' store takes planting intentions, stored grain and DP contracts, with their API calls, and the home page's yield-estimate loading. The dashboard's calls move to Producers' API client, and the `dashboard-*` models with them.

@@ -6,7 +6,7 @@ import { DpContract } from '@models';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
 import { compareNumericStrings } from '@shared/utils/ticket-sort';
-import { dpDeliveryCount, dpTotalBushels, dpUnconvertedCount, dpTotalCharges } from '@shared/utils/dp-aggregate';
+import { dpDeliveryCount, dpTotalBushels, dpUnconvertedCount, dpTotalCharges } from '../../utils/dp-aggregate';
 import { SelectedProducerProduction } from '@core/context/selected-producer-production';
 
 /** Totals shared by both accordion levels. Bushels are per-delivery; charges are per-row. */

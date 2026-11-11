@@ -1,4 +1,5 @@
-import type { Ticket, RefinementFilters } from '@models';
+import type { Ticket } from '@models';
+import type { RefinementFilters } from '../models/refine-filters.model';
 
 /** Net bu + quality avg refinement filters with view-mode semantics. Shared by build-list
  *  (live refinement) and nlq-filter saved-list re-evaluation so the two paths agree.

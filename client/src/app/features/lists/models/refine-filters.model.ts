@@ -88,7 +88,7 @@ export interface RefinementFilters {
   hasGrade?: boolean;        // has a free-text grade entered on a grain-on-farm row
   gradeOver?: number | null; // grade's parsed number at/above this (e.g. "4.4%" -> 4.4)
   gradeUnder?: number | null;// grade's parsed number at/below this
-  // The other grain-on-farm inputs (2026-10-09) — see shared/utils/grain-bin-refine.ts.
+  // The other grain-on-farm inputs (2026-10-09) — see features/lists/utils/grain-bin-refine.ts.
   grainSoldOver?: number | null;   // total bushels SOLD (crop-scoped rows) over this
   hasGrainSold?: boolean;          // any row with bushels sold
   hasLastBid?: boolean;            // any row with a last bid

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Commodity } from '@models';
-import { buildCropGroupLookup, buildCropSelection, matchesCropSelection } from './crop-group-match';
+import { buildCropGroupLookup, buildCropSelection, matchesCropSelection } from '@shared/utils/crop-group-match';
 import {
   binSiteGrainBreakdown, buildGrainOnFarmOptions, formatLastBid, GRAIN_AND_BIN_SITES_CATEGORY, grainOnFarmColorKey, isGrainAndBinSitesCategory, grainOnFarmTitle, indexCommoditiesByCode, isGrainOnFarmCode, isLegacyGrainGroup,
 } from './grain-on-farm';

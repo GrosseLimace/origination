@@ -14,9 +14,9 @@
  * breakdown and Build-A-List chips share, so those surfaces cannot drift apart.
  */
 import { Commodity, GrainOnFarmItem, ProducerBinSiteItem } from '@models';
-import { googleMapsCoordinatesUrl } from './address';
-import { binSiteHasCoordinates } from './coordinates';
-import { CropGroupLookup, resolveCropGroup } from './crop-group-match';
+import { googleMapsCoordinatesUrl } from '@shared/utils/address';
+import { binSiteHasCoordinates } from '@shared/utils/coordinates';
+import { CropGroupLookup, resolveCropGroup } from '@shared/utils/crop-group-match';
 
 /** Build a List library category holding every grain-on-farm AND bin-site prompt (user 2026-10-09:
  *  grain on farm belongs to a bin site, so their prompts share one column). Before that the grain

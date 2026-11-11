@@ -16,13 +16,14 @@ import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { PermissionService } from '@core/access/permission.service';
 import { HasPermissionDirective } from '@core/access/has-permission.directive';
-import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, DpContract, ProducerDetails, RefinementFilters, GrainOnFarmItem, DashboardPlantingEstimate, Commodity } from '@models';
+import { NlqFilterService, NlqFilterContext } from '../../nlq/nlq-filter.service';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, DpContract, ProducerDetails, GrainOnFarmItem, DashboardPlantingEstimate, Commodity } from '@models';
+import { RefinementFilters } from '../../models/refine-filters.model';
 import { SavedList, TeamMember } from '../../models/saved-list.model';
 import { QueryLibraryItem } from '../../models/query-library.model';
-import { dpTotalBushels } from '@shared/utils/dp-aggregate';
+import { dpTotalBushels } from '@features/producers';
 import { commodityChipClass } from '@shared/utils/commodity-color';
-import { plantingChips, plantingQueryScope, PlantingChip } from '@shared/utils/planting-chips';
+import { plantingChips, plantingQueryScope, PlantingChip } from '../../utils/planting-chips';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '@shared/components/card/card.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
@@ -33,7 +34,7 @@ import { TradeUnitSelectorComponent } from '@core/layout/trade-unit-selector/tra
 import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
-import { isGrainAndBinSitesCategory, binSiteGrainBreakdown, BinSiteGrainGroup, formatLastBid } from '@shared/utils/grain-on-farm';
+import { isGrainAndBinSitesCategory, binSiteGrainBreakdown, BinSiteGrainGroup, formatLastBid } from '@features/producers';
 import { binSiteNames, notesMentioningBinSites, splitByBinSiteNames, BIN_SITE_NAME_CLASS } from '@shared/utils/bin-site-mentions';
 import { countActiveRefinements, hasAnyRefinement, hiddenRefineFilters } from '../../utils/refine-panel';
 import { filterByRefinements, applyMemberOverrides, collapseLinkedComponents, RefinementFilterSources } from '../../utils/refinement-filters';
@@ -3113,7 +3114,7 @@ export class BuildListComponent {
     return this.producerProfiles.profileOf(customer.id)?.totalAcres ?? 0;
   }
 
-  /** The rows of a producer's breakdown — see binSiteGrainBreakdown in shared/utils/grain-on-farm. */
+  /** The rows of a producer's breakdown — see binSiteGrainBreakdown in features/producers/utils/grain-on-farm. */
   binSiteGrainBreakdown(customer: Customer): BinSiteGrainGroup[] {
     const profile = this.producerProfiles.profileOf(customer.id);
     return binSiteGrainBreakdown(profile?.binSites, profile?.grainOnFarm);
