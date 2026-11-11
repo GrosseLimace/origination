@@ -104,11 +104,12 @@ export interface CustomerContribution {
  * it for what a badge opens; `actions` in the row under the name, beside the linked-producer picker; `toolbar`, the
  * header's buttons at its top right; `details` in the details row, and inside its Contact column `contacts` above the
  * customer's address and `locations` below its phone and email; `summary` between the header and the tabs. On the home
- * page: `sidebar`, the right column, and `floating`, the launcher over the page.
+ * page: `sidebar`, the right column, and `floating`, the launcher over the page. In the customer list: `list-filter`,
+ * above its rows, where a panel narrows the list through the list's CustomerListFilter.
  */
 export type CustomerSlot =
   | 'badges' | 'badge-panels' | 'actions' | 'toolbar' | 'details' | 'contacts' | 'locations' | 'summary' | 'sidebar'
-  | 'floating';
+  | 'floating' | 'list-filter';
 
 /** A panel on the customer screen. */
 export interface CustomerPanel extends CustomerContribution {

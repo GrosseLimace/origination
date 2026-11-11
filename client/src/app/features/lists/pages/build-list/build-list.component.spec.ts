@@ -1,3 +1,5 @@
+import { SavedListsApiService } from '../../data-access/saved-lists-api.service';
+import { SavedListsStore } from '../../data-access/saved-lists.store';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
@@ -14,7 +16,9 @@ import { PermissionStub, permissionStub, providePermissions } from '@testing/per
 import { ProducerFixture, ProducerProfilesFake, producerProfilesFake, profilesOf, provideProducerProfiles, withFixtureProfile } from '@testing/producer-profiles.fake';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 import { NlqFilterContext, NlqFilterResult, NlqFilterService } from '@core/services/nlq-filter.service';
-import { Contract, Customer, NoteLastContact, ProducerDetails, QueryLibraryItem, RefinementFilters, SavedList, Ticket } from '@models';
+import { Contract, Customer, NoteLastContact, ProducerDetails, RefinementFilters, Ticket } from '@models';
+import { QueryLibraryItem } from '../../models/query-library.model';
+import { SavedList } from '../../models/saved-list.model';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { BuildListStore } from '../../data-access/build-list.store';
 import { CustomersApiService } from '@features/customers';
@@ -177,6 +181,7 @@ describe('BuildListComponent', () => {
         provideRouter([]),
         AppStateService,
         { provide: CustomersApiService, useExisting: ApiService },
+        { provide: SavedListsApiService, useExisting: ApiService },
         { provide: ApiService, useValue: api },
         { provide: NlqFilterService, useValue: nlq },
         { provide: DataPreloadService, useValue: {} },
@@ -243,7 +248,7 @@ describe('BuildListComponent', () => {
       expect(c.customers()).toHaveLength(3);
       expect(c.queryLibraryLoaded()).toBe(true);
       // The shared cache is warmed so other pages can resolve a saved list's category.
-      expect(appState.queryLibrary()).toEqual(LIBRARY);
+      expect(TestBed.inject(SavedListsStore).queryLibrary()).toEqual(LIBRARY);
 
       expect(c.groupedLibrary().map(g => g.category)).toEqual(['Contracts', 'Tickets', 'Producers']);
       expect(c.libraryCategories()).toEqual(['Saved Lists', 'Contracts', 'Producers', 'Tickets']);
@@ -768,7 +773,7 @@ describe('BuildListComponent', () => {
       const c = mount();
       c.selectedCategory.set('Saved Lists');
 
-      expect(appState.savedListsLoadFailed()).toBe(true);
+      expect(TestBed.inject(SavedListsStore).loadFailed()).toBe(true);
       expect(text()).toContain("Couldn't load your saved lists");
       expect(text()).not.toContain('No saved lists yet');
     });
@@ -909,7 +914,7 @@ describe('BuildListComponent', () => {
       expect(api.deleteSavedList).toHaveBeenCalledWith(10);
       expect(c.showDeleteDialog()).toBe(false);
       expect(c.savedLists().map(l => l.id)).toEqual([11]);
-      expect(appState.savedLists().map(l => l.id)).toEqual([11]);
+      expect(TestBed.inject(SavedListsStore).lists().map(l => l.id)).toEqual([11]);
       expect(c.activeSavedList()).toBeNull();
       expect(toast.info).toHaveBeenCalledWith('List deleted');
     });

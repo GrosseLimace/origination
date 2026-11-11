@@ -81,9 +81,9 @@ describe('AppStateService', () => {
     }
 
     it('exposes its state as signals', () => {
-      // Guards the check below against passing vacuously if the surface stopped being found. (35 since the producers'
-      // details moved to the Producers module's ProducerProfileStore.)
-      expect(publicSignals().length).toBeGreaterThanOrEqual(35);
+      // Guards the check below against passing vacuously if the surface stopped being found. (31 since the saved lists,
+      // the query library and the picked list moved to the Lists module's stores.)
+      expect(publicSignals().length).toBeGreaterThanOrEqual(31);
     });
 
     it('offers no .set or .update on any public signal — writes go through the service\'s methods', () => {
@@ -129,13 +129,11 @@ describe('AppStateService', () => {
       service.setTodaysTicketsLoading(true);
       service.setCommodityConversions([{ commodityCode: 'YC', lbsPerUnit: 56 }]);
       service.setHarvestWindows([{ commodityCode: 'YC' } as never]);
-      service.setQueryLibrary([{ queryText: 'q' } as never]);
 
       expect(service.contractsLoading()).toBe(true);
       expect(service.todaysTicketsLoading()).toBe(true);
       expect(service.commodityConversions()).toEqual([{ commodityCode: 'YC', lbsPerUnit: 56 }]);
       expect(service.harvestWindows()).toEqual([{ commodityCode: 'YC' }]);
-      expect(service.queryLibrary()).toEqual([{ queryText: 'q' }]);
     });
 
     it('clearLoadFailures resets both trade-unit failure flags', () => {

@@ -78,7 +78,7 @@ The screen does **not** make per-customer API calls — it operates entirely on 
 
 ### State it reads / writes
 
-Reads (heavy) from `AppStateService`: `contracts`, `tickets`, `notes`, `storedGrain`, `plantingIntentions`, `commodities`, `commodityConversions`; every producer's details from `ProducerProfiles` (`core/context`), which its prompts, refinements and result rows read by customer id; the customers from `CustomerStore` (`@features/customers`), and reloads them through `CustomersApiService` when it needs to; the trade-unit selection from `TradeUnitContext`. Its own query and results persist across navigation in `BuildListStore` (`features/lists/data-access`). Writes only when bulk-fetching is necessary; mostly read-only since DataPreloadService has already populated state.
+Reads (heavy) from `AppStateService`: `contracts`, `tickets`, `notes`, `storedGrain`, `plantingIntentions`, `commodities`, `commodityConversions`; every producer's details from `ProducerProfiles` (`core/context`), which its prompts, refinements and result rows read by customer id; the customers from `CustomerStore` (`@features/customers`), and reloads them through `CustomersApiService` when it needs to; the trade-unit selection from `TradeUnitContext`. Its own query and results persist across navigation in `BuildListStore` (`features/lists/data-access`). The user's saved lists and the query library are kept in Lists' `SavedListsStore` (the same one the home page's saved-list picker and Add to List read), and their calls are `SavedListsApiService`'s. Writes only when bulk-fetching is necessary; mostly read-only since DataPreloadService has already populated state.
 
 ## NLQ pipeline
 
@@ -197,7 +197,7 @@ interface SavedList {
 
 **Load** — `loadSavedList(list)` sets `queryText`, `pendingRefinements`/`appliedRefinements`, restores `manuallyExcludedCustomerIds`, and queues `_pendingIncludedIds` to be resolved into Customer objects when data loads.
 
-**`customerIds` is recomputed at load time**, not stored. In Build a List, the dedup pass ([Linked-producer entity view](#linked-producer-entity-view)) runs and the visible list is the deduped set. On the **home page customer list**, `_executeNlq` runs the same NLQ + filters but **without dedup**, so both A and B (linked) appear as separate rows.
+**`customerIds` is recomputed at load time**, not stored. In Build a List, the dedup pass ([Linked-producer entity view](#linked-producer-entity-view)) runs and the visible list is the deduped set. On the **home page customer list**, the saved-list picker (`SavedListsStore.resolve`) runs the same NLQ + filters but **without dedup**, so both A and B (linked) appear as separate rows.
 
 **Trade-unit visibility** — the dropdown's `visibleSavedLists` computed only shows lists whose `tradeUnits` CSV exactly matches the currently selected TUs. Saving a new list captures the current TU set into `tradeUnits`.
 

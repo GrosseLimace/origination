@@ -1,7 +1,27 @@
+import { Injector, inject } from '@angular/core';
+import { Observable, from, merge, switchMap } from 'rxjs';
 import { ModuleManifest } from '@core/modules/module-manifest';
+
+/**
+ * What Lists loads for a new trade-unit selection: the user's own saved lists (with the query library, the first time),
+ * and the team's lists for the selection, each only for a user who may read them. Who each list holds is worked out
+ * as the trade unit's data arrives. The store's code loads here rather than with the manifest, which the app loads up
+ * front: it brings the NLQ engine.
+ */
+export function preloadLists(): Observable<unknown> {
+  const injector = inject(Injector);
+  return from(import('./data-access/saved-lists.store')).pipe(
+    switchMap(({ SavedListsStore }) => {
+      const store = injector.get(SavedListsStore);
+      return merge(store.load(), store.loadTeamLists());
+    }),
+  );
+}
+
 
 export const listsModule: ModuleManifest = {
   id: 'lists',
+  preload: preloadLists,
   routes: [
     {
       path: 'build-list',
@@ -43,6 +63,14 @@ export const listsModule: ModuleManifest = {
       requires: ['saved-lists:read:own', 'saved-lists:write:own'],
       order: 10,
       component: () => import('./components/add-to-list/add-to-list.component').then(m => m.AddToListComponent),
+    },
+    {
+      // The customer list's saved-list picker: narrows the list to who one of the user's own lists holds.
+      slot: 'list-filter',
+      id: 'saved-list-filter',
+      requires: ['saved-lists:read:own'],
+      order: 10,
+      component: () => import('./components/saved-list-filter/saved-list-filter.component').then(m => m.SavedListFilterComponent),
     },
   ],
 };

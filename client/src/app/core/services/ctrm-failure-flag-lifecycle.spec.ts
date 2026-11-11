@@ -78,7 +78,9 @@ describe('CTRM failure flags — lifecycle', () => {
       ['data-preload contracts', ['core', 'context', 'data-preload.service.ts'], /setContractsLoadFailed/],
       ['data-preload tickets', ['core', 'context', 'data-preload.service.ts'], /setTicketsLoadFailed/],
       ['build-list', ['features', 'lists', 'pages', 'build-list', 'build-list.component.ts'], /setContractsLoadFailed/],
-      ['customer-list', ['features', 'customers', 'components', 'customer-list', 'customer-list.component.ts'], /setContractsLoadFailed/],
+      // What a saved list reads before it runs, and the trade unit's tickets a ticket list needs.
+      ['saved lists contracts', ['features', 'lists', 'data-access', 'saved-lists.store.ts'], /setContractsLoadFailed/],
+      ['saved lists tickets', ['features', 'lists', 'data-access', 'saved-lists.store.ts'], /setTicketsLoadFailed/],
     ];
 
     it.each(sites)('%s clears before it catches', (_name, parts, flag) => {

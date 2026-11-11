@@ -40,7 +40,7 @@ function ticket(id: number): Ticket {
 
 type Api = Record<
   | 'getCommodityConversions' | 'getContracts' | 'getTodaysTickets' | 'getNotesLastContact'
-  | 'getMyReminders' | 'getPlantingIntentions' | 'getStoredGrain' | 'getDpContracts' | 'getSavedLists'
+  | 'getMyReminders' | 'getPlantingIntentions' | 'getStoredGrain' | 'getDpContracts'
   | 'getCommodities' | 'getHarvestWindows',
   ReturnType<typeof vi.fn<(...args: unknown[]) => Observable<unknown>>>
 >;
@@ -87,7 +87,6 @@ describe('DataPreloadService', () => {
       getPlantingIntentions: vi.fn(() => of([])),
       getStoredGrain: vi.fn(() => of([])),
       getDpContracts: vi.fn(() => of([])),
-      getSavedLists: vi.fn(() => of([])),
       getCommodities: vi.fn(() => of([])),
       getHarvestWindows: vi.fn(() => of([])),
     };
@@ -283,7 +282,7 @@ describe('DataPreloadService', () => {
 
   it('a failing secondary read does not stop the others', () => {
     api.getStoredGrain.mockReturnValue(throwError(() => new Error('500')));
-    api.getSavedLists.mockReturnValue(throwError(() => new Error('500')));
+    api.getHarvestWindows.mockReturnValue(throwError(() => new Error('500')));
     create();
     selectTradeUnits(['1085']);
     signIn();
@@ -294,13 +293,12 @@ describe('DataPreloadService', () => {
   });
 
   // Each of these used to resolve a failure to [] with nothing recorded, so the screens showed
-  // "no producers", "Never contacted", "No saved lists yet" and the like for an outage.
+  // "no producers", "Never contacted" and the like for an outage.
   describe('records which trade-unit reads failed, so an empty result is not shown as "none"', () => {
     const cases: [string, keyof Api, () => boolean][] = [
       ['DP contracts', 'getDpContracts', () => appState.dpContractsLoadFailed()],
       ['last-contact dates', 'getNotesLastContact', () => appState.noteLastContactsLoadFailed()],
       ['follow-ups', 'getMyReminders', () => appState.myRemindersLoadFailed()],
-      ['saved lists', 'getSavedLists', () => appState.savedListsLoadFailed()],
       ['planting intentions', 'getPlantingIntentions', () => appState.plantingIntentionsLoadFailed()],
       ['harvest windows', 'getHarvestWindows', () => appState.harvestWindowsLoadFailed()],
     ];

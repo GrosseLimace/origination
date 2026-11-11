@@ -2,24 +2,21 @@ import { Component, input, output, effect, inject, untracked, ChangeDetectionStr
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Observable, Subject, of, forkJoin, takeUntil } from 'rxjs';
+import { Subject, of } from 'rxjs';
 import { catchError, debounceTime, switchMap, map, tap } from 'rxjs/operators';
-import { StoredGrain, DpContract, Ticket, PlantingIntention, Contract } from '@models';
-import { Customer, SavedList, Note, NoteLastContact, ReminderDue, QueryLibraryItem } from '@models';
-import { MsalService } from '@azure/msal-angular';
-import { ApiService } from '@core/services/api.service';
+import { Customer, NoteLastContact, ReminderDue } from '@models';
 import { CustomerStore } from '../../data-access/customer.store';
 import { CustomersApiService } from '../../data-access/customers-api.service';
 import { AppStateService } from '@core/services/app-state.service';
-import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { REMINDER_DUE_CLASS, reminderDueTier } from '@shared/utils/reminder-due';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 import { profileLinkedIds } from '@shared/utils/producer-profile';
-import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
 import { CardComponent, CardContentComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { TradeUnitSelectorComponent } from '@core/layout/trade-unit-selector/trade-unit-selector.component';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { CustomerListFilter } from '@core/context/customer-list-filter';
+import { CustomerSlotComponent } from '@core/modules/customer-slot.component';
 import { ProducerProfiles } from '@core/context/producer-profiles';
 import { CustomerListScrollStore } from '../../data-access/customer-list-scroll.store';
 
@@ -35,22 +32,12 @@ interface LastContactInfo {
   cssClass: string;
 }
 
-/** What a saved list's prefetch can bring back. Each key is present only when the query needed
- *  that data and it was not loaded yet. */
-type SavedListPrefetch = Partial<{
-  storedGrain: StoredGrain[];
-  dpContracts: DpContract[];
-  tickets: Ticket[];
-  plantingIntentions: PlantingIntention[];
-  contracts: Contract[];
-  notes: Note[];
-  queryLibrary: QueryLibraryItem[];
-}>;
-
 @Component({
   selector: 'app-customer-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, CardComponent, CardContentComponent, BadgeComponent, TradeUnitSelectorComponent],
+  imports: [CommonModule, FormsModule, CardComponent, CardContentComponent, BadgeComponent, TradeUnitSelectorComponent, CustomerSlotComponent],
+  // The filter the panel in the list-filter slot sets (the Lists module's saved-list picker).
+  providers: [CustomerListFilter],
   host: { class: 'block w-full' },
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './customer-list.component.html'
@@ -60,7 +47,6 @@ export class CustomerListComponent {
 
   public customers = input<Customer[]>([]);
   public selectedCustomer = input<Customer | null>(null);
-  public savedLists = input<SavedList[]>([]);
   /** Per-customer "last contacted" aggregate (all trade units, one row per customer with
    *  notes) — feeds the badge cache without the full note download. */
   public noteLastContacts = input<NoteLastContact[]>([]);
@@ -81,7 +67,6 @@ export class CustomerListComponent {
   private _hoverTimer: ReturnType<typeof setTimeout> | null = null;
   private static readonly PREFETCH_DWELL_MS = 350;
 
-  private readonly apiService = inject(ApiService);
   private readonly customersApi = inject(CustomersApiService);
   private readonly appStateService = inject(AppStateService);
   private readonly customerStore = inject(CustomerStore);
@@ -90,8 +75,7 @@ export class CustomerListComponent {
    *  saved list's prompts and refines read. */
   private readonly producerProfiles = inject(ProducerProfiles);
   private readonly scrollStore = inject(CustomerListScrollStore);
-  private readonly msalService = inject(MsalService);
-  private readonly nlqFilterService = inject(NlqFilterService);
+  private readonly filter = inject(CustomerListFilter);
   private readonly destroyRef = inject(DestroyRef);
   private readonly _cdr = inject(ChangeDetectorRef);
   private readonly _searchSubject$ = new Subject<string>();
@@ -99,8 +83,6 @@ export class CustomerListComponent {
   // Plain property for the search input — not a signal, so typing does not mark the
   // component dirty and does not re-render the customer list on each keystroke.
   searchInputValue = '';
-  selectedListId = signal('all');
-  savedListLoading = signal(false);
   searchLoading = signal(false);
   /** The last producer search errored. The list shows a "search failed" state instead of rows —
    *  never the loaded roster, which would read as everyone matching the term. Cleared by the next
@@ -108,9 +90,14 @@ export class CustomerListComponent {
   searchFailed = signal(false);
   filteredCustomers = signal<Customer[]>([]);
 
-  /** Roster size when the active saved list's customerIds were last resolved. Guards the
-   *  roster-growth re-run in the constructor; -1 so the first resolve always counts as growth. */
-  private _nlqResolvedForCustomerCount = -1;
+  /** A filter from the list-filter slot narrows the list. */
+  readonly filtered = computed(() => this.filter.kept().kind !== 'all');
+  /** What the list says while the filter is still working out who it keeps, or null. */
+  readonly pendingMessage = computed(() => {
+    const kept = this.filter.kept();
+    return kept.kind === 'pending' ? kept.message : null;
+  });
+
   readonly hasTradeUnitSelection = computed(() =>
     this.tradeUnitContext.selectedTradeUnits().length > 0 || this.tradeUnitContext.selectedGroupNames().length > 0
   );
@@ -138,14 +125,7 @@ export class CustomerListComponent {
 
     // Restore state from service
     this.searchInputValue = this.appStateService.searchQuery();
-    this.selectedListId.set(this.appStateService.selectedSavedListId() || 'all');
-
-    // Apply the restored list selection — applyFilters will use cached customerIds if available
-    if (this.selectedListId() !== 'all') {
-      this.applyFilters();
-    } else {
-      this.applyFilters();
-    }
+    this.applyFilters();
 
     // Set up search — switchMap cancels any in-flight request when a new term arrives,
     // preventing stale results from overwriting newer ones.
@@ -194,13 +174,11 @@ export class CustomerListComponent {
         return;
       }
       this.searchFailed.set(false);
+      // A search's results are narrowed by the filter too; one still working out who it keeps shows none of them.
       let result = customers;
-      if (this.selectedListId() && this.selectedListId() !== 'all') {
-        const savedList = this.savedLists().find(l => String(l.id) === this.selectedListId());
-        if (savedList) {
-          result = result.filter(c => (savedList.customerIds || []).includes(c.id));
-        }
-      }
+      const kept = this.filter.kept();
+      if (kept.kind === 'some') result = result.filter(c => kept.ids.has(c.id));
+      else if (kept.kind === 'pending') result = [];
       this.filteredCustomers.set(result);
     });
 
@@ -252,77 +230,24 @@ export class CustomerListComponent {
       this.filteredCustomers.set(next);
     });
 
-    // Re-run the active saved list's NLQ when tickets / stored grain / planting
-    // intentions arrive AFTER the first run. Without this, a saved list whose query
-    // needs tickets (e.g. "Producers with unapplied tickets") runs once when those
-    // signals are empty, returns 0 from the live NLQ, and stays stuck on the saved
-    // includedCustomerIds (typically 4 from the last save). When the lazy ticket fetch
-    // finishes the count should update — this effect makes that happen.
+    // The filter in the list-filter slot changed which customers the list keeps.
     effect(() => {
-      const tickets = this.appStateService.tickets();
-      const storedGrain = this.appStateService.storedGrain();
-      const planting = this.appStateService.plantingIntentions();
-      untracked(() => {
-        const listId = this.selectedListId();
-        if (!listId || listId === 'all') return;
-        const savedList = this.savedLists().find(l => String(l.id) === listId);
-        if (!savedList || !savedList.query) return;
-        const q = savedList.query;
-        // Only re-run if the data that just arrived is what this query depends on.
-        const needsTickets  = this.nlqFilterService.queryInvolvesTickets(q)  && tickets.length  > 0;
-        const needsStorage  = this.nlqFilterService.queryInvolvesStorage(q)  && storedGrain.length > 0;
-        const needsPlanting = this.nlqFilterService.queryInvolvesPlanting(q) && planting.length    > 0;
-        if (!(needsTickets || needsStorage || needsPlanting)) return;
-        // Re-execute the live filter against the now-complete data and persist the
-        // refreshed customerIds back to appState.
-        this._executeNlq(savedList);
-        this.applyFilters();
-      });
+      this.filter.kept();
+      untracked(() => this.applyFilters());
     });
 
-    // Same idea for the ROSTER growing. The effect above covers late-arriving datasets, but
-    // customers() also fills in progressively via per-producer merges — and the cached
-    // customerIds were only invalidated on a trade-unit change or a list switch. A producer who
-    // arrived after the list resolved, and who matches its query, stayed silently excluded until
-    // the user reselected the list.
-    //
-    // Gated on the roster being strictly LARGER than when the result was computed: customers() is
-    // written often enough that re-running on every change would re-execute the whole filter for
-    // nothing, and the comparison is monotonic so this can't feed itself.
-    effect(() => {
-      const count = this.customers().length;
-      untracked(() => {
-        const listId = this.selectedListId();
-        if (!listId || listId === 'all') return;
-        if (count <= this._nlqResolvedForCustomerCount) return;
-        const savedList = this.savedLists().find(l => String(l.id) === listId);
-        if (!savedList?.query) return;
-        // undefined means a run is already pending or in flight — leave it rather than race it.
-        if (savedList.customerIds === undefined) return;
-        this._executeNlq(savedList);
-        this.applyFilters();
-      });
-    });
-
-    // React to savedLists changes — validate selectedListId and reapply filters.
-    // untracked prevents applyFilters() from adding its own signal reads as
-    // effect dependencies, which would cause this effect to re-run on every keystroke.
-    effect(() => {
-      const savedLists = this.savedLists();
-      untracked(() => {
-        if (this.selectedListId() !== 'all') {
-          const stillExists = savedLists.some(l => String(l.id) === this.selectedListId());
-          if (!stillExists) {
-            this.selectedListId.set('all');
-            this.appStateService.setSelectedSavedListId('all');
-          }
-        }
-        this.applyFilters();
-      });
+    // A filter picked: leave the search, so the filter applies to the trade units' customers rather than a search's
+    // results. Cleared here rather than through clearSearch, since the filter's own change applies the filters.
+    this.filter.picked.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (!this.searchInputValue) return;
+      this.searchInputValue = '';
+      this.searchLoading.set(false);
+      this.appStateService.setSearchQuery('');
+      this._cdr.markForCheck();
     });
 
     // React to customers changing — reapply filters.
-    // untracked prevents applyFilters() from implicitly tracking searchQuery, savedLists,
+    // untracked prevents applyFilters() from implicitly tracking searchQuery, the filter,
     // etc. and causing this effect to fire on every keystroke.
     effect(() => {
       this.customers();
@@ -337,24 +262,8 @@ export class CustomerListComponent {
       this.tradeUnitContext.selectedGroupNames();
       if (!_tuInitialized) { _tuInitialized = true; return; }
       untracked(() => {
+        // The filter keeps or drops its pick for the new selection itself.
         if (this.searchInputValue) this.clearSearch();
-        // A saved list that still overlaps the new selection STAYS selected and re-runs under it —
-        // its cached customerIds belong to the old roster, so drop them (the customers effect
-        // re-enters applyFilters once the new roster lands). A list that no longer overlaps can't
-        // be shown, so fall back to All Producers.
-        const currentList = this.selectedListId();
-        if (currentList && currentList !== 'all') {
-          this._cancelSavedList$.next();
-          if (this.getVisibleSavedLists().some(l => String(l.id) === currentList)) {
-            const savedList = this.savedLists().find(l => String(l.id) === currentList);
-            if (savedList) savedList.customerIds = undefined;
-            this.savedListLoading.set(true);
-          } else {
-            this.savedListLoading.set(false);
-            this.selectedListId.set('all');
-            this.appStateService.setSelectedSavedListId('all');
-          }
-        }
       });
     });
 
@@ -449,238 +358,14 @@ export class CustomerListComponent {
     this.searchFailed.set(false);
     let result = [...this.customers()];
 
-    // Apply saved list filter (skip for "all" which means show all customers).
-    // Invariant: when a saved list is selected, the only valid outcomes are
-    // (a) filter by resolved customerIds, or (b) return early and keep the current
-    // view + spinner. We never fall through to "all customers" while a list is selected
-    // — that's the back-to-back bug where the second pick briefly showed everyone.
-    //
-    // We check `customerIds === undefined` (rather than .length) to distinguish
-    // "not yet computed" from "computed as zero matches". Zero matches must flow
-    // through to filteredCustomers.set([]) so the template renders "No customers
-    // found" instead of leaving the previous (often unfiltered) list visible.
-    if (this.selectedListId() && this.selectedListId() !== 'all') {
-      let savedList = this.savedLists().find(l => String(l.id) === this.selectedListId());
-      if (!savedList) {
-        // Saved list not in the array yet (mid-refetch / pre-load). Keep current view.
-        return;
-      }
-      if (savedList.customerIds === undefined) {
-        this._runSavedListNlq(savedList);
-        // _runSavedListNlq may have synchronously called _executeNlq which patches
-        // appState via setSavedLists. Re-read so we see the resolved customerIds
-        // without waiting for the savedLists effect to re-run applyFilters.
-        savedList = this.savedLists().find(l => String(l.id) === this.selectedListId());
-      }
-      if (savedList?.customerIds === undefined) {
-        // Async path (forkJoin in flight) — keep spinner up; the next signal-driven
-        // re-run will set filteredCustomers once customerIds resolves (even to []).
-        return;
-      }
-      result = result.filter(c => savedList!.customerIds!.includes(c.id));
-    }
+    // The filter in the list-filter slot. While it is still working out who it keeps, the list keeps what it shows,
+    // with the filter's spinner, rather than flashing every customer; one that keeps nobody shows "No customers
+    // found".
+    const kept = this.filter.kept();
+    if (kept.kind === 'pending') return;
+    if (kept.kind === 'some') result = result.filter(c => kept.ids.has(c.id));
 
     this.filteredCustomers.set(result);
-  }
-
-  /** Saved lists sharing at least one trade unit with the current selection (see
-   *  saved-list-trade-units.ts). Trade units govern visibility only — picking one runs its query
-   *  against the currently loaded roster (_runSavedListNlq fetches with the current selection). */
-  getVisibleSavedLists(): SavedList[] {
-    return filterSavedListsByTradeUnitOverlap(this.savedLists(), this.tradeUnitContext.selectedTradeUnits());
-  }
-
-  /** Called when the user selects a saved list from the dropdown. */
-  onSavedListChange(): void {
-    this._cancelSavedList$.next(); // Cancel any in-flight NLQ from previous list
-    const id = this.selectedListId();
-    this.appStateService.setSelectedSavedListId(id);
-    if (id && id !== 'all') {
-      // Show spinner immediately on click so the user gets visual feedback.
-      // _runSavedListNlq will either keep it on (async fetch path) or _executeNlq
-      // will clear it (synchronous cached path). Without this set-true here, the
-      // sync path can paint a single frame of "all customers + no spinner" before
-      // the spinner flips on inside _runSavedListNlq.
-      this.savedListLoading.set(true);
-      // Clear cached customerIds so the NLQ re-runs for the new selection.
-      // We mutate directly because savedLists is fed via an input binding from the parent —
-      // an immutable swap on appState wouldn't propagate to our input, but a mutation on the
-      // shared object reference is visible everywhere that holds it.
-      const savedList = this.savedLists().find(l => String(l.id) === id);
-      if (savedList) savedList.customerIds = undefined;
-      // Clear any active producer-search term so applyFilters() resolves the saved list through
-      // the fast LOCAL NLQ path. With a term present, applyFilters() diverts to the search
-      // pipeline (and the slow ODS fallback in All-Producers mode) and that path never clears
-      // savedListLoading — leaving "Running saved list..." up for the whole search. Mirrors the
-      // clear-on-trade-unit-change behavior. Set the value directly (not clearSearch(), which would
-      // call applyFilters() a second time) so the applyFilters() below runs once with no term.
-      if (this.searchInputValue) {
-        this.searchInputValue = '';
-        this.searchLoading.set(false);
-        this.appStateService.setSearchQuery('');
-      }
-    } else {
-      this.savedListLoading.set(false);
-    }
-    this.applyFilters();
-  }
-
-  private _cancelSavedList$ = new Subject<void>();
-  private _activeSavedListRunId = 0;
-
-  /** Runs the NLQ for the active saved list. Only fetches data the query actually needs. */
-  private _runSavedListNlq(savedList: SavedList): void {
-    // Can't run NLQ without customers — keep spinner up; the customers-input effect
-    // re-runs applyFilters() once data lands, which re-enters this method.
-    if (this.customers().length === 0) {
-      this.savedListLoading.set(true);
-      return;
-    }
-
-    const runId = ++this._activeSavedListRunId;
-    const query = savedList.query;
-    const selectedTU = this.tradeUnitContext.selectedTradeUnits();
-    const tuParam = selectedTU.length > 0 ? selectedTU : undefined;
-
-    // Only fetch data types the query actually needs — skip unnecessary slow fetches
-    const missing: Record<string, Observable<unknown>> = {};
-    if (this.nlqFilterService.queryInvolvesStorage(query) && this.appStateService.storedGrain().length === 0) {
-      missing['storedGrain'] = this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[])));
-    }
-    // Gate on the loaded flag, not length: a per-producer merge can leave rows present without a
-    // TU-wide load, and a TU with genuinely zero DP would otherwise re-fetch every time.
-    if (this.nlqFilterService.queryInvolvesDpContracts(query) && !this.appStateService.dpContractsLoaded()) {
-      missing['dpContracts'] = this.apiService.getDpContracts(tuParam).pipe(catchError(() => of([] as DpContract[])));
-    }
-    // Guard on the explicit ticketsLoaded flag, not `.length === 0`: tickets are no longer
-    // eagerly bulk-loaded, and per-producer selection no longer writes into appState.tickets, so an
-    // emptiness check could misfire (or skip the fetch after a partial write). ticketsLoaded is only
-    // true once a TU-wide set has been loaded; it's reset on TU change.
-    if (this.nlqFilterService.queryInvolvesTickets(query) && !this.appStateService.ticketsLoaded()) {
-      missing['tickets'] = this.apiService.getTickets(tuParam).pipe(
-        tap(() => this.appStateService.setTicketsLoadFailed(false)),
-        catchError(() => { this.appStateService.setTicketsLoadFailed(true); return of([] as Ticket[]); }));
-    }
-    if (this.nlqFilterService.queryInvolvesPlanting(query) && this.appStateService.plantingIntentions().length === 0) {
-      missing['plantingIntentions'] = this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[])));
-    }
-    // Contracts: if the query needs them and the global signal is empty, fetch before
-    // running NLQ. Without this, the saved list runs against an empty contracts array
-    // and "with active contracts" returns 0 even though the producers have contracts —
-    // while commodity-specific prompts silently fall back to customer.commodities and
-    // still return producers, making the failure look intermittent.
-    if (this.nlqFilterService.queryInvolvesContracts(query) && this.appStateService.contracts().length === 0) {
-      missing['contracts'] = this.apiService.getContracts(tuParam).pipe(
-        tap(() => this.appStateService.setContractsLoadFailed(false)),
-        catchError(() => { this.appStateService.setContractsLoadFailed(true); return of([] as Contract[]); }));
-    }
-    // Notes (full set with bodies/authors): fetch ONLY for prompts that actually read note
-    // content/authors/pinned/counts, or whose refine filters do. Recency ("not contacted",
-    // "never contacted", "notes in last N days") and every non-note prompt resolve from the
-    // last-contact aggregate (always loaded on TU change), so they never download the full set.
-    // Gate on notesLoaded, not length (a TU can genuinely have zero notes).
-    const needsFullNotes = this.nlqFilterService.queryNeedsFullNotes(query)
-      || this.nlqFilterService.refineFiltersNeedFullNotes(savedList.filters);
-    if (needsFullNotes && !this.appStateService.notesLoaded()) {
-      missing['notes'] = this.apiService.getNotes().pipe(catchError(() => of([] as Note[])));
-    }
-    // Also fetch the query library when the saved list lacks the _promptCategory hint —
-    // we use it to resolve dimension by queryText match in applyRefinementFilters.
-    if (savedList.filters && !savedList.filters._promptCategory && this.appStateService.queryLibrary().length === 0) {
-      missing['queryLibrary'] = this.apiService.getQueryLibrary().pipe(catchError(() => of([] as import('@models').QueryLibraryItem[])));
-    }
-
-    if (Object.keys(missing).length > 0) {
-      this.savedListLoading.set(true);
-      (forkJoin(missing) as Observable<SavedListPrefetch>).pipe(takeUntil(this._cancelSavedList$), takeUntilDestroyed(this.destroyRef)).subscribe({
-        next: results => {
-          // Stale-response guard — ignore callbacks from a superseded selection.
-          if (runId !== this._activeSavedListRunId) return;
-          if (results.storedGrain) this.appStateService.setStoredGrain(results.storedGrain);
-          if (results.dpContracts) this.appStateService.setDpContracts(results.dpContracts);
-          if (results.tickets) this.appStateService.setTickets(results.tickets);
-          if (results.plantingIntentions) this.appStateService.setPlantingIntentions(results.plantingIntentions);
-          if (results.contracts) this.appStateService.setContracts(results.contracts);
-          if (results.notes) this.appStateService.setNotes(results.notes);
-          if (results.queryLibrary) this.appStateService.setQueryLibrary(results.queryLibrary);
-          this._executeNlq(savedList);
-          this.savedListLoading.set(false);
-          this.applyFilters();
-        },
-        error: () => {
-          if (runId !== this._activeSavedListRunId) return;
-          this.savedListLoading.set(false);
-          // Run NLQ with whatever data is available — don't retry the fetch
-          this._executeNlq(savedList);
-          this.applyFilters();
-        }
-      });
-      return;
-    }
-
-    // All needed data is available — run NLQ instantly
-    this._executeNlq(savedList);
-    this.savedListLoading.set(false);
-  }
-
-  private _executeNlq(savedList: SavedList): void {
-    const contracts = this.appStateService.contracts();
-    const notes = this.appStateService.notes();
-    const context: NlqFilterContext = {
-      customers: this.customers(),
-      producerProfiles: this.producerProfiles.profiles(),
-      contracts,
-      tickets: this.appStateService.tickets(),
-      notes,
-      noteLastContacts: this.appStateService.noteLastContacts(),
-      myReminders: this.appStateService.myReminders(),
-      plantingIntentions: this.appStateService.plantingIntentions(),
-      storedGrain: this.appStateService.storedGrain(),
-      dpContracts: this.appStateService.dpContracts(),
-      commodities: this.appStateService.commodities(),
-      commodityConversions: this.appStateService.commodityConversions()
-    };
-    // Resolve "I"/"me"/"my" to the user's name so author-based queries work
-    const account = this.msalService.instance.getActiveAccount()
-      ?? this.msalService.instance.getAllAccounts()[0];
-    const resolvedQuery = this.nlqFilterService.resolveUserReferences(savedList.query, account?.name ?? '', account?.username ?? '');
-    const result = this.nlqFilterService.parseAndFilter(resolvedQuery, context);
-    // Backfill _promptCategory if the saved list pre-dates the hint AND the query library
-    // has a match for its queryText (the service uses this to drive dimension-aware filters
-    // like the contracts-crop match).
-    let listFilters = savedList.filters;
-    if (listFilters && !listFilters._promptCategory) {
-      const lib = this.appStateService.queryLibrary();
-      if (lib.length > 0) {
-        const qLower = savedList.query.trim().toLowerCase();
-        const matched = lib.find(q => q.queryText.trim().toLowerCase() === qLower);
-        if (matched?.category) listFilters = { ...listFilters, _promptCategory: matched.category };
-      }
-    }
-    const refined = listFilters
-      ? this.nlqFilterService.applyRefinementFilters(result.customers, listFilters, contracts, notes, {
-          producerProfiles: this.producerProfiles.profiles(),
-          tickets: this.appStateService.tickets(),
-          storedGrain: this.appStateService.storedGrain(),
-          dpContracts: this.appStateService.dpContracts(),
-          plantingIntentions: this.appStateService.plantingIntentions(),
-          commodityConversions: this.appStateService.commodityConversions(),
-          noteLastContacts: this.appStateService.noteLastContacts(),
-          commodities: this.appStateService.commodities()
-        })
-      : result.customers;
-    savedList.customerIds = this.nlqFilterService.applyCustomerOverrides(
-      refined.map(c => c.id), savedList.includedCustomerIds, savedList.excludedCustomerIds
-    );
-    // Remember the roster this result was computed against, so the roster-growth effect can tell
-    // a genuinely larger roster from the ordinary churn that also re-fires on every write.
-    this._nlqResolvedForCustomerCount = this.customers().length;
-
-    // Persist customerIds to appState so they survive component remount.
-    const lists = this.appStateService.savedLists().map(l =>
-      l.id === savedList.id ? { ...l, customerIds: savedList.customerIds } : l
-    );
-    this.appStateService.setSavedLists(lists);
   }
 
   clearSearch(): void {
@@ -696,12 +381,9 @@ export class CustomerListComponent {
   }
 
   clearAll(): void {
-    this._cancelSavedList$.next(); // Cancel any in-flight saved list NLQ
-    this.savedListLoading.set(false);
     this.searchInputValue = '';
     this.appStateService.setSearchQuery('');
-    this.selectedListId.set('all');
-    this.appStateService.setSelectedSavedListId('all');
+    this.filter.clear();
     this.tradeUnitContext.setTradeUnits([]);
     this.tradeUnitContext.setSelectedGroupNames([]);
     this.searchFailed.set(false);

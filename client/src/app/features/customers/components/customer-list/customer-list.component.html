@@ -8,7 +8,7 @@
           <!-- Title Row -->
           <div class="flex items-center justify-between">
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Producers</h3>
-            @if (searchInputValue || selectedListId() !== 'all' || selectedCustomer() || hasTradeUnitSelection()) {
+            @if (searchInputValue || filtered() || selectedCustomer() || hasTradeUnitSelection()) {
               <button
                 (click)="clearAll()"
                 type="button"
@@ -63,29 +63,19 @@
           </div>
         </div>
 
-        <!-- Saved Lists Filter — only shown after customers have loaded -->
-        @if (!loading() && getVisibleSavedLists().length > 0) {
-          <div class="py-2 border-b border-gray-200 dark:border-gray-700 px-4">
-            <select
-              [ngModel]="selectedListId()"
-              (ngModelChange)="selectedListId.set($event); onSavedListChange()"
-              class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-base text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
-            >
-              <option value="all">All Producers</option>
-              @for (list of getVisibleSavedLists(); track list.id) {
-                <option [value]="list.id" class="text-gray-900 dark:text-white">{{ list.name }}{{ selectedListId() === '' + list.id && (list.customerIds || []).length ? ' (' + (list.customerIds || []).length + ')' : '' }}</option>
-              }
-            </select>
-          </div>
-        }
+        <!-- The list-filter slot: the Lists module's saved-list picker. Hidden while the producers load, but kept, so
+             the filter it sets stays in place. -->
+        <div [class.hidden]="loading()">
+          <app-customer-slot slot="list-filter" />
+        </div>
 
         <!-- Customer List -->
         <div #scrollContainer class="divide-y divide-gray-200 dark:divide-gray-700 overflow-y-auto flex-1 min-h-0 max-h-[70dvh] lg:max-h-none"
         >
-          @if (savedListLoading()) {
+          @if (pendingMessage(); as message) {
             <div class="p-8 text-center">
               <div class="inline-block animate-spin rounded-full h-10 w-10 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green mb-3"></div>
-              <p class="text-gray-500 dark:text-gray-400 font-medium text-sm">Running saved list...</p>
+              <p class="text-gray-500 dark:text-gray-400 font-medium text-sm">{{ message }}</p>
             </div>
           } @else if (loading() && selectedTradeUnits.length > 0) {
             <div class="p-8 text-center">

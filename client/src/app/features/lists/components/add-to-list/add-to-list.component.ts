@@ -1,12 +1,11 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked } from '@angular/core';
-import { PermissionService } from '@core/access/permission.service';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
-import { SavedListMembership } from '@core/context/saved-list-membership';
-import { SavedList } from '@models';
+import { SavedListsStore } from '../../data-access/saved-lists.store';
+import { SavedList } from '../../models/saved-list.model';
 
 /**
  * Add to List in the profile header's buttons: a dropdown of the user's saved lists, each ticked when the customer on
- * screen is in it. Ticks are staged while it is open; Save hands the changes to the page's SavedListMembership, and
+ * screen is in it. Ticks are staged while it is open; Save hands the changes to SavedListsStore, and
  * Cancel, a click outside, Escape or another customer discards them. A user who may change teammates' lists also gets a
  * Team Lists tab, and changes on both tabs save together. Its element takes no space, so the button sits in the
  * header's row.
@@ -24,17 +23,19 @@ import { SavedList } from '@models';
   templateUrl: './add-to-list.component.html',
 })
 export class AddToListComponent {
-  private readonly membership = inject(SavedListMembership);
-  private readonly access = inject(PermissionService);
+  private readonly store = inject(SavedListsStore);
   private readonly customer = inject(SelectedCustomerContext).customer;
 
-  readonly ownLists = this.membership.ownLists;
-  readonly teamLists = this.membership.teamLists;
-  readonly ownListsLoadFailed = this.membership.ownListsLoadFailed;
+  /** The user's own lists that share a trade unit with the selection, each with who it holds. */
+  readonly ownLists = this.store.ownListsWithMembers;
+  /** Teammates' lists tied to the selected trade units. Empty for a user without the team permissions. */
+  readonly teamLists = this.store.teamListsWithMembers;
+  /** The user's own lists failed to load, so having none does not mean none match. */
+  readonly ownListsLoadFailed = this.store.loadFailed;
 
   /** The Team Lists tab: reading teammates' lists needs the team read, and adding a customer to one changes someone
    *  else's list, which needs the team write. */
-  readonly canEditTeamLists = computed(() => this.access.hasAll(['saved-lists:read:team', 'saved-lists:write:team']));
+  readonly canEditTeamLists = this.store.canEditTeamLists;
 
   readonly menuOpen = signal(false);
   /** Which lists the dropdown is showing: the user's own, or (with the team permissions) the team's. */
@@ -47,6 +48,9 @@ export class AddToListComponent {
   readonly activeLists = computed<SavedList[]>(() => this.tab() === 'team' ? this.teamLists() : this.ownLists());
 
   constructor() {
+    // The reads who a list holds may need that the trade-unit load doesn't make: the trade unit's tickets, the notes.
+    effect(() => this.store.loadMembershipData());
+
     // Another customer: what was staged was for the one before.
     effect(() => {
       this.customer();
@@ -61,7 +65,7 @@ export class AddToListComponent {
   }
 
   /** Whether the customer on screen is in the list now, as saved. An exclusion wins, then a manual include, then the
-   *  membership the page resolved from the list's query (which also covers lists whose query cached no ids). */
+   *  membership worked out from the list's query (none, for a query the engine understood none of). */
   isInList(list: SavedList): boolean {
     const id = this.customer()?.id;
     if (id === undefined) return false;
@@ -97,12 +101,13 @@ export class AddToListComponent {
     return this.allLists().some(list => this.isStagedMember(list) !== this.isInList(list));
   }
 
-  /** Hands the staged changes on both tabs to the page to save, then closes. */
+  /** Saves the staged changes on both tabs, then closes. */
   save(): void {
     const changes = this.allLists()
       .filter(list => this.isStagedMember(list) !== this.isInList(list))
       .map(list => ({ listId: list.id, add: this.isStagedMember(list) }));
-    if (changes.length > 0) this.membership.save(changes);
+    const customer = this.customer();
+    if (customer && changes.length > 0) this.store.save(customer, changes);
     this.cancel();
   }
 

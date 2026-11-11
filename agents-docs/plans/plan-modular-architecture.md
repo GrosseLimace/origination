@@ -662,7 +662,7 @@ These are the slots the customer screen needs to host everything it shows today.
 - **Contacts are the overlap.** Both edit dialogs need them, and today they save with the producer's details under `producer-details:write`. In Phase 5 they get their own save and permission in Customers, and the contacts editor becomes one component both dialogs use. The Trade Units editor can be shared the same way if traders need it.
 
 **Decided in Phase 4 (2026-11-10): the customer list gets two slots of its own.**
-- **A filter slot,** beside the search box. Lists fills it with the saved-list dropdown in step 10b, and the contribution runs the list's query through the NLQ engine, so the list itself no longer does.
+- **A filter slot,** `list-filter`, under the search box and above the rows. Lists fills it with the saved-list picker (step 10b), which runs the list's query through the NLQ engine, so the list itself no longer does; the list keeps who the panel says through the `CustomerListFilter` it provides (§8, step 10).
 - **A row slot,** on each customer's row. Engagement fills it with the last-contacted and follow-up badges, and Producers with the acres, in step 10d.
 - A trader's list then carries no producer pieces, and Customers reads no other module's data.
 
@@ -855,7 +855,7 @@ Add ESLint, since none exists today. Use `@angular-eslint` plus `eslint-plugin-b
 
 **Changed in Phase 4 (2026-11-10): some producer models and utils stay where they are.**
 - **The producer models stay in `src/app/models`:** `planting-intention`, `stored-grain`, `producer-details`, `harvest-window`, `dp-contract` and those like them. The core interfaces the customer screen reads through (`ProducerProfiles`, `SelectedProducerProduction`, `SelectedProducerActivity`) are written in them, and core can't import a module. Only the models nothing outside Producers uses move there (`field-plan`, `fd-cic`, `carbon-intensity`, `tdisc`, and the `dashboard-*` models once the dashboard calls leave `ApiService`).
-- **`linked-producers` and `producer-profile` stay in `shared/utils`,** because Customers uses them. The other producer utils move to Producers once nothing outside Lists and Producers uses them: some in step 10a, the rest in 10b when the NLQ engine leaves core.
+- **`linked-producers` and `producer-profile` stay in `shared/utils`,** because Customers uses them. The other producer utils move to Producers once nothing outside Lists and Producers uses them: some in step 10a, the rest in 10b when the NLQ engine leaves core. Those only Lists uses then (`grain-bin-refine`, `planting-chips`, `ticket-view-filters`) go to Lists instead.
 - **`whats-new` stays in `src/app/models`.** What's New is Platform's (§3), and core's What's New service uses the model.
 - Step 10 in §8 lists which step moves each of them.
 
@@ -1076,7 +1076,7 @@ Where it differs from the row above:
 
 **Phase 4 is in progress** on `feature_ModularArchitecture-Phase4`, cut from `feature_ModularArchitecture`, in reviewed steps. Step 11 turns this list into the phase's record, like Phase 2's and Phase 3's above.
 
-Done, in 21 commits (2026-11-09 to 2026-11-10):
+Done, in 22 commits (2026-11-09 to 2026-11-10):
 1. The customer-screen slot types in the manifest (`2dbec000`).
 2. Module stores cleared on sign-out and idle timeout again (`a31f1483`). Customers' own store, API client and preload (`e8c357f9`).
 3. The selected producer's activity moved out of the home page (`dbca0d0f`) and read through `SelectedProducerActivity` (`437956e7`). The contracts and tickets tables became the Contracts module's profile tabs (`8e24bb19`).
@@ -1089,7 +1089,11 @@ Done, in 21 commits (2026-11-09 to 2026-11-10):
    - Part a: every producer's details have one copy, Producers' `ProducerProfileStore`, which core declares as `ProducerProfiles` and the composition root provides. Producers' preload reads them, and the home page again on each visit, only for users with `producer-details:read`; `AppStateService` no longer holds them. Producers' panels and screens, Build a List with its filters, result rows and bin-site notes, and the NLQ engine (through its context) read a producer's details from it rather than off the customer (`76280638`).
    - Part b: a customer is just a customer, on both ends. The home page (the linked-producer walk and linked group, the commodity auto-saves, the edit save), the customer list, the profile and the Notes card read through `ProducerProfiles`, and nothing lays the details over a customer any more: `applyProducerDetails` and Build a List's copy of it are gone. `Customer` shed `totalAcres`, `linkedProducerIds`, `grainOnFarm`, `binSites`, `binSitesModifiedAt`, `contacts`, `primaryContact`, `primaryPhone`, `commodities` and `farm`; `CustomerResponse` and the entity `Farm`, `FarmIds`, `TotalAcres` and `LinkedProducerIds`; and `customers/linked-to` returns plain customers, so `GetLinkFieldsAsync` went too. `Model_HasNoChangesWithoutAMigration` shows the database didn't change. The NLQ engine's farm-name filter matches the customer's name, and the profile's dead farm line went, with the `header-panel` mark that only it read.
 10. The clean-up, in four parts.
-   - Part a: the preload gate, and the moves that fit now. `PermissionService` keeps the user's `modules`, and `ModuleRegistry` runs a module's `preload` only once the permissions have loaded, and only for a module the user holds or one its manifest marks `spaOnly` (Calculators, Help and What's New, which own no permissions). `app.modules.spec.ts` pins the module ids to the API's. `DataPreloadService` moved to `core/context`. The two customer searches moved to `CustomersApiService`, which core's new `CustomerSearch` declares for Help's troubleshooter. The `bid-sheet` and `barchart` models went to Bid Sheet, `usage-dashboard` to Usage Analytics, `help` with the help utils to `core/help`, and `field-plan`, `fd-cic`, `carbon-intensity`, `tdisc`, `organic-visibility` and `planting-trade-unit-filter` to Producers.
+   - Part a: the preload gate, and the moves that fit now. `PermissionService` keeps the user's `modules`, and `ModuleRegistry` runs a module's `preload` only once the permissions have loaded, and only for a module the user holds or one its manifest marks `spaOnly` (Calculators, Help and What's New, which own no permissions). `app.modules.spec.ts` pins the module ids to the API's. `DataPreloadService` moved to `core/context`. The two customer searches moved to `CustomersApiService`, which core's new `CustomerSearch` declares for Help's troubleshooter. The `bid-sheet` and `barchart` models went to Bid Sheet, `usage-dashboard` to Usage Analytics, `help` with the help utils to `core/help`, and `field-plan`, `fd-cic`, `carbon-intensity`, `tdisc`, `organic-visibility` and `planting-trade-unit-filter` to Producers (`722d2830`).
+   - Part b, first commit: saved lists into Lists. The saved lists, the team's lists and the query library moved from `AppStateService` and `ApiService` into Lists' `SavedListsStore` and `SavedListsApiService`, loaded by a Lists `preload` (which loads the store's code when it runs: imported with the manifest, it put the NLQ engine in the initial bundle, 1.16 MB against the 1.1 MB budget), with the `saved-list` and `query-library` models and the `saved-list-trade-units` util. One resolve works out who a list holds against the trade unit's data, for both its users:
+     - the customer list's new `list-filter` slot, where the saved-list picker is now a Lists panel, narrowing the list through the `CustomerListFilter` the list provides; the picked list and its run (the data it needs read first, run again as more arrives, as the roster grows or as the list changes, kept or dropped across a trade-unit change) are `SavedListFilterStore`'s;
+     - Add to List, which now reads the store itself, so `SavedListMembership` and the home page's `HomeSavedListsStore` are gone.
+     The customer list and the home page hold no saved-list code; the customer list no longer reads the NLQ engine.
 
 Left:
 - **Found and decided for step 9 (2026-11-10):**
@@ -1099,12 +1103,11 @@ Left:
   - **The customer search's `ProducerDetails`/`ProducerContact` join waits for Phase 5** (§4.4). Search requires every word to match some field, and two of those fields are in Producers' tables, so a Producers contributor needs a design and a permission check of its own; traders don't search until Phase 5, when the search widens anyway.
   - **The customer list keeps showing acres** through `ProducerProfiles` until a Producers contribution to its rows, in step 10d's row slot.
   - **Two steps rather than five** (user 2026-11-10), each one reviewed commit.
-- **10. Clean-up, the other three parts.** Each module takes its own data, and what is left in `ApiService` and `AppStateService` is Platform's.
-  - **10b. The NLQ engine and saved lists into Lists** (8c, moved up from last).
-    - `core/services/nlq-filter.service.ts` moves to Lists.
-    - The customer list gets a filter slot, and its saved-list dropdown becomes a Lists contribution to it, which runs the list's query.
-    - `HomeSavedListsStore` becomes a Lists store, and the saved lists and query library move to Lists with their API calls and models (`saved-list`, `query-library`, `refine-filters`).
-    - The producer utils that then only Lists and Producers use (`grain-on-farm`, `production-coverage`, `dp-aggregate`, `grain-bin-refine`, `planting-chips`, and `planting-category`, which `production-coverage` imports) move to Producers.
+- **10. Clean-up, the rest.** Each module takes its own data, and what is left in `ApiService` and `AppStateService` is Platform's.
+  - **10b, second commit: the NLQ engine into Lists.** Only Lists runs it now.
+    - `core/services/nlq-filter.service.ts` and its specs move to Lists, with the `refine-filters` model it reads.
+    - The utils only Lists then uses move to Lists: `grain-bin-refine` and `ticket-view-filters` (both read Lists' `RefinementFilters`) and `planting-chips`.
+    - The producer utils Lists and Producers both use move to Producers, exported from its index: `grain-on-farm`, `production-coverage`, `dp-aggregate`, and `planting-category`, which `production-coverage` imports.
   - **10c. Contracts' and Producers' data into their own stores.**
     - Contracts gets a store, an API client and a `preload` for contracts, tickets (today's, and the trade unit's on demand) and pricing lines.
     - Producers' store takes planting intentions, stored grain and DP contracts, with their API calls, and the home page's yield-estimate loading. The dashboard's calls move to Producers' API client, and the `dashboard-*` models with them.
@@ -1122,6 +1125,12 @@ Left:
     - **`outlook-calendar.service.ts` moves with the home page's reminders store** in 10d, since that store is its only user.
     - **Help's troubleshooter searches customers too** (found in 10a). It is in core, so it reads the searches through `CustomerSearch` in `core/context`, which Customers' `CustomersApiService` implements; the customer list and Build a List call `CustomersApiService` directly.
     - **`planting-category` moves in 10b, not 10a** (found in 10a). `shared/utils/production-coverage.ts`, which the NLQ engine in core uses, imports it, so it can't leave `shared` before `production-coverage` does.
+    - **One resolve for saved lists, against the trade unit's data** (user 2026-11-10, in 10b). The home page and the customer list each worked lists out, against different data: the home page's own copies, whose tickets were only the selected producer's, and `AppStateService`. Now `SavedListsStore.resolve` does it for the picker and Add to List alike, against `AppStateService` and `CustomerStore`. So a ticket list's Add to List tick reads the trade unit's tickets, read once when the list needs them, rather than the producer's alone; the answer for the selected producer is the same. The resolve also tells the engine who the user is, which the picker's run didn't, so a list's "by me" filters work there too.
+    - **10b in two commits** (user 2026-11-10): saved lists into Lists, then the NLQ engine and the utils, which only move.
+    - **`SavedListMembership` went** (10b). It was in core only because the home page implemented it; Add to List is Lists', so it reads Lists' store.
+    - **The customer list's filter is a context the list provides** (10b), as `SelectedCustomerContext` is the home page's: `CustomerListFilter` in `core/context`, which the panel in `list-filter` sets. The panel and its run live in Lists, which the list never names.
+    - **Who a list holds is worked out only when read** (10b). It is a computed that Add to List reads, rather than an effect, so no other page works lists out as the trade unit's data changes. Add to List starts the extra reads a list needs.
+    - **`grain-bin-refine`, `planting-chips` and `ticket-view-filters` go to Lists, not Producers** (found in 10b). The first and last read Lists' `RefinementFilters`, which Producers may not import, and only Lists uses `planting-chips` once the engine moves.
     - **The preload gate waits for the permissions before running any preload** (10a). Customers' preload used to mark the customers loading the moment a selection came in, before the permissions had answered; now it does once they have. Nothing that reads that flag opens sooner: the pages that read it wait for the permissions themselves, through `permissionGuard`.
 - **11. Close-out.**
   - This list becomes the phase's record, and the docs follow.

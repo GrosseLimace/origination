@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { QueryLibraryItem, SavedList } from '@models';
+import { QueryLibraryItem } from '../models/query-library.model';
+import { SavedList } from '../models/saved-list.model';
 import {
   filterLibrary, groupLibrary, libraryCategories, libraryCategoryForQuery, matchedPatternLabels, searchSavedLists, searchTeamLists,
 } from './query-library';

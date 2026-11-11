@@ -25,7 +25,6 @@ import { homeScreenSource } from './home-screen-source';
 import { HomeEngagement } from './home-engagement';
 import { HomeRemindersStore } from './home-reminders.store';
 import { HomeNotesStore } from './home-notes.store';
-import { HomeSavedListsStore } from './home-saved-lists.store';
 import { HomeLinkedProducersStore } from './home-linked-producers.store';
 import { HomePlantingStore } from './home-planting.store';
 import { HomeProducerActivityStore } from './home-producer-activity.store';
@@ -36,7 +35,6 @@ import { SelectedProducerEngagement } from '@core/context/selected-producer-enga
 import { ProducerEdit, ProducerEditing } from '@core/context/producer-editing';
 import { ProducerProfiles } from '@core/context/producer-profiles';
 import { profileLinkedIds } from '@shared/utils/producer-profile';
-import { SavedListMembership } from '@core/context/saved-list-membership';
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -50,7 +48,7 @@ import { SavedListMembership } from '@core/context/saved-list-membership';
   // the page shows, and SelectedProducerActivity their contracts, tickets and pricing, for the panels and tabs the
   // modules add to it.
   providers: [
-    HomePageState, HomeBackgroundFailures, HomeRemindersStore, HomeNotesStore, HomeSavedListsStore, HomeLinkedProducersStore,
+    HomePageState, HomeBackgroundFailures, HomeRemindersStore, HomeNotesStore, HomeLinkedProducersStore,
     HomePlantingStore, HomeProducerActivityStore, SelectedCustomerContext,
     { provide: SelectedProducerActivity, useExisting: HomeProducerActivityStore },
     HomeEngagement,
@@ -58,8 +56,6 @@ import { SavedListMembership } from '@core/context/saved-list-membership';
     { provide: CUSTOMER_SCREEN_SOURCE, useFactory: homeScreenSource },
     // The Edit Producer Details dialog saves through the page, which keeps its lists up to date as the save goes.
     { provide: ProducerEditing, useExisting: forwardRef(() => HomeComponent) },
-    // Add to List offers the saved lists the page has resolved, and saves through it.
-    { provide: SavedListMembership, useExisting: HomeSavedListsStore },
   ],
   // The template reads only signals, computeds, getLinkedGroup() (which reads signals) and two
   // constant flags, and every async writer (API callbacks, effects, the resize listener, the
@@ -86,8 +82,6 @@ export class HomeComponent implements ProducerEditing {
   private readonly reminders = inject(HomeRemindersStore);
   /** Notes cache, notes panel and last-contact badge feed (see HomeNotesStore). */
   private readonly notes = inject(HomeNotesStore);
-  /** Own and team saved lists, their resolution and Add-to-List saves (see HomeSavedListsStore). */
-  private readonly lists = inject(HomeSavedListsStore);
   /** Cross-trade-unit linked producers and the walk that fetches them (see HomeLinkedProducersStore). */
   private readonly linked = inject(HomeLinkedProducersStore);
   /** The selected producer's planting intentions and their handlers (see HomePlantingStore). */
@@ -118,9 +112,6 @@ export class HomeComponent implements ProducerEditing {
   readonly myReminders = this.reminders.myReminders;
   readonly storedGrain = this.page.storedGrain;
   readonly dpContracts = this.page.dpContracts;
-  /** The user's own lists and a manager's team lists, resolved (see HomeSavedListsStore). */
-  readonly savedLists = this.lists.savedLists;
-  readonly teamSavedLists = this.lists.teamSavedLists;
 
   readonly selectedCustomer = this.page.selectedCustomer;
   /** True when the open-contracts table has its extra columns expanded — drops the Notes
@@ -242,14 +233,6 @@ export class HomeComponent implements ProducerEditing {
       untracked(() => this._onTradeUnitsChanged(tradeUnits));
     });
 
-    // (Re)load the team lists whenever the permissions load or the TU selection changes. Guarded
-    // inside loadTeamLists, so a user without the team permissions or an empty selection clears the set.
-    effect(() => {
-      this.lists.canEditTeamLists();
-      this.selectedTradeUnits();
-      untracked(() => this.lists.loadTeamLists());
-    });
-
     this.route.queryParams.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
       const customerId = params['customerId'];
       if (customerId) {
@@ -282,8 +265,6 @@ export class HomeComponent implements ProducerEditing {
       this.myReminders.set(this.appState.myReminders());
       this.storedGrain.set(this.appState.storedGrain());
       this.dpContracts.set(this.appState.dpContracts());
-      this.savedLists.set(this.appState.savedLists());
-      this.lists.enrichSavedLists();
 
       // Stored grain may not have been preloaded yet — fetch if empty
       if (this.appState.storedGrain().length === 0) {
@@ -370,7 +351,6 @@ export class HomeComponent implements ProducerEditing {
         this.customerStore.setCustomersLoadFailed(false);
         this.loading.set(false);
         this._isLoading = false;
-        this.lists.enrichSavedLists();
 
         // The selected producer's details, if already read (by the preload, or this page's read below when it landed
         // first), may link them to producers not walked yet. A read still running does the same when it lands.
@@ -392,9 +372,6 @@ export class HomeComponent implements ProducerEditing {
         const fkExtras = this.contracts().filter(c => !batchIds.has(c.id));
         this.contracts.set([...list, ...fkExtras]);
         this.appState.setContracts(this.contracts());
-        // Re-enrich saved lists now that contracts are loaded — the initial enrichment
-        // may have run before contracts arrived, producing wrong customerIds.
-        this.lists.enrichSavedLists(true);
       },
       error: (err) => this.backgroundFailures.report('load contracts', err)
     });
@@ -444,8 +421,6 @@ export class HomeComponent implements ProducerEditing {
     });
 
     this._loadYieldData();
-
-    this.lists.loadSavedLists();
   }
 
   /** Reads every producer's details again, as each visit to the page does; ProducerProfiles keeps them, and every

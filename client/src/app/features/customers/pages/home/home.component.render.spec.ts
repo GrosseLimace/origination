@@ -3,7 +3,6 @@ import { ChangeDetectionStrategy, Component, Type, computed, inject, input, outp
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
-import { SavedListMembership } from '@core/context/saved-list-membership';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, Params, Router } from '@angular/router';
@@ -22,9 +21,7 @@ import { environment } from '@env/environment';
 import { CustomerSlotComponent } from '@core/modules/customer-slot.component';
 import { ModuleManifest } from '@core/modules/module-manifest';
 import { APP_MODULES } from '@core/modules/module-registry';
-import type {
-  Contract, Customer, Note, NoteLastContact, PlantingIntention, Reminder, ReminderDue, SavedList, StoredGrain,
-} from '@models';
+import type { Contract, Customer, Note, NoteLastContact, PlantingIntention, Reminder, ReminderDue, StoredGrain } from '@models';
 
 import { HomeComponent } from './home.component';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
@@ -46,13 +43,12 @@ const ids = (rows: { id: number | string }[] | null | undefined) => (rows ?? [])
 
 @Component({
   selector: 'app-customer-list', standalone: true, changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<div data-testid="list">roster:{{ ids(customers()) }}|selected:{{ selectedCustomer()?.id }}|loading:{{ loading() }}|lists:{{ ids(savedLists()) }}|lastContacts:{{ noteLastContacts().length }}|myReminders:{{ myReminders().length }}|linked:{{ ids(linkedProducerCustomers()) }}</div>`,
+  template: `<div data-testid="list">roster:{{ ids(customers()) }}|selected:{{ selectedCustomer()?.id }}|loading:{{ loading() }}|lastContacts:{{ noteLastContacts().length }}|myReminders:{{ myReminders().length }}|linked:{{ ids(linkedProducerCustomers()) }}</div>`,
 })
 class StubList {
   readonly ids = ids;
   readonly customers = input<Customer[]>([]);
   readonly selectedCustomer = input<Customer | null>(null);
-  readonly savedLists = input<SavedList[]>([]);
   readonly noteLastContacts = input<NoteLastContact[]>([]);
   readonly myReminders = input<ReminderDue[]>([]);
   readonly loading = input(false);
@@ -65,7 +61,7 @@ class StubList {
 
 @Component({
   selector: 'app-customer-profile', standalone: true, changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<div data-testid="profile">name:{{ customer().name }}|contracts:{{ ids(contracts()) }}|tickets:{{ ids(tickets()) }}|planting:{{ ids(plantingIntentions()) }}|grain:{{ ids(storedGrain()) }}|loadingContracts:{{ isLoadingContracts() }}|contractsError:{{ contractsLoadError() }}|linked:{{ ids(linkedCustomers()) }}|lists:{{ ids(savedLists.ownLists()) }}|openContract:{{ openContractId() }}|estimates:{{ yieldEstimates().length }}</div>`,
+  template: `<div data-testid="profile">name:{{ customer().name }}|contracts:{{ ids(contracts()) }}|tickets:{{ ids(tickets()) }}|planting:{{ ids(plantingIntentions()) }}|grain:{{ ids(storedGrain()) }}|loadingContracts:{{ isLoadingContracts() }}|contractsError:{{ contractsLoadError() }}|linked:{{ ids(linkedCustomers()) }}|openContract:{{ openContractId() }}|estimates:{{ yieldEstimates().length }}</div>`,
 })
 class StubProfile {
   readonly ids = ids;
@@ -93,8 +89,6 @@ class StubProfile {
   // The deep-linked contract reaches the screen's pieces through SelectedCustomerContext, as the contracts tab reads it.
   private readonly screen = inject(SelectedCustomerContext);
   readonly openContractId = computed(() => this.screen.link().contractId ?? null);
-  // The lists Add to List offers reach it through SavedListMembership, which the page provides.
-  readonly savedLists = inject(SavedListMembership);
   readonly openTab = input<unknown>();
   readonly openTicketCrop = input<unknown>();
   readonly openPlantingYear = input<unknown>();
@@ -184,9 +178,6 @@ function makeApi() {
     getPlantingIntentions: empty<PlantingIntention[]>(),
     getStoredGrain: empty<StoredGrain[]>(),
     getDpContracts: empty<unknown[]>(),
-    getSavedLists: empty<SavedList[]>(),
-    getTeamSavedLists: empty<SavedList[]>(),
-    getQueryLibrary: empty<unknown[]>(),
     getAllProducerDetails: empty<unknown[]>(),
     getProducerDetails: vi.fn((id: number) => of({ id, customerId: id, customerName: '' })),
     saveProducerDetails: vi.fn((id: number) => of({ id, customerId: id, customerName: '' })),
@@ -224,17 +215,15 @@ function makeAppState() {
     storedGrain: signal<StoredGrain[]>([]),
     dpContracts: signal<unknown[]>([]),
     dpContractsLoaded: signal(false),
-    savedLists: signal<SavedList[]>([]),
     commodities: signal<unknown[]>([]),
     commodityConversions: signal<unknown[]>([]),
-    queryLibrary: signal<unknown[]>([{ id: 1 }]),
     pricingLines: signal<unknown[]>([]),
     selectCustomer: vi.fn((c: Customer | null) => s.selectedCustomer.set(c)),
     setCustomers: vi.fn((v: Customer[]) => s.customers.set(v)),
     setContracts: vi.fn(), setPlantingIntentions: vi.fn(), setNotes: vi.fn(), setNoteLastContacts: vi.fn(),
     setMyReminders: vi.fn(), setStoredGrain: vi.fn(), setDpContracts: vi.fn(),
-    mergeCustomerDpContracts: vi.fn(), setPricingLines: vi.fn(), setSavedLists: vi.fn(), setQueryLibrary: vi.fn(),
-    setCustomersLoadFailed: vi.fn(), setNoteLastContactsLoadFailed: vi.fn(), setSavedListsLoadFailed: vi.fn(),
+    mergeCustomerDpContracts: vi.fn(), setPricingLines: vi.fn(),
+    setCustomersLoadFailed: vi.fn(), setNoteLastContactsLoadFailed: vi.fn(),
     setPlantingIntentionsLoadFailed: vi.fn(),
   };
   return s;
@@ -375,21 +364,6 @@ describe('HomeComponent (rendered)', () => {
     await settle();
     expect(text('profile')).toContain('contracts:11');
     expect(text('profile')).toMatch(/contractsError:\|/);
-  });
-
-  it('shows saved lists that land after the producer is open, in the list and the profile\'s Add-to-List', async () => {
-    const lists = new Subject<SavedList[]>();
-    await render(a => {
-      a.getCustomers.mockReturnValue(of([A]));
-      a.getSavedLists.mockReturnValue(lists);
-    });
-    list().selectCustomer.emit(A);
-    await settle();
-
-    lists.next([{ id: 7, name: 'L', query: 'q', tradeUnits: 'TU1', createdAt: '' }]);
-    await settle();
-    expect(text('list')).toContain('lists:7');
-    expect(text('profile')).toContain('lists:7');
   });
 
   it('shows the producer\'s follow-ups when they land', async () => {

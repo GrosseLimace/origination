@@ -17,21 +17,15 @@ import {
 } from '@testing/producer-profiles.fake';
 import { OutlookCalendarService } from '@core/services/outlook-calendar.service';
 import { environment } from '@env/environment';
-import {
-  Commodity, CommodityConversion, Contract, ContractPricingLine, Customer, DashboardPlantingEstimate, DpContract,
-  Note, NoteLastContact, PlantingIntention, ProducerDetails, QueryLibraryItem, Reminder, ReminderDue, SavedList,
-  StoredGrain, Ticket,
-} from '@models';
+import { Commodity, CommodityConversion, Contract, ContractPricingLine, Customer, DashboardPlantingEstimate, DpContract, Note, NoteLastContact, PlantingIntention, ProducerDetails, Reminder, ReminderDue, StoredGrain, Ticket } from '@models';
 
 import { HomeComponent } from './home.component';
-import { HomeSavedListsStore } from './home-saved-lists.store';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { CustomerStore } from '../../data-access/customer.store';
 import { CustomersApiService } from '../../data-access/customers-api.service';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
 import { ProducerEditing } from '@core/context/producer-editing';
-import { SavedListMembership } from '@core/context/saved-list-membership';
 // The Notes card's 'Last contacted' label, which the card works out from these same notes.
 import { describeLastContacted } from '@shared/utils/last-contacted';
 
@@ -172,10 +166,6 @@ function note(id: number, customerId: number, createdAt: Date): Note {
   };
 }
 
-function savedList(id: number, over: Partial<SavedList> = {}): SavedList {
-  return { id, name: `List ${id}`, query: 'corn growers', tradeUnits: 'TU1', createdAt: '2026-01-01T00:00:00Z', ...over };
-}
-
 function reminder(id: number, customerId: number, over: Partial<Reminder> = {}): Reminder {
   return {
     id,
@@ -203,11 +193,6 @@ function makeApi() {
     getPlantingIntentions: vi.fn((_tu?: string[]): Observable<PlantingIntention[]> => of([])),
     getStoredGrain: vi.fn((_tu?: string[]): Observable<StoredGrain[]> => of([])),
     getDpContracts: vi.fn((_tu?: string[]): Observable<DpContract[]> => of([])),
-    getSavedLists: vi.fn((): Observable<SavedList[]> => of([])),
-    getTeamSavedLists: vi.fn((_tus: string): Observable<SavedList[]> => of([])),
-    updateSavedList: vi.fn((id: number, body: Partial<SavedList>): Observable<SavedList> =>
-      of(savedList(id, body))),
-    getQueryLibrary: vi.fn((): Observable<QueryLibraryItem[]> => of([])),
     getAllProducerDetails: vi.fn((): Observable<ProducerDetails[]> => of([])),
     getProducerDetails: vi.fn((id: number): Observable<ProducerDetails> => of(details(id))),
     // Answers with what was saved, as the server does.
@@ -253,10 +238,8 @@ function makeAppState() {
     storedGrain: signal<StoredGrain[]>([]),
     dpContracts: signal<DpContract[]>([]),
     dpContractsLoaded: signal(false),
-    savedLists: signal<SavedList[]>([]),
     commodities: signal<Commodity[]>([]),
     commodityConversions: signal<CommodityConversion[]>([]),
-    queryLibrary: signal<QueryLibraryItem[]>([]),
     pricingLines: signal<ContractPricingLine[]>([]),
     selectCustomer: vi.fn((c: Customer | null) => s.selectedCustomer.set(c)),
     setCustomers: vi.fn((v: Customer[]) => s.customers.set(v)),
@@ -270,15 +253,11 @@ function makeAppState() {
     mergeCustomerDpContracts: vi.fn((customerId: number, rows: DpContract[]) =>
       s.dpContracts.update(e => [...e.filter(d => d.customerId !== customerId), ...rows])),
     setPricingLines: vi.fn((v: ContractPricingLine[]) => s.pricingLines.set(v)),
-    setSavedLists: vi.fn((v: SavedList[]) => s.savedLists.set(v)),
-    setQueryLibrary: vi.fn((v: QueryLibraryItem[]) => s.queryLibrary.set(v)),
     customersLoadFailed: signal(false),
     noteLastContactsLoadFailed: signal(false),
-    savedListsLoadFailed: signal(false),
     plantingIntentionsLoadFailed: signal(false),
     setCustomersLoadFailed: vi.fn((v: boolean) => s.customersLoadFailed.set(v)),
     setNoteLastContactsLoadFailed: vi.fn((v: boolean) => s.noteLastContactsLoadFailed.set(v)),
-    setSavedListsLoadFailed: vi.fn((v: boolean) => s.savedListsLoadFailed.set(v)),
     setPlantingIntentionsLoadFailed: vi.fn((v: boolean) => s.plantingIntentionsLoadFailed.set(v)),
   };
   return s;
@@ -320,8 +299,6 @@ interface Harness {
 interface SetupOptions {
   customers?: Customer[];
   queryParams?: Params;
-  /** Grants the team-list permissions, as a manager holds. */
-  teamLists?: boolean;
   /** Mutate the API/NLQ stubs before the component is constructed (constructor loads fire immediately). */
   arrange?: (api: ApiStub, nlq: ReturnType<typeof makeNlq>, app: AppStateStub) => void;
 }
@@ -348,7 +325,7 @@ function setup(opts: SetupOptions = {}): Harness {
   const toast = { error: vi.fn(), success: vi.fn(), info: vi.fn() };
   const outlook = { addToOutlook: vi.fn((_r: Reminder, _link: string): Observable<Reminder | null> => of(null)) };
   const router = { navigate: vi.fn() };
-  const access = permissionStub(opts.teamLists ? ['saved-lists:read:team', 'saved-lists:write:team'] : []);
+  const access = permissionStub([]);
 
   TestBed.configureTestingModule({
     providers: [
@@ -397,10 +374,7 @@ function engagementOf(h: Harness): SelectedProducerEngagement {
   return h.fixture.debugElement.injector.get(SelectedProducerEngagement);
 }
 
-/** The page's SavedListMembership: the lists Add to List offers, and its save. */
-function membershipOf(h: Harness): SavedListMembership {
-  return h.fixture.debugElement.injector.get(SavedListMembership);
-}
+
 
 function callsFor(fn: ReturnType<typeof vi.fn>, id: number): number {
   return fn.mock.calls.filter(args => args[0] === id).length;
@@ -709,105 +683,6 @@ describe('HomeComponent', () => {
     });
   });
 
-  // ── Saved lists ──────────────────────────────────────────────────────────
-  describe('saved lists', () => {
-    it('resolves each list\'s query plus manual include/exclude overrides into customerIds', () => {
-      const h = setup({
-        arrange: (api, nlq) => {
-          api.getSavedLists.mockReturnValue(of([savedList(7, { includedCustomerIds: [3], excludedCustomerIds: [1] })]));
-          nlq.parseAndFilter.mockImplementation((_q, ctx) => ({
-            customers: ctx.customers.filter(x => x.id <= 2), detectedState: null, matchedPatterns: ['crop'],
-          }));
-        },
-      });
-
-      expect(h.c.savedLists()[0].customerIds).toEqual([2, 3]);
-      expect(h.nlq.resolveUserReferences).toHaveBeenCalledWith('corn growers', 'Caden Egr', 'cegr@scoular.com');
-    });
-
-    it('leaves a list unresolved when its query matched no pattern (rather than caching "everyone")', () => {
-      const h = setup({ arrange: api => api.getSavedLists.mockReturnValue(of([savedList(7)])) });
-
-      expect(h.c.savedLists()[0].customerIds).toBeUndefined();
-    });
-
-    it('fetches the full note set once, only when an unresolved list actually needs note content', () => {
-      const h = setup({
-        arrange: (api, nlq) => {
-          api.getSavedLists.mockReturnValue(of([savedList(7, { query: 'notes mentioning drought' })]));
-          nlq.queryNeedsFullNotes.mockImplementation(q => q.includes('notes'));
-        },
-      });
-
-      expect(h.api.getNotes).toHaveBeenCalledTimes(1);
-      expect(h.app.setNotes).toHaveBeenCalledTimes(1);
-    });
-
-    it('never downloads full notes when no list needs them', () => {
-      const h = setup({ arrange: api => api.getSavedLists.mockReturnValue(of([savedList(7)])) });
-
-      expect(h.api.getNotes).not.toHaveBeenCalled();
-    });
-
-    it('offers only lists that overlap the selected trade units, fully-inside lists first', () => {
-      const h = setup({
-        arrange: api => api.getSavedLists.mockReturnValue(of([
-          savedList(1, { tradeUnits: 'TU1,TU9' }),
-          savedList(2, { tradeUnits: 'TU2' }),
-          savedList(3, { tradeUnits: 'TU1' }),
-        ])),
-      });
-
-      expect(membershipOf(h).ownLists().map(l => l.id)).toEqual([3, 1]);
-    });
-
-    it('adding the selected producer to a list updates it optimistically and persists it', () => {
-      const h = setup({ arrange: api => api.getSavedLists.mockReturnValue(of([savedList(7, { excludedCustomerIds: [1] })])) });
-      h.c.handleSelectCustomer(A);
-
-      membershipOf(h).save([{ listId: 7, add: true }]);
-
-      expect(h.c.savedLists()[0].includedCustomerIds).toEqual([1]);
-      expect(h.c.savedLists()[0].excludedCustomerIds).toEqual([]);
-      expect(h.api.updateSavedList).toHaveBeenCalledWith(7, expect.objectContaining({
-        includedCustomerIds: [1], excludedCustomerIds: [], query: 'corn growers',
-      }));
-      expect(h.toast.success).toHaveBeenCalledWith('Saved list updated');
-    });
-
-    it('reverts the membership change and says so when the save fails', () => {
-      const h = setup({ arrange: api => api.getSavedLists.mockReturnValue(of([savedList(7)])) });
-      h.api.updateSavedList.mockReturnValue(throwError(() => httpError(500)));
-      h.c.handleSelectCustomer(A);
-
-      membershipOf(h).save([{ listId: 7, add: true }]);
-
-      expect(h.c.savedLists()[0].includedCustomerIds).toBeUndefined();
-      expect(h.app.savedLists()[0].includedCustomerIds).toBeUndefined();
-      expect(h.toast.error).toHaveBeenCalledWith('Failed to save list changes');
-    });
-
-    it('loads team lists for the selected trade units only for managers', () => {
-      const team = [savedList(40, { createdBy: 'Someone Else' })];
-      const nonManager = setup({ arrange: api => api.getTeamSavedLists.mockReturnValue(of(team)) });
-      expect(nonManager.api.getTeamSavedLists).not.toHaveBeenCalled();
-      expect(membershipOf(nonManager).teamLists()).toEqual([]);
-      TestBed.resetTestingModule();
-
-      const manager = setup({ teamLists: true, arrange: api => api.getTeamSavedLists.mockReturnValue(of(team)) });
-      expect(manager.api.getTeamSavedLists).toHaveBeenCalledWith('TU1');
-      expect(membershipOf(manager).teamLists().map(l => l.id)).toEqual([40]);
-    });
-
-    // Add to List is Lists'; it offers the lists the page resolved, and saves through the page, as SavedListMembership.
-    it('is what Add to List reads and saves through: the page\'s saved lists, and their failed load', () => {
-      const h = setup({ arrange: api => api.getSavedLists.mockReturnValue(throwError(() => httpError(500))) });
-
-      expect(membershipOf(h)).toBe(h.fixture.debugElement.injector.get(HomeSavedListsStore));
-      expect(membershipOf(h).ownListsLoadFailed()).toBe(true);
-    });
-  });
-
   // ── Background-failure toast throttle ────────────────────────────────────
   describe('background-failure toast throttle', () => {
     it('one transient failure produces exactly one toast naming what failed', () => {
@@ -817,7 +692,7 @@ describe('HomeComponent', () => {
       expect(h.toast.error.mock.calls[0][0]).toContain('load contracts');
     });
 
-    it('eight sources failing at once produce a single toast', () => {
+    it('seven sources failing at once produce a single toast', () => {
       const fail = () => throwError(() => httpError(503));
       const h = setup({
         arrange: api => {
@@ -825,7 +700,6 @@ describe('HomeComponent', () => {
           api.getContracts.mockReturnValue(fail());
           api.getStoredGrain.mockReturnValue(fail());
           api.getDpContracts.mockReturnValue(fail());
-          api.getSavedLists.mockReturnValue(fail());
           api.getNotesLastContact.mockReturnValue(fail());
           api.getProducerDetails.mockReturnValue(fail());
           api.getPlantingIntentionsByCustomer.mockReturnValue(fail());
@@ -833,9 +707,9 @@ describe('HomeComponent', () => {
       });
       h.c.handleSelectCustomer(A);
 
-      // Eight distinct sources reported (all logged in dev)...
+      // Seven distinct sources reported (all logged in dev)...
       const reported = new Set(vi.mocked(console.error).mock.calls.map(args => String(args[0])));
-      expect(reported.size).toBe(8);
+      expect(reported.size).toBe(7);
       // ...but the user is told once.
       expect(h.toast.error).toHaveBeenCalledTimes(1);
     });
@@ -1271,105 +1145,6 @@ describe('HomeComponent', () => {
     });
   });
 
-  // ── Saved lists, more (characterisation, written against the pre-extraction page) ──
-  describe('saved lists (membership edge cases and enrichment inputs)', () => {
-    const matchFirstTwo = (nlq: ReturnType<typeof makeNlq>) => nlq.parseAndFilter.mockImplementation((_q, ctx) => ({
-      customers: ctx.customers.filter(x => x.id <= 2), detectedState: null, matchedPatterns: ['crop'],
-    }));
-
-    it('removing a manually added producer drops the manual add; removing a query member excludes it', () => {
-      const h = setup({
-        arrange: (api, nlq) => {
-          api.getSavedLists.mockReturnValue(of([savedList(7, { includedCustomerIds: [3] }), savedList(8)]));
-          matchFirstTwo(nlq);
-        },
-      });
-      h.c.handleSelectCustomer(C);
-      membershipOf(h).save([{ listId: 7, add: false }]);
-      expect(h.c.savedLists()[0].includedCustomerIds).toEqual([]);
-      expect(h.c.savedLists()[0].excludedCustomerIds).toEqual([]);
-
-      h.c.handleSelectCustomer(A);
-      membershipOf(h).save([{ listId: 8, add: false }]);
-      expect(h.c.savedLists()[1].excludedCustomerIds).toEqual([1]);
-      expect(h.c.savedLists()[1].customerIds).toEqual([2]);
-    });
-
-    it('saves several lists together with one message, and ignores an unknown list id', () => {
-      const h = setup({ arrange: api => api.getSavedLists.mockReturnValue(of([savedList(7), savedList(8)])) });
-      h.c.handleSelectCustomer(A);
-
-      membershipOf(h).save([{ listId: 7, add: true }, { listId: 8, add: true }, { listId: 99, add: true }]);
-
-      expect(h.api.updateSavedList).toHaveBeenCalledTimes(2);
-      expect(h.toast.success).toHaveBeenCalledWith('2 saved lists updated');
-      expect(h.app.savedLists().map(l => l.includedCustomerIds)).toEqual([[1], [1]]);
-    });
-
-    it('a manager can change a team list\'s membership; it is not written to the shared own-list cache', () => {
-      const h = setup({
-        teamLists: true,
-        arrange: api => {
-          api.getSavedLists.mockReturnValue(of([savedList(7)]));
-          api.getTeamSavedLists.mockReturnValue(of([savedList(40, { createdBy: 'Someone Else' })]));
-        },
-      });
-      h.c.handleSelectCustomer(A);
-      h.app.setSavedLists.mockClear();
-
-      membershipOf(h).save([{ listId: 40, add: true }]);
-
-      expect(h.c.teamSavedLists()[0].includedCustomerIds).toEqual([1]);
-      expect(h.api.updateSavedList).toHaveBeenCalledWith(40, expect.objectContaining({ includedCustomerIds: [1] }));
-      expect(h.app.setSavedLists).not.toHaveBeenCalled();
-    });
-
-    it('does nothing without a selected producer or without changes', () => {
-      const h = setup({ arrange: api => api.getSavedLists.mockReturnValue(of([savedList(7)])) });
-      membershipOf(h).save([{ listId: 7, add: true }]);
-      h.c.handleSelectCustomer(A);
-      membershipOf(h).save([]);
-      expect(h.api.updateSavedList).not.toHaveBeenCalled();
-    });
-
-    it('backfills an old list\'s prompt category from the query library before refining', () => {
-      const h = setup({
-        arrange: (api, nlq) => {
-          api.getSavedLists.mockReturnValue(of([savedList(7, { query: 'Corn Growers ', filters: {} as SavedList['filters'] })]));
-          api.getQueryLibrary.mockReturnValue(of([
-            { id: 1, category: 'Contracts', name: 'x', queryText: 'corn growers', sortOrder: 0 },
-          ]));
-          matchFirstTwo(nlq);
-        },
-      });
-
-      expect(h.api.getQueryLibrary).toHaveBeenCalledTimes(1);
-      expect(h.app.setQueryLibrary).toHaveBeenCalled();
-      const filtersSeen = h.nlq.applyRefinementFilters.mock.calls.map(args => (args as unknown[])[1]);
-      expect(filtersSeen).toContainEqual(expect.objectContaining({ _promptCategory: 'Contracts' }));
-      expect(h.c.savedLists()[0].customerIds).toEqual([1, 2]);
-    });
-
-    it('re-resolves lists when the trade unit\'s contracts arrive after them, with the contracts in context', () => {
-      const contracts$ = new Subject<Contract[]>();
-      const h = setup({
-        arrange: (api, nlq) => {
-          api.getContracts.mockReturnValue(contracts$.asObservable());
-          api.getSavedLists.mockReturnValue(of([savedList(7)]));
-          matchFirstTwo(nlq);
-        },
-      });
-      const calls = h.nlq.parseAndFilter.mock.calls.length;
-
-      contracts$.next([contract(10, 'S-1')]);
-
-      expect(h.nlq.parseAndFilter.mock.calls.length).toBeGreaterThan(calls);
-      const ctx = h.nlq.parseAndFilter.mock.calls.at(-1)![1];
-      expect(ctx.contracts.map(c => c.id)).toEqual([10]);
-      expect(ctx.currentUserDisplayName).toBe('Caden Egr');
-    });
-  });
-
   // ── Notes (characterisation, written against the pre-extraction page) ────────
   describe('notes', () => {
     /** The note CRUD calls are not in the shared API stub; add them to the same object the page holds. */
@@ -1567,11 +1342,6 @@ describe('HomeComponent', () => {
       const h = setup({ arrange: api => api.getNotesLastContact.mockReturnValue(fail()) });
       expect(h.app.noteLastContactsLoadFailed()).toBe(true);
       expect(h.toast.error).toHaveBeenCalled();
-    });
-
-    it('records a failed saved-list read', () => {
-      const h = setup({ arrange: api => api.getSavedLists.mockReturnValue(fail()) });
-      expect(h.app.savedListsLoadFailed()).toBe(true);
     });
 
     it('records a failed planting read', () => {

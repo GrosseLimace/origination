@@ -6,14 +6,16 @@ import { MsalService } from '@azure/msal-angular';
 import { CustomerListComponent } from './customer-list.component';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
-import { NlqFilterContext, NlqFilterService } from '@core/services/nlq-filter.service';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
-import { Customer, NoteLastContact, ProducerDetails, ReminderDue, SavedList } from '@models';
+import { Customer, NoteLastContact, ProducerDetails, ReminderDue } from '@models';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { CustomerListFilter } from '@core/context/customer-list-filter';
+import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { CustomerListScrollStore } from '../../data-access/customer-list-scroll.store';
 import { CustomerStore } from '../../data-access/customer.store';
 import { CustomersApiService } from '../../data-access/customers-api.service';
 import { ProducerProfilesFake, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
+import { providePermissions } from '@testing/permission.stub';
 
 // Behaviour safety net for the producer list ahead of its OnPush conversion. Pins, through the
 // signal inputs and the rendered DOM:
@@ -23,14 +25,14 @@ import { ProducerProfilesFake, producerProfilesFake, provideProducerProfiles } f
 //   - the follow-up badge (soonest reminder wins, overdue/today/tomorrow/in-N wording);
 //   - the debounced API search (TU / group scoping, ODS onboarding fallback and its 3-char floor,
 //     producer-details overlay, "Search failed" state, clearing, restore on remount, reset on TU change);
-//   - the saved-list dropdown (trade-unit overlap visibility, NLQ filtering + manual overrides,
-//     falling back to All Producers when the list disappears);
+//   - its side of the list-filter slot: keeping who the filter keeps, waiting while it works them out, leaving a
+//     search when a filter is picked, and clearing it on Reset (the saved-list picker that fills the slot, and its
+//     runs, are the Lists module's: app.saved-list-filter.spec.ts covers the two together);
 //   - Reset, and the dwell-gated prefetch output.
 //
 // AppStateService is the real one (pure signals; localStorage cleared per test). ApiService, MSAL
-// and UserTradeUnitsService are stubbed. NlqFilterService is real except parseAndFilter, which is
-// replaced by a deterministic "Kansas producers only" rule so the saved-list tests don't depend on
-// the NLQ grammar. The real template renders, including the real TradeUnitSelectorComponent.
+// and UserTradeUnitsService are stubbed. The real template renders, including the real
+// TradeUnitSelectorComponent.
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -52,10 +54,6 @@ function makeCustomer(over: Partial<Customer> = {}): Customer {
     stateProvince: 'KS', phone: '', email: '',
     eSignEnabled: false, achEnabled: false, ...over,
   };
-}
-
-function makeList(over: Partial<SavedList> = {}): SavedList {
-  return { id: 10, name: 'Kansas growers', query: 'kansas growers', tradeUnits: '2190', createdAt: '2026-09-01T00:00:00', ...over };
 }
 
 function makeLastContact(customerCode: string, daysAgo: number): NoteLastContact {
@@ -85,17 +83,9 @@ describe('CustomerListComponent', () => {
   let appState: AppStateService;
   /** Every producer's saved details, as the list reads them. */
   let profiles: ProducerProfilesFake;
-  let nlq: NlqFilterService;
   let api: {
     searchCustomers: ReturnType<typeof vi.fn<(term: string, tradeUnits?: string[]) => Observable<Customer[]>>>;
     searchOdsCustomers: ReturnType<typeof vi.fn<(term: string) => Observable<Customer[]>>>;
-    getStoredGrain: ReturnType<typeof vi.fn>;
-    getDpContracts: ReturnType<typeof vi.fn>;
-    getTickets: ReturnType<typeof vi.fn>;
-    getPlantingIntentions: ReturnType<typeof vi.fn>;
-    getContracts: ReturnType<typeof vi.fn>;
-    getNotes: ReturnType<typeof vi.fn>;
-    getQueryLibrary: ReturnType<typeof vi.fn>;
   };
 
   const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
@@ -109,7 +99,6 @@ describe('CustomerListComponent', () => {
   };
   const rowText = (id: number): string => (row(id).textContent ?? '').replace(/\s+/g, ' ').trim();
   const searchInput = (): HTMLInputElement => host().querySelector<HTMLInputElement>('input[placeholder="Search producers..."]')!;
-  const listSelect = (): HTMLSelectElement | null => host().querySelector<HTMLSelectElement>('select');
   const resetButton = (): HTMLButtonElement | null => host().querySelector<HTMLButtonElement>('button[title="Clear search and filters"]');
 
   /** The wrapper element of the badge span in a row whose text matches `label`. */
@@ -126,7 +115,7 @@ describe('CustomerListComponent', () => {
   }
 
   function create(inputs: {
-    customers?: Customer[]; savedLists?: SavedList[]; noteLastContacts?: NoteLastContact[];
+    customers?: Customer[]; noteLastContacts?: NoteLastContact[];
     myReminders?: ReminderDue[]; loading?: boolean; selectedCustomer?: Customer | null;
     producerDetailsMap?: ReadonlyMap<number, ProducerDetails>; linkedProducerCustomers?: Customer[];
   } = {}): void {
@@ -152,11 +141,12 @@ describe('CustomerListComponent', () => {
     }
   }
 
-  function pickSavedList(id: string): void {
-    const select = listSelect();
-    if (!select) throw new Error('saved-list dropdown not rendered');
-    select.value = id;
-    select.dispatchEvent(new Event('change'));
+  /** The filter the list provides to its list-filter slot. */
+  const filter = (): CustomerListFilter => fixture.debugElement.injector.get(CustomerListFilter);
+
+  /** The filter keeps these customers, as the panel in the slot would say. */
+  function keep(kept: Parameters<CustomerListFilter['keep']>[0]): void {
+    filter().keep(kept);
     fixture.detectChanges();
   }
 
@@ -168,27 +158,17 @@ describe('CustomerListComponent', () => {
     api = {
       searchCustomers: vi.fn<(term: string, tradeUnits?: string[]) => Observable<Customer[]>>(() => of([])),
       searchOdsCustomers: vi.fn<(term: string) => Observable<Customer[]>>(() => of([])),
-      getStoredGrain: vi.fn(() => of([])),
-      getDpContracts: vi.fn(() => of([])),
-      getTickets: vi.fn(() => of([])),
-      getPlantingIntentions: vi.fn(() => of([])),
-      getContracts: vi.fn(() => of([])),
-      getNotes: vi.fn(() => of([])),
-      getQueryLibrary: vi.fn(() => of([])),
     };
-    nlq = new NlqFilterService();
-    vi.spyOn(nlq, 'parseAndFilter').mockImplementation((_query: string, ctx: NlqFilterContext) => ({
-      customers: ctx.customers.filter(c => c.stateProvince === 'KS'),
-      detectedState: null,
-      matchedPatterns: [],
-    }));
     await TestBed.configureTestingModule({
       imports: [CustomerListComponent],
       providers: [
         { provide: ApiService, useValue: api },
         // The searches are Customers' API client's; the list's other reads are still ApiService's.
         { provide: CustomersApiService, useExisting: ApiService },
-        { provide: NlqFilterService, useValue: nlq },
+        // The list-filter slot's host reads the selected customer, which the home page provides.
+        SelectedCustomerContext,
+        // The slot shows the panels the user holds the permissions for; none are listed in this spec.
+        providePermissions(),
         provideProducerProfiles(profiles),
         {
           provide: MsalService,
@@ -579,112 +559,98 @@ describe('CustomerListComponent', () => {
     });
   });
 
-  // ── Saved lists ───────────────────────────────────────────────────────────
+  // ── The list-filter slot ──────────────────────────────────────────────────
 
-  describe('saved lists', () => {
+  describe('the filter in the list-filter slot', () => {
     const roster = (): Customer[] => [
       makeCustomer({ id: 1, name: 'Alpha Ag', stateProvince: 'KS' }),
       makeCustomer({ id: 2, name: 'Bravo Bros', stateProvince: 'NE' }),
       makeCustomer({ id: 3, name: 'Charlie Co', stateProvince: 'KS' }),
     ];
 
-    it('offers only overlapping lists once loaded, filters to the list\'s NLQ result with a member count, and back to all', () => {
+    it('keeps who the filter keeps, shows Reset meanwhile, and every customer again when it keeps all', () => {
       TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
-      create({
-        customers: roster(),
-        loading: true,
-        savedLists: [makeList({ id: 10, name: 'Kansas growers', tradeUnits: '2190,2191' }), makeList({ id: 11, name: 'Elsewhere', tradeUnits: '9999' })],
-      });
-      expect(listSelect()).toBeNull();   // hidden while the roster loads
+      create({ customers: roster() });
+      keep({ kind: 'some', ids: new Set([1, 3]) });
+      expect(rowNames()).toEqual(['Alpha Ag', 'Charlie Co']);
+      expect(resetButton()).not.toBeNull();
+
+      keep({ kind: 'all' });
+      expect(rowNames()).toEqual(['Alpha Ag', 'Bravo Bros', 'Charlie Co']);
+    });
+
+    it('shows "No producers found" when the filter keeps nobody', () => {
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
+      create({ customers: roster() });
+      keep({ kind: 'some', ids: new Set() });
+      expect(rows()).toHaveLength(0);
+      expect(text()).toContain('No producers found');
+    });
+
+    // Rather than flashing every customer while a list is still worked out.
+    it("keeps what it shows, with the filter's message, while the filter works out who it keeps", () => {
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
+      create({ customers: roster() });
+      keep({ kind: 'some', ids: new Set([1]) });
+      keep({ kind: 'pending', message: 'Running saved list...' });
+      expect(text()).toContain('Running saved list...');
+      expect(rows()).toHaveLength(0);
+      // Underneath the spinner too: not every customer, the bug a second pick once showed for a moment.
+      expect(component.filteredCustomers().map(c => c.id)).toEqual([1]);
+
+      keep({ kind: 'some', ids: new Set([2]) });
+      expect(text()).not.toContain('Running saved list...');
+      expect(rowNames()).toEqual(['Bravo Bros']);
+    });
+
+    it("narrows a search's results too", () => {
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
+      api.searchCustomers.mockReturnValue(of(roster()));
+      create({ customers: roster() });
+      keep({ kind: 'some', ids: new Set([3]) });
+      typeSearch('co');
+      expect(rowNames()).toEqual(['Charlie Co']);
+    });
+
+    // So the picked filter applies to the trade units' customers, not to a search's results.
+    it('leaves the search when a filter is picked', () => {
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
+      create({ customers: roster() });
+      typeSearch('alpha');
+      expect(appState.searchQuery()).toBe('alpha');
+
+      filter().pick();
+      fixture.detectChanges();
+
+      expect(component.searchInputValue).toBe('');
+      expect(appState.searchQuery()).toBe('');
+    });
+
+    it('hides the slot while the producers load, keeping its filter', () => {
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
+      create({ customers: roster(), loading: true });
+      const slot = host().querySelector('app-customer-slot');
+      expect(slot?.parentElement?.classList).toContain('hidden');
 
       ref.setInput('loading', false);
       fixture.detectChanges();
-      expect(Array.from(listSelect()!.options).map(o => o.textContent?.trim())).toEqual(['All Producers', 'Kansas growers']);
-      expect(rowNames()).toEqual(['Alpha Ag', 'Bravo Bros', 'Charlie Co']);
-
-      pickSavedList('10');
-      expect(rowNames()).toEqual(['Alpha Ag', 'Charlie Co']);
-      expect(appState.selectedSavedListId()).toBe('10');
-      expect(listSelect()!.options[1].textContent?.trim()).toBe('Kansas growers (2)');
-      expect(text()).not.toContain('Running saved list...');
-
-      pickSavedList('all');
-      expect(rowNames()).toEqual(['Alpha Ag', 'Bravo Bros', 'Charlie Co']);
-      expect(appState.selectedSavedListId()).toBe('all');
-    });
-
-    it('applies manual includes / excludes, shows "No producers found" for an empty result, and falls back to all when the list disappears', () => {
-      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
-      create({
-        customers: roster(),
-        savedLists: [
-          makeList({ id: 10, includedCustomerIds: [2], excludedCustomerIds: [3] }),
-          makeList({ id: 12, name: 'Nobody', excludedCustomerIds: [1, 3] }),
-        ],
-      });
-
-      pickSavedList('10');
-      expect(rowNames()).toEqual(['Alpha Ag', 'Bravo Bros']);
-
-      pickSavedList('12');
-      expect(rows()).toHaveLength(0);
-      expect(text()).toContain('No producers found');
-
-      ref.setInput('savedLists', [makeList({ id: 20, name: 'Another' })]);
-      fixture.detectChanges();
-      expect(appState.selectedSavedListId()).toBe('all');
-      expect(rowNames()).toEqual(['Alpha Ag', 'Bravo Bros', 'Charlie Co']);
-    });
-
-    // PINS CURRENT BEHAVIOUR (deliberate, load-bearing): resolving a list writes customerIds onto
-    // the caller's OWN list object, not a copy. The home page hands the same objects to the
-    // producer profile's Add-to-List menu (isInList reads list.customerIds) and its own
-    // _enrichSavedLists skips lists that already carry ids. A component-local cache would change
-    // which membership those surfaces show and persist, so it is not a drop-in cleanup.
-    it('PINS CURRENT BEHAVIOUR: writes the resolved customerIds onto the caller\'s list object and clears them on re-pick', () => {
-      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
-      const callerList = makeList({ id: 10, tradeUnits: '2190,2191' });   // still visible after the TU switch
-      create({ customers: roster(), savedLists: [callerList] });
-
-      pickSavedList('10');
-      expect(callerList.customerIds).toEqual([1, 3]);
-      expect(appState.savedLists()).toEqual([]);   // the appState write only patches lists it already holds
-
-      // The roster changes trade unit: the stale ids are dropped from the caller's object too.
-      TestBed.inject(TradeUnitContext).setTradeUnits(['2191']);
-      render();
-      expect(callerList.customerIds).toBeUndefined();
-    });
-  });
-
-  // A list's prompts on acres, contacts, links, grain on farm and bin sites read every producer's saved details.
-  describe("saved lists, against the producers' saved details", () => {
-    it("runs the list with every producer's saved details", () => {
-      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
-      const details = new Map<number, ProducerDetails>([[1, { customerId: 1, totalAcres: 900 } as ProducerDetails]]);
-      create({
-        customers: [makeCustomer({ id: 1, stateProvince: 'KS' }), makeCustomer({ id: 2, stateProvince: 'NE' })],
-        savedLists: [makeList({ id: 10, tradeUnits: '2190' })],
-        producerDetailsMap: details,
-      });
-
-      pickSavedList('10');
-
-      const [, ctx] = vi.mocked(nlq.parseAndFilter).mock.calls.at(-1)!;
-      expect(ctx.producerProfiles).toBe(profiles.profiles());
+      expect(slot?.parentElement?.classList).not.toContain('hidden');
     });
   });
 
   // ── Reset ─────────────────────────────────────────────────────────────────
 
   describe('reset', () => {
-    it('clears the trade-unit selection, saved list and search, and tells the parent to drop the selection', () => {
+    it('clears the trade-unit selection, the filter and the search, and tells the parent to drop the selection', () => {
       TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
       TestBed.inject(TradeUnitContext).setSelectedGroupNames(['Kansas']);
-      create({ customers: [makeCustomer({ id: 1, stateProvince: 'KS' })], savedLists: [makeList({ id: 10 })] });
-      pickSavedList('10');
+      create({ customers: [makeCustomer({ id: 1, stateProvince: 'KS' })] });
+      keep({ kind: 'some', ids: new Set([1]) });
       let cleared = 0;
       component.clearSelection.subscribe(() => cleared++);
+      // The panel in the slot answers a reset by keeping every customer again.
+      let filterCleared = 0;
+      filter().reset.subscribe(() => { filterCleared++; filter().keep({ kind: 'all' }); });
 
       resetButton()!.click();
       fixture.detectChanges();
@@ -692,7 +658,7 @@ describe('CustomerListComponent', () => {
       expect(cleared).toBe(1);
       expect(TestBed.inject(TradeUnitContext).selectedTradeUnits()).toEqual([]);
       expect(TestBed.inject(TradeUnitContext).selectedGroupNames()).toEqual([]);
-      expect(appState.selectedSavedListId()).toBe('all');
+      expect(filterCleared).toBe(1);
       expect(appState.searchQuery()).toBe('');
       expect(text()).toContain('Select Trade Units');
       expect(resetButton()).toBeNull();

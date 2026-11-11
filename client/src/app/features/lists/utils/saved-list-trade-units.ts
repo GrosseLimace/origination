@@ -1,4 +1,4 @@
-import { SavedList } from '@models';
+import { SavedList } from '../models/saved-list.model';
 
 /**
  * Trade-unit visibility for saved lists.

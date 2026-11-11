@@ -1,5 +1,5 @@
 import { Injectable, inject, signal } from '@angular/core';
-import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, ReminderDue, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow, ContractPricingLine, QueryLibraryItem } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, ReminderDue, StoredGrain, DpContract, Commodity, CommodityConversion, HarvestWindow, ContractPricingLine } from '@models';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { SessionReset } from '@core/auth/session-reset.service';
 
@@ -13,7 +13,6 @@ export class AppStateService {
   private readonly _selectedCustomer = signal<Customer | null>(null);
   private readonly _allProducersMode = signal(false);
   private readonly _searchQuery = signal<string>('');
-  private readonly _selectedSavedListId = signal<string>('');
   private readonly _contracts = signal<Contract[]>([]);
   private readonly _todaysTickets = signal<Ticket[]>([]);
   private readonly _tickets = signal<Ticket[]>([]);
@@ -24,10 +23,8 @@ export class AppStateService {
   private readonly _storedGrain = signal<StoredGrain[]>([]);
   private readonly _dpContracts = signal<DpContract[]>([]);
   private readonly _dpContractsLoaded = signal(false);
-  private readonly _savedLists = signal<SavedList[]>([]);
   private readonly _commodities = signal<Commodity[]>([]);
   private readonly _commodityConversions = signal<CommodityConversion[]>([]);
-  private readonly _queryLibrary = signal<QueryLibraryItem[]>([]);
   private readonly _harvestWindows = signal<HarvestWindow[]>([]);
   private readonly _pricingLines = signal<ContractPricingLine[]>([]);
   private readonly _ticketsLoaded = signal(false);
@@ -40,7 +37,6 @@ export class AppStateService {
   private readonly _dpContractsLoadFailed = signal(false);
   private readonly _noteLastContactsLoadFailed = signal(false);
   private readonly _myRemindersLoadFailed = signal(false);
-  private readonly _savedListsLoadFailed = signal(false);
   private readonly _plantingIntentionsLoadFailed = signal(false);
   private readonly _harvestWindowsLoadFailed = signal(false);
   private readonly _commodityConversionsLoadFailed = signal(false);
@@ -60,9 +56,6 @@ export class AppStateService {
 
   // Search state
   readonly searchQuery = this._searchQuery.asReadonly();
-
-  // Saved list selection state — persists across navigation
-  readonly selectedSavedListId = this._selectedSavedListId.asReadonly();
 
   // Data cache - persists across navigation
   readonly contracts = this._contracts.asReadonly();
@@ -87,14 +80,8 @@ export class AppStateService {
    *  query flash "no producers found" while the fetch is still in flight. Same reason
    *  `ticketsLoaded` exists. Reset on trade-unit change. */
   readonly dpContractsLoaded = this._dpContractsLoaded.asReadonly();
-  readonly savedLists = this._savedLists.asReadonly();
   readonly commodities = this._commodities.asReadonly();
   readonly commodityConversions = this._commodityConversions.asReadonly();
-  /** Shared query library cache so home + customer-list can resolve a saved list's prompt
-   *  category (Contracts / Tickets / etc.) by queryText match without each page fetching
-   *  independently. Loaded lazily on first access — both build-list and customer-list
-   *  populate this signal when they receive the API response. */
-  readonly queryLibrary = this._queryLibrary.asReadonly();
   readonly harvestWindows = this._harvestWindows.asReadonly();
   readonly pricingLines = this._pricingLines.asReadonly();
 
@@ -108,10 +95,6 @@ export class AppStateService {
 
   setSearchQuery(query: string): void {
     this._searchQuery.set(query);
-  }
-
-  setSelectedSavedListId(id: string): void {
-    this._selectedSavedListId.set(id);
   }
 
   // Update data cache
@@ -173,10 +156,6 @@ export class AppStateService {
     this._pricingLines.set(lines);
   }
 
-  setSavedLists(savedLists: SavedList[]): void {
-    this._savedLists.set(savedLists);
-  }
-
   setCommodities(commodities: Commodity[]): void {
     this._commodities.set(commodities);
   }
@@ -187,10 +166,6 @@ export class AppStateService {
 
   setHarvestWindows(windows: HarvestWindow[]): void {
     this._harvestWindows.set(windows);
-  }
-
-  setQueryLibrary(items: QueryLibraryItem[]): void {
-    this._queryLibrary.set(items);
   }
 
   // True once the TU-wide ticket set has been loaded into `tickets` (via setTickets). List/NLQ
@@ -303,10 +278,6 @@ export class AppStateService {
   readonly myRemindersLoadFailed = this._myRemindersLoadFailed.asReadonly();
   setMyRemindersLoadFailed(failed: boolean): void { this._myRemindersLoadFailed.set(failed); }
 
-  /** Same, for the user's saved lists, which otherwise read as "No saved lists yet". */
-  readonly savedListsLoadFailed = this._savedListsLoadFailed.asReadonly();
-  setSavedListsLoadFailed(failed: boolean): void { this._savedListsLoadFailed.set(failed); }
-
   /** Same, for the trade-unit planting intentions behind the dashboard and planting prompts. */
   readonly plantingIntentionsLoadFailed = this._plantingIntentionsLoadFailed.asReadonly();
   setPlantingIntentionsLoadFailed(failed: boolean): void { this._plantingIntentionsLoadFailed.set(failed); }
@@ -328,7 +299,6 @@ export class AppStateService {
     this._dpContractsLoadFailed.set(false);
     this._noteLastContactsLoadFailed.set(false);
     this._myRemindersLoadFailed.set(false);
-    this._savedListsLoadFailed.set(false);
     this._plantingIntentionsLoadFailed.set(false);
     this._harvestWindowsLoadFailed.set(false);
   }
@@ -343,7 +313,6 @@ export class AppStateService {
     this.tradeUnitContext.clear();
     this._selectedCustomer.set(null);
     this._searchQuery.set('');
-    this._selectedSavedListId.set('');
     this._contracts.set([]);
     this.clearTicketsCache();
     this._plantingIntentions.set([]);
@@ -353,7 +322,6 @@ export class AppStateService {
     this._storedGrain.set([]);
     this._dpContracts.set([]);
     this._dpContractsLoaded.set(false);
-    this._savedLists.set([]);
     this._commodities.set([]);
     this._contractsLoading.set(false);
     this._todaysTicketsLoading.set(false);

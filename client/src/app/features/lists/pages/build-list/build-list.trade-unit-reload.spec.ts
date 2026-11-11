@@ -1,3 +1,4 @@
+import { SavedListsApiService } from '../../data-access/saved-lists-api.service';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
@@ -11,7 +12,9 @@ import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { providePermissions } from '@testing/permission.stub';
 import { provideProducerProfiles } from '@testing/producer-profiles.fake';
-import { Customer, QueryLibraryItem, SavedList } from '@models';
+import { Customer } from '@models';
+import { QueryLibraryItem } from '../../models/query-library.model';
+import { SavedList } from '../../models/saved-list.model';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
@@ -95,6 +98,7 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
       providers: [
         AppStateService,
         { provide: CustomersApiService, useExisting: ApiService },
+        { provide: SavedListsApiService, useExisting: ApiService },
         { provide: ApiService, useValue: api },
         { provide: DataPreloadService, useValue: {} },
         { provide: ToastService, useValue: { info: vi.fn(), error: vi.fn(), success: vi.fn() } },

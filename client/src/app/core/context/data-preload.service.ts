@@ -6,7 +6,7 @@ import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
-import { Contract, Ticket, NoteLastContact, ReminderDue, PlantingIntention, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow } from '@models';
+import { Contract, Ticket, NoteLastContact, ReminderDue, PlantingIntention, StoredGrain, DpContract, Commodity, CommodityConversion, HarvestWindow } from '@models';
 import { environment } from '@env/environment';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { ModuleRegistry } from '@core/modules/module-registry';
@@ -169,13 +169,6 @@ export class DataPreloadService {
             this.appState.setDpContracts(data);
           })
         );
-        const savedLists$ = this.apiService.getSavedLists().pipe(
-          tap(() => this.appState.setSavedListsLoadFailed(false)),
-          catchError(() => { this.appState.setSavedListsLoadFailed(true); return of([] as SavedList[]); }),
-          tap(data => {
-            this.appState.setSavedLists(data);
-          })
-        );
         const commodities$ = this.apiService.getCommodities().pipe(
           catchError(() => of([] as Commodity[])),
           tap(data => {
@@ -193,7 +186,7 @@ export class DataPreloadService {
         // details), cancelled with the rest by the next trade-unit change.
         const modulePreloads = this.moduleRegistry.preloads(tradeUnits);
 
-        return merge(contracts$, todaysTickets$, notes$, reminders$, plantingIntentions$, storedGrain$, dpContracts$, savedLists$, commodities$, harvestWindows$, ...modulePreloads);
+        return merge(contracts$, todaysTickets$, notes$, reminders$, plantingIntentions$, storedGrain$, dpContracts$, commodities$, harvestWindows$, ...modulePreloads);
       }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe();

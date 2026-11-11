@@ -8,6 +8,8 @@ import { MsalService } from '@azure/msal-angular';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { CustomerStore, CustomersApiService } from '@features/customers';
+import { SavedListsApiService } from '../../data-access/saved-lists-api.service';
+import { SavedListsStore } from '../../data-access/saved-lists.store';
 import { AppStateService } from '@core/services/app-state.service';
 import { DataPreloadService } from '@core/context/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
@@ -15,7 +17,9 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { PermissionService } from '@core/access/permission.service';
 import { HasPermissionDirective } from '@core/access/has-permission.directive';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, DpContract, SavedList, TeamMember, ProducerDetails, RefinementFilters, QueryLibraryItem, GrainOnFarmItem, DashboardPlantingEstimate, Commodity } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, DpContract, ProducerDetails, RefinementFilters, GrainOnFarmItem, DashboardPlantingEstimate, Commodity } from '@models';
+import { SavedList, TeamMember } from '../../models/saved-list.model';
+import { QueryLibraryItem } from '../../models/query-library.model';
 import { dpTotalBushels } from '@shared/utils/dp-aggregate';
 import { commodityChipClass } from '@shared/utils/commodity-color';
 import { plantingChips, plantingQueryScope, PlantingChip } from '@shared/utils/planting-chips';
@@ -48,7 +52,7 @@ import { buildSavedListPayload, SavedListPayload } from '../../utils/saved-list-
 import { binNoteContentAny, planBinSiteNoteChunks } from '../../utils/bin-site-notes';
 import { scopeCommodities } from '@shared/utils/commodity-scope';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
-import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
+import { filterSavedListsByTradeUnitOverlap } from '../../utils/saved-list-trade-units';
 import { environment } from '@env/environment';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { ProducerProfiles } from '@core/context/producer-profiles';
@@ -93,6 +97,9 @@ export class BuildListComponent {
   private readonly producerProfiles = inject(ProducerProfiles);
   private readonly customerStore = inject(CustomerStore);
   private readonly customersApi = inject(CustomersApiService);
+  private readonly savedListsApi = inject(SavedListsApiService);
+  /** The user's saved lists and the query library, kept for the session with the rest of Lists' state. */
+  private readonly savedListsStore = inject(SavedListsStore);
   private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly buildListStore = inject(BuildListStore);
 
@@ -407,7 +414,7 @@ export class BuildListComponent {
 
   /** The saved-list read failed and nothing replaced it, so an empty library is not "none yet". */
   readonly savedListsLoadFailed = computed(() =>
-    this.appState.savedListsLoadFailed() && this.savedLists().length === 0);
+    this.savedListsStore.loadFailed() && this.savedLists().length === 0);
 
   /** The "Start with no producers" blank-start card — the deliberate opposite of "All
    *  producers". It always resolves to zero (see filterCustomers' early return), so the
@@ -1122,35 +1129,35 @@ export class BuildListComponent {
     this._initTradeUnits = this.tradeUnitContext.selectedTradeUnits().slice();
 
     // Load saved lists eagerly — they're user-scoped, not TU-dependent
-    const cachedSavedLists = this.appState.savedLists();
+    const cachedSavedLists = this.savedListsStore.lists();
     if (cachedSavedLists.length > 0) {
       this.savedLists.set(cachedSavedLists);
     } else {
       this.loadingSavedLists.set(true);
-      this.apiService.getSavedLists().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      this.savedListsApi.getSavedLists().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (lists) => {
           this.savedLists.set(lists);
-          this.appState.setSavedLists(lists);
-          this.appState.setSavedListsLoadFailed(false);
+          this.savedListsStore.setLists(lists);
+          this.savedListsStore.setLoadFailed(false);
           this.loadingSavedLists.set(false);
         },
         // The library panel says "Couldn't load your saved lists" from this, not "No saved lists yet".
-        error: () => { this.appState.setSavedListsLoadFailed(true); this.loadingSavedLists.set(false); }
+        error: () => { this.savedListsStore.setLoadFailed(true); this.loadingSavedLists.set(false); }
       });
     }
 
     // Load query library — populate the shared appState cache so other pages (home,
     // customer-list) can resolve a saved list's prompt category by queryText match
     // without each page fetching independently.
-    const cachedLibrary = this.appState.queryLibrary();
+    const cachedLibrary = this.savedListsStore.queryLibrary();
     if (cachedLibrary.length > 0) {
       this.queryLibrary.set(cachedLibrary);
       this.queryLibraryLoaded.set(true);
     } else {
-      this.apiService.getQueryLibrary().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      this.savedListsApi.getQueryLibrary().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (items) => {
           this.queryLibrary.set(items);
-          this.appState.setQueryLibrary(items);
+          this.savedListsStore.setQueryLibrary(items);
           this.queryLibraryLoaded.set(true);
         },
         error: err => { this.queryLibraryLoaded.set(true); if (!alreadyShown(err)) this.toastService.error('Failed to load query library'); }
@@ -1310,7 +1317,7 @@ export class BuildListComponent {
       // Only "ready" if the shared cache was actually populated by a completed fetch — otherwise a
       // DP query must still wait (and show its spinner) rather than filter on an empty array.
       this._dpReady.set(this.appState.dpContractsLoaded());
-      this.savedLists.set(this.appState.savedLists());
+      this.savedLists.set(this.savedListsStore.lists());
       // Don't set _ticketsReady from cache — ticket data may be stale or from a
       // different TU. The background refresh will set it when fresh tickets arrive.
       // Ticket-dependent queries will wait via the "Loading delivery data..." path,
@@ -1400,9 +1407,9 @@ export class BuildListComponent {
         tap(() => this.appState.setPlantingIntentionsLoadFailed(false)),
         catchError(() => { this.appState.setPlantingIntentionsLoadFailed(true); return of([] as PlantingIntention[]); })),
       storedGrain: this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
-      savedLists: this.apiService.getSavedLists().pipe(
-        tap(() => this.appState.setSavedListsLoadFailed(false)),
-        catchError(() => { this.appState.setSavedListsLoadFailed(true); return of([] as SavedList[]); })),
+      savedLists: this.savedListsApi.getSavedLists().pipe(
+        tap(() => this.savedListsStore.setLoadFailed(false)),
+        catchError(() => { this.savedListsStore.setLoadFailed(true); return of([] as SavedList[]); })),
       // Every producer's details, read again as each fresh load does, which the prompts and refines read through
       // ProducerProfiles. A failed read leaves the details already held.
       producerDetails: this.producerProfiles.load().pipe(catchError(() => of([] as ProducerDetails[])))
@@ -1425,7 +1432,7 @@ export class BuildListComponent {
         this.appState.setContracts(data.contracts);
         this.appState.setPlantingIntentions(data.plantingIntentions);
         this.appState.setStoredGrain(data.storedGrain);
-        this.appState.setSavedLists(data.savedLists);
+        this.savedListsStore.setLists(data.savedLists);
 
         this.loading.set(false);
         this.coreDataLoaded.set(true);
@@ -1637,7 +1644,7 @@ export class BuildListComponent {
       // Only auto-log if the request form isn't open (user hasn't clicked "Request a query")
       // to avoid double-logging when they submit the form.
       if (this.filteredLibrary().length === 0 && !this.showRequestForm()) {
-        this.apiService.logQuerySearch(text.trim())
+        this.savedListsApi.logQuerySearch(text.trim())
           .pipe(takeUntilDestroyed(this.destroyRef))
           .subscribe();
         this.usageTracking.postClickEvent('interaction', 'build-a-list', 'library-search-no-match', text.trim());
@@ -1651,7 +1658,7 @@ export class BuildListComponent {
     if (!text) return;
     // Cancel any pending auto-log so we don't double-log
     if (this._searchLogTimeout) { clearTimeout(this._searchLogTimeout); this._searchLogTimeout = null; }
-    this.apiService.logQuerySearch(text)
+    this.savedListsApi.logQuerySearch(text)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
         this.toastService.success('Request submitted — we\'ll review and add it to the library');
@@ -2601,8 +2608,8 @@ export class BuildListComponent {
     const payload = { name: this.newListName(), ...this._listPayload() };
 
     const request$ = this.activeSavedList()
-      ? this.apiService.updateSavedList(this.activeSavedList()!.id, payload)
-      : this.apiService.createSavedList(payload);
+      ? this.savedListsApi.updateSavedList(this.activeSavedList()!.id, payload)
+      : this.savedListsApi.createSavedList(payload);
 
     // Clear state immediately so navigating away before the API responds
     // doesn't leave stale results in the build list state cache.
@@ -2635,7 +2642,7 @@ export class BuildListComponent {
     this.teamMembers.set([]);
     this.showBuildForDialog.set(true);
     this.teamMembersLoading.set(true);
-    this.apiService.getTeamMembers(tus.join(',')).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.savedListsApi.getTeamMembers(tus.join(',')).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (members) => { this.teamMembers.set(members); this.teamMembersLoading.set(false); },
       error: err => { this.teamMembersLoading.set(false); if (!alreadyShown(err)) this.toastService.error('Failed to load team members'); }
     });
@@ -2696,7 +2703,7 @@ export class BuildListComponent {
     const tus = tradeUnitsCsv?.trim();
     if (!tus) return;
     this.teamMembersLoading.set(true);
-    this.apiService.getTeamMembers(tus).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.savedListsApi.getTeamMembers(tus).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (members) => { this.teamMembers.set(members); this.teamMembersLoading.set(false); },
       error: err => { this.teamMembersLoading.set(false); if (!alreadyShown(err)) this.toastService.error('Failed to load team members'); }
     });
@@ -2724,7 +2731,7 @@ export class BuildListComponent {
     const wasBuildFor = this.buildingForMembers().length > 0;
     this.assigning.set(true);
     this.usageTracking.postClickEvent('interaction', 'build-a-list', 'assign-list');
-    this.apiService.assignSavedList({ ...base, name, targetUserIds: targets })
+    this.savedListsApi.assignSavedList({ ...base, name, targetUserIds: targets })
       .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (created) => {
           this.assigning.set(false);
@@ -2767,12 +2774,12 @@ export class BuildListComponent {
     // user's own lists (savedLists) or, for a manager, a teammate's list (teamSavedLists).
     this.savedLists.update(lists => lists.filter(l => l.id !== listId));
     this.teamSavedLists.update(lists => lists.filter(l => l.id !== listId));
-    this.appState.setSavedLists(this.savedLists());
+    this.savedListsStore.setLists(this.savedLists());
     if (this.activeSavedList()?.id === listId) {
       this.activeSavedList.set(null);
     }
 
-    this.apiService.deleteSavedList(listId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.savedListsApi.deleteSavedList(listId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.toastService.info('List deleted');
       },
@@ -2785,10 +2792,10 @@ export class BuildListComponent {
   }
 
   private _refreshSavedLists(): void {
-    this.apiService.getSavedLists().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.savedListsApi.getSavedLists().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this.savedLists.set(data);
-        this.appState.setSavedLists(data);
+        this.savedListsStore.setLists(data);
       },
       error: err => { if (!alreadyShown(err)) this.toastService.error('Failed to refresh lists'); }
     });
@@ -2802,7 +2809,7 @@ export class BuildListComponent {
       this.teamSavedLists.set([]);
       return;
     }
-    this.apiService.getTeamSavedLists(tus.join(',')).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.savedListsApi.getTeamSavedLists(tus.join(',')).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => this.teamSavedLists.set(data),
       error: () => { /* supplementary view — leave the prior set in place */ }
     });
