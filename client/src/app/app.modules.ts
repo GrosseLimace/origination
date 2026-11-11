@@ -1,4 +1,7 @@
+import { Provider } from '@angular/core';
+import { ProducerProfiles } from '@core/context/producer-profiles';
 import { ModuleManifest } from '@core/modules/module-manifest';
+import { ProducerProfileStore } from './features/producers/data-access/producer-profile.store';
 import { bidSheetModule } from './features/bid-sheet/bid-sheet.module';
 import { calculatorsModule } from './features/calculators/calculators.module';
 import { contractsModule } from './features/contracts/contracts.module';
@@ -26,4 +29,12 @@ export const appModules: readonly ModuleManifest[] = [
   calculatorsModule,
   helpModule,
   whatsNewModule,
+];
+
+/**
+ * What core declares and a module implements, for the whole app. main.ts provides these with APP_MODULES.
+ */
+export const appModuleProviders: Provider[] = [
+  // Every producer's details, which Customers' home page and customer list read without importing Producers.
+  { provide: ProducerProfiles, useExisting: ProducerProfileStore },
 ];

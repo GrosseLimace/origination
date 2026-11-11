@@ -3,6 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { forkJoin, of } from 'rxjs';
 import { catchError, takeUntil } from 'rxjs/operators';
 import { CustomersApiService } from '../../data-access/customers-api.service';
+import { ProducerProfiles } from '@core/context/producer-profiles';
 import type { Customer } from '@models';
 import { applyProducerDetails } from '@shared/utils/apply-producer-details';
 import { HomePageState } from './home-page.state';
@@ -16,6 +17,8 @@ import { HomePageState } from './home-page.state';
 export class HomeLinkedProducersStore {
   private readonly customersApi = inject(CustomersApiService);
   private readonly page = inject(HomePageState);
+  /** Every producer's details, kept by the Producers module. */
+  private readonly producerProfiles = inject(ProducerProfiles);
   private readonly destroyRef = inject(DestroyRef);
 
   /** Customers whose linked-producer BFS has already completed in this session.
@@ -38,7 +41,7 @@ export class HomeLinkedProducersStore {
 
   /** Applies ProducerDetails enrichment onto a freshly-fetched Customer. */
   private _enrichCustomer(fetched: Customer): Customer {
-    const pd = this.page.producerDetailsMap().get(fetched.id);
+    const pd = this.producerProfiles.profileOf(fetched.id);
     return pd ? applyProducerDetails(fetched, pd) : fetched;
   }
 

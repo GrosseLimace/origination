@@ -157,7 +157,7 @@ Bulk on init / TU change:
 - `getStoredGrain(tradeUnits?)`
 - `getPlantingIntentions(tradeUnits?)`
 - `getSavedLists()`
-- `getAllProducerDetails()`
+- `getAllProducerDetails()`, through `ProducerProfiles.load()` (on each visit; the Producers preload reads them too, and a read already running is shared)
 - `getCommodities()`
 - `getDashboardPlantingEstimates(tu, year)` — per-TU yield estimates used by the Planting tab to show projected production; one call per year (`forkJoin`) covering planting intentions + contract crop years.
 
@@ -201,7 +201,7 @@ The pending values are stored in component signals (`pendingContractId`, `pendin
 
 ## State and caching
 
-- The home component reads heavily from `AppStateService`: `contracts`, `tickets`, `notes`, `storedGrain`, `plantingIntentions`, `savedLists`, `producerDetails`, `pricingLines`, `selectedCustomer`, `selectedTradeUnits`; and the customers from `CustomerStore`. It also writes (`CustomerStore.setCustomers`, `setContracts`, ...) after each successful fetch so other screens get the same cached data.
+- The home component reads heavily from `AppStateService`: `contracts`, `tickets`, `notes`, `storedGrain`, `plantingIntentions`, `savedLists`, `pricingLines`, `selectedCustomer`, `selectedTradeUnits`; and the customers from `CustomerStore`. It also writes (`CustomerStore.setCustomers`, `setContracts`, ...) after each successful fetch so other screens get the same cached data.
 - `DataPreloadService` may have already populated some of this on app load.
 - **Request deduplication** within the component: a `_customerRequestId` counter is incremented on every TU change. Stale responses with an outdated id are dropped to prevent the list from flipping back to the old TU's data when responses arrive out-of-order.
 

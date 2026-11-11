@@ -37,26 +37,26 @@ describe('NlqFilterService — Delivery Location refine (Ticket.elevatorCity)', 
   });
 
   it('keeps only producers with a matching elevatorCity on at least one ticket', () => {
-    const ids = svc.applyRefinementFilters(all, { deliveryLocations: ['Madrid, NE'] } as never, [], [], { tickets })
+    const ids = svc.applyRefinementFilters(all, { deliveryLocations: ['Madrid, NE'] } as never, [], [], { producerProfiles: new Map(), tickets })
       .map(c => c.id).sort((a, b) => a - b);
     expect(ids).toEqual([1]);
   });
 
   it('matches ANY selected location (OR semantics), same as the crop/state chips', () => {
-    const ids = svc.applyRefinementFilters(all, { deliveryLocations: ['Madrid, NE', 'Pratt, KS'] } as never, [], [], { tickets })
+    const ids = svc.applyRefinementFilters(all, { deliveryLocations: ['Madrid, NE', 'Pratt, KS'] } as never, [], [], { producerProfiles: new Map(), tickets })
       .map(c => c.id).sort((a, b) => a - b);
     expect(ids).toEqual([1, 2]);
   });
 
   it('excludes a producer whose ticket has no resolved location', () => {
-    const ids = svc.applyRefinementFilters(all, { deliveryLocations: ['Madrid, NE'] } as never, [], [], { tickets })
+    const ids = svc.applyRefinementFilters(all, { deliveryLocations: ['Madrid, NE'] } as never, [], [], { producerProfiles: new Map(), tickets })
       .map(c => c.id);
     expect(ids).not.toContain(3);
   });
 
   it('is independent of crops/states — combines as an AND with them', () => {
     const withState = all.map(c => c.id === 1 ? { ...c, extendedStateProvince: 'Nebraska' } : c);
-    const ids = svc.applyRefinementFilters(withState, { deliveryLocations: ['Madrid, NE'], states: ['Nebraska'] } as never, [], [], { tickets })
+    const ids = svc.applyRefinementFilters(withState, { deliveryLocations: ['Madrid, NE'], states: ['Nebraska'] } as never, [], [], { producerProfiles: new Map(), tickets })
       .map(c => c.id);
     expect(ids).toEqual([1]);
   });
@@ -69,7 +69,7 @@ describe('NlqFilterService — "All producers" blank-start card', () => {
   it('returns every producer unchanged, with no narrowing', () => {
     const alpha = customer(1, 'Alpha Farms', 'S1');
     const bravo = customer(2, 'Bravo Farms', 'S2');
-    const ids = svc.parseAndFilter('All producers', { customers: [alpha, bravo], contracts: [], tickets: [], notes: [], plantingIntentions: [], storedGrain: [] })
+    const ids = svc.parseAndFilter('All producers', { customers: [alpha, bravo], producerProfiles: new Map(), contracts: [], tickets: [], notes: [], plantingIntentions: [], storedGrain: [] })
       .customers.map(c => c.id).sort((a, b) => a - b);
     expect(ids).toEqual([1, 2]);
   });
@@ -82,7 +82,7 @@ describe('NlqFilterService — "Start with no producers" blank-start card', () =
   it('returns nobody, even though every other unrecognized query defaults to matching everyone', () => {
     const alpha = customer(1, 'Alpha Farms', 'S1');
     const bravo = customer(2, 'Bravo Farms', 'S2');
-    const ids = svc.parseAndFilter('Start with no producers', { customers: [alpha, bravo], contracts: [], tickets: [], notes: [], plantingIntentions: [], storedGrain: [] })
+    const ids = svc.parseAndFilter('Start with no producers', { customers: [alpha, bravo], producerProfiles: new Map(), contracts: [], tickets: [], notes: [], plantingIntentions: [], storedGrain: [] })
       .customers.map(c => c.id);
     expect(ids).toEqual([]);
   });

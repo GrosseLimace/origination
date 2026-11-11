@@ -7,7 +7,6 @@ import { InteractionStatus } from '@azure/msal-browser';
 import { ApiService } from './api.service';
 import { AppStateService } from './app-state.service';
 import { Contract, Ticket, NoteLastContact, ReminderDue, PlantingIntention, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow } from '@models';
-import { ProducerDetails } from '../../models/producer-details.model';
 import { environment } from '@env/environment';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { ModuleRegistry } from '@core/modules/module-registry';
@@ -190,18 +189,11 @@ export class DataPreloadService {
             this.appState.setHarvestWindows(data);
           })
         );
-        const producerDetails$ = this.apiService.getAllProducerDetails().pipe(
-          catchError(() => of([] as ProducerDetails[])),
-          tap(data => {
-            this.appState.setProducerDetails(data);
-          })
-        );
-
-        // Each module's own preload (the trade unit's customers, the Planting Dashboard's summary), cancelled with
-        // the rest by the next trade-unit change.
+        // Each module's own preload (the trade unit's customers; Producers' dashboard summary and every producer's
+        // details), cancelled with the rest by the next trade-unit change.
         const modulePreloads = this.moduleRegistry.preloads(tradeUnits);
 
-        return merge(contracts$, todaysTickets$, notes$, reminders$, plantingIntentions$, storedGrain$, dpContracts$, savedLists$, commodities$, harvestWindows$, producerDetails$, ...modulePreloads);
+        return merge(contracts$, todaysTickets$, notes$, reminders$, plantingIntentions$, storedGrain$, dpContracts$, savedLists$, commodities$, harvestWindows$, ...modulePreloads);
       }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe();

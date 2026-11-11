@@ -84,8 +84,9 @@ describe('AppStateService', () => {
     }
 
     it('exposes its state as signals', () => {
-      // Guards the check below against passing vacuously if the surface stopped being found.
-      expect(publicSignals().length).toBeGreaterThanOrEqual(36);
+      // Guards the check below against passing vacuously if the surface stopped being found. (35 since the producers'
+      // details moved to the Producers module's ProducerProfileStore.)
+      expect(publicSignals().length).toBeGreaterThanOrEqual(35);
     });
 
     it('offers no .set or .update on any public signal — writes go through the service\'s methods', () => {

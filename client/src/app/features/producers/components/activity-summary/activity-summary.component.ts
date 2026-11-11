@@ -6,6 +6,8 @@ import { SelectedCustomerContext } from '@core/context/selected-customer-context
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { SelectedProducerEngagement } from '@core/context/selected-producer-engagement';
 import { SelectedProducerProduction } from '@core/context/selected-producer-production';
+import { ProducerProfiles } from '@core/context/producer-profiles';
+import { profileCommodities } from '@shared/utils/producer-profile';
 import { ContractPacingHistoryStore } from '../../data-access/contract-pacing-history.store';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
 import { buildLbsPerBushelMap, quantityInBushels, sumInBushels } from '@shared/utils/production-coverage';
@@ -38,6 +40,8 @@ export class ActivitySummaryComponent {
   private readonly activity = inject(SelectedProducerActivity);
   private readonly production = inject(SelectedProducerProduction);
   private readonly pacing = inject(ContractPacingHistoryStore);
+  /** The producer's acres, primary contact and commodities, and their linked producers' primary contacts. */
+  private readonly profiles = inject(ProducerProfiles);
 
   readonly customer = this.context.customer;
   private readonly customerId = computed(() => this.customer()?.id ?? null);
@@ -111,6 +115,8 @@ export class ActivitySummaryComponent {
       const _storedGrain = this.storedGrain();
       const _linked = this.linkedCustomers();
       const _historical = this.historicalContracts();
+      // The producer's and their linked producers' details: acres, primary contacts, commodities.
+      const _profiles = this.profiles.profiles();
       // commodityConversions feeds the spot-load / unapplied ticket bushel sums; tracking it ensures the summary
       // recalculates once GNP024 lookups become available after an initial empty load.
       const _conv = this.appState.commodityConversions();
@@ -150,10 +156,11 @@ export class ActivitySummaryComponent {
     if (!customer) return '';
 
     const customerName = customer.name || 'This customer';
-    const acres = customer.totalAcres || 0;
+    const profile = this.profiles.profileOf(customer.id);
+    const acres = profile?.totalAcres || 0;
     const farm = customer.farm || '';
-    const primaryContact = (customer.primaryContact || '').trim();
-    const commodities = customer.commodities || [];
+    const primaryContact = (profile?.primaryContact || '').trim();
+    const commodities = profileCommodities(profile);
     const linkedGroup = this._getLinkedGroup();
 
     // Prefer the primary-contact name as the subject of the narrative ("John operates 5,000
@@ -485,7 +492,7 @@ export class ActivitySummaryComponent {
       let sourceStr = '';
       if (currentCustomer && lastNote.customerId !== currentCustomer.id) {
         const sourceCustomer = linked.find(c => c.id === lastNote.customerId);
-        const sourceName = sourceCustomer?.primaryContact?.trim() || sourceCustomer?.name?.trim();
+        const sourceName = (sourceCustomer && this.profiles.profileOf(sourceCustomer.id)?.primaryContact?.trim()) || sourceCustomer?.name?.trim();
         if (sourceName) sourceStr = ` on ${sourceName}`;
       }
 

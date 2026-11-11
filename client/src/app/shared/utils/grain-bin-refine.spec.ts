@@ -2,22 +2,26 @@ import { describe, it, expect } from 'vitest';
 import { Customer, GrainOnFarmItem, ProducerBinSiteItem } from '@models';
 import { activeGrainBinRefineCount, applyGrainBinRefinements } from './grain-bin-refine';
 
-const producer = (id: number, sites: ProducerBinSiteItem[], grain: GrainOnFarmItem[]): Customer =>
-  ({ id, name: `Farm ${id}`, binSites: sites, grainOnFarm: grain } as unknown as Customer);
+const producer = (id: number): Customer => ({ id, name: `Farm ${id}` } as unknown as Customer);
 
 const north: ProducerBinSiteItem = { siteKey: 'n', name: 'North Bins', capacity: 50000, latitude: 41.39, longitude: -95.01 };
 const home: ProducerBinSiteItem = { siteKey: 'h', name: 'Home Place', capacity: 20000 };
 const bin1: ProducerBinSiteItem = { siteKey: 'b', name: 'Bin 1', capacity: 5000 };
 
-const a = producer(1, [north, home], [
-  { commodityCode: 'YC', bushelsOnHand: 30000, bushelsSold: 10000, lastBid: -0.35 },
-  { commodityCode: 'SB', bushelsOnHand: 12500, lastBid: 10.5 },
+// The producers' saved details: their bin sites and grain on farm, which the caller looks up for each producer.
+const sitesById = new Map<number, ProducerBinSiteItem[]>([[1, [north, home]], [2, [bin1]], [3, []]]);
+const grainById = new Map<number, GrainOnFarmItem[]>([
+  [1, [
+    { commodityCode: 'YC', bushelsOnHand: 30000, bushelsSold: 10000, lastBid: -0.35 },
+    { commodityCode: 'SB', bushelsOnHand: 12500, lastBid: 10.5 },
+  ]],
+  [2, [{ commodityCode: 'YC', bushelsOnHand: 5000, lastBid: 0 }]],
+  [3, []],
 ]);
-const b = producer(2, [bin1], [{ commodityCode: 'YC', bushelsOnHand: 5000, lastBid: 0 }]);
-const c = producer(3, [], []);
-const all = [a, b, c];
-const rows = (x: Customer) => x.grainOnFarm ?? [];
-const ids = (r: object, scoped = rows) => applyGrainBinRefinements(all, r, scoped).map(x => x.id);
+const all = [producer(1), producer(2), producer(3)];
+const rows = (x: Customer) => grainById.get(x.id) ?? [];
+const sites = (x: Customer) => sitesById.get(x.id) ?? [];
+const ids = (r: object, scoped = rows) => applyGrainBinRefinements(all, r, scoped, sites).map(x => x.id);
 
 describe('applyGrainBinRefinements — grain on farm', () => {
   it('Sold: total sold over N, and has any sold', () => {

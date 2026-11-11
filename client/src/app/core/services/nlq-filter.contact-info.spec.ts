@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { NlqFilterService, NlqFilterContext } from './nlq-filter.service';
+import { profilesOf, withProfile } from '@testing/producer-profiles.fake';
 import { Customer, ProducerContactItem } from '@models';
 
 /**
@@ -10,16 +11,17 @@ import { Customer, ProducerContactItem } from '@models';
  */
 function customer(
   id: number, name: string,
-  over: { email?: string; supplementalEmail?: string; phone?: string; extendedPrimaryPhone?: string; contacts?: ProducerContactItem[] } = {}
+  { contacts, ...over }: { email?: string; supplementalEmail?: string; phone?: string; extendedPrimaryPhone?: string; contacts?: ProducerContactItem[] } = {}
 ): Customer {
-  return {
+  // The source system's email and phone are the customer's; the typed-in contact rows are in its saved details.
+  return withProfile({
     id, name, farm: '', location: '', totalAcres: 0, linkedProducerIds: [], eSignEnabled: false,
     email: '', phone: '', ...over,
-  } as Customer;
+  } as Customer, { contacts });
 }
 
 function ctx(customers: Customer[]): NlqFilterContext {
-  return { customers, contracts: [], tickets: [], notes: [], plantingIntentions: [], storedGrain: [] };
+  return { customers, producerProfiles: profilesOf(customers), contracts: [], tickets: [], notes: [], plantingIntentions: [], storedGrain: [] };
 }
 
 describe('NlqFilterService — email/phone presence includes contact rows', () => {

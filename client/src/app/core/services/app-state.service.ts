@@ -1,6 +1,5 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, ReminderDue, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow, ContractPricingLine, QueryLibraryItem } from '@models';
-import { ProducerDetails } from '../../models/producer-details.model';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { SessionReset } from '@core/auth/session-reset.service';
 
@@ -30,7 +29,6 @@ export class AppStateService {
   private readonly _commodityConversions = signal<CommodityConversion[]>([]);
   private readonly _queryLibrary = signal<QueryLibraryItem[]>([]);
   private readonly _harvestWindows = signal<HarvestWindow[]>([]);
-  private readonly _producerDetails = signal<ProducerDetails[]>([]);
   private readonly _pricingLines = signal<ContractPricingLine[]>([]);
   private readonly _ticketsLoaded = signal(false);
   private readonly _ticketsTradeUnitKey = signal<string | null>(null);
@@ -98,7 +96,6 @@ export class AppStateService {
    *  populate this signal when they receive the API response. */
   readonly queryLibrary = this._queryLibrary.asReadonly();
   readonly harvestWindows = this._harvestWindows.asReadonly();
-  readonly producerDetails = this._producerDetails.asReadonly();
   readonly pricingLines = this._pricingLines.asReadonly();
 
   selectCustomer(customer: Customer | null): void {
@@ -182,10 +179,6 @@ export class AppStateService {
 
   setCommodities(commodities: Commodity[]): void {
     this._commodities.set(commodities);
-  }
-
-  setProducerDetails(details: ProducerDetails[]): void {
-    this._producerDetails.set(details);
   }
 
   setCommodityConversions(conversions: CommodityConversion[]): void {
@@ -362,7 +355,6 @@ export class AppStateService {
     this._dpContractsLoaded.set(false);
     this._savedLists.set([]);
     this._commodities.set([]);
-    this._producerDetails.set([]);
     this._contractsLoading.set(false);
     this._todaysTicketsLoading.set(false);
     this._todaysTickets.set([]);

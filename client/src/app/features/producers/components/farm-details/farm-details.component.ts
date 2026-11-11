@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, linkedSignal, sig
 import { DecimalPipe, CurrencyPipe } from '@angular/common';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { SelectedProducerProduction } from '@core/context/selected-producer-production';
+import { ProducerProfiles } from '@core/context/producer-profiles';
 import { AppStateService } from '@core/services/app-state.service';
 import { GrainOnFarmItem } from '@models';
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
@@ -27,6 +28,12 @@ export const GRAIN_ON_FARM_COLLAPSED_KEY = 'origination.profile.grainOnFarm.coll
 })
 export class FarmDetailsComponent {
   readonly customer = inject(SelectedCustomerContext).customer;
+  private readonly profiles = inject(ProducerProfiles);
+  /** The producer's saved details: their acres, bin sites and grain on farm. */
+  readonly profile = computed(() => {
+    const customer = this.customer();
+    return customer ? this.profiles.profileOf(customer.id) : undefined;
+  });
   /** The commodity codes the producer deals in: their tickets' and those on their profile. */
   readonly commodityCodes = inject(SelectedProducerProduction).commodityCodes;
   private readonly commodities = inject(AppStateService).commodities;
@@ -36,10 +43,10 @@ export class FarmDetailsComponent {
   /** Grain-on-farm rows with a positive total or sold, a target or last bid, or a grade entered, grouped by bin site
    *  in the sites' order (rows not tied to a site last), total descending within a site. */
   readonly rows = computed(() => {
-    const customer = this.customer();
-    const siteOrder = new Map((customer?.binSites ?? []).map((b, i) => [b.siteKey, i]));
+    const profile = this.profile();
+    const siteOrder = new Map((profile?.binSites ?? []).map((b, i) => [b.siteKey, i]));
     const orderOf = (key: string | null | undefined) => (key ? siteOrder.get(key) : undefined) ?? Number.MAX_SAFE_INTEGER;
-    return (customer?.grainOnFarm ?? [])
+    return (profile?.grainOnFarm ?? [])
       .filter(g => (g.bushelsOnHand ?? 0) > 0 || (g.bushelsSold ?? 0) > 0 || g.targetBushels != null || g.lastBid != null || !!(g.grade ?? '').trim())
       .sort((a, b) => orderOf(a.binSiteKey) - orderOf(b.binSiteKey) || (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0));
   });
@@ -95,7 +102,7 @@ export class FarmDetailsComponent {
   }
 
   /** Total bushels on the farm: every row's on-hand, at every site. */
-  readonly total = computed(() => (this.customer()?.grainOnFarm ?? []).reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0));
+  readonly total = computed(() => (this.profile()?.grainOnFarm ?? []).reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0));
 
   /** Whether the table is expanded. Open by default and left however the user set it, across producers and reloads,
    *  like the Activity Summary (user 2026-10-12); only an explicit close is remembered. */

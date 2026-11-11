@@ -1,14 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { NlqFilterService, NlqFilterContext } from './nlq-filter.service';
+import { profilesOf, withProfile } from '@testing/producer-profiles.fake';
 import { Customer, Note, NoteLastContact } from '@models';
 
-/** Minimal customer with only the fields these filters touch. Neutral names so name-search
- *  paths can't accidentally match a keyword. */
+/** Minimal customer with only the fields these filters touch, and the producers its saved details link to. Neutral
+ *  names so name-search paths can't accidentally match a keyword. */
 function customer(id: number, name: string, scoularId: string, linkedProducerIds: string[] = []): Customer {
-  return {
+  return withProfile({
     id, name, scoularId, farm: '', location: '', phone: '', email: '',
-    totalAcres: 0, linkedProducerIds, eSignEnabled: false,
-  } as unknown as Customer;
+    totalAcres: 0, linkedProducerIds: [], eSignEnabled: false,
+  } as unknown as Customer, { linkedProducerIds: linkedProducerIds.join(',') });
 }
 
 /** `tradeUnit` is set to a value the caller would NOT have selected on purpose: a note's
@@ -30,7 +31,7 @@ function lastContact(customerId: number, customerCode: string, daysAgo: number):
 }
 
 function ctx(customers: Customer[], notes: Note[], noteLastContacts: NoteLastContact[] = []): NlqFilterContext {
-  return { customers, contracts: [], tickets: [], notes, noteLastContacts, plantingIntentions: [], storedGrain: [] };
+  return { customers, producerProfiles: profilesOf(customers), contracts: [], tickets: [], notes, noteLastContacts, plantingIntentions: [], storedGrain: [] };
 }
 
 describe('NlqFilterService.queryNeedsFullNotes', () => {
@@ -167,7 +168,7 @@ describe('NlqFilterService — recency filters resolve from the last-contact agg
     const aggregate = [lastContact(1, 'A001', 1), lastContact(2, 'B002', 40)];
     const notes = [note(1, 1, 'A001', 'called about basis')]; // createdBy defaults to rep@scoular.com (a teammate)
     const context: NlqFilterContext = {
-      customers: [alpha, bravo], contracts: [], tickets: [], notes,
+      customers: [alpha, bravo], producerProfiles: profilesOf([alpha, bravo]), contracts: [], tickets: [], notes,
       noteLastContacts: aggregate, plantingIntentions: [], storedGrain: [],
       currentUserDisplayName: 'Caden Egr', currentUserUsername: 'CEgr@scoular.com',
     };

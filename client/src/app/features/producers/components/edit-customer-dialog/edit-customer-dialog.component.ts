@@ -3,8 +3,8 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
-import { Customer, Commodity } from '@models';
-import { applyProducerDetails } from '@shared/utils/apply-producer-details';
+import { Customer, Commodity, ProducerDetails } from '@models';
+import { profileCommodities, profileLinkedIds } from '@shared/utils/producer-profile';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { CustomersApiService } from '@features/customers';
@@ -20,6 +20,7 @@ import { PermissionService } from '@core/access/permission.service';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { ProducerEdit, ProducerEditing } from '@core/context/producer-editing';
+import { ProducerProfiles } from '@core/context/producer-profiles';
 
 /** One bin-site row as edited: every field is the text in its input. Capacity holds the grouped
  *  display text ("50,000"). */
@@ -82,6 +83,8 @@ const binSiteRowHasData = (r: BinSiteEditRow): boolean =>
 })
 export class EditCustomerDialogComponent {
   private readonly apiService = inject(ApiService);
+  /** Every producer's saved details: this producer's open the form, and the others' say who links to them. */
+  private readonly profiles = inject(ProducerProfiles);
   private readonly destroyRef = inject(DestroyRef);
   private readonly toast = inject(ToastService);
   private readonly appState = inject(AppStateService);
@@ -285,10 +288,17 @@ export class EditCustomerDialogComponent {
     this.editContacts.update(rows => rows.map((r, i) => i === index ? { ...r, [field]: value } : r));
   }
 
-  /** Hydrates the contact rows from the customer's saved contacts; older cached data without a
-   *  contacts array falls back to synthesizing one row from the legacy primary fields. */
-  private _contactsFromCustomer(customer: Customer): { name: string; phone: string; email: string; isPrimary: boolean }[] {
-    const saved = customer.contacts;
+  /** The saved details of the producer the dialog is open for, as the page holds them. */
+  private _profileOfCustomer(): ProducerDetails | undefined {
+    const customer = this.customer();
+    return customer ? this.profiles.profileOf(customer.id) : undefined;
+  }
+
+  /** Hydrates the contact rows from the producer's saved contacts; older saved details without a
+   *  contacts array fall back to synthesizing one row from the legacy primary fields. */
+  private _contactsFromProfile(profile: ProducerDetails | undefined): { name: string; phone: string; email: string; isPrimary: boolean }[] {
+    if (!profile) return [];
+    const saved = profile.contacts;
     if (saved && saved.length > 0) {
       return saved.map(c => ({
         name: c.name || '',
@@ -297,10 +307,10 @@ export class EditCustomerDialogComponent {
         isPrimary: !!c.isPrimary
       }));
     }
-    if (customer.primaryContact || customer.primaryPhone) {
+    if (profile.primaryContact || profile.primaryPhone) {
       return [{
-        name: customer.primaryContact || '',
-        phone: customer.primaryPhone || '',
+        name: profile.primaryContact || '',
+        phone: profile.primaryPhone || '',
         email: '',
         isPrimary: true
       }];
@@ -388,9 +398,9 @@ export class EditCustomerDialogComponent {
     if (canonical !== row.coords) this.updateBinSiteField(index, 'coords', canonical);
   }
 
-  private _binSitesFromCustomer(customer: Customer): BinSiteEditRow[] {
+  private _binSitesFromProfile(profile: ProducerDetails | undefined): BinSiteEditRow[] {
     const bushels = (v: number | null | undefined) => v != null ? formatBinSiteCapacityInput(String(v)) : '';
-    return (customer.binSites ?? []).map(b => ({
+    return (profile?.binSites ?? []).map(b => ({
       key: b.siteKey ?? newSiteKey(),
       name: b.name ?? '',
       coords: b.latitude != null && b.longitude != null ? formatCoordinatePairFull(b.latitude, b.longitude) : '',
@@ -614,11 +624,11 @@ export class EditCustomerDialogComponent {
       r.siteKey === null && r.commodityCode === commodityCode ? { ...r, siteKey } : r));
   }
 
-  /** Grain rows from the saved customer. A key naming no current site (shouldn't happen) is shown as
+  /** Grain rows from the producer's saved details. A key naming no current site (shouldn't happen) is shown as
    *  not tied to a site rather than hidden. */
-  private _grainFromCustomer(customer: Customer | null | undefined): GrainEditRow[] {
-    const siteKeys = new Set((customer?.binSites ?? []).map(b => b.siteKey).filter(Boolean));
-    return (customer?.grainOnFarm || []).map(g => ({
+  private _grainFromProfile(profile: ProducerDetails | undefined): GrainEditRow[] {
+    const siteKeys = new Set((profile?.binSites ?? []).map(b => b.siteKey).filter(Boolean));
+    return (profile?.grainOnFarm || []).map(g => ({
       siteKey: g.binSiteKey && siteKeys.has(g.binSiteKey) ? g.binSiteKey : null,
       commodityCode: g.commodityCode,
       bushelsOnHand: g.bushelsOnHand != null ? String(g.bushelsOnHand) : '',
@@ -641,19 +651,19 @@ export class EditCustomerDialogComponent {
     this.apiService.getProducerDetails(openedFor).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (details) => {
         if (!this.isOpen() || !this._initialized || this.customer()?.id !== openedFor) return;
-        const fresh = applyProducerDetails(customer, details);
+        const fresh = details;
         if (this._parseNumericInput(this.editAcres) === this._originalAcres) {
           this.editAcres = String(fresh.totalAcres || 0);
           this._originalAcres = fresh.totalAcres || 0;
         }
         if (this._serializeContacts() === this._originalContacts) {
-          this.editContacts.set(this._contactsFromCustomer(fresh));
+          this.editContacts.set(this._contactsFromProfile(fresh));
           this._originalContacts = this._serializeContacts();
         }
         // Bin sites and grain go together: grain rows point at sites by key.
         if (this._serializeBinSites() === this._originalBinSites && this._serializeGrain() === this._originalGrainOnFarm) {
-          this.editBinSites.set(this._binSitesFromCustomer(fresh));
-          this.editGrainOnFarm.set(this._grainFromCustomer(fresh));
+          this.editBinSites.set(this._binSitesFromProfile(fresh));
+          this.editGrainOnFarm.set(this._grainFromProfile(fresh));
           this._grainAutoAddedCommodities.clear();
           this._resetGrainPicker();
           this._originalBinSites = this._serializeBinSites();
@@ -661,8 +671,8 @@ export class EditCustomerDialogComponent {
         }
         const linkedNow = [...this.editLinkedProducerIds()].sort().join(',');
         if (linkedNow === [...this._originalLinkedProducerIds].sort().join(',')) {
-          this.editLinkedProducerIds.set([...(fresh.linkedProducerIds || [])]);
-          this._originalLinkedProducerIds = [...(fresh.linkedProducerIds || [])];
+          this.editLinkedProducerIds.set(profileLinkedIds(fresh));
+          this._originalLinkedProducerIds = profileLinkedIds(fresh);
         }
         // editAcres and the change snapshots are plain fields, and this is a response, not a
         // template event: when only the acres changed, nothing above has marked the view.
@@ -747,7 +757,9 @@ export class EditCustomerDialogComponent {
 
       // When isOpen becomes true, initialize the form from the customer
       if (isOpen && customer && !this._initialized) {
-        this.editAcres = String(customer.totalAcres || 0);
+        // The producer's saved details, as the page holds them; untracked, so a change to them doesn't re-run this.
+        const profile = untracked(() => this.profiles.profileOf(customer.id));
+        this.editAcres = String(profile?.totalAcres || 0);
         const ticketCommodities = [...new Set(
           this.tickets().map(t => t.productCode || '').filter(Boolean)
         )];
@@ -755,22 +767,22 @@ export class EditCustomerDialogComponent {
           this.contracts().map(c => c.commodityCode || '').filter(Boolean)
         )];
         this._derivedCommoditySet = new Set([...ticketCommodities, ...contractCommodities]);
-        const userCommodities = customer.commodities || [];
+        const userCommodities = profileCommodities(profile);
         this.editCommodities.set([...new Set([...ticketCommodities, ...contractCommodities, ...userCommodities])].sort());
-        this.editLinkedProducerIds.set([...(customer.linkedProducerIds || [])]);
+        this.editLinkedProducerIds.set(profileLinkedIds(profile));
         this.removedIncomingIds.set([]);
         this.editESignEnabled.set(customer.eSignEnabled);
-        this.editContacts.set(this._contactsFromCustomer(customer));
-        this.editBinSites.set(this._binSitesFromCustomer(customer));
-        this.editGrainOnFarm.set(this._grainFromCustomer(customer));
+        this.editContacts.set(this._contactsFromProfile(profile));
+        this.editBinSites.set(this._binSitesFromProfile(profile));
+        this.editGrainOnFarm.set(this._grainFromProfile(profile));
         this._grainAutoAddedCommodities.clear();
         this._resetGrainPicker();
 
         // Store original values
-        this._originalAcres = customer.totalAcres || 0;
+        this._originalAcres = profile?.totalAcres || 0;
         this._originalCommodities = [...this.editCommodities()];
         this._originalGrainOnFarm = this._serializeGrain();
-        this._originalLinkedProducerIds = [...(customer.linkedProducerIds || [])];
+        this._originalLinkedProducerIds = profileLinkedIds(profile);
         this._originalESignEnabled = customer.eSignEnabled;
         this._originalContacts = this._serializeContacts();
         this._originalBinSites = this._serializeBinSites();
@@ -1221,8 +1233,7 @@ export class EditCustomerDialogComponent {
     if (!this.customer()) return [];
     const mySourceId = this.customer()!.scoularId || '';
     return this._producerPool.filter(c =>
-      c.linkedProducerIds &&
-      c.linkedProducerIds.includes(mySourceId) &&
+      profileLinkedIds(this.profiles.profileOf(c.id)).includes(mySourceId) &&
       !this.removedIncomingIds().includes(c.scoularId || '')
     );
   }
@@ -1274,7 +1285,8 @@ export class EditCustomerDialogComponent {
     // Reset all fields back to original values
     this.editAcres = String(this._originalAcres || 0);
     this.editCommodities.set([...this._originalCommodities]);
-    this.editGrainOnFarm.set(this._grainFromCustomer(this.customer()));
+    const profile = this._profileOfCustomer();
+    this.editGrainOnFarm.set(this._grainFromProfile(profile));
     this._grainAutoAddedCommodities.clear();
     this._resetGrainPicker();
     this.editLinkedProducerIds.set([...this._originalLinkedProducerIds]);
@@ -1284,9 +1296,8 @@ export class EditCustomerDialogComponent {
     this._stagedIntentionMoves.set(new Map());
     this.tuRemovalPrompt.set(null);
     this.tuRemovalTarget.set('');
-    const customer = this.customer();
-    this.editContacts.set(customer ? this._contactsFromCustomer(customer) : []);
-    this.editBinSites.set(customer ? this._binSitesFromCustomer(customer) : []);
+    this.editContacts.set(this._contactsFromProfile(profile));
+    this.editBinSites.set(this._binSitesFromProfile(profile));
     this.newCommodity.set('');
     this.filteredCommodities.set([]);
     this.showSuggestions.set(false);

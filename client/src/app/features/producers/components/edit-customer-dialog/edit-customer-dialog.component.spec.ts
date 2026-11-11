@@ -12,6 +12,7 @@ import { MAX_BIN_SITES } from '@shared/utils/coordinates';
 import { CustomersApiService } from '@features/customers';
 import { PermissionId } from '@core/access/permission-ids.generated';
 import { CustomerScreenSources, customerScreenSources } from '@testing/customer-screen-sources';
+import { producerProfile, profilesOf, withProfile } from '@testing/producer-profiles.fake';
 import { ProducerEditingFake, producerEditingFake, provideProducerEditing } from '@testing/producer-editing.fake';
 import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
 
@@ -20,11 +21,18 @@ import { PermissionStub, permissionStub, providePermissions } from '@testing/per
 // instead — otherwise they would sit on a trade unit the producer has left and be counted on no
 // dashboard at all.
 
-function makeCustomer(over: Partial<Customer> = {}): Customer {
-  return {
+/** The producer the dialog edits. Their acres, commodities, links, contacts, bin sites and grain on farm are their
+ *  saved details, which open() hands to ProducerProfiles with them. */
+function makeCustomer(
+  { totalAcres, commodities, linkedProducerIds, contacts, primaryContact, primaryPhone, binSites, grainOnFarm, ...over }: Partial<Customer> = {},
+): Customer {
+  return withProfile({
     id: 42, scoularId: 'SAMPFRM', name: 'Sample Farms', farm: '', location: '',
     phone: '', email: '', totalAcres: 0, linkedProducerIds: [], eSignEnabled: false, ...over,
-  };
+  }, {
+    totalAcres, commodities: commodities?.join(','), linkedProducerIds: linkedProducerIds?.join(','),
+    contacts, primaryContact, primaryPhone, binSites, grainOnFarm,
+  });
 }
 
 function makeIntention(over: Partial<PlantingIntention> = {}): PlantingIntention {
@@ -340,6 +348,7 @@ describe('EditCustomerDialogComponent — bin sites', () => {
 
   /** Opens the dialog on a producer so the open effect hydrates the rows and change snapshot. */
   function open(customer: Customer): void {
+    screen.profiles.set([...profilesOf([customer]).values()]);
     ref.setInput('customer', customer);
     ref.setInput('isOpen', true);
     TestBed.tick();
@@ -838,6 +847,7 @@ describe('EditCustomerDialogComponent — rendering', () => {
   }
 
   async function open(customer: Customer): Promise<void> {
+    screen.profiles.set([...profilesOf([customer]).values()]);
     ref.setInput('customer', customer);
     ref.setInput('isOpen', true);
     await render();
@@ -945,6 +955,23 @@ describe('EditCustomerDialogComponent — rendering', () => {
     await render();
 
     expect(acresBox().value).toBe('300');
+  });
+
+  // A link is kept on the producer that declares it, so who links here comes from the others' saved details.
+  it("lists the producers whose saved details link to this one under Linked From", async () => {
+    editing.producers.set([
+      makeCustomer({ id: 7, scoularId: 'OTHER', name: 'Other Farm' }),
+      makeCustomer({ id: 8, scoularId: 'THIRD', name: 'Third Farm' }),
+    ]);
+    await open(makeCustomer());
+    expect(text()).not.toContain('Linked From');
+
+    screen.profiles.put(producerProfile(7, { linkedProducerIds: 'SAMPFRM' }));
+    await render();
+
+    expect(text()).toContain('Linked From:');
+    expect(text()).toContain('Other Farm');
+    expect(text()).not.toContain('Third Farm');
   });
 
   it('shows the freshly read acres even when the re-read changes nothing else on screen', async () => {

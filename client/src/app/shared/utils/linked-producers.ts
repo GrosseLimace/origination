@@ -11,14 +11,19 @@ import type { Customer } from '@models';
  *  representative). Customers without a scoularId are skipped — they can't participate
  *  in the link graph.
  *
- *  Cost: O(V + E) where V = customers and E = total linkedProducerIds entries. Cheap at
+ *  `linkedIdsOf` gives each customer's links: the producer codes their saved details link to.
+ *
+ *  Cost: O(V + E) where V = customers and E = total linked-producer entries. Cheap at
  *  any realistic Scoular customer count. */
-export function buildLinkedProducerComponents(customers: readonly Customer[]): Map<string, Set<string>> {
+export function buildLinkedProducerComponents(
+  customers: readonly Customer[],
+  linkedIdsOf: (c: Customer) => readonly string[],
+): Map<string, Set<string>> {
   const componentMap = new Map<string, Set<string>>();
   const adj = new Map<string, Set<string>>();
   for (const c of customers) {
     if (!c.scoularId) continue;
-    for (const linkedCode of (c.linkedProducerIds || [])) {
+    for (const linkedCode of linkedIdsOf(c)) {
       if (!linkedCode) continue;
       if (!adj.has(c.scoularId)) adj.set(c.scoularId, new Set());
       adj.get(c.scoularId)!.add(linkedCode);

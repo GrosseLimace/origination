@@ -9,6 +9,7 @@ import { ToastService } from '@core/services/toast.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { PermissionService } from '@core/access/permission.service';
 import { SavedListMembership, SavedListMembershipChange } from '@core/context/saved-list-membership';
+import { ProducerProfiles } from '@core/context/producer-profiles';
 import type { SavedList } from '@models';
 import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
 import { HomeBackgroundFailures } from './home-background-failures';
@@ -34,6 +35,8 @@ export class HomeSavedListsStore implements SavedListMembership {
   private readonly nlqFilterService = inject(NlqFilterService);
   private readonly backgroundFailures = inject(HomeBackgroundFailures);
   private readonly page = inject(HomePageState);
+  /** Every producer's saved details, which the lists' queries and refines read. */
+  private readonly producerProfiles = inject(ProducerProfiles);
   private readonly destroyRef = inject(DestroyRef);
 
   private readonly access = inject(PermissionService);
@@ -147,6 +150,7 @@ export class HomeSavedListsStore implements SavedListMembership {
       ?? this.msalService.instance.getAllAccounts()[0];
     const context: NlqFilterContext = {
       customers: this.page.customers(),
+      producerProfiles: this.producerProfiles.profiles(),
       contracts: this.page.contracts(),
       tickets: this.page.tickets(),
       // Full note set from the lazy NLQ cache — empty until a note-based list triggers
@@ -185,6 +189,7 @@ export class HomeSavedListsStore implements SavedListMembership {
       }
       const refined = listFilters
         ? this.nlqFilterService.applyRefinementFilters(result.customers, listFilters, this.page.contracts(), this.appState.notes(), {
+            producerProfiles: this.producerProfiles.profiles(),
             tickets: this.page.tickets(),
             storedGrain: this.page.storedGrain(),
             dpContracts: this.page.dpContracts(),

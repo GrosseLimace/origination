@@ -1,11 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
-import { Observable, firstValueFrom, of, throwError } from 'rxjs';
+import { Observable, firstValueFrom, lastValueFrom, of, throwError } from 'rxjs';
 import { defaultIfEmpty } from 'rxjs/operators';
 import { DashboardSummary, DpContract, PlantingIntention, StoredGrain } from '@models';
 import { ApiService } from '@core/services/api.service';
 import { PermissionService } from '@core/access/permission.service';
 import { DashboardStore } from './data-access/dashboard.store';
+import { ProducerProfileStore } from './data-access/producer-profile.store';
+import { permissionStub, providePermissions } from '@testing/permission.stub';
+import { producerProfile } from '@testing/producer-profiles.fake';
 import { provideSelectedProducerProduction, selectedProducerProductionFake } from '@testing/selected-producer-production.fake';
 import { newestSeasonIntentionCount, preloadDashboardSummary, producersModule } from './producers.module';
 import { PlantingIntentionsTableComponent } from './components/planting-intentions-table/planting-intentions-table.component';
@@ -84,6 +87,42 @@ describe('Producers preload: the Planting Dashboard summary', () => {
 
     expect(store.preloadedDashboardSummary()).toBeNull();
     expect(store.dashboardCache()).toBeNull();
+  });
+});
+
+describe("Producers preload: every producer's details", () => {
+  let api: { getDashboardSummary: ReturnType<typeof vi.fn>; getAllProducerDetails: ReturnType<typeof vi.fn> };
+
+  function run(): Promise<unknown> {
+    return lastValueFrom(
+      TestBed.runInInjectionContext(() => producersModule.preload!(['2190']) as Observable<unknown>).pipe(defaultIfEmpty('none')),
+    );
+  }
+
+  beforeEach(() => {
+    api = {
+      getDashboardSummary: vi.fn(() => of({ estimates: [], marketShares: [], actualHarvest: [] })),
+      getAllProducerDetails: vi.fn(() => of([producerProfile(1, { totalAcres: 900 })])),
+    };
+    TestBed.configureTestingModule({
+      providers: [{ provide: ApiService, useValue: api }, providePermissions(permissionStub(['planting-estimates:read', 'producer-details:read']))],
+    });
+  });
+
+  it('reads them beside the dashboard summary and keeps them in the store', async () => {
+    await run();
+
+    expect(api.getDashboardSummary).toHaveBeenCalled();
+    expect(TestBed.inject(ProducerProfileStore).profileOf(1)?.totalAcres).toBe(900);
+  });
+
+  // One module's outage must not stop another's preload, and the details read before stay.
+  it('swallows a failed read, leaving the details it already held', async () => {
+    await run();
+    api.getAllProducerDetails.mockReturnValue(throwError(() => new Error('503')));
+
+    await expect(run()).resolves.toBeDefined();
+    expect(TestBed.inject(ProducerProfileStore).profileOf(1)?.totalAcres).toBe(900);
   });
 });
 

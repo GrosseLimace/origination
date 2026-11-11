@@ -5,6 +5,7 @@ import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import type { Customer, PlantingIntention, ProducerDetails } from '@models';
+import { ProducerProfilesFake, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
 import { HomeBackgroundFailures } from './home-background-failures';
 import { HomePageState } from './home-page.state';
 import { HomePlantingStore } from './home-planting.store';
@@ -21,6 +22,7 @@ describe('HomePlantingStore', () => {
   let appState: { setPlantingIntentions: ReturnType<typeof vi.fn> };
   let toast: { success: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> };
   let failures: { report: ReturnType<typeof vi.fn> };
+  let profiles: ProducerProfilesFake;
 
   beforeEach(() => {
     api = {
@@ -34,6 +36,7 @@ describe('HomePlantingStore', () => {
     appState = { setPlantingIntentions: vi.fn() };
     toast = { success: vi.fn(), error: vi.fn() };
     failures = { report: vi.fn() };
+    profiles = producerProfilesFake();
     TestBed.configureTestingModule({
       providers: [
         HomePageState, HomePlantingStore,
@@ -42,6 +45,7 @@ describe('HomePlantingStore', () => {
         { provide: TradeUnitContext, useValue: appState },
         { provide: ToastService, useValue: toast },
         { provide: HomeBackgroundFailures, useValue: failures },
+        provideProducerProfiles(profiles),
       ],
     });
     store = TestBed.inject(HomePlantingStore);
@@ -112,7 +116,7 @@ describe('HomePlantingStore', () => {
       expect(api['saveProducerDetails']).toHaveBeenCalledWith(1, expect.objectContaining({ commodities: 'Corn,SOYBEANS' }));
       expect(page.selectedCustomer()?.commodities).toEqual(['Corn', 'SOYBEANS']);
       expect(page.customers()[0].commodities).toEqual(['Corn', 'SOYBEANS']);
-      expect(page.producerDetailsMap().has(1)).toBe(true);
+      expect(profiles.profileOf(1)).toBeDefined();
     });
 
     it('add, edit and delete keep the trade unit\'s list and the shared copy in step', () => {

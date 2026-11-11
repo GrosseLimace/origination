@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { NlqFilterService, NlqFilterContext } from './nlq-filter.service';
+import { profilesOf, withProfile } from '@testing/producer-profiles.fake';
 import { Customer, ProducerBinSiteItem } from '@models';
 
 /**
@@ -9,15 +10,16 @@ import { Customer, ProducerBinSiteItem } from '@models';
  */
 const site = (lat: number): ProducerBinSiteItem => ({ name: null, latitude: lat, longitude: -95.1 });
 
+/** A customer, with its bin sites in its saved details. */
 function customer(id: number, over: { binSites?: ProducerBinSiteItem[] } = {}): Customer {
-  return {
+  return withProfile({
     id, name: `Farm ${id}`, farm: '', location: '', totalAcres: 0, linkedProducerIds: [], eSignEnabled: false,
-    email: '', phone: '', ...over,
-  } as Customer;
+    email: '', phone: '',
+  } as Customer, over);
 }
 
 function ctx(customers: Customer[]): NlqFilterContext {
-  return { customers, contracts: [], tickets: [], notes: [], plantingIntentions: [], storedGrain: [] };
+  return { customers, producerProfiles: profilesOf(customers), contracts: [], tickets: [], notes: [], plantingIntentions: [], storedGrain: [] };
 }
 
 describe('NlqFilterService — bin sites', () => {

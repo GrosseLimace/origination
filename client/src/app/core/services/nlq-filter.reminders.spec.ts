@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { NlqFilterService, NlqFilterContext } from './nlq-filter.service';
+import { profilesOf } from '@testing/producer-profiles.fake';
 import { Customer, ReminderDue } from '@models';
 
 // The "Follow-Ups Scheduled" Build-A-List card. The literal card text is pinned below: a parser
@@ -25,7 +26,7 @@ function reminder(id: number, customerId: number, days: number): ReminderDue {
 
 function ctx(customers: Customer[], myReminders: ReminderDue[] = []): NlqFilterContext {
   return {
-    customers, contracts: [], tickets: [], notes: [], noteLastContacts: [],
+    customers, producerProfiles: profilesOf(customers), contracts: [], tickets: [], notes: [], noteLastContacts: [],
     myReminders, plantingIntentions: [], storedGrain: [],
   };
 }

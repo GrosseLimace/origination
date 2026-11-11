@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { Observable, Subject, of, throwError } from 'rxjs';
 import { CustomersApiService } from '../../data-access/customers-api.service';
-import type { Customer, ProducerDetails } from '@models';
+import type { Customer } from '@models';
+import { ProducerProfilesFake, producerProfile, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
 import { HomePageState } from './home-page.state';
 import { HomeLinkedProducersStore } from './home-linked-producers.store';
 
@@ -17,16 +18,18 @@ describe('HomeLinkedProducersStore', () => {
   /** The graph the stub API serves: who each source id is, and who links to it. */
   let bySource: Map<string, Customer>;
   let linkedTo: Map<string, Customer[]>;
+  let profiles: ProducerProfilesFake;
 
   beforeEach(() => {
     bySource = new Map();
+    profiles = producerProfilesFake();
     linkedTo = new Map();
     api = {
       getCustomerBySourceId: vi.fn((src: string): Observable<Customer | null> => of(bySource.get(src) ?? null)),
       getCustomersLinkedTo: vi.fn((src: string): Observable<Customer[]> => of(linkedTo.get(src) ?? [])),
     };
     TestBed.configureTestingModule({
-      providers: [HomePageState, HomeLinkedProducersStore, { provide: CustomersApiService, useValue: api }],
+      providers: [HomePageState, HomeLinkedProducersStore, { provide: CustomersApiService, useValue: api }, provideProducerProfiles(profiles)],
     });
     store = TestBed.inject(HomeLinkedProducersStore);
     page = TestBed.inject(HomePageState);
@@ -51,7 +54,7 @@ describe('HomeLinkedProducersStore', () => {
 
   it('applies known producer details to what it fetches', () => {
     bySource.set('S-90', customer(90));
-    page.producerDetailsMap.set(new Map([[90, { id: 90, customerId: 90, customerName: 'P90', totalAcres: 640 } as ProducerDetails]]));
+    profiles.set([producerProfile(90, { customerName: 'P90', totalAcres: 640 })]);
 
     store.fetchMissingLinkedProducers(customer(1, ['S-90']), onWalked);
 

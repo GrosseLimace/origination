@@ -5,6 +5,7 @@ import { catchError, takeUntil } from 'rxjs/operators';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
+import { ProducerProfiles } from '@core/context/producer-profiles';
 import type { Contract, ContractPricingLine, Customer, DpContract, StoredGrain, Ticket } from '@models';
 import { environment } from '@env/environment';
 import { CustomerStore } from '../../data-access/customer.store';
@@ -27,6 +28,8 @@ export class HomeProducerActivityStore implements SelectedProducerActivity {
   private readonly appState = inject(AppStateService);
   private readonly customerStore = inject(CustomerStore);
   private readonly page = inject(HomePageState);
+  /** Every producer's details, kept by the Producers module. */
+  private readonly producerProfiles = inject(ProducerProfiles);
   private readonly notes = inject(HomeNotesStore);
   private readonly linked = inject(HomeLinkedProducersStore);
   private readonly destroyRef = inject(DestroyRef);
@@ -550,7 +553,7 @@ export class HomeProducerActivityStore implements SelectedProducerActivity {
     this._autoSaveInFlight.add(customer.id);
 
     const merged = [...new Set([...storedCommodities, ...sourceCommodities])].sort();
-    const existingPd = this.page.producerDetailsMap().get(customer.id);
+    const existingPd = this.producerProfiles.profileOf(customer.id);
     this.apiService.saveProducerDetails(customer.id, {
       scoularId: customer.scoularId || null,
       customerName: customer.name,
@@ -563,9 +566,7 @@ export class HomeProducerActivityStore implements SelectedProducerActivity {
       // preserves the existing rows when it is absent (a cached copy could be older than a teammate's edit).
     }).subscribe({
       next: (pd) => {
-        const map = new Map(this.page.producerDetailsMap());
-        map.set(pd.customerId, pd);
-        this.page.producerDetailsMap.set(map);
+        this.producerProfiles.put(pd);
         const updatedCustomer = { ...customer, commodities: merged };
         const customers = this.page.customers();
         const index = customers.findIndex(c => c.id === customer.id);

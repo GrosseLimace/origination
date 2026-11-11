@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
+import { ProducerProfiles } from '@core/context/producer-profiles';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { googleMapsCoordinatesUrl } from '@shared/utils/address';
 import { binSiteHasCoordinates } from '@shared/utils/coordinates';
@@ -24,12 +25,14 @@ export const BIN_SITES_COLLAPSED_KEY = 'origination.profile.binSites.collapsed';
 export class BinSitesComponent {
   private readonly customer = inject(SelectedCustomerContext).customer;
   private readonly usageTracking = inject(UsageTrackingService);
+  private readonly profiles = inject(ProducerProfiles);
 
   /** The sites in saved order, every cell already formatted ("50,000", or "—" when empty). The coordinates aren't a
    *  column: the pin opens them in Google Maps at full precision, or there's no pin when the site has none. */
   readonly rows = computed(() => {
     const bushels = (v: number | null | undefined) => (v == null ? '—' : v.toLocaleString('en-US'));
-    return (this.customer()?.binSites ?? []).map(site => ({
+    const customer = this.customer();
+    return ((customer && this.profiles.profileOf(customer.id)?.binSites) ?? []).map(site => ({
       name: site.name?.trim() || 'Bin site',
       capacity: bushels(site.capacity),
       url: binSiteHasCoordinates(site) ? googleMapsCoordinatesUrl(site.latitude, site.longitude) : null,

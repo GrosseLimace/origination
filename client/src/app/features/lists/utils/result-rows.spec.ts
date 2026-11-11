@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { Contract, Customer, DpContract, PlantingIntention, StoredGrain, Ticket } from '@models';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
+import { profileLinkedIds } from '@shared/utils/producer-profile';
+import { producerProfile, profileMap } from '@testing/producer-profiles.fake';
 import {
   binSiteGrainHiddenLabel, binSiteGrainSummary, commodityCategoryByKey, contractsByCustomerCode, cropsByCustomer, dpBreakdown,
   formattedLocation, grainOnFarmBreakdown, groupByCustomerId, hasBinSiteGrain, initials, linkedProducerInfo, storageBreakdown,
@@ -34,8 +36,9 @@ describe('groupByCustomerId', () => {
 
 describe('linkedProducerInfo', () => {
   it('lists the other loaded, non-excluded members of each customer\'s linked component', () => {
-    const customers = [customer(1, { linkedProducerIds: ['C2', 'C9'] }), customer(2, { linkedProducerIds: ['C3'] }), customer(3), customer(4)];
-    const components = buildLinkedProducerComponents(customers);
+    const customers = [customer(1), customer(2), customer(3), customer(4)];
+    const links = profileMap(producerProfile(1, { linkedProducerIds: 'C2,C9' }), producerProfile(2, { linkedProducerIds: 'C3' }));
+    const components = buildLinkedProducerComponents(customers, c => profileLinkedIds(links.get(c.id)));
     const info = linkedProducerInfo(customers, new Set([3]), components);
     expect(info.get(1)).toEqual({ count: 1, producers: [customers[1]] });
     expect(info.get(2)!.producers.map(p => p.id)).toEqual([1]);
@@ -46,13 +49,14 @@ describe('linkedProducerInfo', () => {
 
 describe('cropsByCustomer', () => {
   it('merges details, contracts, plantings, tickets and storage, de-duplicated, first five', () => {
-    const customers = [customer(1, { commodities: ['Corn', ' corn', 'Soybeans'] }), customer(2, { scoularId: undefined }), customer(3)];
+    const customers = [customer(1), customer(2, { scoularId: undefined }), customer(3)];
     const map = cropsByCustomer(
       contractsByCustomerCode([contract(1, 'C1', { commodityCode: 'YC' }), contract(2, 'C1', { commodityCode: 'YC' }), contract(3, 'C1', { commodityCode: '' })]),
       [{ customerId: 1, crop: 'WHT' }, { customerId: 2, crop: 'SB' }] as PlantingIntention[],
       [{ customerId: 1, productCode: 'MILO' }, { customerId: 3, productCode: 'YC' }, { customerId: 3 }] as Ticket[],
       [{ customerId: 1, crop: 'OATS' }, { customerId: 3, crop: 'yc' }] as StoredGrain[],
       customers,
+      profileMap(producerProfile(1, { commodities: 'Corn, corn,Soybeans' })),
     );
     expect(map.get(1)).toEqual(['Corn', 'Soybeans', 'YC', 'WHT', 'MILO']);
     expect(map.get(2)).toEqual(['SB']);
@@ -79,11 +83,11 @@ describe('initials and formattedLocation', () => {
 
 describe('grain on farm and bin sites', () => {
   it('sums a crop across bin sites, ignores empty rows, largest first', () => {
-    const c = customer(1, { grainOnFarm: [
+    const profile = producerProfile(1, { grainOnFarm: [
       { commodityCode: 'sb', bushelsOnHand: 100 }, { commodityCode: 'YC', bushelsOnHand: 50 },
       { commodityCode: 'SB', bushelsOnHand: 25 }, { commodityCode: 'HRW', bushelsOnHand: 0 }, { commodityCode: '', bushelsOnHand: 9 },
     ] });
-    expect(grainOnFarmBreakdown(c)).toEqual([{ commodityCode: 'sb', bushelsOnHand: 125 }, { commodityCode: 'YC', bushelsOnHand: 50 }]);
+    expect(grainOnFarmBreakdown(profile)).toEqual([{ commodityCode: 'sb', bushelsOnHand: 125 }, { commodityCode: 'YC', bushelsOnHand: 50 }]);
   });
 
   it('summarises a site and labels the hidden ones', () => {
@@ -98,9 +102,10 @@ describe('grain on farm and bin sites', () => {
   });
 
   it('hasBinSiteGrain is true with a site or a grain row', () => {
-    expect(hasBinSiteGrain(customer(1))).toBe(false);
-    expect(hasBinSiteGrain(customer(1, { binSites: [{ name: 'x' }] }))).toBe(true);
-    expect(hasBinSiteGrain(customer(1, { grainOnFarm: [{ commodityCode: 'YC' }] }))).toBe(true);
+    expect(hasBinSiteGrain(undefined)).toBe(false);
+    expect(hasBinSiteGrain(producerProfile(1))).toBe(false);
+    expect(hasBinSiteGrain(producerProfile(1, { binSites: [{ name: 'x' }] }))).toBe(true);
+    expect(hasBinSiteGrain(producerProfile(1, { grainOnFarm: [{ commodityCode: 'YC' }] }))).toBe(true);
   });
 });
 

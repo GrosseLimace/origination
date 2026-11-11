@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { CtrmSplit, Customer, FieldSeason, PlantingIntention } from '@models';
 import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
+import { ProducerProfilesFake, producerProfile, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
 import { CtrmSplitApiService } from '../../data-access/ctrm-split-api.service';
 import { FdCicApiService } from '../../data-access/fd-cic-api.service';
 import { CropFieldsPanelComponent, splitFromText, splitIdFromText } from './crop-fields-panel.component';
@@ -46,11 +47,12 @@ describe('splitIdFromText (a split ID typed by hand)', () => {
 });
 
 /** The panel for a 250 ac Corn row with one 300 ac field, North, and one program it could join. */
-function renderPanel(access: PermissionStub) {
+function renderPanel(access: PermissionStub, profiles: ProducerProfilesFake = producerProfilesFake()) {
   const season: FieldSeason = { id: 's1', fieldKey: 'f1', plantingIntentionId: 1, year: 2026, cropLabel: 'Corn', acres: 300 };
   TestBed.configureTestingModule({
     providers: [
       providePermissions(access),
+      provideProducerProfiles(profiles),
       {
         provide: FieldPlanStore,
         useValue: {
@@ -72,6 +74,23 @@ function renderPanel(access: PermissionStub) {
   fixture.detectChanges();
   return fixture;
 }
+
+// The field's reports (the Biofuel Feedstock Report among them) name the producer, and their primary contact from the
+// producer's saved details.
+describe('CropFieldsPanelComponent — the producer its reports name', () => {
+  const name = (...profiles: Parameters<typeof producerProfile>[]) =>
+    renderPanel(permissionStub(['field-plans:read']), producerProfilesFake(profiles.map(p => producerProfile(...p))))
+      .componentInstance.producerForExport();
+
+  it('names the starred contact, else the legacy primary contact, else none', () => {
+    expect(name([42, { contacts: [{ name: 'Office' }, { name: ' Pat ', isPrimary: true }], primaryContact: 'Old' }]))
+      .toEqual({ code: 'SAMPFRM', name: 'Sample Farms', primaryContact: 'Pat' });
+    TestBed.resetTestingModule();
+    expect(name([42, { primaryContact: ' Old ' }]).primaryContact).toBe('Old');
+    TestBed.resetTestingModule();
+    expect(name().primaryContact).toBeNull();
+  });
+});
 
 // "Update total" opens the intention's Edit dialog, so it shows only to a user who may change intentions.
 describe('CropFieldsPanelComponent — "Update total" when the fields add up to more than the row', () => {

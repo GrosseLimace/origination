@@ -366,14 +366,21 @@ describe('CustomerListComponent', () => {
 
     it('surfaces the newest note across the whole linked-producer chain, including reverse links fetched separately', () => {
       TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
+      // The links are in the producers' saved details: A → B → C, and Z (off the roster) → X.
+      const links = new Map<number, ProducerDetails>([
+        [1, { customerId: 1, linkedProducerIds: 'B1' } as ProducerDetails],
+        [2, { customerId: 2, linkedProducerIds: 'C1' } as ProducerDetails],
+        [99, { customerId: 99, linkedProducerIds: 'X1' } as ProducerDetails],
+      ]);
       create({
         customers: [
-          makeCustomer({ id: 1, scoularId: 'A1', linkedProducerIds: ['B1'] }),
-          makeCustomer({ id: 2, scoularId: 'B1', linkedProducerIds: ['C1'] }),
+          makeCustomer({ id: 1, scoularId: 'A1' }),
+          makeCustomer({ id: 2, scoularId: 'B1' }),
           makeCustomer({ id: 3, scoularId: 'C1' }),
           makeCustomer({ id: 4, scoularId: 'X1' }),   // only linked FROM an off-roster producer
         ],
         noteLastContacts: [makeLastContact('C1', 2), makeLastContact('Z1', 3)],
+        producerDetailsMap: links,
       });
 
       // A → B → C: A and B both see C's note from two days ago.
@@ -382,7 +389,7 @@ describe('CustomerListComponent', () => {
       expect(badgeText(4, LAST_CONTACT_LABEL)).toBe('Never contacted');
 
       // Z (another trade unit) links to X; once the home page supplies Z, X picks up Z's note.
-      ref.setInput('linkedProducerCustomers', [makeCustomer({ id: 99, scoularId: 'Z1', linkedProducerIds: ['X1'] })]);
+      ref.setInput('linkedProducerCustomers', [makeCustomer({ id: 99, scoularId: 'Z1' })]);
       fixture.detectChanges();
       expect(badgeText(4, LAST_CONTACT_LABEL)).toBe('3 days ago');
     });
@@ -634,6 +641,24 @@ describe('CustomerListComponent', () => {
       TestBed.inject(TradeUnitContext).setTradeUnits(['2191']);
       render();
       expect(callerList.customerIds).toBeUndefined();
+    });
+  });
+
+  // A list's prompts on acres, contacts, links, grain on farm and bin sites read every producer's saved details.
+  describe("saved lists, against the producers' saved details", () => {
+    it('runs the list with the details the page gives the list', () => {
+      TestBed.inject(TradeUnitContext).setTradeUnits(['2190']);
+      const details = new Map<number, ProducerDetails>([[1, { customerId: 1, totalAcres: 900 } as ProducerDetails]]);
+      create({
+        customers: [makeCustomer({ id: 1, stateProvince: 'KS' }), makeCustomer({ id: 2, stateProvince: 'NE' })],
+        savedLists: [makeList({ id: 10, tradeUnits: '2190' })],
+        producerDetailsMap: details,
+      });
+
+      pickSavedList('10');
+
+      const [, ctx] = vi.mocked(nlq.parseAndFilter).mock.calls.at(-1)!;
+      expect(ctx.producerProfiles).toBe(details);
     });
   });
 

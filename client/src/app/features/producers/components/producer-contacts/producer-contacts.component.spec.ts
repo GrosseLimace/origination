@@ -1,12 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ChangeDetectorRef, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Customer, ProducerContactItem } from '@models';
+import { Customer, ProducerContactItem, ProducerDetails } from '@models';
+import { producerProfilesFake, profilesOf, provideProducerProfiles, withProfile } from '@testing/producer-profiles.fake';
 import { CUSTOMER_SCREEN_SOURCE, CustomerScreenLink, SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { ProducerContactsComponent } from './producer-contacts.component';
 
-const producer = (over: Partial<Customer> = {}) => ({ id: 1, name: 'Smith Farms', ...over }) as Customer;
+/** A producer, with the given saved details (their bin sites, contacts, acres, grain on farm) as their profile. */
+const producer = ({ id = 1, name = 'Smith Farms', ...details }: Omit<Partial<ProducerDetails>, 'id'> & { id?: number; name?: string } = {}) =>
+  withProfile({ id, name } as Customer, details);
 
 /** A copy of `items` that counts how many times it is iterated: the sort copies it with a spread. */
 function countingIterations<T>(items: T[]): { list: T[]; count: () => number } {
@@ -20,6 +23,7 @@ function countingIterations<T>(items: T[]): { list: T[]; count: () => number } {
 
 describe('ProducerContactsComponent', () => {
   const customer = signal<Customer | null>(null);
+  const profiles = producerProfilesFake();
   let fixture: ComponentFixture<ProducerContactsComponent>;
   let tracking: { trackCallClick: ReturnType<typeof vi.fn>; trackEmailClick: ReturnType<typeof vi.fn> };
 
@@ -35,8 +39,10 @@ describe('ProducerContactsComponent', () => {
     fixture.detectChanges();
   };
 
+  /** Puts `who` on screen, with their saved details. */
   function show(who: Customer | null): void {
     customer.set(who);
+    profiles.set(who ? [...profilesOf([who]).values()] : []);
     fixture.detectChanges();
   }
 
@@ -46,6 +52,7 @@ describe('ProducerContactsComponent', () => {
       providers: [
         { provide: CUSTOMER_SCREEN_SOURCE, useValue: { customer, linkedCustomers: signal([]), link: signal<CustomerScreenLink>({}) } },
         SelectedCustomerContext,
+        provideProducerProfiles(profiles),
         { provide: UsageTrackingService, useValue: tracking },
       ],
     });

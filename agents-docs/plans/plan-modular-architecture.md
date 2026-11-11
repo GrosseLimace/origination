@@ -451,7 +451,7 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
     - The Customers code that calls contributors asks `IPermissionService` first, and skips any contributor whose permission the user doesn't hold.
     - Where a contributor works on a single customer, it also skips customers outside its segments.
     - This is the same check the frontend registry applies to contributions (§5.2).
-  - The first candidate is the `ProducerDetails`/`ProducerContact` join in customer search. Until it is replaced (Phase 4 or 5, before traders search customers), that SQL is the one known Customers → Producers dependency, and the architecture tests can't see it because it's SQL text.
+  - The first candidate is the `ProducerDetails`/`ProducerContact` join in customer search. Until it is replaced (Phase 5, before traders search customers; decided in Phase 4, step 9), that SQL is the one known Customers → Producers dependency, and the architecture tests can't see it because it's SQL text.
 - **The same inversion works for any module a shared module needs, not only Producers.** The first one built (Phase 2, 2026-11-08) is Customers → Contracts:
   - Customers locks a trade-unit membership while the producer has an open contract or an unapplied ticket there. That is contract data.
   - Customers declares `ICustomerActivitySource`, and Contracts implements it from its contract and ticket repositories (`CustomerActivitySource`).
@@ -509,6 +509,7 @@ Settled against the endpoints in Phase 1 (2026-11-04): 42 permissions over 27 re
 - **A doc reference that pointed nowhere:** `CustomerIdMinting` linked to `Ctrm.CtrmSyntheticId`, which from inside Customers resolves to the module's own `Ctrm` folder, not the shared one. It now names `Platform.Ctrm.CtrmSyntheticId`.
 
 **`CustomerResponse` sheds `TotalAcres`, `FarmIds`, `LinkedProducerIds` and `Farm`.** The Producers module serves them in a `ProducerProfileResponse` instead. This one *is* a wire change, so sequence it with the frontend in Phase 4.
+- *Changed in Phase 4 (2026-11-10): no `ProducerProfileResponse`.* Customers never filled those four, so they always went out empty, and `/producer-details` (`ProducerDetailsResponse`) already serves the producer's acres, links, contacts, commodities, bin sites and grain on farm. Step 9b drops the four once the SPA reads none of them (§8).
 
 ---
 
@@ -774,6 +775,7 @@ export const APP_MODULES: ModuleManifest[] = [
   - The `_dedupe` helper moves to `core/http`.
   - The 403 toast becomes an interceptor (`core/http/forbidden.interceptor.ts`), and it is the **only** place a 403 is shown: screens stop toasting their own 403s by checking `alreadyShown(err)` before their own failure message. eTMS showed two contradicting toasts per 403 (the global handler plus the screen). This has to be in place before Phase 2 enforces the first endpoint, so it is built in Phase 1.
 - **The `Customer` model sheds** `farm`, `totalAcres`, `binCapacity`, `grainOnFarm` and `linkedProducerIds`. They move to a `ProducerProfile` in `features/producers/models`.
+  - *Changed in Phase 4 (2026-11-10):* the producer profile is the existing `ProducerDetails` model, read through `ProducerProfiles` in `core/context`, which Producers' `ProducerProfileStore` implements (step 9a). `Customer` sheds ten fields in step 9b: `farm`, `totalAcres`, `linkedProducerIds`, `grainOnFarm`, `binSites`, `binSitesModifiedAt`, `contacts`, `primaryContact`, `primaryPhone` and `commodities` (`binCapacity` was already gone). The model moves to `features/producers/models` with the other producer models in step 10.
 
 ### 5.4 Boundary enforcement
 
@@ -1062,7 +1064,7 @@ Where it differs from the row above:
 
 **Phase 4 is in progress** on `feature_ModularArchitecture-Phase4`, cut from `feature_ModularArchitecture`, in reviewed steps. Step 11 turns this list into the phase's record, like Phase 2's and Phase 3's above.
 
-Done, in 18 commits (2026-11-09 to 2026-11-10):
+Done, in 19 commits (2026-11-09 to 2026-11-10):
 1. The customer-screen slot types in the manifest (`2dbec000`).
 2. Module stores cleared on sign-out and idle timeout again (`a31f1483`). Customers' own store, API client and preload (`e8c357f9`).
 3. The selected producer's activity moved out of the home page (`dbca0d0f`) and read through `SelectedProducerActivity` (`437956e7`). The contracts and tickets tables became the Contracts module's profile tabs (`8e24bb19`).
@@ -1070,12 +1072,22 @@ Done, in 18 commits (2026-11-09 to 2026-11-10):
 5. The planting, storage and DP tables read `SelectedProducerProduction` (`40fb13e6`) and became the Producers module's profile tabs (`11c2a8e8`). Planting's add and edit (`9ec0971c`) and the field plan (`b7598008`) are gated by permission.
 6. The profile header's producer details (`42cfa900`) and the producer's performance panels (`9c316abc`) became Producers panels.
 7. Print with the Producer Summary Report (`e2d2f5e9`), and Edit with the Edit Producer Details dialog (`c6fe0dcd`), moved whole into Producers. See "Decided in Phase 4" in §5.2.
-8. The calculator launcher moved into the home page's `floating` slot (`2d69f12c`). Add to List became a Lists panel in the `toolbar` slot, before Print, needing `saved-lists:read:own` and `saved-lists:write:own`. It reads the lists, whether they failed to load, and the save from `SavedListMembership`, which the home page's `HomeSavedListsStore` implements, and the profile dropped the dropdown, its staging logic, three inputs and an output. 8c is in step 10.
+8. The calculator launcher moved into the home page's `floating` slot (`2d69f12c`). Add to List became a Lists panel in the `toolbar` slot, before Print, needing `saved-lists:read:own` and `saved-lists:write:own`. It reads the lists, whether they failed to load, and the save from `SavedListMembership`, which the home page's `HomeSavedListsStore` implements, and the profile dropped the dropdown, its staging logic, three inputs and an output (`49f18332`). 8c is in step 10.
+9. Part a: every producer's details have one copy, Producers' `ProducerProfileStore`, which core declares as `ProducerProfiles` and the composition root provides. Producers' preload reads them, and the home page again on each visit, only for users with `producer-details:read`; `AppStateService` no longer holds them. Producers' panels and screens, Build a List with its filters, result rows and bin-site notes, and the NLQ engine (through its context) read a producer's details from it rather than off the customer. Part b is below.
 
 Left:
-- **9. The `Customer` → `ProducerProfile` split.**
-  - `CustomerResponse` sheds `TotalAcres`, `FarmIds`, `LinkedProducerIds` and `Farm`, and the Producers module serves them in a `ProducerProfileResponse` (§4.5). It is a wire change, so the backend and the SPA change in the same step.
-  - Decide then whether the customer search's `ProducerDetails`/`ProducerContact` join, the one known Customers → Producers dependency, is replaced now or in Phase 5 (§4.4).
+- **9b. A customer is just a customer, on both ends.**
+  - The home page, the linked-producer walk, the customer list and the Notes card read through `ProducerProfiles`. `applyProducerDetails` and Build a List's copy of it go, and with them Build a List's writing back of the customers it copied the details onto, which the dashboard read.
+  - `Customer` sheds `totalAcres`, `linkedProducerIds`, `grainOnFarm`, `binSites`, `binSitesModifiedAt`, `contacts`, `primaryContact`, `primaryPhone`, `commodities` and `farm`, and the spec fixtures lose them.
+  - `CustomerResponse` and the entity drop `Farm`, `FarmIds`, `TotalAcres` and `LinkedProducerIds`, and `customers/linked-to` returns plain customers. `Model_HasNoChangesWithoutAMigration` confirms the database doesn't change.
+  - The NLQ engine's farm-name filter matches the customer's name.
+- **Found and decided for step 9 (2026-11-10):**
+  - **The server never sent the producer fields.** `CustomerResponse`'s `TotalAcres`, `FarmIds`, `LinkedProducerIds` and `Farm` come from entity properties EF ignores and nothing in Customers writes, so they always went out as `0`, `[]`, `[]` and `""`. Only Producers' `customers/linked-to` set acres and links on top. The SPA put the producer fields on its customers itself, from producer details: on the home page, in Build a List and in the customer list.
+  - **`farm` is dead on both ends,** and the NLQ farm-name filter that reads it could only ever return no one.
+  - **No `ProducerProfileResponse`.** `/producer-details` (`ProducerDetailsResponse`) already carries everything it would, so it is the producer profile, and the SPA's is the `ProducerDetails` model (§4.5, §5.3).
+  - **The customer search's `ProducerDetails`/`ProducerContact` join waits for Phase 5** (§4.4). Search requires every word to match some field, and two of those fields are in Producers' tables, so a Producers contributor needs a design and a permission check of its own; traders don't search until Phase 5, when the search widens anyway.
+  - **The customer list keeps showing acres** through `ProducerProfiles` until a Producers contribution to its rows, with step 10's filter slot.
+  - **Two steps rather than five** (user 2026-11-10), each one reviewed commit.
 - **10. Clean-up.**
   - The `modules[]` preload gate, with a rule for Calculators, Help and What's New, which own no permissions (§5.2).
   - The home page's trade-unit pools (contracts, tickets, planting intentions, stored grain, DP contracts) move into module stores. `DataPreloadService` moves to `core/context`, and the home page's yield-estimate loading possibly to Producers.

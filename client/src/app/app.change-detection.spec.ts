@@ -15,7 +15,7 @@ import { MsalService, MsalBroadcastService, MsalGuard } from '@azure/msal-angula
 import { makeMsalServiceMock, makeMsalBroadcastMock } from '@testing/msal.mocks';
 import { AppComponent } from './app.component';
 import { routes } from './app.routes';
-import { appModules } from './app.modules';
+import { appModuleProviders, appModules } from './app.modules';
 import { APP_MODULES } from './core/modules/module-registry';
 import { By } from '@angular/platform-browser';
 import { HomeComponent } from './features/customers/pages/home/home.component';
@@ -88,6 +88,7 @@ describe('NG0103 probe', () => {
         provideRouter(routes),
         // The app's modules, as main.ts provides them: the customer profile's module tabs render from these.
         { provide: APP_MODULES, useValue: appModules },
+        ...appModuleProviders,
         provideHttpClient(withInterceptors([req => of(new HttpResponse({ status: 200, body: body(req.urlWithParams) }))])),
         { provide: MsalService, useValue: makeMsalServiceMock({ name: 'Caden Egr', username: 'CEgr@scoular.com' }) },
         { provide: MsalBroadcastService, useValue: makeMsalBroadcastMock() },
@@ -137,6 +138,7 @@ describe('NG0103 probe', () => {
           provideRouter(routes),
         // The app's modules, as main.ts provides them: the customer profile's module tabs render from these.
         { provide: APP_MODULES, useValue: appModules },
+        ...appModuleProviders,
           provideHttpClient(withInterceptors([req => of(new HttpResponse({ status: 200, body: body(req.url) }))])),
           { provide: MsalService, useValue: makeMsalServiceMock({ name: 'Caden Egr', username: 'CEgr@scoular.com' }) },
           { provide: MsalBroadcastService, useValue: makeMsalBroadcastMock() },

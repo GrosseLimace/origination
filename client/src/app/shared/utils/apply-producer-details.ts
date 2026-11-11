@@ -1,4 +1,5 @@
 import { Customer, ProducerDetails } from '@models';
+import { profileCommodities, profileLinkedIds } from './producer-profile';
 
 /**
  * A producer with their saved details (dbo.ProducerDetails and its child sets) laid over the customer
@@ -17,7 +18,7 @@ export function applyProducerDetails(customer: Customer, pd: ProducerDetails): C
     primaryPhone: pd.primaryPhone ?? customer.primaryPhone,
     contacts: pd.contacts ?? customer.contacts,
     binSites: pd.binSites ?? customer.binSites,
-    commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
-    linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds,
+    commodities: pd.commodities ? profileCommodities(pd) : customer.commodities,
+    linkedProducerIds: pd.linkedProducerIds ? profileLinkedIds(pd) : customer.linkedProducerIds,
   };
 }

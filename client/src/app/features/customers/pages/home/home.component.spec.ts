@@ -4,6 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Params, Router } from '@angular/router';
 import { MsalService } from '@azure/msal-angular';
 import { BehaviorSubject, NEVER, Observable, Subject, of, throwError } from 'rxjs';
+import { tap } from 'rxjs/operators';
 
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
@@ -11,6 +12,7 @@ import { ToastService } from '@core/services/toast.service';
 import { NlqFilterContext, NlqFilterResult, NlqFilterService } from '@core/services/nlq-filter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
+import { ProducerProfilesFake, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
 import { OutlookCalendarService } from '@core/services/outlook-calendar.service';
 import { environment } from '@env/environment';
 import {
@@ -299,6 +301,8 @@ interface Harness {
   outlook: { addToOutlook: ReturnType<typeof vi.fn> };
   router: { navigate: ReturnType<typeof vi.fn> };
   access: PermissionStub;
+  /** Every producer's details, as the page reads and updates them. */
+  profiles: ProducerProfilesFake;
   /** Runs change detection so the component's effects (TU change, team lists) observe signal writes. */
   flush(): void;
 }
@@ -318,6 +322,9 @@ const C = customer(3);
 
 function setup(opts: SetupOptions = {}): Harness {
   const api = makeApi();
+  // Every producer's details, read through the API stub and kept, as the Producers module's store does.
+  const profiles = producerProfilesFake();
+  profiles.load.mockImplementation(() => api.getAllProducerDetails().pipe(tap(list => profiles.set(list ?? []))));
   const app = makeAppState();
   const nlq = makeNlq();
   api.getCustomers.mockReturnValue(of(opts.customers ?? [A, B, C]));
@@ -339,6 +346,7 @@ function setup(opts: SetupOptions = {}): Harness {
       { provide: NlqFilterService, useValue: nlq },
       { provide: UsageTrackingService, useValue: { trackProfileOpened: vi.fn() } },
       providePermissions(access),
+      provideProducerProfiles(profiles),
       { provide: OutlookCalendarService, useValue: outlook },
       {
         provide: MsalService,
@@ -359,7 +367,7 @@ function setup(opts: SetupOptions = {}): Harness {
   const fixture = TestBed.createComponent(HomeComponent);
   fixture.detectChanges();
   return {
-    fixture, c: fixture.componentInstance, api, app, toast, nlq, outlook, router, access,
+    fixture, c: fixture.componentInstance, api, app, toast, nlq, outlook, router, access, profiles,
     flush: () => fixture.detectChanges(),
   };
 }
@@ -1645,5 +1653,29 @@ describe('HomeComponent — a trade-unit save still in flight', () => {
 
     expect(assign).not.toHaveBeenCalled();
     expect(h.c.isSavingTradeUnits()).toBe(false);
+  });
+
+  // The Producers panels read the producer's details from ProducerProfiles, not the page's copy of the producer.
+  it("shows an edit wherever the producer's details are read while its save is still running", () => {
+    const h = setup();
+    Object.assign(h.api, { saveProducerDetails: vi.fn(() => NEVER) });
+    h.profiles.set([details(1, { totalAcres: 100, linkedProducerIds: 'S-2' })]);
+    h.c.handleSelectCustomer(A);
+
+    h.c.handleSaveCustomer({ ...save(1), acres: 640, commodities: ['YC'], reconcileTradeUnits: false });
+
+    expect(h.profiles.profileOf(1)).toMatchObject({ totalAcres: 640, commodities: 'YC', linkedProducerIds: undefined });
+  });
+
+  it('gives a producer with no saved details theirs on the first edit, without waiting for the save', () => {
+    const h = setup();
+    // Neither the read on selection nor the save answers.
+    Object.assign(h.api, { getProducerDetails: vi.fn(() => NEVER), saveProducerDetails: vi.fn(() => NEVER) });
+    h.c.handleSelectCustomer(A);
+    expect(h.profiles.profileOf(1)).toBeUndefined();
+
+    h.c.handleSaveCustomer({ ...save(1), acres: 640, reconcileTradeUnits: false });
+
+    expect(h.profiles.profileOf(1)).toMatchObject({ customerId: 1, customerName: A.name, totalAcres: 640 });
   });
 });

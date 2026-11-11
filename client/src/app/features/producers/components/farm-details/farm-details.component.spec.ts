@@ -1,13 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Commodity, Customer } from '@models';
+import { Commodity, Customer, ProducerDetails } from '@models';
+import { producerProfilesFake, profilesOf, provideProducerProfiles, withProfile } from '@testing/producer-profiles.fake';
 import { CUSTOMER_SCREEN_SOURCE, CustomerScreenLink, SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { provideSelectedProducerProduction, selectedProducerProductionFake, SelectedProducerProductionFake } from '@testing/selected-producer-production.fake';
 import { FarmDetailsComponent } from './farm-details.component';
 
-const producer = (over: Partial<Customer> = {}) => ({ id: 1, name: 'Smith Farms', ...over }) as Customer;
+/** A producer, with the given saved details (their bin sites, contacts, acres, grain on farm) as their profile. */
+const producer = ({ id = 1, name = 'Smith Farms', ...details }: Omit<Partial<ProducerDetails>, 'id'> & { id?: number; name?: string } = {}) =>
+  withProfile({ id, name } as Customer, details);
 const twoSites = (id: number) => producer({
   id,
   binSites: [{ siteKey: 'north', name: 'North Bins' }, { siteKey: 'home', name: 'Home Place' }],
@@ -20,6 +23,7 @@ const twoSites = (id: number) => producer({
 
 describe('FarmDetailsComponent', () => {
   const customer = signal<Customer | null>(null);
+  const profiles = producerProfilesFake();
   const commodities = signal<Commodity[]>([]);
   let production: SelectedProducerProductionFake;
   let fixture: ComponentFixture<FarmDetailsComponent>;
@@ -29,8 +33,10 @@ describe('FarmDetailsComponent', () => {
   const text = () => (host().textContent ?? '').replace(/\s+/g, ' ').trim();
   const table = () => host().querySelector<HTMLElement>('#grain-on-farm-table');
 
+  /** Puts `who` on screen, with their saved details. */
   function show(who: Customer | null): void {
     customer.set(who);
+    profiles.set(who ? [...profilesOf([who]).values()] : []);
     fixture.detectChanges();
   }
 
@@ -42,6 +48,7 @@ describe('FarmDetailsComponent', () => {
       providers: [
         { provide: CUSTOMER_SCREEN_SOURCE, useValue: { customer, linkedCustomers: signal([]), link: signal<CustomerScreenLink>({}) } },
         SelectedCustomerContext,
+        provideProducerProfiles(profiles),
         provideSelectedProducerProduction(production),
         { provide: AppStateService, useValue: { commodities } },
       ],

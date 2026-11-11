@@ -6,7 +6,8 @@
  * Pure functions moved verbatim out of BuildListComponent; the page keeps the computeds and the
  * template-facing methods and delegates to these.
  */
-import { Commodity, Contract, Customer, DpContract, GrainOnFarmItem, PlantingIntention, StoredGrain, Ticket } from '@models';
+import { Commodity, Contract, Customer, DpContract, GrainOnFarmItem, PlantingIntention, ProducerDetails, StoredGrain, Ticket } from '@models';
+import { profileCommodities } from '@shared/utils/producer-profile';
 import { dpBreakdownByCrop } from '@shared/utils/dp-aggregate';
 import { BinSiteGrainGroup } from '@shared/utils/grain-on-farm';
 
@@ -68,7 +69,7 @@ export function linkedProducerInfo(
   return map;
 }
 
-/** Crops per customer — merged from ProducerDetails, contracts (all, by ctrmCustomerId), planting
+/** Crops per customer — merged from their saved details (ProducerDetails), contracts (all, by ctrmCustomerId), planting
  *  intentions, tickets and storage; de-duplicated case-insensitively, first five kept. */
 export function cropsByCustomer(
   contractMap: Map<string, Contract[]>,
@@ -76,6 +77,7 @@ export function cropsByCustomer(
   tickets: Ticket[],
   storedGrain: StoredGrain[],
   customers: Customer[],
+  profiles: ReadonlyMap<number, ProducerDetails>,
 ): Map<number, string[]> {
   const map = new Map<number, string[]>();
 
@@ -109,7 +111,7 @@ export function cropsByCustomer(
   }
 
   for (const customer of customers) {
-    const detailCrops = customer.commodities?.length ? [...customer.commodities] : [];
+    const detailCrops = profileCommodities(profiles.get(customer.id));
     const contractCrops = customer.scoularId
       ? [...new Set(
           (contractMap.get(customer.scoularId) || [])
@@ -161,9 +163,9 @@ export function formattedLocation(customer: Customer): string {
  * Per-crop grain on farm with bushels on hand, largest first — the chips shown inline on Grain on
  * Farm results. Rows are per bin site, so one crop stored at two sites is summed into one chip.
  */
-export function grainOnFarmBreakdown(customer: Customer): GrainOnFarmItem[] {
+export function grainOnFarmBreakdown(profile: ProducerDetails | undefined): GrainOnFarmItem[] {
   const byCrop = new Map<string, GrainOnFarmItem>();
-  for (const g of customer.grainOnFarm ?? []) {
+  for (const g of profile?.grainOnFarm ?? []) {
     if (!g.commodityCode || (g.bushelsOnHand ?? 0) <= 0) continue;
     const key = g.commodityCode.toUpperCase();
     const seen = byCrop.get(key);
@@ -235,6 +237,6 @@ export function binSiteGrainSummary(group: BinSiteGrainGroup): string {
 }
 
 /** Whether the producer has any bin site or grain-on-farm row to show. */
-export function hasBinSiteGrain(customer: Customer): boolean {
-  return (customer.binSites?.length ?? 0) > 0 || (customer.grainOnFarm?.length ?? 0) > 0;
+export function hasBinSiteGrain(profile: ProducerDetails | undefined): boolean {
+  return (profile?.binSites?.length ?? 0) > 0 || (profile?.grainOnFarm?.length ?? 0) > 0;
 }

@@ -10,6 +10,7 @@ import { PermissionId } from '@core/access/permission-ids.generated';
 import { SelectedProducerActivityFake, provideSelectedProducerActivity, selectedProducerActivityFake } from '@testing/selected-producer-activity.fake';
 import { SelectedProducerProductionFake, provideSelectedProducerProduction, selectedProducerProductionFake } from '@testing/selected-producer-production.fake';
 import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
+import { ProducerProfilesFake, producerProfilesFake, profilesOf, provideProducerProfiles, withProfile } from '@testing/producer-profiles.fake';
 
 // Behaviour safety net for the Producer Summary Report dialog. Pins, through its customer and the shared data it
 // reads, the sidebar checkboxes and the rendered preview:
@@ -45,12 +46,14 @@ function daysFromNow(n: number): Date {
   return d;
 }
 
-function makeCustomer(over: Partial<Customer> = {}): Customer {
-  return {
+/** The customer the report is for. Their acres, bin sites and grain on farm are their saved details (1,200 acres by
+ *  default), which setCustomer hands to ProducerProfiles with them. */
+function makeCustomer({ totalAcres = 1200, binSites, grainOnFarm, ...over }: Partial<Customer> = {}): Customer {
+  return withProfile({
     id: 42, scoularId: 'SAMPFRM', name: 'Sample Farms', farm: 'Sample Farm Co', location: 'Pratt',
-    stateProvince: 'KS', phone: '316-555-0100', email: 'sample@example.com', totalAcres: 1200,
+    stateProvince: 'KS', phone: '316-555-0100', email: 'sample@example.com', totalAcres: 0,
     linkedProducerIds: [], eSignEnabled: false, achEnabled: false, ...over,
-  };
+  }, { totalAcres, binSites, grainOnFarm });
 }
 
 /** An open, unpriced 10,000 bu corn contract in the middle of its delivery window. */
@@ -109,6 +112,7 @@ describe('CustomerPrintReportComponent', () => {
   let toast: { success: ReturnType<typeof vi.fn>; warning: ReturnType<typeof vi.fn> };
   let activity: SelectedProducerActivityFake;
   let production: SelectedProducerProductionFake;
+  let profiles: ProducerProfilesFake;
   let access: PermissionStub;
 
   const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
@@ -249,6 +253,12 @@ describe('CustomerPrintReportComponent', () => {
     }
   }
 
+  /** Shows the report for `customer`, with their saved details. */
+  function setCustomer(customer: Customer): void {
+    ref.setInput('customer', customer);
+    profiles.set([...profilesOf([customer]).values()]);
+  }
+
   /** Builds the component for a customer with the given data, then opens the dialog (the defaults effect fires on open). */
   function open(inputs: { customer?: Customer } & Partial<Data> = {}): void {
     const { customer, ...data } = inputs;
@@ -256,7 +266,7 @@ describe('CustomerPrintReportComponent', () => {
     fixture = TestBed.createComponent(CustomerPrintReportComponent);
     component = fixture.componentInstance;
     ref = fixture.componentRef;
-    ref.setInput('customer', customer ?? makeCustomer());
+    setCustomer(customer ?? makeCustomer());
     ref.setInput('isOpen', true);
     fixture.detectChanges();
   }
@@ -269,6 +279,7 @@ describe('CustomerPrintReportComponent', () => {
     activity = selectedProducerActivityFake();
     production = selectedProducerProductionFake();
     access = permissionStub(EVERY_READ);
+    profiles = producerProfilesFake();
     await TestBed.configureTestingModule({
       imports: [CustomerPrintReportComponent],
       providers: [
@@ -276,6 +287,7 @@ describe('CustomerPrintReportComponent', () => {
         provideSelectedProducerActivity(activity),
         provideSelectedProducerProduction(production),
         providePermissions(access),
+        provideProducerProfiles(profiles),
         {
           provide: MsalService,
           // A bare UPN prefix — the dialog completes it to an @scoular.com address.
@@ -296,7 +308,7 @@ describe('CustomerPrintReportComponent', () => {
   it('renders nothing while closed, then a banner with contact fallbacks and the signed-in originator', () => {
     fixture = TestBed.createComponent(CustomerPrintReportComponent);
     ref = fixture.componentRef;
-    ref.setInput('customer', makeCustomer({ phone: '  ', extendedPrimaryPhone: '316-555-0199', email: '', supplementalEmail: 'alt@example.com' }));
+    setCustomer(makeCustomer({ phone: '  ', extendedPrimaryPhone: '316-555-0199', email: '', supplementalEmail: 'alt@example.com' }));
     fixture.detectChanges();
     expect(host().textContent?.trim()).toBe('');
 
@@ -316,7 +328,7 @@ describe('CustomerPrintReportComponent', () => {
     fixture.detectChanges();
     expect(headerLines()).toEqual(['Producer Summary Report', 'October 13, 2026', 'Prepared by Caden Egr', 'Grain Merchandiser']);
 
-    ref.setInput('customer', makeCustomer({ location: '', stateProvince: undefined, phone: '', extendedPrimaryPhone: undefined }));
+    setCustomer(makeCustomer({ location: '', stateProvince: undefined, phone: '', extendedPrimaryPhone: undefined }));
     fixture.detectChanges();
     expect(bannerField('Location')).toBe('—');
     expect(bannerField('Phone')).toBeUndefined();                 // no number at all → field dropped
@@ -443,7 +455,7 @@ describe('CustomerPrintReportComponent', () => {
     set('tickets', [makeTicket()]);
     set('plantingIntentions', [makeIntention({ id: 1, plantingYear: 2026 }), makeIntention({ id: 2, plantingYear: 2025 })]);
     set('storedGrain', [makeStoredGrain()]);
-    ref.setInput('customer', makeCustomer({ totalAcres: 800, binSites: [{ siteKey: 's1', name: 'North bins' }] }));
+    setCustomer(makeCustomer({ totalAcres: 800, binSites: [{ siteKey: 's1', name: 'North bins' }] }));
     fixture.detectChanges();
 
     expect(sectionTitles()).toEqual(['Executive Summary', 'Contracts', 'Unapplied Tickets', 'Planting Intentions', 'Grain in Storage', 'Bin Sites & Grain on Farm']);

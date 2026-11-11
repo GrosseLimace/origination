@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { NlqFilterService, NlqFilterContext } from './nlq-filter.service';
+import { profilesOf } from '@testing/producer-profiles.fake';
 import { Customer } from '@models';
 
 /** Minimal customer with just the fields the state filter reads. Neutral names so name-search
@@ -14,7 +15,7 @@ function customer(id: number, name: string, extendedStateProvince?: string, stat
 }
 
 function ctx(customers: Customer[]): NlqFilterContext {
-  return { customers, contracts: [], tickets: [], notes: [], plantingIntentions: [], storedGrain: [] };
+  return { customers, producerProfiles: profilesOf(customers), contracts: [], tickets: [], notes: [], plantingIntentions: [], storedGrain: [] };
 }
 
 describe('NlqFilterService — state detection covers all 50 states, not just the original 15', () => {

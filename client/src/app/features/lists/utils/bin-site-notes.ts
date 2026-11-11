@@ -3,7 +3,7 @@
  * producer's notes naming one of their bin sites. Moved verbatim out of
  * BuildListComponent._loadBinSiteNotes; the page still sends the requests and keeps the results.
  */
-import { Customer } from '@models';
+import { Customer, ProducerDetails } from '@models';
 import { binSiteNames } from '@shared/utils/bin-site-mentions';
 
 /** One notes request: the producers it covers, their "customerId:site names" keys, the site names
@@ -11,16 +11,18 @@ import { binSiteNames } from '@shared/utils/bin-site-mentions';
 export interface BinNoteChunk { ids: number[]; keys: string[]; names: Set<string>; length: number }
 
 /**
- * Splits the producers that have named bin sites (skipping keys already fetched — a renamed site
+ * Splits the producers whose saved details have named bin sites (skipping keys already fetched — a renamed site
  * changes the key, so it refetches) into requests whose ids + URL-encoded site names stay under
  * `budget` characters. A single producer whose names alone pass the budget gets a chunk of its own;
  * see binNoteContentAny for how that one is sent.
  */
-export function planBinSiteNoteChunks(customers: Customer[], fetchedKeys: ReadonlySet<string>, budget: number): BinNoteChunk[] {
+export function planBinSiteNoteChunks(
+  customers: Customer[], profiles: ReadonlyMap<number, ProducerDetails>, fetchedKeys: ReadonlySet<string>, budget: number,
+): BinNoteChunk[] {
   const chunks: BinNoteChunk[] = [];
   let chunk: BinNoteChunk = { ids: [], keys: [], names: new Set(), length: 0 };
   for (const c of customers) {
-    const siteNames = binSiteNames(c.binSites);
+    const siteNames = binSiteNames(profiles.get(c.id)?.binSites);
     if (siteNames.length === 0) continue;
     const key = `${c.id}:${siteNames.join('|').toLowerCase()}`;
     if (fetchedKeys.has(key)) continue;

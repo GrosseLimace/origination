@@ -6,9 +6,10 @@
  * here once so the two copies can't drift.
  *
  * Grain filters act on the producer's grain rows the caller passes (crop-scoped when Crops chips are
- * selected, like the existing grain filters); bin-site filters act on the producer's sites.
+ * selected, like the existing grain filters); bin-site filters act on the producer's sites, which the caller also
+ * passes, from their saved details.
  */
-import { Customer, GrainOnFarmItem, RefinementFilters } from '@models';
+import { Customer, GrainOnFarmItem, ProducerBinSiteItem, RefinementFilters } from '@models';
 import { binSiteHasCoordinates } from './coordinates';
 
 type GrainBinRefine = Pick<RefinementFilters,
@@ -33,11 +34,13 @@ export function activeGrainBinRefineCount(r: GrainBinRefine | null | undefined):
   ].filter(Boolean).length;
 }
 
-/** Applies these filters. `grainRowsFor` returns the producer's grain rows to judge (crop-scoped). */
+/** Applies these filters. `grainRowsFor` returns the producer's grain rows to judge (crop-scoped), and `binSitesFor`
+ *  their bin sites. */
 export function applyGrainBinRefinements<T extends Customer>(
   list: T[],
   r: GrainBinRefine,
   grainRowsFor: (c: T) => readonly GrainOnFarmItem[],
+  binSitesFor: (c: T) => readonly ProducerBinSiteItem[],
 ): T[] {
   let out = list;
   // ── Grain on farm: Sold ──
@@ -59,25 +62,25 @@ export function applyGrainBinRefinements<T extends Customer>(
   }
   // ── Bin sites ──
   if (r.hasBinSites) {
-    out = out.filter(c => (c.binSites?.length ?? 0) > 0);
+    out = out.filter(c => binSitesFor(c).length > 0);
   }
   if (r.noBinSites) {
-    out = out.filter(c => (c.binSites?.length ?? 0) === 0);
+    out = out.filter(c => binSitesFor(c).length === 0);
   }
   if ((r.binCapacityOver ?? 0) > 0) {
     // The producer's total storage: the sum of their sites' capacities.
-    out = out.filter(c => (c.binSites ?? []).reduce((sum, s) => sum + (s.capacity ?? 0), 0) > r.binCapacityOver!);
+    out = out.filter(c => binSitesFor(c).reduce((sum, s) => sum + (s.capacity ?? 0), 0) > r.binCapacityOver!);
   }
   const nameNeedle = r.binSiteNameContains?.trim().toLowerCase();
   if (nameNeedle) {
-    out = out.filter(c => (c.binSites ?? []).some(s => (s.name ?? '').toLowerCase().includes(nameNeedle)));
+    out = out.filter(c => binSitesFor(c).some(s => (s.name ?? '').toLowerCase().includes(nameNeedle)));
   }
   if (r.binSitesWithLocation) {
-    out = out.filter(c => (c.binSites ?? []).some(s => binSiteHasCoordinates(s)));
+    out = out.filter(c => binSitesFor(c).some(s => binSiteHasCoordinates(s)));
   }
   if (r.binSitesMissingLocation) {
     // Producers with a site that still needs its latitude/longitude filled in.
-    out = out.filter(c => (c.binSites ?? []).some(s => !binSiteHasCoordinates(s)));
+    out = out.filter(c => binSitesFor(c).some(s => !binSiteHasCoordinates(s)));
   }
   return out;
 }

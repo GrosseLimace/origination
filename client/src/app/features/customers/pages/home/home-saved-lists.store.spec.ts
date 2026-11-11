@@ -8,6 +8,7 @@ import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { NlqFilterContext, NlqFilterService } from '@core/services/nlq-filter.service';
 import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
+import { ProducerProfilesFake, producerProfile, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
 import type { Customer, Note, QueryLibraryItem, SavedList } from '@models';
 import { HomeBackgroundFailures } from './home-background-failures';
 import { HomePageState } from './home-page.state';
@@ -40,6 +41,7 @@ describe('HomeSavedListsStore', () => {
   };
   let toast: { success: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> };
   let failures: { report: ReturnType<typeof vi.fn> };
+  let profiles: ProducerProfilesFake;
 
   beforeEach(() => {
     access = permissionStub();
@@ -75,6 +77,7 @@ describe('HomeSavedListsStore', () => {
     };
     toast = { success: vi.fn(), error: vi.fn() };
     failures = { report: vi.fn() };
+    profiles = producerProfilesFake([producerProfile(1, { totalAcres: 900 })]);
     TestBed.configureTestingModule({
       providers: [
         HomePageState, HomeSavedListsStore,
@@ -85,6 +88,7 @@ describe('HomeSavedListsStore', () => {
         { provide: NlqFilterService, useValue: nlq },
         { provide: HomeBackgroundFailures, useValue: failures },
         providePermissions(access),
+        provideProducerProfiles(profiles),
         { provide: MsalService, useValue: { instance: { getActiveAccount: () => null, getAllAccounts: () => [{ name: 'Pat', username: 'pat@x' }] } } },
       ],
     });
@@ -112,6 +116,14 @@ describe('HomeSavedListsStore', () => {
       store.enrichSavedLists();
       expect(store.savedLists()[0].customerIds).toEqual([2, 3]);
       expect(nlq.resolveUserReferences).toHaveBeenCalledWith('corn growers', 'Pat', 'pat@x');
+    });
+
+    // The lists' acre, contact, link, grain and bin-site prompts and refines read every producer's saved details.
+    it('resolves the query and the refines against the producers\' saved details', () => {
+      store.savedLists.set([list(7, { filters: { acresOver: 100 } as SavedList['filters'] })]);
+      store.enrichSavedLists();
+      expect(nlq.parseAndFilter.mock.calls[0][1].producerProfiles).toBe(profiles.profiles());
+      expect(nlq.applyRefinementFilters.mock.calls[0][4].producerProfiles).toBe(profiles.profiles());
     });
 
     it('does nothing before the roster has loaded', () => {

@@ -9,6 +9,7 @@ import { ProgramRegistry } from './programs/program-registry';
 import { FieldSeasonDialogComponent } from './field-season-dialog.component';
 import { HasPermissionDirective } from '@core/access/has-permission.directive';
 import { PermissionService } from '@core/access/permission.service';
+import { ProducerProfiles } from '@core/context/producer-profiles';
 
 /**
  * The split the add-field type-ahead text points at: its ID typed or picked ("TATOB43 · JARBOE WEST",
@@ -56,6 +57,7 @@ export class CropFieldsPanelComponent {
   private readonly fdCic = inject(FdCicApiService);
   private readonly ctrmSplits = inject(CtrmSplitApiService);
   private readonly permissions = inject(PermissionService);
+  private readonly profiles = inject(ProducerProfiles);
   /** Adding, changing and removing fields and their programs is for a user who may change field plans. */
   readonly canEdit = computed(() => this.permissions.has('field-plans:write'));
 
@@ -69,7 +71,8 @@ export class CropFieldsPanelComponent {
   /** The producer as the field's reports name them: code, name, and the primary contact when there is one. */
   readonly producerForExport = computed(() => {
     const c = this.customer();
-    const primaryContact = c.contacts?.find(x => x.isPrimary)?.name?.trim() || c.primaryContact?.trim() || null;
+    const profile = this.profiles.profileOf(c.id);
+    const primaryContact = profile?.contacts?.find(x => x.isPrimary)?.name?.trim() || profile?.primaryContact?.trim() || null;
     return { code: c.scoularId ?? '', name: c.name, primaryContact };
   });
   /** The producer's fields are in from the backend (the planting table asks for them). */

@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Customer, Contract, Ticket, Note, NoteLastContact, ReminderDue, PlantingIntention, StoredGrain, DpContract, RefinementFilters, Commodity, CommodityConversion } from '@models';
+import { Customer, Contract, Ticket, Note, NoteLastContact, ReminderDue, PlantingIntention, StoredGrain, DpContract, ProducerDetails, RefinementFilters, Commodity, CommodityConversion } from '@models';
 import { isContractUnconfirmed, isContractCustomerConfirmed, isContractOverdueWithUnshippedBu, computeHarvestPacePct } from '@shared/utils/contract-status';
 import { buildLbsPerBushelMap, sumInBushels } from '@shared/utils/production-coverage';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
@@ -8,9 +8,13 @@ import { dpTotalBushels, dpTotalCharges, dpContractCount } from '@shared/utils/d
 import { buildCropGroupLookup, buildCropSelection, matchesCropSelection } from '@shared/utils/crop-group-match';
 import { isGrainAndBinSitesCategory } from '@shared/utils/grain-on-farm';
 import { activeGrainBinRefineCount, applyGrainBinRefinements } from '@shared/utils/grain-bin-refine';
+import { profileCommodities, profileLinkedIds } from '@shared/utils/producer-profile';
 
 export interface NlqFilterContext {
   customers: Customer[];
+  /** Every producer's saved details, by customer id: their acres, contacts, links, commodities, grain on farm and
+   *  bin sites (ProducerProfiles). A customer without any has none of these. */
+  producerProfiles: ReadonlyMap<number, ProducerDetails>;
   contracts: Contract[];
   tickets: Ticket[];
   /** Full note set with bodies/authors — ONLY loaded for prompts that need note content, authors,
@@ -642,6 +646,9 @@ export class NlqFilterService {
     contracts: Contract[],
     notes: Note[],
     dimensionContext?: {
+      /** Every producer's saved details, by customer id: the acres, contact, link, commodity, grain and bin-site
+       *  refines read them. */
+      producerProfiles: ReadonlyMap<number, ProducerDetails>;
       tickets?: Ticket[];
       storedGrain?: StoredGrain[];
       dpContracts?: DpContract[];
@@ -658,6 +665,7 @@ export class NlqFilterService {
     }
   ): Customer[] {
     let list = customers;
+    const profileOf = (c: Customer) => dimensionContext?.producerProfiles.get(c.id);
     const cropLookup = buildCropGroupLookup(dimensionContext?.commodities);
     const cropSelection = buildCropSelection(filters.crops, cropLookup);
 
@@ -782,7 +790,7 @@ export class NlqFilterService {
       // both, so a "Corn" chip scopes to YC/YCNG rows and a "YC" chip to YC plus any legacy "Corn".
       // (This used a bidirectional substring test, which could never match a code against a group.)
       const grainRowsFor = (c: Customer) => {
-        const rows = c.grainOnFarm ?? [];
+        const rows = profileOf(c)?.grainOnFarm ?? [];
         if (cropSelection.isEmpty) return rows;
         return rows.filter(g => matchesCropSelection(g.commodityCode, cropSelection, cropLookup, { groupOnlyValue: true }));
       };
@@ -821,11 +829,11 @@ export class NlqFilterService {
     // Sold, Last Bid and the bin-site fields — shared with Build a List (grain-bin-refine.ts).
     if (activeGrainBinRefineCount(filters) > 0) {
       list = applyGrainBinRefinements(list, filters, c => {
-        const rows = c.grainOnFarm ?? [];
+        const rows = profileOf(c)?.grainOnFarm ?? [];
         return cropSelection.isEmpty
           ? rows
           : rows.filter(g => matchesCropSelection(g.commodityCode, cropSelection, cropLookup, { groupOnlyValue: true }));
-      });
+      }, c => profileOf(c)?.binSites ?? []);
     }
 
     if (!cropSelection.isEmpty) {
@@ -892,9 +900,9 @@ export class NlqFilterService {
         ));
       } else if (dim === 'Grain on Farm') {
         // The crops on the producer's grain-on-farm rows — any row entered, with or without bushels.
-        list = list.filter(c => (c.grainOnFarm ?? []).some(g => matchesCropGroupOnly(g.commodityCode)));
+        list = list.filter(c => (profileOf(c)?.grainOnFarm ?? []).some(g => matchesCropGroupOnly(g.commodityCode)));
       } else {
-        list = list.filter(c => (c.commodities ?? []).some(crop => matchesCrop(crop)));
+        list = list.filter(c => profileCommodities(profileOf(c)).some(crop => matchesCrop(crop)));
       }
     }
     if (filters.states && filters.states.length > 0) {
@@ -1370,12 +1378,13 @@ export class NlqFilterService {
     // Build bidirectional linked-producer map
     const linkedById = new Map<number, string[]>();
     for (const c of context.customers) {
-      if (c.linkedProducerIds?.length) linkedById.set(c.id, c.linkedProducerIds);
+      const linked = profileLinkedIds(context.producerProfiles.get(c.id));
+      if (linked.length) linkedById.set(c.id, linked);
     }
     const incomingCodeLinks = new Map<string, Set<string>>();
     for (const c of context.customers) {
       if (!c.scoularId) continue;
-      for (const linkedCode of (c.linkedProducerIds || [])) {
+      for (const linkedCode of (linkedById.get(c.id) ?? [])) {
         if (!incomingCodeLinks.has(linkedCode)) incomingCodeLinks.set(linkedCode, new Set());
         incomingCodeLinks.get(linkedCode)!.add(c.scoularId);
       }
@@ -1383,7 +1392,7 @@ export class NlqFilterService {
 
     // Resolve latest contact per customer including bidirectional linked producers
     for (const customer of context.customers) {
-      const freshLinked = linkedById.get(customer.id) ?? customer.linkedProducerIds ?? [];
+      const freshLinked = linkedById.get(customer.id) ?? [];
       const allCodes = new Set<string>();
       if (customer.scoularId) allCodes.add(customer.scoularId);
       for (const linkedCode of freshLinked) allCodes.add(linkedCode);
@@ -1404,21 +1413,21 @@ export class NlqFilterService {
     result = this.applyCustomerSearchFilter(query, result);
     result = this.applyRegionFilter(lowerQuery, result);
     result = this.applyStateFilter(result, detectedState);
-    result = this.applyAcresFilter(lowerQuery, result);
-    result = this.applyCustomerInfoFilters(lowerQuery, result, context.tickets, context.contracts);
-    result = this.applyContactFilters(lowerQuery, result, latestNoteByCustomer, customerIdsWithNotes, context.notes, context.customers, context.currentUserDisplayName, context.currentUserUsername);
+    result = this.applyAcresFilter(lowerQuery, result, context.producerProfiles);
+    result = this.applyCustomerInfoFilters(lowerQuery, result, context.producerProfiles, context.tickets, context.contracts);
+    result = this.applyContactFilters(lowerQuery, result, context.producerProfiles, latestNoteByCustomer, customerIdsWithNotes, context.notes, context.customers, context.currentUserDisplayName, context.currentUserUsername);
     result = this.applyReminderFilters(lowerQuery, result, context.myReminders ?? []);
-    result = this.applyNoteFilters(lowerQuery, result, context.notes, context.customers, customerIdsWithNotes, context.currentUserDisplayName, context.currentUserUsername);
+    result = this.applyNoteFilters(lowerQuery, result, context.producerProfiles, context.notes, context.customers, customerIdsWithNotes, context.currentUserDisplayName, context.currentUserUsername);
     result = this.applyStorageFilters(lowerQuery, result, context.storedGrain);
     result = this.applyDpContractFilters(lowerQuery, result, context.dpContracts ?? []);
     result = this.applyPlantingFilters(lowerQuery, result, context.plantingIntentions);
     result = this.applyContractFilters(lowerQuery, result, context.contracts, context.commodityConversions);
-    result = this.applyMultiCommodityContractFilter(lowerQuery, result, context.contracts);
+    result = this.applyMultiCommodityContractFilter(lowerQuery, result, context.producerProfiles, context.contracts);
     result = this.applyTicketFilters(lowerQuery, result, context.tickets, context.contracts);
     result = this.applyQuarterDateFilter(lowerQuery, result, context.tickets);
     result = this.applyContractStatusOrFilter(lowerQuery, result, context.contracts);
     result = this.applyCrossEntityFilters(lowerQuery, result, context.contracts, context.tickets, context.plantingIntentions);
-    result = this.applyRankingFilters(lowerQuery, result, context.contracts, context.tickets, context.plantingIntentions, context.storedGrain, context.notes, context.dpContracts);
+    result = this.applyRankingFilters(lowerQuery, result, context.producerProfiles, context.contracts, context.tickets, context.plantingIntentions, context.storedGrain, context.notes, context.dpContracts);
 
     // NOTE: the former "supplementary note-keyword merge" (which unioned in any producer whose notes
     // mentioned a query keyword, for every non-ranking/planting/ticket/grain prompt) was removed.
@@ -1587,7 +1596,7 @@ export class NlqFilterService {
   // MULTI-COMMODITY CONTRACT FILTER (both corn AND soybeans)
   // ============================================================
 
-  private applyMultiCommodityContractFilter(lowerQuery: string, result: Customer[], contracts: Contract[]): Customer[] {
+  private applyMultiCommodityContractFilter(lowerQuery: string, result: Customer[], profiles: ReadonlyMap<number, ProducerDetails>, contracts: Contract[]): Customer[] {
     const crops = this.detectAllCropsInQuery(lowerQuery);
     if (crops.length < 2) return result;
     if (!lowerQuery.includes(' both ') && !lowerQuery.includes(' and ')) return result;
@@ -1602,7 +1611,7 @@ export class NlqFilterService {
 
     return result.filter(c => {
       const customerContracts = contractsByCustomer.get(c.scoularId!) || [];
-      const customerCommodities = c.commodities || [];
+      const customerCommodities = profileCommodities(profiles.get(c.id));
       // Check each required crop appears in either contracts or customer commodities
       return crops.every(crop =>
         customerContracts.some(ct => this.matchesCommodity(ct.commodityDescription, crop) || this.matchesCommodity(ct.commodityCode, crop)) ||
@@ -1693,34 +1702,35 @@ export class NlqFilterService {
   // ACRES FILTER
   // ============================================================
 
-  private applyAcresFilter(lowerQuery: string, result: Customer[]): Customer[] {
+  private applyAcresFilter(lowerQuery: string, result: Customer[], profiles: ReadonlyMap<number, ProducerDetails>): Customer[] {
+    const acresOf = (c: Customer) => profiles.get(c.id)?.totalAcres ?? 0;
     const moreAcresMatch = lowerQuery.match(/(?:more than|over|at least|greater than|above|exceeding)\s*(\d+(?:,\d+)?(?:k)?)\s*acres?/);
     if (moreAcresMatch) {
       const minAcres = this.parseQuantity(moreAcresMatch[1]);
-      result = result.filter(c => c.totalAcres >= minAcres);
+      result = result.filter(c => acresOf(c) >= minAcres);
     }
 
     const lessAcresMatch = lowerQuery.match(/(?:less than|under|fewer than|below)\s*(\d+(?:,\d+)?(?:k)?)\s*acres?/);
     if (lessAcresMatch) {
       const maxAcres = this.parseQuantity(lessAcresMatch[1]);
-      result = result.filter(c => c.totalAcres < maxAcres);
+      result = result.filter(c => acresOf(c) < maxAcres);
     }
 
     const betweenAcresMatch = lowerQuery.match(/between\s*(\d+(?:,\d+)?(?:k)?)\s*(?:and|to|-)\s*(\d+(?:,\d+)?(?:k)?)\s*acres?/);
     if (betweenAcresMatch) {
       const minAcres = this.parseQuantity(betweenAcresMatch[1]);
       const maxAcres = this.parseQuantity(betweenAcresMatch[2]);
-      result = result.filter(c => c.totalAcres >= minAcres && c.totalAcres <= maxAcres);
+      result = result.filter(c => acresOf(c) >= minAcres && acresOf(c) <= maxAcres);
     }
 
     const isTopQuery = /top\s*\d+/.test(lowerQuery);
     if ((lowerQuery.includes('large') || lowerQuery.includes('big')) &&
         (lowerQuery.includes('operation') || lowerQuery.includes('farm')) && !isTopQuery) {
-      if (!moreAcresMatch) result = result.filter(c => c.totalAcres >= 1500);
+      if (!moreAcresMatch) result = result.filter(c => acresOf(c) >= 1500);
     }
 
     if (lowerQuery.includes('small') && (lowerQuery.includes('operation') || lowerQuery.includes('farm'))) {
-      if (!lessAcresMatch) result = result.filter(c => c.totalAcres < 500);
+      if (!lessAcresMatch) result = result.filter(c => acresOf(c) < 500);
     }
 
     return result;
@@ -1730,13 +1740,14 @@ export class NlqFilterService {
   // CUSTOMER INFO FILTERS (email, phone, esign, bin, linked, zip, commodities)
   // ============================================================
 
-  private applyCustomerInfoFilters(lowerQuery: string, result: Customer[], tickets: Ticket[], contracts: Contract[] = []): Customer[] {
+  private applyCustomerInfoFilters(lowerQuery: string, result: Customer[], profiles: ReadonlyMap<number, ProducerDetails>, tickets: Ticket[], contracts: Contract[] = []): Customer[] {
+    const profileOf = (c: Customer) => profiles.get(c.id);
     // An email/phone counts whether it came from the source system OR was typed into Edit Producer
     // Details as a contact row — otherwise a producer whose only email is a user-entered contact
     // (e.g. their insurance agent) is reported as having no email, and worse, shows up under
     // "producers with no email".
-    const anyContactEmail = (c: Customer) => !!c.contacts?.some(ct => ct.email?.trim());
-    const anyContactPhone = (c: Customer) => !!c.contacts?.some(ct => ct.phone?.trim());
+    const anyContactEmail = (c: Customer) => !!profileOf(c)?.contacts?.some(ct => ct.email?.trim());
+    const anyContactPhone = (c: Customer) => !!profileOf(c)?.contacts?.some(ct => ct.phone?.trim());
 
     // Email — "has email", "with an email", "have email addresses", etc.
     const hasEmail = /(?:has|have|with)\s+(?:an?\s+)?email|email\s*address/i.test(lowerQuery);
@@ -1763,10 +1774,10 @@ export class NlqFilterService {
     const hasContact = /(?:has|have|with)\s+(?:a\s+)?(?:primary\s+)?contact\b(?!s?\s*(?:for|with|in))|contact\s*(?:person|info|name|details)/i.test(lowerQuery) && !lowerQuery.includes('contract');
     const noContact = /(?:no|without|missing|don'?t have|doesn'?t have)\s+(?:a\s+)?(?:primary\s+)?contact\b(?!s)|no\s+contact\s*(?:person|info|name)?/i.test(lowerQuery) && !lowerQuery.includes('contract');
     if (hasContact && !noContact) {
-      result = result.filter(c => c.primaryContact?.trim());
+      result = result.filter(c => profileOf(c)?.primaryContact?.trim());
     }
     if (noContact) {
-      result = result.filter(c => !c.primaryContact?.trim());
+      result = result.filter(c => !profileOf(c)?.primaryContact?.trim());
     }
 
     // ── Grain on Farm — per-commodity bushels on hand + a $/bu target price entered on the
@@ -1793,7 +1804,7 @@ export class NlqFilterService {
       // scoping the filter to a bogus crop and returning zero producers.
       const grainCrop = this.grainCrops.find(crop => new RegExp(`\\b${crop}\\b`).test(lowerQuery)) ?? null;
       const rowsFor = (c: Customer) => {
-        const rows = c.grainOnFarm ?? [];
+        const rows = profileOf(c)?.grainOnFarm ?? [];
         return grainCrop ? rows.filter(g => this.matchesCommodity(g.commodityCode, grainCrop)) : rows;
       };
       const totalBu = (c: Customer) => rowsFor(c).reduce((s, g) => s + (g.bushelsOnHand ?? 0), 0);
@@ -1935,7 +1946,7 @@ export class NlqFilterService {
           if (codes && [...codes].some(code => this.matchesCommodity(code, cropLower))) return true;
           const ticketCodes = ticketCommoditiesByCustomer.get(c.scoularId ?? '');
           if (ticketCodes && [...ticketCodes].some(code => this.matchesCommodity(code, cropLower))) return true;
-          return c.commodities?.some(cm => this.matchesCommodity(cm, cropLower)) ?? false;
+          return profileCommodities(profileOf(c)).some(cm => this.matchesCommodity(cm, cropLower));
         });
       });
     }
@@ -1949,7 +1960,7 @@ export class NlqFilterService {
       result = result.filter(c => {
         const crops = new Set<string>();
         // From customer commodities field
-        for (const crop of (c.commodities ?? [])) { if (crop.trim()) crops.add(crop.trim().toUpperCase()); }
+        for (const crop of profileCommodities(profileOf(c))) { if (crop.trim()) crops.add(crop.trim().toUpperCase()); }
         // From contracts
         const custContracts = contracts.filter(ct =>
           ct.ctrmCustomerId === c.scoularId && ct.status !== 'Cancelled');
@@ -1979,11 +1990,11 @@ export class NlqFilterService {
     if (lowerQuery.includes('has linked') || lowerQuery.includes('with linked') ||
         lowerQuery.includes('linked producer') || lowerQuery.includes('linked customer')) {
       if (!lowerQuery.includes('no linked') && !lowerQuery.includes('without linked') && !lowerQuery.includes('not linked')) {
-        result = result.filter(c => (c.linkedProducerIds?.length ?? 0) > 0);
+        result = result.filter(c => profileLinkedIds(profileOf(c)).length > 0);
       }
     }
     if (lowerQuery.includes('no linked') || lowerQuery.includes('without linked') || lowerQuery.includes('not linked')) {
-      result = result.filter(c => !c.linkedProducerIds?.length);
+      result = result.filter(c => !profileLinkedIds(profileOf(c)).length);
     }
 
     // Zip/postal code — check both merchandising and extended postal codes
@@ -2010,7 +2021,7 @@ export class NlqFilterService {
 
     // Has/no bin sites, and "more than N" / "at least N" / "multiple" bin sites. A count implies
     // having some, so it replaces the plain has-filter rather than stacking on it.
-    const binSiteCount = (c: Customer) => c.binSites?.length ?? 0;
+    const binSiteCount = (c: Customer) => profileOf(c)?.binSites?.length ?? 0;
     const minSites = binSiteMinimum(lowerQuery);
     const noSitesFilter = NO_BIN_SITES.test(lowerQuery);
     if (noSitesFilter) {
@@ -2025,20 +2036,20 @@ export class NlqFilterService {
     const hasCommoditiesFilter = /(?:has|have|with)\s+(?:a\s+)?commodit(?:y|ies)|commodit(?:y|ies)\s+(?:set|listed|on file)/i.test(lowerQuery);
     const noCommoditiesFilter = /(?:no|without|missing|don'?t have|doesn'?t have)\s+(?:a\s+)?commodit(?:y|ies)/i.test(lowerQuery);
     if (hasCommoditiesFilter && !noCommoditiesFilter) {
-      result = result.filter(c => (c.commodities?.length ?? 0) > 0);
+      result = result.filter(c => profileCommodities(profileOf(c)).length > 0);
     }
     if (noCommoditiesFilter) {
-      result = result.filter(c => !c.commodities?.length);
+      result = result.filter(c => !profileCommodities(profileOf(c)).length);
     }
 
     // Has/no acreage (any acreage set vs. zero/unset)
     const hasAcreageFilter = /(?:has|have|with)\s+(?:any\s+)?(?:acres?|acreage)/i.test(lowerQuery);
     const noAcreageFilter = /(?:no|without|missing|don'?t have|doesn'?t have)\s+(?:any\s+)?(?:acres?|acreage)/i.test(lowerQuery);
     if (hasAcreageFilter && !noAcreageFilter) {
-      result = result.filter(c => (c.totalAcres ?? 0) > 0);
+      result = result.filter(c => (profileOf(c)?.totalAcres ?? 0) > 0);
     }
     if (noAcreageFilter) {
-      result = result.filter(c => !c.totalAcres || c.totalAcres === 0);
+      result = result.filter(c => !profileOf(c)?.totalAcres);
     }
 
     // Farm name search — "farm [name]", "on [name] farm". Skipped for grain-on-farm / target
@@ -2101,6 +2112,7 @@ export class NlqFilterService {
   private applyContactFilters(
     lowerQuery: string,
     result: Customer[],
+    profiles: ReadonlyMap<number, ProducerDetails>,
     latestNoteByCustomer: Map<number, { time: number }>,
     customerIdsWithNotes: Set<number>,
     notes: Note[] = [],
@@ -2157,7 +2169,7 @@ export class NlqFilterService {
       const incomingCodeLinks = new Map<string, Set<string>>();
       for (const c of customers) {
         if (!c.scoularId) continue;
-        for (const linkedCode of (c.linkedProducerIds || [])) {
+        for (const linkedCode of profileLinkedIds(profiles.get(c.id))) {
           if (!incomingCodeLinks.has(linkedCode)) incomingCodeLinks.set(linkedCode, new Set());
           incomingCodeLinks.get(linkedCode)!.add(c.scoularId);
         }
@@ -2165,7 +2177,7 @@ export class NlqFilterService {
       for (const customer of customers) {
         const allCodes = new Set<string>();
         if (customer.scoularId) allCodes.add(customer.scoularId);
-        for (const linkedCode of (customer.linkedProducerIds || [])) allCodes.add(linkedCode);
+        for (const linkedCode of profileLinkedIds(profiles.get(customer.id))) allCodes.add(linkedCode);
         for (const incomingCode of (incomingCodeLinks.get(customer.scoularId || '') || new Set<string>())) {
           allCodes.add(incomingCode);
         }
@@ -2284,7 +2296,7 @@ export class NlqFilterService {
     return keywords.length > 0 ? keywords : [searchTerm];
   }
 
-  private applyNoteFilters(lowerQuery: string, result: Customer[], notes: Note[], allCustomers: Customer[] = result, customerIdsWithNotes: Set<number> = new Set(), currentUserDisplayName?: string, currentUserUsername?: string): Customer[] {
+  private applyNoteFilters(lowerQuery: string, result: Customer[], profiles: ReadonlyMap<number, ProducerDetails>, notes: Note[], allCustomers: Customer[] = result, customerIdsWithNotes: Set<number> = new Set(), currentUserDisplayName?: string, currentUserUsername?: string): Customer[] {
     // "Customers with notes" — broad boolean (has any note). Resolved from the aggregate-derived
     // has-note set (linked-producer aware, always available) rather than the full note bodies, so
     // this prompt never forces a full-notes download.
@@ -2421,8 +2433,9 @@ export class NlqFilterService {
         if (own) allNoteTexts.push(...own);
 
         // Include linked producer notes
-        if (c.linkedProducerIds?.length) {
-          for (const linkedSourceId of c.linkedProducerIds) {
+        const linkedSourceIds = profileLinkedIds(profiles.get(c.id));
+        if (linkedSourceIds.length) {
+          for (const linkedSourceId of linkedSourceIds) {
             const linkedNumericId = sourceIdToNumericId.get(linkedSourceId);
             if (linkedNumericId && linkedNumericId !== c.id) {
               const linked = notesByCustomer.get(linkedNumericId);
@@ -3295,6 +3308,7 @@ export class NlqFilterService {
   private applyRankingFilters(
     lowerQuery: string,
     result: Customer[],
+    profiles: ReadonlyMap<number, ProducerDetails>,
     contracts?: Contract[],
     tickets?: Ticket[],
     plantingIntentions?: PlantingIntention[],
@@ -3411,8 +3425,8 @@ export class NlqFilterService {
     } else if (lowerQuery.includes('grain on farm') || (/on\s+(?:the\s+)?farm/.test(lowerQuery) && lowerQuery.includes('top'))) {
       // Sort by total bushels on hand across the producer's grain-on-farm rows.
       result = [...result].sort((a, b) => {
-        const aVal = (a.grainOnFarm ?? []).reduce((s, g) => s + (g.bushelsOnHand ?? 0), 0);
-        const bVal = (b.grainOnFarm ?? []).reduce((s, g) => s + (g.bushelsOnHand ?? 0), 0);
+        const aVal = (profiles.get(a.id)?.grainOnFarm ?? []).reduce((s, g) => s + (g.bushelsOnHand ?? 0), 0);
+        const bVal = (profiles.get(b.id)?.grainOnFarm ?? []).reduce((s, g) => s + (g.bushelsOnHand ?? 0), 0);
         return isTop ? bVal - aVal : aVal - bVal;
       });
     } else {
@@ -3429,7 +3443,7 @@ export class NlqFilterService {
         ticketTotals.set(t.customerCode, (ticketTotals.get(t.customerCode) || 0) + (t.appliedDockQuantity || 0));
       }
       result = [...result].sort((a, b) => {
-        const acresDiff = (b.totalAcres || 0) - (a.totalAcres || 0);
+        const acresDiff = (profiles.get(b.id)?.totalAcres || 0) - (profiles.get(a.id)?.totalAcres || 0);
         if (acresDiff !== 0) return isTop ? acresDiff : -acresDiff;
         const contractDiff = (contractTotals.get(b.scoularId!) || 0) - (contractTotals.get(a.scoularId!) || 0);
         if (contractDiff !== 0) return isTop ? contractDiff : -contractDiff;

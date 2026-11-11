@@ -6,6 +6,7 @@ import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
+import { ProducerProfiles } from '@core/context/producer-profiles';
 import type { Customer, PlantingIntention } from '@models';
 import { HomeBackgroundFailures } from './home-background-failures';
 import { HomePageState } from './home-page.state';
@@ -23,6 +24,8 @@ export class HomePlantingStore {
   private readonly toastService = inject(ToastService);
   private readonly backgroundFailures = inject(HomeBackgroundFailures);
   private readonly page = inject(HomePageState);
+  /** Every producer's details, kept by the Producers module. */
+  private readonly producerProfiles = inject(ProducerProfiles);
   private readonly destroyRef = inject(DestroyRef);
 
   /** Per-customer planting-intentions cache. Hydrated from the first visit's
@@ -225,9 +228,7 @@ export class HomePlantingStore {
         this.page.selectedCustomer.set(updatedCustomer);
         this.page.customers.update(arr => arr.map(c => c.id === customer.id ? updatedCustomer : c));
         // Keep the producer-details map in sync — same pattern as handleSaveCustomer.
-        const map = new Map(this.page.producerDetailsMap());
-        map.set(savedDetails.customerId, savedDetails);
-        this.page.producerDetailsMap.set(map);
+        this.producerProfiles.put(savedDetails);
       },
       error: () => { /* non-blocking — intention saved successfully */ }
     });

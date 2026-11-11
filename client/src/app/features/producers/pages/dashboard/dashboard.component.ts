@@ -33,6 +33,7 @@ import {
   plantingYearsDescending, projectedProduction, weightedAverageYield,
 } from '../../utils/dashboard-planting';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { ProducerProfiles } from '@core/context/producer-profiles';
 import { DashboardCacheEntry, DashboardStore } from '../../data-access/dashboard.store';
 
 @Component({
@@ -45,6 +46,8 @@ import { DashboardCacheEntry, DashboardStore } from '../../data-access/dashboard
 export class DashboardComponent {
   private readonly apiService = inject(ApiService);
   private readonly appStateService = inject(AppStateService);
+  /** Every producer's details: their crops, farm acres and linked producers. */
+  private readonly producerProfiles = inject(ProducerProfiles);
   private readonly customerStore = inject(CustomerStore);
   private readonly dashboardStore = inject(DashboardStore);
   private readonly tradeUnitContext = inject(TradeUnitContext);
@@ -326,7 +329,7 @@ export class DashboardComponent {
 
   // Combined crops per customer — mirrors build-list's resolution logic.
   private readonly _customerCropsById = computed(() =>
-    buildCustomerCropsById(this.appStateService.producerDetails(), this.contracts(), this.customers()));
+    buildCustomerCropsById([...this.producerProfiles.profiles().values()], this.contracts(), this.customers()));
 
   readonly producersWithoutIntentionsRows = computed(() =>
     buildProducersWithoutIntentionsRows({
@@ -372,7 +375,7 @@ export class DashboardComponent {
 
   // Last-contacted info per customer, from the last-contact aggregate (see buildLastContactByCustomer).
   private readonly _lastContactByCustomer = computed(() =>
-    buildLastContactByCustomer(this.appStateService.noteLastContacts(), this.customers()));
+    buildLastContactByCustomer(this.appStateService.noteLastContacts(), this.customers(), this.producerProfiles.profiles()));
 
   readonly producersTabRows = computed(() => {
     const view = this.producerView();
@@ -386,7 +389,7 @@ export class DashboardComponent {
 
     // When a chip is active on the With view, narrow each row's acres/production to the matching crop(s).
     const narrowed = narrowProducerRowsToChip(rows, view, this.producerCropFilter(), !!this.selectedCropFilter());
-    return sortProducerRows(narrowed, sortKey, dir);
+    return sortProducerRows(narrowed, sortKey, dir, this.producerProfiles.profiles());
   });
 
   readonly showProducerTradeUnitColumn = computed(() =>
@@ -741,7 +744,7 @@ export class DashboardComponent {
 
   private _calculateMetrics(): void {
     const openContracts = this.contracts().filter(c => !c.closedDate);
-    this.totalAcres.set(this.customers().reduce((sum, c) => sum + c.totalAcres, 0));
+    this.totalAcres.set(this.customers().reduce((sum, c) => sum + (this.producerProfiles.profileOf(c.id)?.totalAcres ?? 0), 0));
     this.activeContracts.set(openContracts.filter(c => c.status === 'Active').length);
     this.totalContractValue.set(openContracts.reduce((sum, c) => sum + (c.totalValue || 0), 0));
 
@@ -1087,4 +1090,8 @@ export class DashboardComponent {
   readonly formatK = formatK;
   readonly getInitials = getInitials;
   readonly getFormattedLocation = getFormattedLocation;
+  /** A producer's farm acres, from their saved details; 0 without any. */
+  farmAcresOf(customer: Customer | null | undefined): number {
+    return (customer && this.producerProfiles.profileOf(customer.id)?.totalAcres) || 0;
+  }
 }

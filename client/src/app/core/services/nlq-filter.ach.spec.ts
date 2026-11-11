@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { NlqFilterService, NlqFilterContext } from './nlq-filter.service';
+import { profilesOf } from '@testing/producer-profiles.fake';
 import { Customer } from '@models';
 
 /** Minimal customer with just the fields the ACH filter reads. Neutral names so name-search can't interfere. */
@@ -11,7 +12,7 @@ function customer(id: number, name: string, achEnabled: boolean): Customer {
 }
 
 function ctx(customers: Customer[]): NlqFilterContext {
-  return { customers, contracts: [], tickets: [], notes: [], plantingIntentions: [], storedGrain: [] };
+  return { customers, producerProfiles: profilesOf(customers), contracts: [], tickets: [], notes: [], plantingIntentions: [], storedGrain: [] };
 }
 
 describe('NlqFilterService — ACH payment', () => {

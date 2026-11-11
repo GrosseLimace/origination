@@ -16,6 +16,7 @@ import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
 import { PermissionService } from '@core/access/permission.service';
 import { SelectedProducerActivity } from '@core/context/selected-producer-activity';
 import { SelectedProducerProduction } from '@core/context/selected-producer-production';
+import { ProducerProfiles } from '@core/context/producer-profiles';
 
 
 /** The report's include toggles whose default depends on the data. */
@@ -69,10 +70,13 @@ export class CustomerPrintReportComponent {
   private readonly datePipe = inject(DatePipe);
   private readonly activity = inject(SelectedProducerActivity);
   private readonly production = inject(SelectedProducerProduction);
+  private readonly profiles = inject(ProducerProfiles);
 
   /** Opened by the Print button, for the customer on screen. */
   public isOpen = input(false);
   public customer = input.required<Customer>();
+  /** The customer's saved producer details: their acres, bin sites and grain on farm. */
+  readonly profile = computed(() => this.profiles.profileOf(this.customer().id));
   public close = output<void>();
 
   // The producer's data, as the rest of the customer screen reads it.
@@ -147,7 +151,7 @@ export class CustomerPrintReportComponent {
   private readonly _sectionDefaults = computed<Record<SectionKey, boolean>>(() => {
     const readable = this.readable();
     return {
-      totalAcres: readable.totalAcres && (this.customer().totalAcres ?? 0) > 0,
+      totalAcres: readable.totalAcres && (this.profile()?.totalAcres ?? 0) > 0,
       totalContracted: readable.totalContracted && this.totalContracted() > 0,
       contracts: readable.contracts && this.contracts().filter(c => !c.closedDate).length > 0,
       tickets: readable.tickets && this.tickets().filter(t => !t.isApplied).length > 0,
@@ -350,7 +354,7 @@ export class CustomerPrintReportComponent {
   readonly kpis = computed(() => {
     const items: { label: string; value: string; sub: string }[] = [];
     if (this.showTotalAcres()) {
-      const acres = this.customer().totalAcres ?? 0;
+      const acres = this.profile()?.totalAcres ?? 0;
       items.push({ label: 'Total Acres', value: acres > 0 ? acres.toLocaleString() : '0', sub: '' });
     }
     if (this.showTotalContracted()) {
@@ -384,9 +388,9 @@ export class CustomerPrintReportComponent {
 
   /** The producer's bin sites in saved order (name and capacity — no coordinates on paper) with the grain
    *  stored there — the same grouping the producer page and Build a List use. */
-  readonly binSiteGroups = computed(() => binSiteGrainBreakdown(this.customer().binSites, this.customer().grainOnFarm));
+  readonly binSiteGroups = computed(() => binSiteGrainBreakdown(this.profile()?.binSites, this.profile()?.grainOnFarm));
   readonly grainOnFarmTotal = computed(() =>
-    (this.customer().grainOnFarm ?? []).reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0));
+    (this.profile()?.grainOnFarm ?? []).reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0));
   readonly formatLastBid = formatLastBid;
   private readonly _cropGroupLookup = computed(() => buildCropGroupLookup(this.commodities()));
   private readonly _commodityByCode = computed(() => indexCommoditiesByCode(this.commodities()));

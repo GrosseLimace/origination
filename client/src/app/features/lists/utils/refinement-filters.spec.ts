@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { Commodity, Contract, Customer, DpContract, Note, PlantingIntention, RefinementFilters, StoredGrain, Ticket } from '@models';
+import { Commodity, Contract, Customer, DpContract, Note, PlantingIntention, ProducerDetails, RefinementFilters, StoredGrain, Ticket } from '@models';
 import { buildCropGroupLookup } from '@shared/utils/crop-group-match';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
+import { profileLinkedIds } from '@shared/utils/producer-profile';
+import { producerProfile, profileMap } from '@testing/producer-profiles.fake';
 import { applyMemberOverrides, collapseLinkedComponents, filterByRefinements, RefinementFilterSources } from './refinement-filters';
 
 const NOW = new Date('2026-10-13T12:00:00');
@@ -38,9 +40,10 @@ function sources(data: {
   storage?: StoredGrain[]; dp?: DpContract[]; contracts?: Contract[];
   lastContact?: Map<number, { daysAgo: number }>; account?: { name?: string; username?: string };
   pacing?: (c: Customer) => 'up' | 'down' | 'flat' | null; appliedTickets?: boolean; dimension?: string | null;
-  commodities?: Commodity[];
+  commodities?: Commodity[]; profiles?: ProducerDetails[];
 } = {}) {
   const customers = data.customers ?? ALL;
+  const profiles = profileMap(...(data.profiles ?? []));
   const open = new Map<string, Contract[]>();
   for (const c of data.contracts ?? []) {
     if (!c.ctrmCustomerId || c.closedDate) continue;
@@ -56,7 +59,8 @@ function sources(data: {
     openContractsByCustomer: vi.fn(() => open),
     cropGroupLookup: vi.fn(() => buildCropGroupLookup(data.commodities ?? [])),
     lastContactByCustomer: vi.fn(() => data.lastContact ?? new Map()),
-    linkedProducerComponents: vi.fn(() => buildLinkedProducerComponents(customers)),
+    linkedProducerComponents: vi.fn(() => buildLinkedProducerComponents(customers, c => profileLinkedIds(profiles.get(c.id)))),
+    profileOf: vi.fn((c: Customer) => profiles.get(c.id)),
     commodityConversions: vi.fn(() => [{ commodityCode: 'YC', lbsPerUnit: 56 }, { commodityCode: 'SBM', lbsPerUnit: 2000 }]),
     currentAccount: vi.fn(() => data.account ?? { name: 'Pat Merchant', username: 'pat@scoular.com' }),
     pacingDirection: vi.fn(data.pacing ?? (() => null)),
@@ -137,12 +141,12 @@ describe('filterByRefinements', () => {
     });
 
     it('note counts aggregate across a linked producer network', () => {
-      const customers = [customer(1, { linkedProducerIds: ['C2'] }), customer(2), customer(3)];
+      const profiles = [producerProfile(1, { linkedProducerIds: 'C2' })];
       const notes = [note({ id: 1, customerCode: 'C1' }), note({ id: 2, customerCode: 'C2' }), note({ id: 3, customerCode: 'C3' })];
-      const src = sources({ customers, notes });
-      expect(run({ contactedOnlyOnce: true }, src, customers)).toEqual([3]);
+      const src = sources({ notes, profiles });
+      expect(run({ contactedOnlyOnce: true }, src)).toEqual([3]);
       const many = Array.from({ length: 6 }, (_, i) => note({ id: 10 + i, customerCode: 'C3' }));
-      expect(run({ contactedMoreThan5: true }, sources({ customers, notes: many }), customers)).toEqual([3]);
+      expect(run({ contactedMoreThan5: true }, sources({ notes: many, profiles }))).toEqual([3]);
     });
 
     it('authorship is token-bounded, and empty identity claims mark no note as mine', () => {
@@ -158,28 +162,32 @@ describe('filterByRefinements', () => {
     });
 
     it('pinned and keyword match on the customer\'s whole code network', () => {
-      const customers = [customer(1, { linkedProducerIds: ['C2'] }), customer(2), customer(3)];
       const notes = [note({ id: 1, customerCode: 'C2', isPinned: true, content: 'Hail DAMAGE' }), note({ id: 2, customerCode: 'C3', content: 'fine' })];
-      const src = sources({ customers, notes });
-      expect(run({ hasPinnedNotes: true }, src, customers)).toEqual([1, 2]);
-      expect(run({ noteKeyword: ' damage ' }, src, customers)).toEqual([1, 2]);
+      const src = sources({ notes, profiles: [producerProfile(1, { linkedProducerIds: 'C2' })] });
+      expect(run({ hasPinnedNotes: true }, src)).toEqual([1, 2]);
+      expect(run({ noteKeyword: ' damage ' }, src)).toEqual([1, 2]);
     });
   });
 
   describe('producer details and grain on farm', () => {
     const customers = [
-      customer(1, { totalAcres: 900, supplementalEmail: 'x@y.z', extendedStateProvince: 'CO', stateProvince: 'KS',
-        grainOnFarm: [{ commodityCode: 'YC', bushelsOnHand: 6000, targetBushels: 4.2, grade: '15.5%' }] }),
-      customer(2, { extendedPrimaryPhone: '555', primaryContact: '  ', eSignEnabled: true, linkedProducerIds: ['C3'], stateProvince: 'KS',
+      customer(1, { supplementalEmail: 'x@y.z', extendedStateProvince: 'CO', stateProvince: 'KS' }),
+      customer(2, { extendedPrimaryPhone: '555', eSignEnabled: true, stateProvince: 'KS' }),
+      customer(3, { stateProvince: 'NE' }),
+    ];
+    // Their saved details: acres, contacts, links and grain on farm.
+    const profiles = [
+      producerProfile(1, { totalAcres: 900, grainOnFarm: [{ commodityCode: 'YC', bushelsOnHand: 6000, targetBushels: 4.2, grade: '15.5%' }] }),
+      producerProfile(2, { primaryContact: '  ', linkedProducerIds: 'C3',
         grainOnFarm: [{ commodityCode: 'Corn', bushelsOnHand: 3000 }, { commodityCode: 'SB', bushelsOnHand: 3000, targetBushels: 11 }] }),
-      customer(3, { contacts: [{ name: 'Ins', email: 'i@n.s' }] as never, primaryContact: 'Ann', stateProvince: 'NE' }),
+      producerProfile(3, { contacts: [{ name: 'Ins', email: 'i@n.s' }], primaryContact: 'Ann' }),
     ];
     // A real lookup, so YC is a CODE chip: exact on code rows, and on legacy group rows ('Corn') only via groupOnlyValue.
     const commodities = [
       { id: 1, code: 'YC', name: 'Yellow Corn', category: 'Corn', isActive: true },
       { id: 2, code: 'SB', name: 'Soybeans', category: 'Soybeans', isActive: true },
     ];
-    const r = (f: RefinementFilters) => run(f, sources({ customers, commodities, dimension: 'Grain on Farm' }), customers);
+    const r = (f: RefinementFilters) => run(f, sources({ customers, profiles, commodities, dimension: 'Grain on Farm' }), customers);
 
     it('acres, contact details, linked, eSign and states (extended first)', () => {
       expect(r({ acresOver: 100 })).toEqual([1]);
@@ -276,13 +284,13 @@ describe('filterByRefinements', () => {
   });
 
   describe('crop chips scope to the prompt\'s dimension', () => {
-    const customers = [
-      customer(1, { commodities: ['Corn'], grainOnFarm: [{ commodityCode: 'YC', bushelsOnHand: 1 }] }),
-      customer(2, { commodities: ['Soybeans'] }),
-      customer(3),
-    ];
+    const customers = [customer(1), customer(2), customer(3)];
     const data = {
       customers,
+      profiles: [
+        producerProfile(1, { commodities: 'Corn', grainOnFarm: [{ commodityCode: 'YC', bushelsOnHand: 1 }] }),
+        producerProfile(2, { commodities: 'Soybeans' }),
+      ],
       dp: [{ id: 'd', ticketKey: 'd', customerId: 2, crop: 'YC' }] as DpContract[],
       storage: [{ customerId: 3, crop: 'YC', quantity: 1 }] as StoredGrain[],
       tickets: [{ id: 1, customerCode: 'C2', productCode: 'YC', date: '2026-10-01' }] as Ticket[],
@@ -327,8 +335,9 @@ describe('applyMemberOverrides', () => {
 
 describe('collapseLinkedComponents', () => {
   it('keeps one row per linked component (the lowest id present) and leaves standalone producers alone', () => {
-    const customers = [customer(5, { linkedProducerIds: ['C2'] }), customer(2, { linkedProducerIds: ['C9'] }), customer(9), customer(4), customer(7, { scoularId: undefined })];
-    const components = buildLinkedProducerComponents(customers);
+    const customers = [customer(5), customer(2), customer(9), customer(4), customer(7, { scoularId: undefined })];
+    const links = profileMap(producerProfile(5, { linkedProducerIds: 'C2' }), producerProfile(2, { linkedProducerIds: 'C9' }));
+    const components = buildLinkedProducerComponents(customers, c => profileLinkedIds(links.get(c.id)));
     expect(ids(collapseLinkedComponents(customers, components))).toEqual([2, 4, 7]);
     // The representative is the lowest id IN THE LIST, not in the component.
     expect(ids(collapseLinkedComponents([customers[0], customers[2]], components))).toEqual([5]);
@@ -336,6 +345,6 @@ describe('collapseLinkedComponents', () => {
 
   it('returns the same list when nothing is linked', () => {
     const list = [customer(1), customer(2)];
-    expect(collapseLinkedComponents(list, buildLinkedProducerComponents(list))).toBe(list);
+    expect(collapseLinkedComponents(list, buildLinkedProducerComponents(list, () => []))).toBe(list);
   });
 });

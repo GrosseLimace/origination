@@ -16,6 +16,7 @@ import { ToastService } from '@core/services/toast.service';
 import { NlqFilterService } from '@core/services/nlq-filter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { providePermissions } from '@testing/permission.stub';
+import { provideProducerProfiles } from '@testing/producer-profiles.fake';
 import { OutlookCalendarService } from '@core/services/outlook-calendar.service';
 import { environment } from '@env/environment';
 import { CustomerSlotComponent } from '@core/modules/customer-slot.component';
@@ -278,6 +279,7 @@ describe('HomeComponent (rendered)', () => {
         },
         { provide: UsageTrackingService, useValue: { trackProfileOpened: vi.fn() } },
         providePermissions(),
+        provideProducerProfiles(),
         // The right column is the sidebar slot: Engagement's two cards, stubbed, contributed as the real module does.
         { provide: APP_MODULES, useValue: sidebarModules },
         { provide: OutlookCalendarService, useValue: { addToOutlook: vi.fn(() => of(null)) } },

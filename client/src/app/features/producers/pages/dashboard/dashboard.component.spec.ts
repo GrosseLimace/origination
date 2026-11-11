@@ -14,6 +14,7 @@ import { TradeUnitSelectorComponent } from '@core/layout/trade-unit-selector/tra
 import { commodityChipClass } from '@shared/utils/commodity-color';
 import { CommodityChipClassPipe } from '@shared/pipes/commodity-chip-class.pipe';
 import { makeMsalServiceMock } from '@testing/msal.mocks';
+import { producerProfile, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
 import {
   Commodity, CommodityConversion, Contract, Customer, DashboardActualHarvest, DashboardMarketShare,
   DashboardPlantingEstimate, DashboardSummary, NoteLastContact, PlantingIntention, ProducerDetails, StoredGrain,
@@ -57,10 +58,17 @@ function makeCustomer(over: Partial<Customer>): Customer {
 }
 
 const CUSTOMERS: Customer[] = [
-  makeCustomer({ id: 1, scoularId: 'ALPHA', name: 'Alpha Farms', totalAcres: 400 }),
-  makeCustomer({ id: 2, scoularId: 'BRAVO', name: 'Bravo Ag', totalAcres: 300 }),
+  makeCustomer({ id: 1, scoularId: 'ALPHA', name: 'Alpha Farms' }),
+  makeCustomer({ id: 2, scoularId: 'BRAVO', name: 'Bravo Ag' }),
   // No planting intentions at all — the "without intentions" producer.
-  makeCustomer({ id: 3, scoularId: 'CHARLIE', name: 'Charlie Grain', totalAcres: 100, commodities: ['YC', 'HRW'] }),
+  makeCustomer({ id: 3, scoularId: 'CHARLIE', name: 'Charlie Grain' }),
+];
+
+/** Their saved details: farm acres, and the crops Charlie grows. */
+const PROFILES: ProducerDetails[] = [
+  producerProfile(1, { totalAcres: 400 }),
+  producerProfile(2, { totalAcres: 300 }),
+  producerProfile(3, { totalAcres: 100, commodities: 'YC,HRW' }),
 ];
 
 function pi(over: Partial<PlantingIntention>): PlantingIntention {
@@ -168,7 +176,6 @@ function makeAppState() {
     plantingIntentionsLoadFailed: signal(false),
     commodityConversionsLoadFailed: signal(false),
     customersLoadFailed: signal(false),
-    producerDetails: signal<ProducerDetails[]>([]),
     customersLoading: signal(false),
     contractsLoading: signal(false),
     todaysTicketsLoading: signal(false),
@@ -242,6 +249,7 @@ describe('DashboardComponent', () => {
         { provide: UsageTrackingService, useValue: usage },
         { provide: Router, useValue: router },
         { provide: MsalService, useValue: makeMsalServiceMock() },
+        provideProducerProfiles(producerProfilesFake(PROFILES)),
       ],
     });
     TestBed.overrideComponent(DashboardComponent, {

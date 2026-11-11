@@ -61,7 +61,6 @@ The shared data caches, built on Angular signals: the trade-unit-wide data the c
 | `storedGrain` | `StoredGrain[]` | Computed in service from `ctrm.vw_GNTA39D1` |
 | `savedLists` | `SavedList[]` | User's saved Build-a-List queries |
 | `commodities`, `commodityConversions`, `harvestWindows` | reference | Crop catalog and lb-per-bushel conversions |
-| `producerDetails` | `ProducerDetails[]` | App-DB enrichment (acres, bin sites, grain on farm, etc.) |
 | `pricingLines` | `ContractPricingLine[]` | Pricing lines for the selected producer — CTRM (live, inline on the contract) or ODS `vw_ContractPricing` per `Ctrm:Source` |
 | `allProducersMode` | `boolean` | Session-only "All Producers" selector mode — clears TU scope so the customer list searches every producer (incl. ODS producers with no contract/ticket) for onboarding. Never persisted. |
 | `selectedCustomer` | `Customer \| null` | Driven by Home page navigation. App-wide rather than the home page's: Help, Build a List, Insights and the Bid Sheet read or set it too. |
@@ -73,7 +72,20 @@ The shared data caches, built on Angular signals: the trade-unit-wide data the c
 
 `client/src/app/core/auth/session-reset.service.ts`
 
-Clears the module stores when the session ends. Core can't reach a module's stores, so each root store registers its own clearing in its constructor (`inject(SessionReset).onReset(...)`), and `AppStateService.clearAll()` runs them all. A store that was never created holds nothing, so it needs no clearing. Registered so far: the trade units' customers (`CustomerStore`), Build a List's state (`BuildListStore`), the customer list's scroll position (`CustomerListScrollStore`) and the Planting Dashboard's caches (`DashboardStore`). Before 2026-11-09 those three weren't cleared at sign-out: they had left `AppStateService` and nothing cleared them. A new module store that holds the user's data must register too.
+Clears the module stores when the session ends. Core can't reach a module's stores, so each root store registers its own clearing in its constructor (`inject(SessionReset).onReset(...)`), and `AppStateService.clearAll()` runs them all. A store that was never created holds nothing, so it needs no clearing. Registered so far: the trade units' customers (`CustomerStore`), Build a List's state (`BuildListStore`), the customer list's scroll position (`CustomerListScrollStore`), the Planting Dashboard's caches (`DashboardStore`) and every producer's details (`ProducerProfileStore`). Before 2026-11-09 those three weren't cleared at sign-out: they had left `AppStateService` and nothing cleared them. A new module store that holds the user's data must register too.
+
+### `ProducerProfiles`
+
+`client/src/app/core/context/producer-profiles.ts`
+
+Every producer's saved details (`dbo.ProducerDetails` with its contacts, bin sites and grain on farm), by customer id: the producer's profile, from `/api/producer-details`. Declared in core so a module that may not import Producers can read and update it; the Producers module's `ProducerProfileStore` (`features/producers/data-access`) is the one implementation, which `appModuleProviders` in `app.modules.ts` provides with the module list.
+
+- **One copy.** Producers' preload reads them on every trade-unit change, beside the dashboard summary, and the home page reads them again on each visit; a read already running is shared. A full read replaces what was held, so deleted details go; a failed one leaves them as they were.
+- **Only for a user holding `producer-details:read`.** Anyone else gets none, without a request, so nobody is refused on every trade-unit change.
+- **`put`** puts in one producer after it is read or saved on its own: the home page does on selection, on its background re-read, and at once when an edit is saved, before the save answers (a producer with no saved details yet gets them then).
+- **Cleared when the session ends**, through `SessionReset`; a read started before then puts nothing back.
+- **The comma-separated lists** (`commodities`, `linkedProducerIds`) are read with `profileCommodities` and `profileLinkedIds` (`shared/utils/producer-profile.ts`).
+- **Who reads it:** Producers' panels and screens (Farm Details, contacts, bin sites, Activity Summary, the print report, Edit Producer Details and its Linked From list, the field plan's report name, the Planting Dashboard), Build a List and its refinement filters, result rows and bin-site notes, and the NLQ engine, through `NlqFilterContext.producerProfiles` and the refinements' dimension context. The home page and the customer list read it too, and still lay the details over the page's customers (`applyProducerDetails`), which Phase 4 step 9b removes.
 
 ### `TradeUnitContext`
 

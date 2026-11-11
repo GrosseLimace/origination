@@ -473,11 +473,11 @@
                                     </svg>
                                     <span class="text-xs text-gray-400">{{ getFormattedLocation(row.customer) }}</span>
                                   }
-                                  @if (producerView() === 'with' && row.customer?.totalAcres) {
+                                  @if (producerView() === 'with' && farmAcresOf(row.customer)) {
                                     @if (getFormattedLocation(row.customer)) {
                                       <span class="text-gray-300 dark:text-gray-600">•</span>
                                     }
-                                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ row.customer?.totalAcres | number }} farm acres</span>
+                                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ farmAcresOf(row.customer) | number }} farm acres</span>
                                   }
                                   @if (showProducerTradeUnitColumn() && producerView() === 'with' && row.tradeUnit) {
                                     <span class="text-gray-300 dark:text-gray-600">•</span>

@@ -78,7 +78,7 @@ The screen does **not** make per-customer API calls — it operates entirely on 
 
 ### State it reads / writes
 
-Reads (heavy) from `AppStateService`: `contracts`, `tickets`, `notes`, `storedGrain`, `plantingIntentions`, `commodities`, `commodityConversions`, `producerDetails`; the customers from `CustomerStore` (`@features/customers`), and reloads them through `CustomersApiService` when it needs to; the trade-unit selection from `TradeUnitContext`. Its own query and results persist across navigation in `BuildListStore` (`features/lists/data-access`). Writes only when bulk-fetching is necessary; mostly read-only since DataPreloadService has already populated state.
+Reads (heavy) from `AppStateService`: `contracts`, `tickets`, `notes`, `storedGrain`, `plantingIntentions`, `commodities`, `commodityConversions`; every producer's details from `ProducerProfiles` (`core/context`), which its prompts, refinements and result rows read by customer id; the customers from `CustomerStore` (`@features/customers`), and reloads them through `CustomersApiService` when it needs to; the trade-unit selection from `TradeUnitContext`. Its own query and results persist across navigation in `BuildListStore` (`features/lists/data-access`). Writes only when bulk-fetching is necessary; mostly read-only since DataPreloadService has already populated state.
 
 ## NLQ pipeline
 

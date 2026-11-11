@@ -10,6 +10,7 @@ import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { providePermissions } from '@testing/permission.stub';
+import { provideProducerProfiles } from '@testing/producer-profiles.fake';
 import { Customer, QueryLibraryItem, SavedList } from '@models';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -99,6 +100,7 @@ describe('BuildListComponent - trade-unit reload keeps the library usable', () =
         { provide: ToastService, useValue: { info: vi.fn(), error: vi.fn(), success: vi.fn() } },
         { provide: UsageTrackingService, useValue: { postClickEvent: vi.fn() } },
         providePermissions(),
+        provideProducerProfiles(),
         { provide: MsalService, useValue: { instance: { getActiveAccount: () => null, getAllAccounts: () => [] } } },
         { provide: Router, useValue: { navigate: vi.fn() } },
         // No ?query= example link from the Help panel.

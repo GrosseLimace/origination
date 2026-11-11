@@ -1,16 +1,25 @@
 import { describe, it, expect } from 'vitest';
-import { Customer } from '@models';
+import { Customer, ProducerDetails } from '@models';
+import { producerProfile } from '@testing/producer-profiles.fake';
 import { binNoteContentAny, planBinSiteNoteChunks } from './bin-site-notes';
 
-const customer = (id: number, ...sites: string[]): Customer => ({
-  id, name: `P${id}`, scoularId: `C${id}`, farm: '', location: '', phone: '', email: '', totalAcres: 0,
-  linkedProducerIds: [], eSignEnabled: false, achEnabled: false,
-  binSites: sites.map((name, i) => ({ siteKey: `${id}-${i}`, name })),
-});
+/** Each producer's saved details, holding the bin sites named for them below. */
+const profiles = new Map<number, ProducerDetails>();
+
+const customer = (id: number, ...sites: string[]): Customer => {
+  profiles.set(id, producerProfile(id, { binSites: sites.map((name, i) => ({ siteKey: `${id}-${i}`, name })) }));
+  return {
+    id, name: `P${id}`, scoularId: `C${id}`, farm: '', location: '', phone: '', email: '', totalAcres: 0,
+    linkedProducerIds: [], eSignEnabled: false, achEnabled: false,
+  };
+};
+
+const plan = (customers: Customer[], fetchedKeys: ReadonlySet<string>, budget: number) =>
+  planBinSiteNoteChunks(customers, profiles, fetchedKeys, budget);
 
 describe('planBinSiteNoteChunks', () => {
   it('one chunk for small requests, skipping producers with no named sites and keys already fetched', () => {
-    const chunks = planBinSiteNoteChunks(
+    const chunks = plan(
       [customer(1, 'North', 'South'), customer(2), customer(3, 'North'), customer(4, 'Barn')],
       new Set(['4:barn']), 1500);
     expect(chunks).toHaveLength(1);
@@ -22,20 +31,20 @@ describe('planBinSiteNoteChunks', () => {
   });
 
   it('starts a new chunk before the budget would be passed', () => {
-    const chunks = planBinSiteNoteChunks([customer(1, 'aaaa'), customer(2, 'bbbb'), customer(3, 'cccc')], new Set(), 22);
+    const chunks = plan([customer(1, 'aaaa'), customer(2, 'bbbb'), customer(3, 'cccc')], new Set(), 22);
     expect(chunks.map(ch => ch.ids)).toEqual([[1, 2], [3]]);
     expect(chunks.map(ch => ch.length)).toEqual([22, 11]);
   });
 
   it('counts URL-encoded length, and gives an over-budget producer a chunk of its own', () => {
-    const chunks = planBinSiteNoteChunks([customer(1, 'a b'), customer(2, 'x'.repeat(40))], new Set(), 20);
+    const chunks = plan([customer(1, 'a b'), customer(2, 'x'.repeat(40))], new Set(), 20);
     expect(chunks[0].length).toBe(1 + 3 + 5 + 3);
     expect(chunks.map(ch => ch.ids)).toEqual([[1], [2]]);
     expect(chunks[1].length).toBeGreaterThan(20);
   });
 
   it('returns no chunks when nothing needs fetching', () => {
-    expect(planBinSiteNoteChunks([customer(1)], new Set(), 1500)).toEqual([]);
+    expect(plan([customer(1)], new Set(), 1500)).toEqual([]);
   });
 });
 

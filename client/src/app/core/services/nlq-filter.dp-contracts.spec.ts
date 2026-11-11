@@ -1,20 +1,20 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { NlqFilterService, NlqFilterContext } from './nlq-filter.service';
+import { profilesOf, withProfile } from '@testing/producer-profiles.fake';
 import { Customer, DpContract } from '@models';
 
 /**
  * Neutral names (Alpha/Bravo/…) so the engine's name-search paths can't match crop words.
  *
- * `commodities` is populated on every customer deliberately: a query naming a crop also runs the
- * engine's generic commodity filter against customer.commodities, so leaving it empty would filter
- * everyone out before the DP logic under test ever ran.
+ * `commodities` is populated on every customer's saved details deliberately: a query naming a crop also runs the
+ * engine's generic commodity filter against them, so leaving them empty would filter everyone out before the DP
+ * logic under test ever ran.
  */
 function customer(id: number, name: string): Customer {
-  return {
+  return withProfile({
     id, name, farm: '', location: '', phone: '', email: '',
     totalAcres: 0, linkedProducerIds: [], eSignEnabled: false,
-    commodities: ['Corn', 'Soybeans'],
-  } as Customer;
+  } as Customer, { commodities: 'Corn,Soybeans' });
 }
 
 /**
@@ -57,7 +57,7 @@ function delivery(
 }
 
 function ctx(customers: Customer[], dpContracts: DpContract[]): NlqFilterContext {
-  return { customers, contracts: [], tickets: [], notes: [], plantingIntentions: [], storedGrain: [], dpContracts };
+  return { customers, producerProfiles: profilesOf(customers), contracts: [], tickets: [], notes: [], plantingIntentions: [], storedGrain: [], dpContracts };
 }
 
 describe('NlqFilterService — DP contracts', () => {
@@ -154,13 +154,13 @@ describe('NlqFilterService — DP contracts', () => {
   });
 
   it('treats missing dpContracts as no DP rather than throwing', () => {
-    const noDpCtx: NlqFilterContext = { customers: all, contracts: [], tickets: [], notes: [], plantingIntentions: [], storedGrain: [] };
+    const noDpCtx: NlqFilterContext = { customers: all, producerProfiles: profilesOf(all), contracts: [], tickets: [], notes: [], plantingIntentions: [], storedGrain: [] };
     expect(svc.parseAndFilter('producers with DP contracts', noDpCtx).customers).toEqual([]);
   });
 
   describe('refinement filters', () => {
     const refine = (f: Record<string, unknown>) =>
-      svc.applyRefinementFilters(all, f as never, [], [], { dpContracts: dp })
+      svc.applyRefinementFilters(all, f as never, [], [], { producerProfiles: profilesOf(all), dpContracts: dp })
         .map(c => c.id).sort((a, b) => a - b);
 
     it('hasDpContracts is inferred as the DP dimension for crop scoping', () => {
@@ -183,7 +183,7 @@ describe('NlqFilterService — DP contracts', () => {
         { id: 3, code: 'YSB', name: 'Yellow Soybeans', category: 'Soybeans', isActive: true },
       ];
       const result = svc.applyRefinementFilters(all, { hasDpContracts: true, crops: ['Corn'] } as never, [], [],
-        { dpContracts: dpWithAltCode, commodities })
+        { producerProfiles: profilesOf(all), dpContracts: dpWithAltCode, commodities })
         .map(c => c.id).sort((a, b) => a - b);
       expect(result).toEqual([1, 3]);
     });

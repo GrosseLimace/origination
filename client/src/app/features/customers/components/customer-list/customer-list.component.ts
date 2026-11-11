@@ -13,6 +13,7 @@ import { AppStateService } from '@core/services/app-state.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { REMINDER_DUE_CLASS, reminderDueTier } from '@shared/utils/reminder-due';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
+import { profileLinkedIds } from '@shared/utils/producer-profile';
 import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
 import { CardComponent, CardContentComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
@@ -65,7 +66,7 @@ export class CustomerListComponent {
    *  returns the caller's — so this badge never reveals another originator's plans. */
   public myReminders = input<ReminderDue[]>([]);
   public loading = input(false);
-  public producerDetailsMap = input(new Map<number, ProducerDetails>());
+  public producerDetailsMap = input<ReadonlyMap<number, ProducerDetails>>(new Map());
   /** Extra customers fetched for incoming/outgoing linked-producer lookups (populated by the home
    *  page when a customer is selected in no-TU mode). Folded into the incoming-link map so the
    *  last-contacted date on the card reflects notes from reverse-linked producers. */
@@ -633,6 +634,7 @@ export class CustomerListComponent {
     const notes = this.appStateService.notes();
     const context: NlqFilterContext = {
       customers: this.customers(),
+      producerProfiles: this.producerDetailsMap(),
       contracts,
       tickets: this.appStateService.tickets(),
       notes,
@@ -663,6 +665,7 @@ export class CustomerListComponent {
     }
     const refined = listFilters
       ? this.nlqFilterService.applyRefinementFilters(result.customers, listFilters, contracts, notes, {
+          producerProfiles: this.producerDetailsMap(),
           tickets: this.appStateService.tickets(),
           storedGrain: this.appStateService.storedGrain(),
           dpContracts: this.appStateService.dpContracts(),
@@ -810,7 +813,8 @@ export class CustomerListComponent {
     // Includes any linked-producer customers fetched on demand by home page so links across
     // TUs still resolve when the main roster is filtered or empty.
     const allCustomers = [...this.customers(), ...this.linkedProducerCustomers()];
-    const components = buildLinkedProducerComponents(allCustomers);
+    const profiles = this.producerDetailsMap();
+    const components = buildLinkedProducerComponents(allCustomers, c => profileLinkedIds(profiles.get(c.id)));
 
     for (const customer of customersToCache) {
       // Start from the connected component when we have a scoularId — otherwise fall back

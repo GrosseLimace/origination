@@ -51,6 +51,8 @@ import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 import { filterSavedListsByTradeUnitOverlap } from '@shared/utils/saved-list-trade-units';
 import { environment } from '@env/environment';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
+import { ProducerProfiles } from '@core/context/producer-profiles';
+import { profileCommodities, profileLinkedIds } from '@shared/utils/producer-profile';
 import { BuildListState, BuildListStore } from '../../data-access/build-list.store';
 
 @Component({
@@ -87,6 +89,8 @@ import { BuildListState, BuildListStore } from '../../data-access/build-list.sto
 export class BuildListComponent {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
+  /** Every producer's details, kept by the Producers module; laid over the customers this page filters. */
+  private readonly producerProfiles = inject(ProducerProfiles);
   private readonly customerStore = inject(CustomerStore);
   private readonly customersApi = inject(CustomersApiService);
   private readonly tradeUnitContext = inject(TradeUnitContext);
@@ -425,6 +429,7 @@ export class BuildListComponent {
    *  inside displayedCustomers, so each signal is tracked only by the refinements that consult it. */
   private readonly _refineSources: RefinementFilterSources = {
     customers: () => this.customers(),
+    profileOf: c => this.producerProfiles.profileOf(c.id),
     notes: () => this.notes(),
     tickets: () => this.tickets(),
     plantingIntentions: () => this.plantingIntentions(),
@@ -536,7 +541,10 @@ export class BuildListComponent {
         for (const n of found.notes) max = Math.max(max, parseNoteTime(n.createdAt));
         lastMention.set(id, max);
       }
-      const changed = (c: Customer) => (c.binSitesModifiedAt ? Date.parse(c.binSitesModifiedAt) || 0 : 0);
+      const changed = (c: Customer) => {
+        const at = this.producerProfiles.profileOf(c.id)?.binSitesModifiedAt;
+        return at ? Date.parse(at) || 0 : 0;
+      };
       return [...list].sort((a, b) =>
         (lastMention.get(b.id) ?? 0) - (lastMention.get(a.id) ?? 0)
         || changed(b) - changed(a)
@@ -606,7 +614,7 @@ export class BuildListComponent {
   });
 
   /** Fallback chip source: the distinct commodity codes carried by the current results (plus the
-   *  grain-on-farm and DP crops those rows hold, which needn't appear in customer.commodities). */
+   *  grain-on-farm and DP crops those rows hold, which needn't appear in the producer's saved commodities). */
   private _cropsPresentInResults(): string[] {
     const codes = new Set<string>();
     const add = (raw: string | null | undefined) => {
@@ -614,7 +622,7 @@ export class BuildListComponent {
       if (trimmed) codes.add(trimmed.toUpperCase());
     };
     for (const c of this.filteredCustomers()) {
-      for (const crop of (c.commodities ?? [])) add(crop);
+      for (const crop of profileCommodities(this.producerProfiles.profileOf(c.id))) add(crop);
     }
     if (this.showDpFilters()) {
       const dpByCustomer = this._dpByCustomerId();
@@ -630,7 +638,7 @@ export class BuildListComponent {
   private _grainCropsInResults(): string[] {
     const codes = new Set<string>();
     for (const c of this.filteredCustomers()) {
-      for (const g of (c.grainOnFarm ?? [])) {
+      for (const g of (this.producerProfiles.profileOf(c.id)?.grainOnFarm ?? [])) {
         const code = (g.commodityCode || '').trim();
         if (code) codes.add(code.toUpperCase());
       }
@@ -848,7 +856,7 @@ export class BuildListComponent {
    *  collapse, codesByCustomerId, matchingNotesByCustomer, lastContactByCustomer) so chained
    *  links A→B→C are treated as one transitive group everywhere. See shared util for details. */
   readonly linkedProducerComponents = computed<Map<string, Set<string>>>(() => {
-    return buildLinkedProducerComponents(this.customers());
+    return buildLinkedProducerComponents(this.customers(), c => profileLinkedIds(this.producerProfiles.profileOf(c.id)));
   });
 
   /** True when the result list should render an inline note section per customer.
@@ -921,7 +929,7 @@ export class BuildListComponent {
 
   /** Crops per customer — merged from ProducerDetails, contracts, intentions. */
   readonly cropsByCustomer = computed(() => cropsByCustomer(
-    this._contractsByCustomer(), this.plantingIntentions(), this.tickets(), this.storedGrain(), this.customers()));
+    this._contractsByCustomer(), this.plantingIntentions(), this.tickets(), this.storedGrain(), this.customers(), this.producerProfiles.profiles()));
 
   // ── Query Library ──────────────────────────────────────────────────────
   queryLibrary = signal<QueryLibraryItem[]>([]);
@@ -1050,7 +1058,7 @@ export class BuildListComponent {
     for (const c of this.customers()) {
       const notes = byCustomer.get(c.id);
       if (!notes) continue;
-      const found = notesMentioningBinSites(notes, binSiteNames(c.binSites));
+      const found = notesMentioningBinSites(notes, binSiteNames(this.producerProfiles.profileOf(c.id)?.binSites));
       if (found) map.set(c.id, found);
     }
     return map;
@@ -1066,7 +1074,7 @@ export class BuildListComponent {
    */
   private _loadBinSiteNotes(): void {
     if (!this.binNotesActive() || this._binNotesFetchInFlight) return;
-    const chunks = planBinSiteNoteChunks(this.filteredCustomers(), this._binNoteFetchedKeys, BuildListComponent.BIN_NOTES_QUERY_BUDGET);
+    const chunks = planBinSiteNoteChunks(this.filteredCustomers(), this.producerProfiles.profiles(), this._binNoteFetchedKeys, BuildListComponent.BIN_NOTES_QUERY_BUDGET);
     if (chunks.length === 0) return;
 
     this._binNotesFetchInFlight = true;
@@ -1307,9 +1315,8 @@ export class BuildListComponent {
       // different TU. The background refresh will set it when fresh tickets arrive.
       // Ticket-dependent queries will wait via the "Loading delivery data..." path,
       // ensuring they always use fresh data.
-      if (this.appState.producerDetails().length > 0) {
-        this._mergeProducerDetails(this.appState.producerDetails());
-      }
+      const heldDetails = [...this.producerProfiles.profiles().values()];
+      if (heldDetails.length > 0) this._mergeProducerDetails(heldDetails);
 
       // Restore filtered results if we had a previous query for the same TUs
       const saved = this.buildListStore.buildListState();
@@ -1399,7 +1406,8 @@ export class BuildListComponent {
       savedLists: this.apiService.getSavedLists().pipe(
         tap(() => this.appState.setSavedListsLoadFailed(false)),
         catchError(() => { this.appState.setSavedListsLoadFailed(true); return of([] as SavedList[]); })),
-      producerDetails: this.apiService.getAllProducerDetails().pipe(catchError(() => of([] as ProducerDetails[])))
+      // Read again, as each fresh load does; a failed read falls back to the details already held.
+      producerDetails: this.producerProfiles.load().pipe(catchError(() => of([...this.producerProfiles.profiles().values()])))
     }).pipe(takeUntil(this._cancelLoad$), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         // Ignore stale response from a previous TU's load
@@ -1414,8 +1422,7 @@ export class BuildListComponent {
         if (this.appState.notesLoaded()) this.notes.set(this.appState.notes());
         this.storedGrain.set(data.storedGrain);
         this.savedLists.set(data.savedLists);
-        // Merge producer details into customer objects, then write to appState
-        if (data.producerDetails.length > 0) this.appState.setProducerDetails(data.producerDetails);
+        // Merge producer details into customer objects (ProducerProfiles already keeps them)
         this._mergeProducerDetails(data.producerDetails);
         // Write to appState so other pages and restore path can use it
         this.customerStore.setCustomers(this.customers());
@@ -2017,7 +2024,7 @@ export class BuildListComponent {
       dpContracts: this.apiService.getDpContracts(tuParam).pipe(
         tap(() => this.appState.setDpContractsLoadFailed(false)),
         catchError(() => { this.appState.setDpContractsLoadFailed(true); return of([] as DpContract[]); })),
-      producerDetails: (this.appState.producerDetails().length > 0 ? of(this.appState.producerDetails()) : this.apiService.getAllProducerDetails()).pipe(catchError(() => of([] as ProducerDetails[])))
+      producerDetails: (this.producerProfiles.profiles().size > 0 ? of([...this.producerProfiles.profiles().values()]) : this.producerProfiles.load()).pipe(catchError(() => of([] as ProducerDetails[])))
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         if (queryGen !== this._queryGenId) return; // Superseded by a newer query
@@ -2108,6 +2115,7 @@ export class BuildListComponent {
       ?? this.msalService.instance.getAllAccounts()[0];
     const context: NlqFilterContext = {
       customers: this.customers(),
+      producerProfiles: this.producerProfiles.profiles(),
       contracts: this.contracts(),
       tickets: this.tickets(),
       notes: this.notes(),
@@ -2965,7 +2973,7 @@ export class BuildListComponent {
 
   /** Per-crop grain on farm with bushels on hand, largest first — see grainOnFarmBreakdown (utils). */
   grainOnFarmBreakdown(customer: Customer): GrainOnFarmItem[] {
-    return grainOnFarmBreakdown(customer);
+    return grainOnFarmBreakdown(this.producerProfiles.profileOf(customer.id));
   }
 
   /** Storage receipts grouped by numeric customerId (StoredGrain joins on Customer.id, not scoularId). */
@@ -3062,7 +3070,7 @@ export class BuildListComponent {
     if (this.showGrainOnFarmFilters()) {
       // Only how many bin sites the producer has (a neutral chip — it is not a crop). The crops are in the
       // bin-site breakdown next to the name, so no per-crop chips here (user 2026-10-12: too much at once).
-      const sites = customer.binSites?.length ?? 0;
+      const sites = this.producerProfiles.profileOf(customer.id)?.binSites?.length ?? 0;
       return [{ text: sites > 0 ? `${sites} bin site${sites === 1 ? '' : 's'}` : 'No bin sites', colorKey: '', neutral: true }];
     }
     return [];
@@ -3131,12 +3139,18 @@ export class BuildListComponent {
   }
 
   hasBinSiteGrain(customer: Customer): boolean {
-    return hasBinSiteGrain(customer);
+    return hasBinSiteGrain(this.producerProfiles.profileOf(customer.id));
+  }
+
+  /** A producer's farm acres, from their saved details; 0 without any. */
+  acresOf(customer: Customer): number {
+    return this.producerProfiles.profileOf(customer.id)?.totalAcres ?? 0;
   }
 
   /** The rows of a producer's breakdown — see binSiteGrainBreakdown in shared/utils/grain-on-farm. */
   binSiteGrainBreakdown(customer: Customer): BinSiteGrainGroup[] {
-    return binSiteGrainBreakdown(customer.binSites, customer.grainOnFarm);
+    const profile = this.producerProfiles.profileOf(customer.id);
+    return binSiteGrainBreakdown(profile?.binSites, profile?.grainOnFarm);
   }
 
   /**

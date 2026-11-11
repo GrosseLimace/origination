@@ -1,15 +1,19 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Customer } from '@models';
+import { Customer, ProducerDetails } from '@models';
+import { producerProfilesFake, profilesOf, provideProducerProfiles, withProfile } from '@testing/producer-profiles.fake';
 import { CUSTOMER_SCREEN_SOURCE, CustomerScreenLink, SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { BinSitesComponent } from './bin-sites.component';
 
-const producer = (over: Partial<Customer> = {}) => ({ id: 1, name: 'Smith Farms', ...over }) as Customer;
+/** A producer, with the given saved details (their bin sites, contacts, acres, grain on farm) as their profile. */
+const producer = ({ id = 1, name = 'Smith Farms', ...details }: Omit<Partial<ProducerDetails>, 'id'> & { id?: number; name?: string } = {}) =>
+  withProfile({ id, name } as Customer, details);
 
 describe('BinSitesComponent', () => {
   const customer = signal<Customer | null>(null);
+  const profiles = producerProfilesFake();
   let fixture: ComponentFixture<BinSitesComponent>;
   let sites: BinSitesComponent;
   let tracking: { trackBinSiteMapClick: ReturnType<typeof vi.fn> };
@@ -17,8 +21,10 @@ describe('BinSitesComponent', () => {
   const host = () => fixture.nativeElement as HTMLElement;
   const text = () => (host().textContent ?? '').replace(/\s+/g, ' ').trim();
 
+  /** Puts `who` on screen, with their saved details. */
   function show(who: Customer | null): void {
     customer.set(who);
+    profiles.set(who ? [...profilesOf([who]).values()] : []);
     fixture.detectChanges();
   }
 
@@ -29,6 +35,7 @@ describe('BinSitesComponent', () => {
       providers: [
         { provide: CUSTOMER_SCREEN_SOURCE, useValue: { customer, linkedCustomers: signal([]), link: signal<CustomerScreenLink>({}) } },
         SelectedCustomerContext,
+        provideProducerProfiles(profiles),
         { provide: UsageTrackingService, useValue: tracking },
       ],
     });

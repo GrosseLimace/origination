@@ -1,5 +1,5 @@
 import { computed, inject } from '@angular/core';
-import { EMPTY, Observable, of } from 'rxjs';
+import { EMPTY, Observable, merge, of } from 'rxjs';
 import { catchError, switchMap, take, tap } from 'rxjs/operators';
 import { PermissionService } from '@core/access/permission.service';
 import { SelectedProducerProduction } from '@core/context/selected-producer-production';
@@ -8,6 +8,7 @@ import { ApiService } from '@core/services/api.service';
 import { PlantingIntention } from '@models';
 import { dpContractCount } from '@shared/utils/dp-aggregate';
 import { DashboardStore } from './data-access/dashboard.store';
+import { ProducerProfileStore } from './data-access/producer-profile.store';
 
 /**
  * Pre-fetches the Planting Dashboard's summary for the current year, so the dashboard renders without its own round
@@ -35,6 +36,16 @@ export function preloadDashboardSummary(tradeUnits: readonly string[]): Observab
         )
       : EMPTY),
   );
+}
+
+/**
+ * What Producers loads for a new trade-unit selection: the Planting Dashboard's summary, and every producer's details,
+ * which the customer screen, Build a List and the dashboard read. A failed read of the details leaves the last ones in
+ * place.
+ */
+export function preloadProducers(tradeUnits: readonly string[]): Observable<unknown> {
+  const profiles = inject(ProducerProfileStore);
+  return merge(preloadDashboardSummary(tradeUnits), profiles.load().pipe(catchError(() => EMPTY)));
 }
 
 /**
@@ -66,7 +77,7 @@ export const producersModule: ModuleManifest = {
       menu: 'main',
     },
   ],
-  preload: preloadDashboardSummary,
+  preload: preloadProducers,
   customerPanels: [
     // The profile header's producer details, all from the producer's saved details (ProducerDetails).
     {

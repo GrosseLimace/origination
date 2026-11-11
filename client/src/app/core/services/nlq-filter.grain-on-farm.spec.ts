@@ -1,22 +1,25 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { NlqFilterService, NlqFilterContext } from './nlq-filter.service';
-import { Customer } from '@models';
+import { Customer, ProducerDetails } from '@models';
+import { profilesOf, withProfile } from '@testing/producer-profiles.fake';
 
-/** Minimal customer with just the fields the grain-on-farm filters read. Names are intentionally
- *  neutral (Alpha/Bravo/…) so the engine's name-search paths can't accidentally match crop words. */
+/** Minimal customer, with its grain on farm in its saved details, which is what the grain-on-farm filters read.
+ *  Names are intentionally neutral (Alpha/Bravo/…) so the engine's name-search paths can't accidentally match crop
+ *  words. */
 function customer(
   id: number,
   name: string,
-  grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[]
+  grainOnFarm: { commodityCode: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[],
+  profile: Partial<ProducerDetails> = {},
 ): Customer {
-  return {
+  return withProfile({
     id, name, farm: '', location: '', phone: '', email: '',
-    totalAcres: 0, linkedProducerIds: [], eSignEnabled: false, grainOnFarm,
-  } as Customer;
+    totalAcres: 0, linkedProducerIds: [], eSignEnabled: false,
+  } as Customer, { grainOnFarm, ...profile });
 }
 
 function ctx(customers: Customer[]): NlqFilterContext {
-  return { customers, contracts: [], tickets: [], notes: [], plantingIntentions: [], storedGrain: [] };
+  return { customers, producerProfiles: profilesOf(customers), contracts: [], tickets: [], notes: [], plantingIntentions: [], storedGrain: [] };
 }
 
 describe('NlqFilterService — grain on farm + target', () => {
@@ -145,7 +148,7 @@ describe('NlqFilterService — grain-on-farm refinement filters', () => {
   const all = [alpha, bravo, charlie, delta];
 
   const refine = (f: Record<string, unknown>) =>
-    svc.applyRefinementFilters(all, f as never, [], []).map(c => c.id).sort((a, b) => a - b);
+    svc.applyRefinementFilters(all, f as never, [], [], { producerProfiles: profilesOf(all) }).map(c => c.id).sort((a, b) => a - b);
 
   it('grainOnFarmBushelsOver filters by total bushels on hand', () => {
     expect(refine({ grainOnFarmBushelsOver: 50000 })).toEqual([1]);
@@ -188,7 +191,7 @@ describe('NlqFilterService — grain-on-farm refinement filters', () => {
     const echo = customer(5, 'Echo Farms', [{ commodityCode: 'SRWW', bushelsOnHand: 15000 }]);
     const commodities = [{ id: 1, code: 'SRWW', name: 'Soft Red Winter Wheat', category: 'Wheat', isActive: true }];
     const result = svc.applyRefinementFilters([...all, echo],
-      { _promptCategory: 'Grain on Farm', crops: ['Wheat'] } as never, [], [], { commodities })
+      { _promptCategory: 'Grain on Farm', crops: ['Wheat'] } as never, [], [], { producerProfiles: profilesOf([...all, echo]), commodities })
       .map(c => c.id).sort((a, b) => a - b);
     expect(result).toContain(5);
   });
@@ -197,7 +200,7 @@ describe('NlqFilterService — grain-on-farm refinement filters', () => {
     const echo = customer(5, 'Echo Farms', [{ commodityCode: 'SRWW', bushelsOnHand: 15000 }]);
     const commodities = [{ id: 1, code: 'SRWW', name: 'Soft Red Winter Wheat', category: 'Wheat', isActive: true }];
     const result = svc.applyRefinementFilters([...all, echo],
-      { _promptCategory: 'Grain on Farm & Bin Sites', crops: ['Wheat'] } as never, [], [], { commodities })
+      { _promptCategory: 'Grain on Farm & Bin Sites', crops: ['Wheat'] } as never, [], [], { producerProfiles: profilesOf([...all, echo]), commodities })
       .map(c => c.id);
     expect(result).toContain(5);
   });
@@ -205,10 +208,10 @@ describe('NlqFilterService — grain-on-farm refinement filters', () => {
   it('a crop chip matches the crops entered on grain rows — even with no bushels on hand — not the producer commodities', () => {
     // Foxtrot entered wheat at a site (sold out, nothing on hand); Golf trades wheat but has none on farm.
     const foxtrot = customer(6, 'Foxtrot Farms', [{ commodityCode: 'SRWW', bushelsOnHand: 0 }]);
-    const golf = { ...customer(7, 'Golf Farms', [{ commodityCode: 'YC', bushelsOnHand: 9000 }]), commodities: ['SRWW'] } as Customer;
+    const golf = customer(7, 'Golf Farms', [{ commodityCode: 'YC', bushelsOnHand: 9000 }], { commodities: 'SRWW' });
     const commodities = [{ id: 1, code: 'SRWW', name: 'Soft Red Winter Wheat', category: 'Wheat', isActive: true }];
     const result = svc.applyRefinementFilters([foxtrot, golf],
-      { _promptCategory: 'Grain on Farm & Bin Sites', crops: ['SRWW'] } as never, [], [], { commodities })
+      { _promptCategory: 'Grain on Farm & Bin Sites', crops: ['SRWW'] } as never, [], [], { producerProfiles: profilesOf([foxtrot, golf]), commodities })
       .map(c => c.id);
     expect(result).toEqual([6]);
   });
@@ -232,7 +235,7 @@ describe('NlqFilterService — grain on farm keyed by commodity code', () => {
   const all = [foxtrot, golf, hotel, legacy];
 
   const refine = (f: Record<string, unknown>) =>
-    svc.applyRefinementFilters(all, f as never, [], [], { commodities } as never).map(c => c.id).sort((a, b) => a - b);
+    svc.applyRefinementFilters(all, f as never, [], [], { producerProfiles: profilesOf(all), commodities } as never).map(c => c.id).sort((a, b) => a - b);
 
   it('a group chip scopes the bushel refine to that group\'s code rows (and legacy group rows)', () => {
     // Before the switch this path used a substring test, so a "Wheat" chip could never match HRWW.

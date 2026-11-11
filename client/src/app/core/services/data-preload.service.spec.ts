@@ -41,7 +41,7 @@ function ticket(id: number): Ticket {
 type Api = Record<
   | 'getCommodityConversions' | 'getContracts' | 'getTodaysTickets' | 'getNotesLastContact'
   | 'getMyReminders' | 'getPlantingIntentions' | 'getStoredGrain' | 'getDpContracts' | 'getSavedLists'
-  | 'getCommodities' | 'getHarvestWindows' | 'getAllProducerDetails',
+  | 'getCommodities' | 'getHarvestWindows',
   ReturnType<typeof vi.fn<(...args: unknown[]) => Observable<unknown>>>
 >;
 
@@ -90,7 +90,6 @@ describe('DataPreloadService', () => {
       getSavedLists: vi.fn(() => of([])),
       getCommodities: vi.fn(() => of([])),
       getHarvestWindows: vi.fn(() => of([])),
-      getAllProducerDetails: vi.fn(() => of([])),
     };
     TestBed.configureTestingModule({
       providers: [

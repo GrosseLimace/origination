@@ -3,6 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Provider, signal } from '@angular/core';
 import { ActivitySummaryComponent } from './activity-summary.component';
 import { CustomerScreenSources, customerScreenSources } from '@testing/customer-screen-sources';
+import { producerProfile } from '@testing/producer-profiles.fake';
 import { ContractPacingHistoryFake, contractPacingHistoryFake, provideContractPacingHistory } from '../../data-access/contract-pacing-history.store.testing';
 import { AppStateService } from '@core/services/app-state.service';
 import { CommodityConversion, Contract, Customer, Ticket } from '@models';
@@ -105,6 +106,30 @@ describe('ActivitySummaryComponent — collapsible', () => {
  * conversion list (GNP024). Rendered through the real template, with the conversions as a signal
  * so the list can be replaced the way app state replaces it.
  */
+describe('ActivitySummaryComponent — who the producer is', () => {
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [...panelProviders(), { provide: AppStateService, useValue: { harvestWindows: () => [], commodityConversions: () => [] } }],
+    });
+    TestBed.overrideComponent(ActivitySummaryComponent, { set: { template: '', templateUrl: undefined, imports: [] } });
+  });
+
+  // Their primary contact, acres and crops are in their saved details, not on the customer record.
+  it("opens with the primary contact, the acres and the crops from the producer's saved details", () => {
+    sources.profiles.set([producerProfile(1, { primaryContact: ' Pat ', totalAcres: 1200, commodities: 'YC,SB' })]);
+    const { component } = createComponent();
+
+    expect(component.summaryText()).toContain('Pat operates 1,200 acres, primarily growing YC and SB.');
+  });
+
+  it('opens with the producer\'s name when they have no saved details', () => {
+    const { component } = createComponent();
+
+    expect(component.summaryText()).toMatch(/^Test Farm\./);
+  });
+});
+
 describe('ActivitySummaryComponent — unapplied ticket bushels', () => {
   const conversions = signal<CommodityConversion[]>([]);
   let fixture: ComponentFixture<ActivitySummaryComponent>;

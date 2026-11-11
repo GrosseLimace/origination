@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { NlqFilterService, NlqFilterContext } from './nlq-filter.service';
+import { producerProfile, profileMap, profilesOf } from '@testing/producer-profiles.fake';
 import { Customer, Contract } from '@models';
 
 /**
@@ -26,7 +27,7 @@ function contract(ctrmCustomerId: string, over: Partial<Contract> = {}): Contrac
 }
 
 function ctx(customers: Customer[], contracts: Contract[] = []): NlqFilterContext {
-  return { customers, contracts, tickets: [], notes: [], plantingIntentions: [], storedGrain: [] };
+  return { customers, producerProfiles: profilesOf(customers), contracts, tickets: [], notes: [], plantingIntentions: [], storedGrain: [] };
 }
 
 describe('NlqFilterService — contract absence ("No contracts" prompt)', () => {
@@ -113,12 +114,23 @@ describe('NlqFilterService — ranking prompt-card wording (pins the literal Que
   });
 
   it('"Top 10 by acres" (renamed from "Top 10 largest operations", which only worked via a synonym rewrite) ranks by totalAcres, descending', () => {
-    const withAcres = [
-      { ...alpha, totalAcres: 1200 },
-      { ...bravo, totalAcres: 5000 },
-      { ...charlie, totalAcres: 2800 },
-    ];
-    const ordered = svc.parseAndFilter('Top 10 by acres', ctx(withAcres, [])).customers.map(c => c.id);
+    // Their acres are in their saved details.
+    const acres = profileMap(
+      producerProfile(alpha.id, { totalAcres: 1200 }),
+      producerProfile(bravo.id, { totalAcres: 5000 }),
+      producerProfile(charlie.id, { totalAcres: 2800 }),
+    );
+    const ordered = svc.parseAndFilter('Top 10 by acres', { ...ctx([alpha, bravo, charlie], []), producerProfiles: acres }).customers.map(c => c.id);
     expect(ordered).toEqual([2, 3, 1]);
+  });
+
+  it('filters by the acres in the producers\' saved details: over, under, between, and none saved counting as 0', () => {
+    const acres = profileMap(producerProfile(alpha.id, { totalAcres: 1200 }), producerProfile(bravo.id, { totalAcres: 5000 }));
+    const ids = (q: string) => svc.parseAndFilter(q, { ...ctx([alpha, bravo, charlie], []), producerProfiles: acres }).customers
+      .map(c => c.id).sort((a, b) => a - b);
+
+    expect(ids('producers with more than 1,000 acres')).toEqual([1, 2]);
+    expect(ids('producers with under 2000 acres')).toEqual([1, 3]);
+    expect(ids('producers between 1000 and 2000 acres')).toEqual([1]);
   });
 });

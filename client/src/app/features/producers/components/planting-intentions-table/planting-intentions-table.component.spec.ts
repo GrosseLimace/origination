@@ -8,6 +8,7 @@ import { ToastService } from '@core/services/toast.service';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { SelectedCustomerContext } from '@core/context/selected-customer-context.service';
 import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
+import { provideProducerProfiles } from '@testing/producer-profiles.fake';
 import { FieldPlanStore } from '../field-plan/store/field-plan.store';
 import { Commodity, Customer, PlantingIntention } from '@models';
 import { CustomersApiService } from '@features/customers';
@@ -57,6 +58,7 @@ describe('PlantingIntentionsTableComponent — trade unit on a row', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: CustomersApiService, useExisting: ApiService },
+        provideProducerProfiles(),
         {
           provide: ApiService,
           useValue: {
@@ -351,6 +353,7 @@ describe('PlantingIntentionsTableComponent — rendering', () => {
       imports: [PlantingIntentionsTableComponent],
       providers: [
         { provide: CustomersApiService, useExisting: ApiService },
+        provideProducerProfiles(),
         {
           provide: ApiService,
           useValue: {
@@ -537,6 +540,7 @@ describe('PlantingIntentionsTableComponent — permissions', () => {
       imports: [PlantingIntentionsTableComponent],
       providers: [
         { provide: CustomersApiService, useExisting: ApiService },
+        provideProducerProfiles(),
         { provide: ApiService, useValue: { getCommodities: () => of([]), getPlantingCommodities: () => of([]), getCustomerTradeUnits: () => of([]) } },
         { provide: ToastService, useValue: { error: () => {}, success: () => {}, warning: () => {} } },
         {

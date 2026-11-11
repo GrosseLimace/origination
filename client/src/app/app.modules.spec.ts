@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { appModules } from './app.modules';
+import { TestBed } from '@angular/core/testing';
+import { ProducerProfiles } from '@core/context/producer-profiles';
+import { ApiService } from '@core/services/api.service';
+import { providePermissions } from '@testing/permission.stub';
+import { appModuleProviders, appModules } from './app.modules';
+import { ProducerProfileStore } from './features/producers/data-access/producer-profile.store';
 import { routes } from './app.routes';
 
 describe("the app's pages and links", () => {
@@ -33,5 +38,14 @@ describe("the app's pages and links", () => {
 
     expect(new Set(ids).size).toBe(ids.length);
     expect(routes.at(-1)).toEqual({ path: '**', redirectTo: '' });
+  });
+});
+
+describe('what core declares and a module implements', () => {
+  // Customers' home page and customer list read every producer's details without importing Producers.
+  it("gives ProducerProfiles as the Producers module's store", () => {
+    TestBed.configureTestingModule({ providers: [appModuleProviders, { provide: ApiService, useValue: {} }, providePermissions()] });
+
+    expect(TestBed.inject(ProducerProfiles)).toBe(TestBed.inject(ProducerProfileStore));
   });
 });

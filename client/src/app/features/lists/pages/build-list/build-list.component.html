@@ -1703,7 +1703,7 @@
                               }
                             } @else {
                               <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
-                              <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ customer.totalAcres | number }} acres</span>
+                              <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ acresOf(customer) | number }} acres</span>
                             }
                           </div>
                           @if (linkedInfo) {
@@ -1903,7 +1903,7 @@
                                     }
                                   } @else {
                                     <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
-                                    <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ linked.totalAcres | number }} acres</span>
+                                    <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ acresOf(linked) | number }} acres</span>
                                   }
                                 </div>
                               </div>
