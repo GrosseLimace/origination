@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TDiscPass } from '@models';
+import { TDiscPass } from '../../../../models/tdisc.model';
 import { designate, operationsFor, passesProblem, rateTDisc, supportedTillage, tDiscNeeded } from './fd-cic-tdisc';
 import { TDISC_TEST_OPTIONS as options } from './fd-cic-tdisc.testing';
 

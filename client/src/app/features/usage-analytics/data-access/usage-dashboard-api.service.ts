@@ -2,22 +2,7 @@ import { inject, Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { catchError } from 'rxjs/operators';
-import {
-  UsageDashboardSummary,
-  UsageDashboardUser,
-  DailyActive,
-  FeatureSessions,
-  QueryLibraryUsage,
-  QuerySearchGap,
-  WeeklyTrend,
-  ActivityBreakdown,
-  UnderusedFeature,
-  UserUsageDetail,
-  ExcludedUser,
-  AccessUsers,
-  ExclusionPermissions,
-  UsageManager,
-} from '@models';
+import { UsageDashboardSummary, UsageDashboardUser, DailyActive, FeatureSessions, QueryLibraryUsage, QuerySearchGap, WeeklyTrend, ActivityBreakdown, UnderusedFeature, UserUsageDetail, ExcludedUser, AccessUsers, ExclusionPermissions, UsageManager } from '../models/usage-dashboard.model';
 import { environment } from '@env/environment';
 import { injectApiErrorHandler } from '@core/http/api-error-handler';
 

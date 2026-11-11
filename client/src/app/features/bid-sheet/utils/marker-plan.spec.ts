@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BidSheetLocation, BidSheetLocationBid } from '@models';
+import { BidSheetLocation, BidSheetLocationBid } from '../models/bid-sheet.model';
 import { buildBidLookup, flattenBidEntries } from './bid-math';
 import { EXPANDED_PIN_GREY, PIN_GREY, SCOULAR_BG, STATUS_COLORS } from './map-markers';
 import { MarkerPlanInput, planMarkers } from './marker-plan';

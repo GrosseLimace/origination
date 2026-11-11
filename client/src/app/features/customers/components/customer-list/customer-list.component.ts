@@ -9,6 +9,7 @@ import { Customer, SavedList, Note, NoteLastContact, ReminderDue, QueryLibraryIt
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { CustomerStore } from '../../data-access/customer.store';
+import { CustomersApiService } from '../../data-access/customers-api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { REMINDER_DUE_CLASS, reminderDueTier } from '@shared/utils/reminder-due';
@@ -81,6 +82,7 @@ export class CustomerListComponent {
   private static readonly PREFETCH_DWELL_MS = 350;
 
   private readonly apiService = inject(ApiService);
+  private readonly customersApi = inject(CustomersApiService);
   private readonly appStateService = inject(AppStateService);
   private readonly customerStore = inject(CustomerStore);
   private readonly tradeUnitContext = inject(TradeUnitContext);
@@ -165,13 +167,13 @@ export class CustomerListComponent {
         // useful onboarding lookup. Keeps short-term typing fast (our-table search only).
         const noScope = explicitUnits.length === 0 && selectedGroups.length === 0;
         const odsEligible = noScope && searchTerm.trim().length >= 3;
-        return this.apiService.searchCustomers(searchTerm, tradeUnits).pipe(
+        return this.customersApi.searchCustomers(searchTerm, tradeUnits).pipe(
           // Onboarding fallback: when nothing matches in our tables AND no TU/group is
           // selected, look the term up in the ODS customer master so the user can find
           // and onboard a producer who exists in CTRM but has no contract/ticket yet.
           switchMap(results => {
             if (results.length === 0 && odsEligible) {
-              return this.apiService.searchOdsCustomers(searchTerm).pipe(
+              return this.customersApi.searchOdsCustomers(searchTerm).pipe(
                 map(ods => ods.map(c => ({ ...c, isOnboardCandidate: true }))),
                 catchError(() => of([] as Customer[]))
               );

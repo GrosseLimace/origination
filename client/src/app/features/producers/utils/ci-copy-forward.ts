@@ -1,4 +1,4 @@
-import { FdCicCrop, FdCicData } from '@models';
+import { FdCicCrop, FdCicData } from '../models/carbon-intensity.model';
 
 /** The 45Z practice inputs carried from one season of a field to the next. */
 export type CopyablePractices = Pick<FdCicData, 'expectedYield' | 'syntheticN' | 'niFraction' | 'tillage' | 'coverCrop' | 'manure'>;

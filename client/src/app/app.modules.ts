@@ -1,6 +1,8 @@
 import { Provider } from '@angular/core';
+import { CustomerSearch } from '@core/context/customer-search';
 import { ProducerProfiles } from '@core/context/producer-profiles';
 import { ModuleManifest } from '@core/modules/module-manifest';
+import { CustomersApiService } from './features/customers/data-access/customers-api.service';
 import { ProducerProfileStore } from './features/producers/data-access/producer-profile.store';
 import { bidSheetModule } from './features/bid-sheet/bid-sheet.module';
 import { calculatorsModule } from './features/calculators/calculators.module';
@@ -37,4 +39,6 @@ export const appModules: readonly ModuleManifest[] = [
 export const appModuleProviders: Provider[] = [
   // Every producer's details, which Customers' home page and customer list read without importing Producers.
   { provide: ProducerProfiles, useExisting: ProducerProfileStore },
+  // Searching customers, which Help's troubleshooter runs without importing Customers.
+  { provide: CustomerSearch, useExisting: CustomersApiService },
 ];

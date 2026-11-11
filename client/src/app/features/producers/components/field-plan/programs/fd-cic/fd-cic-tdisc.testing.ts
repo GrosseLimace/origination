@@ -1,4 +1,4 @@
-import { TDiscOptions } from '@models';
+import { TDiscOptions } from '../../../../models/tdisc.model';
 import type { TDiscApiService } from '../../../../data-access/tdisc-api.service';
 
 /**

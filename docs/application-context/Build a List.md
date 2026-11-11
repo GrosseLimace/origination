@@ -72,7 +72,7 @@ The screen does **not** make per-customer API calls — it operates entirely on 
 
 - `apiService.getQueryLibrary()` — on init.
 - `apiService.getSavedLists()` — on init.
-- `apiService.searchCustomers(term, tradeUnits?)` — debounced from Manage Members search input.
+- `customersApi.searchCustomers(term, tradeUnits?)` (`CustomersApiService`, from `@features/customers`) — debounced from Manage Members search input.
 - `apiService.saveList(payload)` / `updateList(id, payload)` / `deleteList(id)` — save dialog and saved-list actions.
 - `apiService.logQuerySearch({ searchText, matchedQueryId? })` — fired when a library search produces no match (data feeds the Usage Dashboard "Query search gaps" panel).
 
@@ -206,7 +206,7 @@ interface SavedList {
 Two-pane search:
 
 - **In-results matches** — filters `displayedCustomers()` by name/code/farm. Excludes already-excluded ids. Cap of 5 shown.
-- **Add candidates** — debounced 300 ms call to `apiService.searchCustomers`. Filters out anyone already in the results or already manually included.
+- **Add candidates** — debounced 300 ms call to `customersApi.searchCustomers`. Filters out anyone already in the results or already manually included.
 
 A `logicallyInResultsIds` computed considers a producer "in results" if they're either a deduped peer row or a linked producer reachable through a parent's expand panel. This makes Manage Members search labels match the user's mental model when the linked-producer entity view is on.
 

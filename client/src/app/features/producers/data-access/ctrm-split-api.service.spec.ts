@@ -3,7 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { environment } from '@env/environment';
-import type { CtrmSplit } from '@models';
+import type { CtrmSplit } from '../models/field-plan.model';
 import { CtrmSplitApiService } from './ctrm-split-api.service';
 
 const URL = `${environment.apiBaseUrl}/ctrm-splits/customer/9`;

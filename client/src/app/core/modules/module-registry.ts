@@ -1,6 +1,6 @@
 import { EnvironmentInjector, Injectable, InjectionToken, computed, inject, isDevMode, runInInjectionContext } from '@angular/core';
 import { EMPTY, Observable, defer } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { catchError, switchMap } from 'rxjs/operators';
 import { PermissionService } from '@core/access/permission.service';
 import { CustomerContribution, CustomerPanel, CustomerSlot, ModuleManifest, NavItem } from './module-manifest';
 
@@ -34,19 +34,28 @@ export class ModuleRegistry {
   }
 
   /**
-   * Each module's preload for this trade-unit selection, run in an injection context when subscribed. A preload that
-   * throws or errors anyway ends quietly: it is merged into the app's trade-unit load, which one module's bug must
-   * not stop for the rest of the session.
+   * Each module's preload for this trade-unit selection, run in an injection context when subscribed. It waits for the
+   * user's permissions, and runs only for a module the user holds: a user who can read nothing of a module, such as a
+   * trader and Producers, fetches nothing for it. A preload that throws or errors anyway ends quietly: it is merged
+   * into the app's trade-unit load, which one module's bug must not stop for the rest of the session.
    */
   preloads(tradeUnits: readonly string[]): Observable<unknown>[] {
     return this.modules
       .filter(module => module.preload)
-      .map(module => defer(() => runInInjectionContext(this.injector, () => module.preload!(tradeUnits))).pipe(
+      .map(module => this.access.loaded().pipe(
+        switchMap(() => this.holds(module)
+          ? defer(() => runInInjectionContext(this.injector, () => module.preload!(tradeUnits)))
+          : EMPTY),
         catchError(error => {
           if (isDevMode()) console.error(`The ${module.id} module's preload failed:`, error);
           return EMPTY;
         }),
       ));
+  }
+
+  /** Whether the user holds the module: the API lists it among their modules, or it is one the API doesn't know. */
+  private holds(module: ModuleManifest): boolean {
+    return module.spaOnly === true || this.access.holdsModule(module.id);
   }
 
   private navItems(menu: NavItem['menu']): NavItem[] {

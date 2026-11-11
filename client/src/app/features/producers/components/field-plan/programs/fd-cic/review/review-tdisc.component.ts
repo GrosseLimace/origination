@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { TDiscOptions, TDiscPass, TDiscResult, TDiscWindowKey } from '@models';
+import { TDiscOptions, TDiscPass, TDiscResult, TDiscWindowKey } from '../../../../../models/tdisc.model';
 import { DESIGNATION_LABELS, operationsFor } from '../fd-cic-tdisc';
 
 interface SearchResult { kind: 'operation' | 'implement'; name: string; implements: string[] }

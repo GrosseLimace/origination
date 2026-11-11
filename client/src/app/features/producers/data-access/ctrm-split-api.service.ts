@@ -2,7 +2,7 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { environment } from '@env/environment';
 import { ApiError } from '@core/errors/api-error';
-import { CtrmSplit } from '@models';
+import { CtrmSplit } from '../models/field-plan.model';
 
 /** A producer's CTRM splits as they load. `source` is "sample" until the CTRM splits query is confirmed. */
 export type CtrmSplitsState =

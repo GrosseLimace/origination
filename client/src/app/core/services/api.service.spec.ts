@@ -25,15 +25,6 @@ describe('ApiService', () => {
     httpMock.verify();
   });
 
-  // ── Customers ──────────────────────────────────────────────────────────────
-
-  it('searchCustomers() calls GET /customers/search with searchTerm', () => {
-    service.searchCustomers('Smith').subscribe();
-    const req = httpMock.expectOne(r => r.url === `${BASE}/customers/search`);
-    expect(req.request.params.get('searchTerm')).toBe('Smith');
-    req.flush([]);
-  });
-
   // ── DP Contracts ───────────────────────────────────────────────────────────
 
   it('getDpContracts() calls GET /dpcontracts', () => {

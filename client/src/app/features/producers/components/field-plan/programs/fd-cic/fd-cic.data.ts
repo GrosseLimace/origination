@@ -1,4 +1,6 @@
-import { CoverCrop, FdCicCrop, FdCicData, FdCicScoreRequest, FdCicScoreState, FieldSeason, ProducerField, Tillage } from '@models';
+import { CoverCrop, FdCicCrop, FdCicData, Tillage } from '../../../../models/carbon-intensity.model';
+import { FdCicScoreRequest, FdCicScoreState } from '../../../../models/fd-cic.model';
+import { FieldSeason, ProducerField } from '../../../../models/field-plan.model';
 import { FdCicApiService } from '../../../../data-access/fd-cic-api.service';
 
 /** The workbook's own labels, which the API's tables are keyed by. */

@@ -4,6 +4,7 @@ import { Observable, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { Customer } from '@models';
 import { environment } from '@env/environment';
+import { CustomerSearch } from '@core/context/customer-search';
 import { injectApiErrorHandler } from '@core/http/api-error-handler';
 import { dedupeRequests } from '@core/http/dedupe-requests';
 
@@ -16,12 +17,11 @@ export interface CustomerTradeUnit {
 }
 
 /**
- * The Customers module's API: the trade units' customers, one customer by id or source id, linked producers, and a
- * producer's trade-unit memberships. Searching customers stays on ApiService for now, because Help's troubleshooter
- * in core runs the same searches.
+ * The Customers module's API: the trade units' customers, searching them, one customer by id or source id, linked
+ * producers, and a producer's trade-unit memberships. It is also core's CustomerSearch, for Help's troubleshooter.
  */
 @Injectable({ providedIn: 'root' })
-export class CustomersApiService {
+export class CustomersApiService implements CustomerSearch {
   private readonly http = inject(HttpClient);
   private readonly handleError = injectApiErrorHandler();
   private readonly dedupe = dedupeRequests();
@@ -36,6 +36,21 @@ export class CustomersApiService {
       this.http.get<Customer[]>(`${this.baseUrl}/customers`, { params })
         .pipe(catchError(e => this.handleError(e)))
     );
+  }
+
+  /** Searches customers by name (max 15 results), within the trade units when any are given. */
+  searchCustomers(searchTerm: string, tradeUnits?: string[]): Observable<Customer[]> {
+    let params = new HttpParams().set('searchTerm', searchTerm);
+    tradeUnits?.forEach(tu => params = params.append('tradeUnits', tu));
+    return this.http.get<Customer[]>(`${this.baseUrl}/customers/search`, { params })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Searches the ODS customer master for producers not yet in our tables (onboarding fallback). */
+  searchOdsCustomers(searchTerm: string): Observable<Customer[]> {
+    const params = new HttpParams().set('searchTerm', searchTerm);
+    return this.http.get<Customer[]>(`${this.baseUrl}/customers/search-ods`, { params })
+      .pipe(catchError(() => of([] as Customer[])));
   }
 
   /** Assigns trade units to a producer, onboarding them into our tables if not present. For a

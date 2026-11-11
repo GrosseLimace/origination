@@ -7,7 +7,7 @@ import { ActivatedRoute } from '@angular/router';
 import { NgTemplateOutlet } from '@angular/common';
 
 // Models
-import { HelpAction, HelpFaq } from '@models';
+import { HelpAction, HelpFaq } from '@core/help/help.model';
 
 // Core services
 import { HelpPanelService } from '@core/help/help-panel.service';
@@ -16,9 +16,9 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 
 // Shared
 import { HelpIconComponent } from '@shared/components/help-icon/help-icon.component';
-import { filterHelpFaqs } from '@shared/utils/help-match';
-import { splitHelpText } from '@shared/utils/help-text';
-import { revealAfterRender } from '@shared/utils/help-reveal';
+import { filterHelpFaqs } from '@core/help/help-match';
+import { splitHelpText } from '@core/help/help-text';
+import { revealAfterRender } from '@core/help/help-reveal';
 
 /**
  * The full Help page (/help): every question, browsable by category or searchable, with deep links

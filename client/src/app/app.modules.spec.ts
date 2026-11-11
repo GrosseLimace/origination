@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { TestBed } from '@angular/core/testing';
+import { CustomerSearch } from '@core/context/customer-search';
 import { ProducerProfiles } from '@core/context/producer-profiles';
 import { ApiService } from '@core/services/api.service';
 import { providePermissions } from '@testing/permission.stub';
 import { appModuleProviders, appModules } from './app.modules';
+import { CustomersApiService } from './features/customers/data-access/customers-api.service';
 import { ProducerProfileStore } from './features/producers/data-access/producer-profile.store';
 import { routes } from './app.routes';
 
@@ -33,6 +35,15 @@ describe("the app's pages and links", () => {
     }
   });
 
+  // /api/me/permissions names the user's modules by AppPermissions' nested classes, in kebab case. A module named
+  // differently here would never be held, and its preload would never run.
+  it("name each module as the API does, and mark as SPA-only exactly those the API doesn't know", () => {
+    const apiModules = ['platform', 'customers', 'contracts', 'engagement', 'producers', 'lists', 'bid-sheet', 'usage-analytics'];
+
+    expect(appModules.filter(module => !module.spaOnly).map(module => module.id).filter(id => !apiModules.includes(id))).toEqual([]);
+    expect(appModules.filter(module => module.spaOnly).map(module => module.id).sort()).toEqual(['calculators', 'help', 'whats-new']);
+  });
+
   it('list each module once, and send every other path home', () => {
     const ids = appModules.map(module => module.id);
 
@@ -47,5 +58,12 @@ describe('what core declares and a module implements', () => {
     TestBed.configureTestingModule({ providers: [appModuleProviders, { provide: ApiService, useValue: {} }, providePermissions()] });
 
     expect(TestBed.inject(ProducerProfiles)).toBe(TestBed.inject(ProducerProfileStore));
+  });
+
+  // Help's troubleshooter, in core, searches customers without importing Customers.
+  it("gives CustomerSearch as the Customers module's API client", () => {
+    TestBed.configureTestingModule({ providers: [appModuleProviders, providePermissions()] });
+
+    expect(TestBed.inject(CustomerSearch)).toBe(TestBed.inject(CustomersApiService));
   });
 });

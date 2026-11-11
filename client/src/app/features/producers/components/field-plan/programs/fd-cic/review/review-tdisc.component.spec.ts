@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed, ComponentFixture } from '@angular/core/testing';
-import { TDiscPass } from '@models';
+import { TDiscPass } from '../../../../../models/tdisc.model';
 import { TDISC_TEST_OPTIONS } from '../fd-cic-tdisc.testing';
 import { ReviewTDiscComponent } from './review-tdisc.component';
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { FieldProgramRecord, FieldSeason, FieldTicket, ProducerField } from '@models';
+import type { FieldProgramRecord, FieldSeason, FieldTicket, ProducerField } from '../../../../models/field-plan.model';
 import { LEDGER_HEADERS, ledgerCsv, ledgerFileName, ledgerRows } from './mass-balance-ledger';
 
 const field: ProducerField = {

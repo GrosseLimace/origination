@@ -5,7 +5,7 @@ import { DialogComponent, DialogContentComponent, DialogDescriptionComponent, Di
 import { ApiError } from '@core/errors/api-error';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ToastService } from '@core/services/toast.service';
-import { FieldPlanDocument, FieldPlanDocumentStatus, FieldPlanDocumentType, FieldPlanUploadType } from '@models';
+import { FieldPlanDocument, FieldPlanDocumentStatus, FieldPlanDocumentType, FieldPlanUploadType } from '../../../../models/field-plan.model';
 import { FieldPlanDocumentsService } from '../../store/field-plan-documents.service';
 import { HasPermissionDirective } from '@core/access/has-permission.directive';
 import { parseCsv } from './csv-table';

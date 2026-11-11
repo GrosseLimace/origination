@@ -7,7 +7,7 @@ import { FieldPlanStore } from './store/field-plan.store';
 import { FdCicApiService } from '../../data-access/fd-cic-api.service';
 import { ToastService } from '@core/services/toast.service';
 import { PermissionService } from '@core/access/permission.service';
-import { FieldProgramRecord, FieldSeason, OFFICIAL_STATUS_TEXT, ProducerField } from '@models';
+import { FieldProgramRecord, FieldSeason, OFFICIAL_STATUS_TEXT, ProducerField } from '../../models/field-plan.model';
 import { ProgramRegistry } from './programs/program-registry';
 import { FD_CIC_PROGRAM_KEY } from './programs/fd-cic/fd-cic.program';
 import { FdCicReviewComponent } from './programs/fd-cic/fd-cic-review.component';

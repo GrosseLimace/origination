@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import { UsageManager } from '@models';
+import { UsageManager } from '../../models/usage-dashboard.model';
 
 import { ManagerFilterComponent } from './manager-filter.component';
 

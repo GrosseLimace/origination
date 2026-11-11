@@ -12,6 +12,7 @@ import { Customer, NoteLastContact, ProducerDetails, ReminderDue, SavedList } fr
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { CustomerListScrollStore } from '../../data-access/customer-list-scroll.store';
 import { CustomerStore } from '../../data-access/customer.store';
+import { CustomersApiService } from '../../data-access/customers-api.service';
 import { ProducerProfilesFake, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
 
 // Behaviour safety net for the producer list ahead of its OnPush conversion. Pins, through the
@@ -185,6 +186,8 @@ describe('CustomerListComponent', () => {
       imports: [CustomerListComponent],
       providers: [
         { provide: ApiService, useValue: api },
+        // The searches are Customers' API client's; the list's other reads are still ApiService's.
+        { provide: CustomersApiService, useExisting: ApiService },
         { provide: NlqFilterService, useValue: nlq },
         provideProducerProfiles(profiles),
         {

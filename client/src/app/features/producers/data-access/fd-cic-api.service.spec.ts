@@ -3,7 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { environment } from '@env/environment';
-import type { FdCicScore, FdCicScoreRequest } from '@models';
+import type { FdCicScore, FdCicScoreRequest } from '../models/fd-cic.model';
 import { FdCicApiService } from './fd-cic-api.service';
 
 const BASE = `${environment.apiBaseUrl}/fd-cic`;

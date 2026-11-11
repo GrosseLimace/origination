@@ -1,4 +1,4 @@
-import { FieldProgramRecord, FieldSeason, ProducerField } from '@models';
+import { FieldProgramRecord, FieldSeason, ProducerField } from '../../../../models/field-plan.model';
 import { CsvCell, toCsv } from '@shared/utils/csv';
 import { fdCicCropFor } from './fd-cic.data';
 

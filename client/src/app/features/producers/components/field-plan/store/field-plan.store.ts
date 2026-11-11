@@ -1,5 +1,5 @@
 import { Injectable, inject, signal } from '@angular/core';
-import { FieldProgramRecord, FieldSeason, FieldTickets, ProducerField } from '@models';
+import { FieldProgramRecord, FieldSeason, FieldTickets, ProducerField } from '../../../models/field-plan.model';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ToastService } from '@core/services/toast.service';
 import { ProgramRegistry } from '../programs/program-registry';

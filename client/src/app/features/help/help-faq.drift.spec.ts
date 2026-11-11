@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
-import type { HelpAction, HelpContent } from '@models';
+import type { HelpAction, HelpContent } from '@core/help/help.model';
 import { HELP_ANCHOR_TIPS } from '@core/help/help-panel/help-spotlight.component';
 import { HELP_TROUBLESHOOTERS } from '@core/help/help-panel/help-troubleshooter.component';
 

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { Router, provideRouter } from '@angular/router';
-import type { HelpFaq } from '@models';
+import type { HelpFaq } from './help.model';
 import { HelpPanelService } from './help-panel.service';
 import { HelpService } from './help.service';
 import { UsageTrackingService } from '../services/usage-tracking.service';

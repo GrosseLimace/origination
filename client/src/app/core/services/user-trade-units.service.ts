@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { Observable, map, tap } from 'rxjs';
 import { ApiService } from './api.service';
-import { DataPreloadService } from './data-preload.service';
+import { DataPreloadService } from '@core/context/data-preload.service';
 import { environment } from '../../../environments/environment';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 

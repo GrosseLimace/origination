@@ -64,18 +64,9 @@ export class ApiService {
   }
 
   // ==========================================================================
-  // Customer search, and the user's and the system's trade units
+  // The user's and the system's trade units
   // ==========================================================================
-  // The rest of the customer calls are the Customers module's (CustomersApiService). The two searches stay here
-  // because Help's troubleshooter, in core, runs them too.
-
-  /** Searches customers by name (max 15 results) */
-  searchCustomers(searchTerm: string, tradeUnits?: string[]): Observable<Customer[]> {
-    let params = new HttpParams().set('searchTerm', searchTerm);
-    tradeUnits?.forEach(tu => params = params.append('tradeUnits', tu));
-    return this.http.get<Customer[]>(`${this.baseUrl}/customers/search`, { params })
-      .pipe(catchError(e => this.handleError(e)));
-  }
+  // The customer calls, the searches included, are the Customers module's (CustomersApiService).
 
   /** Fetches trade unit groups assigned to the currently authenticated user from the TradeUnitPreferences database */
   getUserTradeUnits(): Observable<{ groupName: string; tradeUnitCodes: string[]; tradeUnits: { code: string; description?: string }[] }[]> {
@@ -88,13 +79,6 @@ export class ApiService {
   getEntitlementsCatalog(): Observable<import('@models').EntitlementsCatalog> {
     return this.http.get<import('@models').EntitlementsCatalog>(`${this.baseUrl}/entitlements/catalog`)
       .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Searches the ODS customer master for producers not yet in our tables (onboarding fallback). */
-  searchOdsCustomers(searchTerm: string): Observable<Customer[]> {
-    const params = new HttpParams().set('searchTerm', searchTerm);
-    return this.http.get<Customer[]>(`${this.baseUrl}/customers/search-ods`, { params })
-      .pipe(catchError(() => of([] as Customer[])));
   }
 
   /** All trade units in the system (code + description) for the onboarding assign dropdown. */

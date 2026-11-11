@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { ApiError } from '@core/errors/api-error';
 import { environment } from '@env/environment';
-import { FieldProgramRecord, FieldSeason, FieldTickets, ProducerField, ProgramRecordStatus } from '@models';
+import { FieldProgramRecord, FieldSeason, FieldTickets, ProducerField, ProgramRecordStatus } from '../../../models/field-plan.model';
 import type { ConfirmReview, FieldPlanBackend, FieldPlanSnapshot } from './field-plan-backend';
 
 /**

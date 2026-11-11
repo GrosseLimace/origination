@@ -5,7 +5,9 @@ import { DialogComponent, DialogContentComponent, DialogDescriptionComponent, Di
 import { FdCicApiService } from '../../../../data-access/fd-cic-api.service';
 import { ToastService } from '@core/services/toast.service';
 import { TDiscApiService } from '../../../../data-access/tdisc-api.service';
-import { FdCicData, FieldTicket, FieldTickets, TDiscPass, TDiscResult, Tillage } from '@models';
+import { FdCicData, Tillage } from '../../../../models/carbon-intensity.model';
+import { FieldTicket, FieldTickets } from '../../../../models/field-plan.model';
+import { TDiscPass, TDiscResult } from '../../../../models/tdisc.model';
 import { downloadCsv } from '@shared/utils/csv';
 import { FieldPlanStore } from '../../store/field-plan.store';
 import { COVER_LABELS, TILLAGE_LABELS, fdCicRequest, tillageFromLabel } from './fd-cic.data';

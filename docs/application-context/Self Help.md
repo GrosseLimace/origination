@@ -9,7 +9,7 @@
 | **Who sees it** | Every authenticated user. No role gating, no environment flag. |
 | **Content source** | `api/GrainOriginatorPortal.Api/Content/help-faq.json`, hand-curated |
 | **API** | `GET /api/help` — `[Authorize]`, embedded resource, same delivery as What's New |
-| **Answer engine** | Keyword matching in the browser (`shared/utils/help-match.ts`). No AI in this release. |
+| **Answer engine** | Keyword matching in the browser (`core/help/help-match.ts`). No AI in this release. |
 | **Ticket** | 578 — design approved by the project team 2026-10-13 (Claude Design "Help States" mockup) |
 
 ## How users reach it
@@ -83,7 +83,7 @@ This is the part that matters most. The content is a JSON file the compiler neve
 | --- | --- |
 | `client/src/app/features/help/help-faq.drift.spec.ts` | a route it names is gone; a screen users work in has no `suggestions` entry; a `uiLabels` label no longer appears in any template; a `spotlight` target has no `data-help-anchor` in the app (or no tooltip); a troubleshooter it names doesn't exist |
 | `api/.../Controllers/HelpControllerTests.cs` | ids aren't unique slugs; a category, suggestion, related or troubleshoot id points at nothing; a question is in no category; an action kind or target is invalid (route targets must be in-app paths); bold markers are unbalanced; text contains markup or a URL |
-| `client/src/app/shared/utils/help-match.spec.ts` (last block) | a question users really ask — "customer not showing", "report a bug", … — stops finding its answer |
+| `client/src/app/core/help/help-match.spec.ts` (last block) | a question users really ask — "customer not showing", "report a bug", … — stops finding its answer |
 
 So **renaming a button that the help mentions breaks the build until the help is updated in the same PR.** The drift test also prints a warning (not a failure) for answers not re-checked in six months.
 
@@ -152,8 +152,8 @@ flowchart LR
 | `api/GrainOriginatorPortal.Api/Platform/Help/Models/Responses/HelpContentResponse.cs` | Content schema, with the authoring rules |
 | `client/src/app/core/help/help.service.ts` | Loads the content once |
 | `client/src/app/core/help/help-panel.service.ts` | Panel state, conversation, button behaviour |
-| `client/src/app/shared/utils/help-match.ts` | Question matching |
-| `client/src/app/shared/utils/help-text.ts` | Bold-marker splitting |
+| `client/src/app/core/help/help-match.ts` | Question matching |
+| `client/src/app/core/help/help-text.ts` | Bold-marker splitting |
 | `client/src/app/core/help/help-panel/` | Panel, answer card, troubleshooter, support card, spotlight |
 | `client/src/app/shared/components/help-icon/` | Icons (Lucide, as data) |
 | `client/src/app/features/help/pages/help/` | The `/help` page |

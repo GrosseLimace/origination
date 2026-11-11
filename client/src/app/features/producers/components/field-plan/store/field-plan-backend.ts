@@ -1,5 +1,6 @@
 import { InjectionToken, inject } from '@angular/core';
-import { FieldProgramRecord, FieldSeason, FieldTickets, ProducerField, ProgramRecordStatus, TDiscPass } from '@models';
+import { FieldProgramRecord, FieldSeason, FieldTickets, ProducerField, ProgramRecordStatus } from '../../../models/field-plan.model';
+import { TDiscPass } from '../../../models/tdisc.model';
 import { environment } from '@env/environment';
 import { InMemoryFieldPlanBackend } from './in-memory-field-plan-backend';
 import { HttpFieldPlanBackend } from './http-field-plan-backend';

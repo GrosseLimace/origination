@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { FdCicData, FieldProgramRecord, FieldSeason, ProducerField } from '@models';
+import { FdCicData } from '../../../../models/carbon-intensity.model';
+import { FieldProgramRecord, FieldSeason, ProducerField } from '../../../../models/field-plan.model';
 import { createFdCicProgram } from './fd-cic.program';
 import { fakeFdCicApi } from './fd-cic.testing';
 

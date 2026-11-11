@@ -1,5 +1,5 @@
 import { InputSignal, Type } from '@angular/core';
-import { FieldProgramRecord, FieldSeason, FrozenProgramResult, ProducerField, ProgramScore } from '@models';
+import { FieldProgramRecord, FieldSeason, FrozenProgramResult, ProducerField, ProgramScore } from '../../../models/field-plan.model';
 
 /**
  * A sustainability program a field can take part in (45Z first, others later). Everything that is

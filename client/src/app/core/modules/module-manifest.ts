@@ -23,6 +23,12 @@ export type ModuleId =
 export interface ModuleManifest {
   id: ModuleId;
 
+  /**
+   * Set on a module the API has no counterpart for: Calculators, Help and What's New. It owns no permissions, so
+   * `/api/me/permissions` never lists it among the user's modules, and every user holds it.
+   */
+  spaOnly?: true;
+
   /** The module's pages. */
   routes?: readonly ModuleRoute[];
 
@@ -37,7 +43,8 @@ export interface ModuleManifest {
 
   /**
    * Loads what the module wants ready before its screens open, for a new trade-unit selection. Called in an
-   * injection context on every non-empty selection; the next selection cancels it, so it returns the work as an
+   * injection context on every non-empty selection, once the user's permissions have loaded, and only for a user
+   * holding the module (one of its permissions); the next selection cancels it, so it returns the work as an
    * Observable rather than subscribing itself. It must load only what the user may read, and swallow its own
    * failures: one module's outage must not stop another's preload.
    */

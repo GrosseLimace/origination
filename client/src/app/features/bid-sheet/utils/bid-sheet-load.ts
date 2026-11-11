@@ -5,7 +5,7 @@
  * to show, anchoring the old/new comparison window, and resolving the saved per-trade-unit and
  * global preferences. The page owns the requests and applies the results to its signals.
  */
-import { BidSheetLocation } from '@models';
+import { BidSheetLocation } from '../models/bid-sheet.model';
 
 /** Special key used to store the user's global (cross-TU) preference. */
 export const GLOBAL_PREF_KEY = '__global__';

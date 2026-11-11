@@ -3,7 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { InsightsComponent } from './insights.component';
 import { AppStateService } from '@core/services/app-state.service';
-import { DataPreloadService } from '@core/services/data-preload.service';
+import { DataPreloadService } from '@core/context/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket } from '@models';

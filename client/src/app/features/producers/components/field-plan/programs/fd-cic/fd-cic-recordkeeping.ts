@@ -1,4 +1,4 @@
-import { FdCicData, Tillage } from '@models';
+import { FdCicData, Tillage } from '../../../../models/carbon-intensity.model';
 
 /**
  * The documents a 45Z producer keeps for a field, in plain words, by what the field's inputs claim: each line

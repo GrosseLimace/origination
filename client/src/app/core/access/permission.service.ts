@@ -25,6 +25,7 @@ interface Outcome {
   load: PermissionLoad;
   userId: string;
   permissions: readonly string[];
+  modules: readonly string[];
 }
 
 /**
@@ -43,6 +44,7 @@ export class PermissionService {
   private readonly msalBroadcast = inject(MsalBroadcastService);
 
   private readonly _permissions = signal<ReadonlySet<string>>(new Set());
+  private readonly _modules = signal<ReadonlySet<string>>(new Set());
   private readonly _userId = signal('');
   private readonly _loaded$ = new ReplaySubject<PermissionLoad>(1);
 
@@ -67,6 +69,7 @@ export class PermissionService {
       tap(outcome => {
         this._userId.set(outcome.userId);
         this._permissions.set(new Set(outcome.permissions));
+        this._modules.set(new Set(outcome.modules));
         this._loaded$.next(outcome.load);
       }),
       takeUntilDestroyed(inject(DestroyRef)),
@@ -84,6 +87,14 @@ export class PermissionService {
     return permissions.every(p => held.has(p));
   }
 
+  /**
+   * Whether the user holds at least one of the module's permissions, by the module's kebab-case id ('bid-sheet'), as
+   * the API reports it. A module the API has no counterpart for owns no permissions, so it is never held here.
+   */
+  holdsModule(module: string): boolean {
+    return this._modules().has(module);
+  }
+
   /** Emits once, when the load has ended, and replays to later subscribers. */
   loaded(): Observable<PermissionLoad> {
     return this._loaded$.pipe(take(1));
@@ -91,13 +102,14 @@ export class PermissionService {
 
   private request(): Observable<Outcome> {
     const account = this.msal.instance.getActiveAccount() ?? this.msal.instance.getAllAccounts()[0];
-    if (!account) return of<Outcome>({ load: 'signed-out', userId: '', permissions: [] });
+    if (!account) return of<Outcome>({ load: 'signed-out', userId: '', permissions: [], modules: [] });
 
     return this.http.get<MyPermissionsResponse>(`${environment.apiBaseUrl}/me/permissions`).pipe(
       map((response): Outcome => ({
         load: 'loaded',
         userId: response?.userId ?? '',
         permissions: response?.permissions ?? [],
+        modules: response?.modules ?? [],
       })),
       catchError(() => of(failed())),
     );
@@ -105,6 +117,6 @@ export class PermissionService {
 }
 
 function failed(): Outcome {
-  return { load: 'failed', userId: '', permissions: [] };
+  return { load: 'failed', userId: '', permissions: [], modules: [] };
 }
 

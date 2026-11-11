@@ -6,7 +6,7 @@ import { Router } from '@angular/router';
 import { debounceTime, filter, pairwise, take } from 'rxjs/operators';
 import { AppStateService } from '@core/services/app-state.service';
 import { CustomerStore } from '@features/customers';
-import { DataPreloadService } from '@core/services/data-preload.service';
+import { DataPreloadService } from '@core/context/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket } from '@models';

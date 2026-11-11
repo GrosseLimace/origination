@@ -75,8 +75,8 @@ describe('CTRM failure flags — lifecycle', () => {
    */
   describe('every trade-unit-wide call site uses that arrangement', () => {
     const sites: [string, string[], RegExp][] = [
-      ['data-preload contracts', ['core', 'services', 'data-preload.service.ts'], /setContractsLoadFailed/],
-      ['data-preload tickets', ['core', 'services', 'data-preload.service.ts'], /setTicketsLoadFailed/],
+      ['data-preload contracts', ['core', 'context', 'data-preload.service.ts'], /setContractsLoadFailed/],
+      ['data-preload tickets', ['core', 'context', 'data-preload.service.ts'], /setTicketsLoadFailed/],
       ['build-list', ['features', 'lists', 'pages', 'build-list', 'build-list.component.ts'], /setContractsLoadFailed/],
       ['customer-list', ['features', 'customers', 'components', 'customer-list', 'customer-list.component.ts'], /setContractsLoadFailed/],
     ];

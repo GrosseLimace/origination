@@ -19,6 +19,23 @@ describe('CustomersApiService', () => {
 
   afterEach(() => httpMock.verify());
 
+  it('searchCustomers() calls GET /customers/search with the term and any trade units', () => {
+    service.searchCustomers('Smith', ['TU1', 'TU2']).subscribe();
+    const req = httpMock.expectOne(r => r.url === `${BASE}/customers/search`);
+    expect(req.request.params.get('searchTerm')).toBe('Smith');
+    expect(req.request.params.getAll('tradeUnits')).toEqual(['TU1', 'TU2']);
+    req.flush([]);
+  });
+
+  it('searchOdsCustomers() calls GET /customers/search-ods, and finds no one when it fails', () => {
+    let found: unknown;
+    service.searchOdsCustomers('Zed').subscribe(customers => found = customers);
+    const req = httpMock.expectOne(r => r.url === `${BASE}/customers/search-ods`);
+    expect(req.request.params.get('searchTerm')).toBe('Zed');
+    req.flush('down', { status: 500, statusText: 'Server Error' });
+    expect(found).toEqual([]);
+  });
+
   it('getCustomers() calls GET /customers', () => {
     service.getCustomers().subscribe();
     const req = httpMock.expectOne(`${BASE}/customers`);

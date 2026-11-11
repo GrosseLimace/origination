@@ -5,7 +5,7 @@ import { ApiError } from '@core/errors/api-error';
 import { markShown } from '@core/http/shown-errors';
 import { ToastService } from '@core/services/toast.service';
 import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
-import { FieldPlanDocument } from '@models';
+import { FieldPlanDocument } from '../../../../models/field-plan.model';
 import { FieldPlanDocumentsService } from '../../store/field-plan-documents.service';
 import { FdCicDocumentsDialogComponent } from './fd-cic-documents-dialog.component';
 import { parseCsv } from './csv-table';

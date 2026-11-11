@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed, ComponentFixture } from '@angular/core/testing';
-import { FieldTicket } from '@models';
+import { FieldTicket } from '../../../../../models/field-plan.model';
 import { ReviewTicketTableComponent } from './review-ticket-table.component';
 
 const ticket = (over: Partial<FieldTicket> & Pick<FieldTicket, 'ticketKey'>): FieldTicket => ({

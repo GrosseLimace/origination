@@ -1,4 +1,4 @@
-import { FdCicScore, FdCicScoreRequest, FdCicScoreState } from '@models';
+import { FdCicScore, FdCicScoreRequest, FdCicScoreState } from '../../../../models/fd-cic.model';
 import { FdCicApiService } from '../../../../data-access/fd-cic-api.service';
 
 /**

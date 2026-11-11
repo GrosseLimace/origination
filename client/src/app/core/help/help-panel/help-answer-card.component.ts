@@ -1,11 +1,11 @@
 import { ChangeDetectionStrategy, Component, Injector, computed, inject, input, signal } from '@angular/core';
 import { Router } from '@angular/router';
 
-import { HelpFaq } from '@models';
+import { HelpFaq } from '../help.model';
 import { HelpPanelService } from '@core/help/help-panel.service';
 import { HelpService } from '@core/help/help.service';
-import { splitHelpText } from '@shared/utils/help-text';
-import { revealAfterRender } from '@shared/utils/help-reveal';
+import { splitHelpText } from '../help-text';
+import { revealAfterRender } from '../help-reveal';
 import { HelpIconComponent } from '@shared/components/help-icon/help-icon.component';
 
 /**

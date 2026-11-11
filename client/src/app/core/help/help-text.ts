@@ -1,4 +1,4 @@
-import type { HelpTextSegment } from '@models';
+import type { HelpTextSegment } from './help.model';
 
 /**
  * Splits help answer text into plain and bold segments on its `**` markers.

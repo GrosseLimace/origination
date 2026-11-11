@@ -2,6 +2,7 @@ import { ModuleManifest } from '@core/modules/module-manifest';
 
 export const calculatorsModule: ModuleManifest = {
   id: 'calculators',
+  spaOnly: true,
   customerPanels: [
     {
       // The floating calculator launcher on the home page, for every customer. The calculators read none of the

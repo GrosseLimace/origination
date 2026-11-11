@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { TestBed } from '@angular/core/testing';
-import { CtrmSplit, Customer, FieldSeason, PlantingIntention } from '@models';
+import { Customer, PlantingIntention } from '@models';
+import { CtrmSplit, FieldSeason } from '../../models/field-plan.model';
 import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
 import { ProducerProfilesFake, producerProfile, producerProfilesFake, provideProducerProfiles } from '@testing/producer-profiles.fake';
 import { CtrmSplitApiService } from '../../data-access/ctrm-split-api.service';

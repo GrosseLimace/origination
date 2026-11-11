@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { Type, WritableSignal } from '@angular/core';
-import { FieldProgramRecord, FieldTicket, OfficialResult } from '@models';
+import { FieldProgramRecord, FieldTicket, OfficialResult } from '../../../models/field-plan.model';
 import { downloadCsv } from '@shared/utils/csv';
 import { FieldPlanStore } from '../store/field-plan.store';
 import { ProgramIntake, SustainabilityProgramDef } from './program-def';

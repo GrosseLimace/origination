@@ -1,4 +1,4 @@
-import type { HelpFaq } from '@models';
+import type { HelpFaq } from './help.model';
 
 /** What the panel should show for a typed question. */
 export type HelpMatch =

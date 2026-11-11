@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
-import { FdCicScoreState } from '@models';
+import { FdCicScoreState } from '../../models/fd-cic.model';
 import { fakeFdCicApi } from './programs/fd-cic/fd-cic.testing';
 import { CiPreviewPanelComponent } from './ci-preview-panel.component';
 

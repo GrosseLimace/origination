@@ -1,4 +1,6 @@
-import { FdCicData, FdCicScore, FieldProgramRecord, FieldSeason, ProducerField, ProgramScore } from '@models';
+import { FdCicData } from '../../../../models/carbon-intensity.model';
+import { FdCicScore } from '../../../../models/fd-cic.model';
+import { FieldProgramRecord, FieldSeason, ProducerField, ProgramScore } from '../../../../models/field-plan.model';
 import { FdCicApiService } from '../../../../data-access/fd-cic-api.service';
 import { practicesToCopy } from '../../../../utils/ci-copy-forward';
 import { environment } from '@env/environment';

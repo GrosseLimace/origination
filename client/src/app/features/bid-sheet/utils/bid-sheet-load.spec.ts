@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BidSheetLocation } from '@models';
+import { BidSheetLocation } from '../models/bid-sheet.model';
 import {
   GLOBAL_PREF_KEY, mergeTradeUnitLoads, parseHiddenCrops, pickSelectedYear, preferredSelection, StoredBidSheetPreference, yearOffsetFor,
 } from './bid-sheet-load';

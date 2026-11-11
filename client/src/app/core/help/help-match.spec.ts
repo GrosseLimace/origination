@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { HelpContent, HelpFaq } from '@models';
+import type { HelpContent, HelpFaq } from './help.model';
 import { filterHelpFaqs, matchHelpQuestion, questionWords } from './help-match';
 
 function faq(id: string, question: string, keywords: string[] = [], routes: string[] = [], answer = 'An answer.'): HelpFaq {

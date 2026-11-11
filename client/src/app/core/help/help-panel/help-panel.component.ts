@@ -4,7 +4,7 @@ import {
 import { Router } from '@angular/router';
 import { A11yModule } from '@angular/cdk/a11y';
 
-import { HelpFaq } from '@models';
+import { HelpFaq } from '../help.model';
 import { HelpPanelService } from '@core/help/help-panel.service';
 import { HelpService } from '@core/help/help.service';
 import { HelpIconComponent } from '@shared/components/help-icon/help-icon.component';

@@ -6,7 +6,7 @@ import { InteractionStatus } from '@azure/msal-browser';
 import { Customer } from '@models';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
-import { DataPreloadService } from '@core/services/data-preload.service';
+import { DataPreloadService } from '@core/context/data-preload.service';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 import { APP_MODULES } from '@core/modules/module-registry';
 import { permissionStub, providePermissions } from '@testing/permission.stub';

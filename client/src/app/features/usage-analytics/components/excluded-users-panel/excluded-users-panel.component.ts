@@ -5,7 +5,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { alreadyShown } from '@core/http/shown-errors';
 import { ToastService } from '@core/services/toast.service';
-import { AccessUser, ExcludedUser } from '@models';
+import { AccessUser, ExcludedUser } from '../../models/usage-dashboard.model';
 
 import { formatLastActive } from '../../utils/usage-format';
 import { UsageDashboardApiService } from '../../data-access/usage-dashboard-api.service';

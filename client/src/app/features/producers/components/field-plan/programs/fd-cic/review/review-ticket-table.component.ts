@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { FieldTicket } from '@models';
+import { FieldTicket } from '../../../../../models/field-plan.model';
 
 /** Added in the review from outside the crop year (offered as 'other', confirmed as 'added'). */
 export function isAddedTicket(t: FieldTicket): boolean {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { FieldProgramRecord, FieldSeason, ProducerField } from '@models';
+import type { FieldProgramRecord, FieldSeason, ProducerField } from '../../../../models/field-plan.model';
 import { feedstockReport } from './feedstock-report';
 
 const field: ProducerField = {

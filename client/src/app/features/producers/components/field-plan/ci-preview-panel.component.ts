@@ -1,6 +1,6 @@
 import { Component, computed, input, linkedSignal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FdCicScore, FdCicScoreState } from '@models';
+import { FdCicScore, FdCicScoreState } from '../../models/fd-cic.model';
 
 /**
  * One field's CI from the USDA FD-CIC calculator on the API: the raw number (never a comparison with the

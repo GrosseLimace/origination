@@ -72,7 +72,7 @@ The screen does **not** fetch its own data — it reads everything from `AppStat
 | --- | --- |
 | Component | `client/src/app/features/lists/pages/insights/insights.component.ts` |
 | Template | `client/src/app/features/lists/pages/insights/insights.component.html` |
-| Data preload | `client/src/app/core/services/data-preload.service.ts` |
+| Data preload | `client/src/app/core/context/data-preload.service.ts` |
 | State consumed | `CustomerStore` (`@features/customers`): `customers`, `customersLoading`. `AppStateService`: `contracts`, `todaysTickets`, `commodities`, `commodityConversions`, `contractsLoading`, `todaysTicketsLoading` |
 | Underlying ODS views (via other screens / preload) | `base.vw_CurrentContracts`, `base.vw_CurrentTickets`, `ctrm.vw_GNP024` (commodity conversions). Customers come from app-DB `dbo.Customer`. |
 | App tables (read indirectly via cached signals) | none directly |

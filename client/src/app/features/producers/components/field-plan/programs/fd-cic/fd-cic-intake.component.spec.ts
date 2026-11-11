@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FdCicApiService } from '../../../../data-access/fd-cic-api.service';
-import { FdCicData, FieldProgramRecord, FieldSeason, ProducerField } from '@models';
+import { FdCicData } from '../../../../models/carbon-intensity.model';
+import { FieldProgramRecord, FieldSeason, ProducerField } from '../../../../models/field-plan.model';
 import { FdCicIntakeComponent } from './fd-cic-intake.component';
 import { fakeFdCicApi } from './fd-cic.testing';
 

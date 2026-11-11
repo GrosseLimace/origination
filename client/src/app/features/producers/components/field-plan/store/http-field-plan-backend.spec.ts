@@ -4,7 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { environment } from '@env/environment';
 import { ApiError } from '@core/errors/api-error';
-import type { FieldProgramRecord } from '@models';
+import type { FieldProgramRecord } from '../../../models/field-plan.model';
 import { HttpFieldPlanBackend } from './http-field-plan-backend';
 
 const BASE = `${environment.apiBaseUrl}/field-plan`;

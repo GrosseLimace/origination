@@ -4,10 +4,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, injec
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { alreadyShown } from '@core/http/shown-errors';
 import { ToastService } from '@core/services/toast.service';
-import {
-  BarchartCatalogLocation,
-  BarchartCoverage
-} from '@models';
+import { BarchartCatalogLocation, BarchartCoverage } from '../../models/barchart.model';
 import { barchartDisplayName, barchartSaveName, barchartSiteLabel, isScoularListing } from '../../utils/barchart-location-name';
 import { BidSheetApiService } from '../../data-access/bid-sheet-api.service';
 

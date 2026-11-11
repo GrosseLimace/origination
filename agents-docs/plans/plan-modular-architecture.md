@@ -116,7 +116,7 @@ What that buys:
 | **Contracts** | everyone | Contracts, tickets, pricing lines, the CTRM/ODS readers and switches, contracts and tickets tables | Customers, Platform |
 | **Engagement** | everyone *(confirm, Q6)* | Notes, reminders with the Outlook mirror, Teams mentions, daily digest | Customers, Platform |
 | **Producers** | Originator | Planting intentions, producer details, contacts and grain on farm, stored grain, DP contracts, pacing, producer insights, growth opportunity, linked producers (`dbo.CustomerLink`) and the commodities a producer grows (`dbo.CustomerCommodity`), Planting Dashboard, the field plan (fields and CTRM splits, crop seasons, 45Z sustainability programs, the FD-CIC calculator) | Contracts, Customers, Platform |
-| **Lists & Insights** | Originator *(for now)* | Build-a-List with its customer map, NLQ engine, saved lists, query library, Actionable Insights | Producers, Contracts, Customers |
+| **Lists & Insights** | Originator *(for now)* | Build-a-List with its customer map, NLQ engine, saved lists, query library, Actionable Insights | Producers, Contracts, Engagement *(added 2026-11-10, for the NLQ engine's note and reminder filters; Phase 4, step 10d)*, Customers |
 | **Bid Sheet** | Originator | Bid sheet, the BarChart bid feed (picker reads and pipeline ingestion) | Engagement (a sheet can be shared with a Daily Recap group; decided 2026-11-08), Platform |
 | **Usage Analytics** | Manager, Support | Usage dashboard and its excluded users. It reads what Platform's usage tracking records, and names the customers, contracts and query-library prompts people used. | Lists, Contracts, Customers, Platform |
 | **Calculators** | everyone | Frontend-only tools | Platform |
@@ -130,6 +130,7 @@ flowchart BT
     Producers --> Contracts
     Producers --> Customers
     Lists[Lists & Insights] --> Producers
+    Lists --> Engagement
     BidSheet[Bid Sheet] --> Engagement
     Usage[Usage Analytics] --> Lists
     Usage --> Contracts
@@ -660,6 +661,11 @@ These are the slots the customer screen needs to host everything it shows today.
 - **Phase 5 gives trader customers their own edit dialog,** shown for the `Commercial` segment, and their own report if one is wanted.
 - **Contacts are the overlap.** Both edit dialogs need them, and today they save with the producer's details under `producer-details:write`. In Phase 5 they get their own save and permission in Customers, and the contacts editor becomes one component both dialogs use. The Trade Units editor can be shared the same way if traders need it.
 
+**Decided in Phase 4 (2026-11-10): the customer list gets two slots of its own.**
+- **A filter slot,** beside the search box. Lists fills it with the saved-list dropdown in step 10b, and the contribution runs the list's query through the NLQ engine, so the list itself no longer does.
+- **A row slot,** on each customer's row. Engagement fills it with the last-contacted and follow-up badges, and Producers with the acres, in step 10d.
+- A trader's list then carries no producer pieces, and Customers reads no other module's data.
+
 #### Example: the Producers manifest
 
 One module contributes to many slots, and each contribution lists the permissions it needs. One permission can gate several contributions:
@@ -775,7 +781,7 @@ export const APP_MODULES: ModuleManifest[] = [
   - The `_dedupe` helper moves to `core/http`.
   - The 403 toast becomes an interceptor (`core/http/forbidden.interceptor.ts`), and it is the **only** place a 403 is shown: screens stop toasting their own 403s by checking `alreadyShown(err)` before their own failure message. eTMS showed two contradicting toasts per 403 (the global handler plus the screen). This has to be in place before Phase 2 enforces the first endpoint, so it is built in Phase 1.
 - **The `Customer` model sheds** `farm`, `totalAcres`, `binCapacity`, `grainOnFarm` and `linkedProducerIds`. They move to a `ProducerProfile` in `features/producers/models`.
-  - *Changed in Phase 4 (2026-11-10):* the producer profile is the existing `ProducerDetails` model, read through `ProducerProfiles` in `core/context`, which Producers' `ProducerProfileStore` implements (step 9a). `Customer` sheds ten fields in step 9b: `farm`, `totalAcres`, `linkedProducerIds`, `grainOnFarm`, `binSites`, `binSitesModifiedAt`, `contacts`, `primaryContact`, `primaryPhone` and `commodities` (`binCapacity` was already gone). The model moves to `features/producers/models` with the other producer models in step 10.
+  - *Changed in Phase 4 (2026-11-10):* the producer profile is the existing `ProducerDetails` model, read through `ProducerProfiles` in `core/context`, which Producers' `ProducerProfileStore` implements (step 9a). `Customer` sheds ten fields in step 9b: `farm`, `totalAcres`, `linkedProducerIds`, `grainOnFarm`, `binSites`, `binSitesModifiedAt`, `contacts`, `primaryContact`, `primaryPhone` and `commodities` (`binCapacity` was already gone). The model stays in `src/app/models` with the other producer models that core's interfaces are written in (§5.5).
 
 ### 5.4 Boundary enforcement
 
@@ -812,9 +818,9 @@ Add ESLint, since none exists today. Use `@angular-eslint` plus `eslint-plugin-b
 | `core/services/ctrm-split-api`, `fd-cic-api` | `features/producers/data-access` |
 | `shared/components/header`, `trade-unit-selector` | `core/layout` (they inject core state, so they aren't "shared") |
 | `shared/components/help-panel` with `core/services/help*` | `core/help` (the panel injects core state; the Help *page* stays in `features/help`) |
-| `shared/utils/planting-*`, `grain-on-farm`, `production-coverage`, `linked-producers`, `apply-producer-details`, `dp-aggregate`, `grain-bin-refine`, `organic-visibility`, `ci-copy-forward` | `features/producers/utils` |
-| `models/planting-intention`, `stored-grain`, `producer-details`, `harvest-window`, `dashboard-*`, `dp-contract`, `field-plan`, `fd-cic`, `carbon-intensity` | `features/producers/models` |
-| `models/bid-sheet`, `barchart`, `usage-dashboard`, `whats-new`, `help`, `query-library`, `refine-filters` | their owning module (`help` to `core/help`) |
+| `shared/utils/planting-*`, `grain-on-farm`, `production-coverage`, `linked-producers`, `apply-producer-details`, `dp-aggregate`, `grain-bin-refine`, `organic-visibility`, `ci-copy-forward` | `features/producers/utils` *(changed in Phase 4: `linked-producers` and `producer-profile` stay, and `apply-producer-details` was deleted in step 9b; see below)* |
+| `models/planting-intention`, `stored-grain`, `producer-details`, `harvest-window`, `dashboard-*`, `dp-contract`, `field-plan`, `fd-cic`, `carbon-intensity` | `features/producers/models` *(changed in Phase 4: only the ones nothing outside Producers uses; see below)* |
+| `models/bid-sheet`, `barchart`, `usage-dashboard`, `whats-new`, `help`, `query-library`, `refine-filters` | their owning module (`help` to `core/help`; *changed in Phase 4:* `whats-new` stays, since What's New is Platform's) |
 | `customers/components/contracts-table`, `tickets-table` | `features/contracts/components` |
 | `customers/components/customer-notes`, `customer-reminders`; `features/daily-digest` | `features/engagement` |
 | `customers/components/planting-intentions-table`, `stored-grain-table`, `dp-contracts-table`, `producer-insights`, `growth-opportunity`, `contract-pacing-card`, `activity-summary`, `field-plan` (about 3,300 lines with its store and programs); `features/dashboard` | `features/producers` |
@@ -846,6 +852,12 @@ Add ESLint, since none exists today. Use `@angular-eslint` plus `eslint-plugin-b
 - **The producer utils in `shared/utils` and the producer models,** by the rule above: customer-screen components use them.
 - **The other module models in `src/app/models`:** `bid-sheet`, `barchart`, `usage-dashboard`, `whats-new`, `help`, `query-library` and `refine-filters`. Phase 3 didn't move them; Phase 4 moves them with each module's remaining files.
 - **`DataPreloadService`.** It is the orchestrator now (§5.2), but it stays in `core/services`.
+
+**Changed in Phase 4 (2026-11-10): some producer models and utils stay where they are.**
+- **The producer models stay in `src/app/models`:** `planting-intention`, `stored-grain`, `producer-details`, `harvest-window`, `dp-contract` and those like them. The core interfaces the customer screen reads through (`ProducerProfiles`, `SelectedProducerProduction`, `SelectedProducerActivity`) are written in them, and core can't import a module. Only the models nothing outside Producers uses move there (`field-plan`, `fd-cic`, `carbon-intensity`, `tdisc`, and the `dashboard-*` models once the dashboard calls leave `ApiService`).
+- **`linked-producers` and `producer-profile` stay in `shared/utils`,** because Customers uses them. The other producer utils move to Producers once nothing outside Lists and Producers uses them: some in step 10a, the rest in 10b when the NLQ engine leaves core.
+- **`whats-new` stays in `src/app/models`.** What's New is Platform's (§3), and core's What's New service uses the model.
+- Step 10 in §8 lists which step moves each of them.
 
 ---
 
@@ -1064,7 +1076,7 @@ Where it differs from the row above:
 
 **Phase 4 is in progress** on `feature_ModularArchitecture-Phase4`, cut from `feature_ModularArchitecture`, in reviewed steps. Step 11 turns this list into the phase's record, like Phase 2's and Phase 3's above.
 
-Done, in 20 commits (2026-11-09 to 2026-11-10):
+Done, in 21 commits (2026-11-09 to 2026-11-10):
 1. The customer-screen slot types in the manifest (`2dbec000`).
 2. Module stores cleared on sign-out and idle timeout again (`a31f1483`). Customers' own store, API client and preload (`e8c357f9`).
 3. The selected producer's activity moved out of the home page (`dbca0d0f`) and read through `SelectedProducerActivity` (`437956e7`). The contracts and tickets tables became the Contracts module's profile tabs (`8e24bb19`).
@@ -1072,10 +1084,12 @@ Done, in 20 commits (2026-11-09 to 2026-11-10):
 5. The planting, storage and DP tables read `SelectedProducerProduction` (`40fb13e6`) and became the Producers module's profile tabs (`11c2a8e8`). Planting's add and edit (`9ec0971c`) and the field plan (`b7598008`) are gated by permission.
 6. The profile header's producer details (`42cfa900`) and the producer's performance panels (`9c316abc`) became Producers panels.
 7. Print with the Producer Summary Report (`e2d2f5e9`), and Edit with the Edit Producer Details dialog (`c6fe0dcd`), moved whole into Producers. See "Decided in Phase 4" in §5.2.
-8. The calculator launcher moved into the home page's `floating` slot (`2d69f12c`). Add to List became a Lists panel in the `toolbar` slot, before Print, needing `saved-lists:read:own` and `saved-lists:write:own`. It reads the lists, whether they failed to load, and the save from `SavedListMembership`, which the home page's `HomeSavedListsStore` implements, and the profile dropped the dropdown, its staging logic, three inputs and an output (`49f18332`). 8c is in step 10.
+8. The calculator launcher moved into the home page's `floating` slot (`2d69f12c`). Add to List became a Lists panel in the `toolbar` slot, before Print, needing `saved-lists:read:own` and `saved-lists:write:own`. It reads the lists, whether they failed to load, and the save from `SavedListMembership`, which the home page's `HomeSavedListsStore` implements, and the profile dropped the dropdown, its staging logic, three inputs and an output (`49f18332`). 8c is step 10b.
 9. The `Customer` → producer profile split, in two parts.
    - Part a: every producer's details have one copy, Producers' `ProducerProfileStore`, which core declares as `ProducerProfiles` and the composition root provides. Producers' preload reads them, and the home page again on each visit, only for users with `producer-details:read`; `AppStateService` no longer holds them. Producers' panels and screens, Build a List with its filters, result rows and bin-site notes, and the NLQ engine (through its context) read a producer's details from it rather than off the customer (`76280638`).
    - Part b: a customer is just a customer, on both ends. The home page (the linked-producer walk and linked group, the commodity auto-saves, the edit save), the customer list, the profile and the Notes card read through `ProducerProfiles`, and nothing lays the details over a customer any more: `applyProducerDetails` and Build a List's copy of it are gone. `Customer` shed `totalAcres`, `linkedProducerIds`, `grainOnFarm`, `binSites`, `binSitesModifiedAt`, `contacts`, `primaryContact`, `primaryPhone`, `commodities` and `farm`; `CustomerResponse` and the entity `Farm`, `FarmIds`, `TotalAcres` and `LinkedProducerIds`; and `customers/linked-to` returns plain customers, so `GetLinkFieldsAsync` went too. `Model_HasNoChangesWithoutAMigration` shows the database didn't change. The NLQ engine's farm-name filter matches the customer's name, and the profile's dead farm line went, with the `header-panel` mark that only it read.
+10. The clean-up, in four parts.
+   - Part a: the preload gate, and the moves that fit now. `PermissionService` keeps the user's `modules`, and `ModuleRegistry` runs a module's `preload` only once the permissions have loaded, and only for a module the user holds or one its manifest marks `spaOnly` (Calculators, Help and What's New, which own no permissions). `app.modules.spec.ts` pins the module ids to the API's. `DataPreloadService` moved to `core/context`. The two customer searches moved to `CustomersApiService`, which core's new `CustomerSearch` declares for Help's troubleshooter. The `bid-sheet` and `barchart` models went to Bid Sheet, `usage-dashboard` to Usage Analytics, `help` with the help utils to `core/help`, and `field-plan`, `fd-cic`, `carbon-intensity`, `tdisc`, `organic-visibility` and `planting-trade-unit-filter` to Producers.
 
 Left:
 - **Found and decided for step 9 (2026-11-10):**
@@ -1083,17 +1097,32 @@ Left:
   - **`farm` is dead on both ends,** and the NLQ farm-name filter that reads it could only ever return no one.
   - **No `ProducerProfileResponse`.** `/producer-details` (`ProducerDetailsResponse`) already carries everything it would, so it is the producer profile, and the SPA's is the `ProducerDetails` model (§4.5, §5.3).
   - **The customer search's `ProducerDetails`/`ProducerContact` join waits for Phase 5** (§4.4). Search requires every word to match some field, and two of those fields are in Producers' tables, so a Producers contributor needs a design and a permission check of its own; traders don't search until Phase 5, when the search widens anyway.
-  - **The customer list keeps showing acres** through `ProducerProfiles` until a Producers contribution to its rows, with step 10's filter slot.
+  - **The customer list keeps showing acres** through `ProducerProfiles` until a Producers contribution to its rows, in step 10d's row slot.
   - **Two steps rather than five** (user 2026-11-10), each one reviewed commit.
-- **10. Clean-up.**
-  - The `modules[]` preload gate, with a rule for Calculators, Help and What's New, which own no permissions (§5.2).
-  - The home page's trade-unit pools (contracts, tickets, planting intentions, stored grain, DP contracts) move into module stores. `DataPreloadService` moves to `core/context`, and the home page's yield-estimate loading possibly to Producers.
-  - What is left of `ApiService` and `AppStateService` splits by module, and `outlook-calendar.service.ts` moves to Engagement.
-  - The producer utils in `shared/utils` and the producer models move to `features/producers`. The other module models (`bid-sheet`, `barchart`, `usage-dashboard`, `whats-new`, `help`, `query-library`, `refine-filters`) move to their modules (§5.5).
-  - **8c, the NLQ engine and saved lists, comes last** (decided 2026-11-10).
+- **10. Clean-up, the other three parts.** Each module takes its own data, and what is left in `ApiService` and `AppStateService` is Platform's.
+  - **10b. The NLQ engine and saved lists into Lists** (8c, moved up from last).
     - `core/services/nlq-filter.service.ts` moves to Lists.
-    - The customer list's saved-list dropdown becomes a Lists contribution to a new filter slot in the customer list.
-    - `HomeSavedListsStore` becomes a Lists store that reads the pools from their modules. Done before the pools move, it would need another temporary service carrying all five.
+    - The customer list gets a filter slot, and its saved-list dropdown becomes a Lists contribution to it, which runs the list's query.
+    - `HomeSavedListsStore` becomes a Lists store, and the saved lists and query library move to Lists with their API calls and models (`saved-list`, `query-library`, `refine-filters`).
+    - The producer utils that then only Lists and Producers use (`grain-on-farm`, `production-coverage`, `dp-aggregate`, `grain-bin-refine`, `planting-chips`, and `planting-category`, which `production-coverage` imports) move to Producers.
+  - **10c. Contracts' and Producers' data into their own stores.**
+    - Contracts gets a store, an API client and a `preload` for contracts, tickets (today's, and the trade unit's on demand) and pricing lines.
+    - Producers' store takes planting intentions, stored grain and DP contracts, with their API calls, and the home page's yield-estimate loading. The dashboard's calls move to Producers' API client, and the `dashboard-*` models with them.
+    - The home page's selected-producer loads split between the two, and each implements its part of the core interfaces the screen reads (`SelectedProducerActivity`, `SelectedProducerProduction`).
+    - Lists and the Planting Dashboard read the two stores rather than `AppStateService`.
+  - **10d. Engagement's data into Engagement.**
+    - Notes, the last-contact summary and the user's reminders move to Engagement's stores, with the home page's notes and reminders stores (and so `HomeEngagement`), `outlook-calendar.service.ts`, and the notes, reminders, Teams and mention API calls.
+    - The customer list gets a row slot. The last-contacted and follow-up badges become Engagement contributions to it, and the acres a Producers one, so the list no longer reads `ProducerProfiles`.
+    - Lists' note and reminder filters read Engagement's stores, so Lists depends on Engagement in both module maps (§3).
+  - **Found and decided for step 10 (2026-11-10):**
+    - **8c moves up from last to 10b** (user 2026-11-10). The customer list runs the NLQ engine only for its saved-list filter, and that filter is the main reason Customers reads the trade-unit pools; the selected producer's own loads and the list's badges, the others, move in 10c and 10d. Once 10b gives the engine and the filter to Lists, each pool can move into its module with only that module and Lists reading it. Done last, every pool move would first need a core interface just to keep feeding the customer list, deleted again by 8c. Done first, Lists reads the pools from `AppStateService` until they move.
+    - **The producer models stay in `src/app/models`, and the `linked-producers` and `producer-profile` utils in `shared/utils`** (§5.5). The core interfaces from steps 3 to 9 (`ProducerProfiles`, `SelectedProducerProduction`, `SelectedProducerActivity`) are written in those models, and core can't import a module; Customers uses the two utils.
+    - **Lists depends on Engagement** (§3). The NLQ engine filters on notes and reminders, which Engagement owns from 10d. Engagement depends only on Customers, so there is no cycle, and a core interface would only stand in for the same import.
+    - **The customer list gets two slots, a filter slot and a row slot,** filled by Lists, Engagement and Producers, so a trader's list carries no producer pieces (§5.2).
+    - **`outlook-calendar.service.ts` moves with the home page's reminders store** in 10d, since that store is its only user.
+    - **Help's troubleshooter searches customers too** (found in 10a). It is in core, so it reads the searches through `CustomerSearch` in `core/context`, which Customers' `CustomersApiService` implements; the customer list and Build a List call `CustomersApiService` directly.
+    - **`planting-category` moves in 10b, not 10a** (found in 10a). `shared/utils/production-coverage.ts`, which the NLQ engine in core uses, imports it, so it can't leave `shared` before `production-coverage` does.
+    - **The preload gate waits for the permissions before running any preload** (10a). Customers' preload used to mark the customers loading the moment a selection came in, before the permissions had answered; now it does once they have. Nothing that reads that flag opens sooner: the pages that read it wait for the permissions themselves, through `permissionGuard`.
 - **11. Close-out.**
   - This list becomes the phase's record, and the docs follow.
   - The app is run and each module clicked through, as the Phase 2 and Phase 3 notes ask.

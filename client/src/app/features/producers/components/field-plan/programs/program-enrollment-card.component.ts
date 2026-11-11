@@ -2,7 +2,7 @@ import { Component, computed, inject, input, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { FieldPlanStore } from '../store/field-plan.store';
-import { OFFICIAL_STATUS_TEXT, ProgramRecordStatus, ProgramScore } from '@models';
+import { OFFICIAL_STATUS_TEXT, ProgramRecordStatus, ProgramScore } from '../../../models/field-plan.model';
 import { ProgramRegistry } from './program-registry';
 import { FieldResult } from './program-def';
 import { LadderRow, atOrBelowTarget, ciLadder } from './ci-ladder';

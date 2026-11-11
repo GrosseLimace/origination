@@ -1,6 +1,6 @@
 import { Injectable, signal } from '@angular/core';
 import { Customer } from '@models';
-import { isOrganicSectionVisible } from '@shared/utils/organic-visibility';
+import { isOrganicSectionVisible } from '../../utils/organic-visibility';
 
 /**
  * Whether the producer gets the Organic badge: the CTRM organic industry code, or a real NOP id on file. See

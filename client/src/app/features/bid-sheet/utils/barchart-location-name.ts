@@ -1,4 +1,4 @@
-import { BarchartCatalogLocation } from '@models';
+import { BarchartCatalogLocation } from '../models/barchart.model';
 
 /** Letters and digits only, upper-cased — so "Salina, KS", "SALINA KS" and "salinaks" all match. */
 function nameKey(value: string | undefined): string {

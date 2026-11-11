@@ -1,5 +1,6 @@
 import { Injectable, inject } from '@angular/core';
-import { FdCicData, FieldProgramRecord, FieldSeason, FieldTicket, FieldTickets, OfficialResult, ProducerField, ProgramRecordStatus } from '@models';
+import { FdCicData } from '../../../models/carbon-intensity.model';
+import { FieldProgramRecord, FieldSeason, FieldTicket, FieldTickets, OfficialResult, ProducerField, ProgramRecordStatus } from '../../../models/field-plan.model';
 import { ProgramRegistry } from '../programs/program-registry';
 import type { ConfirmReview, FieldPlanBackend, FieldPlanSnapshot } from './field-plan-backend';
 import { CROP_GROUP_BY_TOKEN } from '../../../../../shared/utils/crop-group-match';

@@ -2,7 +2,7 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { environment } from '@env/environment';
 import { ApiError } from '@core/errors/api-error';
-import { FdCicScore, FdCicScoreRequest, FdCicScoreState } from '@models';
+import { FdCicScore, FdCicScoreRequest, FdCicScoreState } from '../models/fd-cic.model';
 
 /**
  * The 45Z carbon-intensity calculator on the API (USDA FD-CIC), and the state/county lists a field's

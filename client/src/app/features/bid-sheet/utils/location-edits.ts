@@ -4,7 +4,7 @@
  * Pure helpers for the panel's rename / Scoular toggle / delete actions: the update payload the API
  * expects, and the optimistic changes applied to a cached location list once the API confirms.
  */
-import { BidSheetLocation } from '@models';
+import { BidSheetLocation } from '../models/bid-sheet.model';
 
 /**
  * Full update payload for a location: every editable field carried over unchanged, with the new

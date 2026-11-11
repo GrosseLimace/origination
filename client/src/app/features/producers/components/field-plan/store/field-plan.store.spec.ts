@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { Type } from '@angular/core';
-import { FdCicData, FieldSeason, ProducerField } from '@models';
+import { FdCicData } from '../../../models/carbon-intensity.model';
+import { FieldSeason, ProducerField } from '../../../models/field-plan.model';
 import { ToastService } from '@core/services/toast.service';
 import { ProgramIntake, SustainabilityProgramDef } from '../programs/program-def';
 import { SUSTAINABILITY_PROGRAMS } from '../programs/program-registry';

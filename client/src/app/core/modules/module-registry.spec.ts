@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
+import { Subject, merge, of } from 'rxjs';
+import { PermissionLoad } from '@core/access/permission.service';
 import { PermissionStub, permissionStub, providePermissions } from '@testing/permission.stub';
 import { ModuleManifest } from './module-manifest';
 import { APP_MODULES, ModuleRegistry } from './module-registry';
@@ -70,5 +72,43 @@ describe("ModuleRegistry: the customer screen's contributions", () => {
 
     expect(modulesRegistry.customerTabs()).toEqual([]);
     expect(modulesRegistry.customerPanels('badges')).toEqual([]);
+  });
+});
+
+describe('ModuleRegistry: the preload gate', () => {
+  /** A module per kind: one the user holds, one they don't, and one the API doesn't know, each preloading. */
+  function preloading(access: PermissionStub) {
+    const ran = { customers: vi.fn(() => of(null)), producers: vi.fn(() => of(null)), calculators: vi.fn(() => of(null)) };
+    const manifests: ModuleManifest[] = [
+      { id: 'customers', preload: ran.customers },
+      { id: 'producers', preload: ran.producers },
+      { id: 'calculators', spaOnly: true, preload: ran.calculators },
+    ];
+    TestBed.configureTestingModule({ providers: [{ provide: APP_MODULES, useValue: manifests }, providePermissions(access)] });
+    return { registry: TestBed.inject(ModuleRegistry), ran };
+  }
+
+  // A trader holds Customers and not Producers, so fetches nothing of Producers'.
+  it('runs the preloads of the modules the user holds, and of those the API does not know', () => {
+    const { registry: modulesRegistry, ran } = preloading(permissionStub(['customers:read'], '', ['customers']));
+
+    merge(...modulesRegistry.preloads(['1085'])).subscribe();
+
+    expect(ran.customers).toHaveBeenCalledWith(['1085']);
+    expect(ran.calculators).toHaveBeenCalledWith(['1085']);
+    expect(ran.producers).not.toHaveBeenCalled();
+  });
+
+  it("waits for the user's permissions before running any", () => {
+    const loaded$ = new Subject<PermissionLoad>();
+    const { registry: modulesRegistry, ran } = preloading({ ...permissionStub([], '', ['customers']), loaded: () => loaded$ });
+
+    merge(...modulesRegistry.preloads(['1085'])).subscribe();
+
+    expect(ran.customers).not.toHaveBeenCalled();
+
+    loaded$.next('loaded');
+
+    expect(ran.customers).toHaveBeenCalledTimes(1);
   });
 });

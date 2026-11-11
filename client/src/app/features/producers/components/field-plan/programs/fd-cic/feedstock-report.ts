@@ -1,4 +1,5 @@
-import { FieldProgramRecord, FieldSeason, ManureApplication, ProducerField } from '@models';
+import { FieldProgramRecord, FieldSeason, ProducerField } from '../../../../models/field-plan.model';
+import { ManureApplication } from '../../../../models/carbon-intensity.model';
 import { DESIGNATION_LABELS } from './fd-cic-tdisc';
 import { fdCicCropFor } from './fd-cic.data';
 import { safeCode, yyyymmdd } from './mass-balance-ledger';

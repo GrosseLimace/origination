@@ -3,13 +3,13 @@ import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import { Customer } from '@models';
-import { ApiService } from '@core/services/api.service';
+import { CustomerSearch } from '@core/context/customer-search';
 import { AppStateService } from '@core/services/app-state.service';
 import { HelpPanelService } from '@core/help/help-panel.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserTradeUnitsService } from '@core/services/user-trade-units.service';
 import { HelpIconComponent } from '@shared/components/help-icon/help-icon.component';
-import { revealAfterRender } from '@shared/utils/help-reveal';
+import { revealAfterRender } from '../help-reveal';
 import { TradeUnitContext } from '@core/context/trade-unit-context.service';
 
 /** The troubleshooters help-faq.json may start. help-faq.drift.spec.ts holds the content to this list. */
@@ -43,7 +43,7 @@ const MIN_NAME = 3;
   templateUrl: './help-troubleshooter.component.html'
 })
 export class HelpTroubleshooterComponent {
-  private readonly api = inject(ApiService);
+  private readonly customerSearch = inject(CustomerSearch);
   private readonly appState = inject(AppStateService);
   private readonly tradeUnitContext = inject(TradeUnitContext);
   private readonly panel = inject(HelpPanelService);
@@ -147,7 +147,7 @@ export class HelpTroubleshooterComponent {
 
   private async lookUp(name: string): Promise<Result> {
     // No trade units passed: our producer table across every trade unit.
-    const found = await firstValueFrom(this.api.searchCustomers(name));
+    const found = await firstValueFrom(this.customerSearch.searchCustomers(name));
     if (found.length > 0) {
       const customer = found[0];
       const units = (customer.activeTradeUnits ?? []).map(u => u.trim());
@@ -161,7 +161,7 @@ export class HelpTroubleshooterComponent {
     }
 
     // Not in our table: the customer master, as the Producers page's onboarding fallback does.
-    const master = await firstValueFrom(this.api.searchOdsCustomers(name));
+    const master = await firstValueFrom(this.customerSearch.searchOdsCustomers(name));
     return master.length > 0 ? { kind: 'not-added', name: master[0].name } : { kind: 'not-found', name };
   }
 }

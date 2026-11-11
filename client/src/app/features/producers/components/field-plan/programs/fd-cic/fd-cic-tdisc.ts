@@ -1,4 +1,5 @@
-import { TDiscDesignation, TDiscOptions, TDiscPass, TDiscResult, TDiscWindowKey, Tillage } from '@models';
+import { TDiscDesignation, TDiscOptions, TDiscPass, TDiscResult, TDiscWindowKey } from '../../../../models/tdisc.model';
+import { Tillage } from '../../../../models/carbon-intensity.model';
 
 /**
  * The USDA T-DISC check a no-till or reduced-till 45Z field needs before its CI is confirmed (7 CFR 2100.051).

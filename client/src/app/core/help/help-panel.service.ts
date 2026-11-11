@@ -9,7 +9,7 @@ import { NavigationEnd, Router } from '@angular/router';
 import { filter, map } from 'rxjs';
 
 // Models
-import { HelpAction } from '@models';
+import { HelpAction } from './help.model';
 
 // Project services
 import { AppStateService } from '../services/app-state.service';
@@ -20,7 +20,7 @@ import { UsageTrackingService } from '../services/usage-tracking.service';
 import { UserTradeUnitsService } from '../services/user-trade-units.service';
 
 // Shared utils
-import { matchHelpQuestion } from '@shared/utils/help-match';
+import { matchHelpQuestion } from './help-match';
 
 /** One entry in the panel's conversation. */
 export type HelpThreadItem =

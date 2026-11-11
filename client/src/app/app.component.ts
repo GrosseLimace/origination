@@ -6,7 +6,7 @@ import { ToastContainerComponent } from '@core/layout/toast-container/toast-cont
 import { WhatsNewDialogComponent } from '@features/whats-new';
 import { HelpPanelComponent } from '@core/help/help-panel/help-panel.component';
 import { IdleTimeoutService } from '@core/services/idle-timeout.service';
-import { DataPreloadService } from '@core/services/data-preload.service';
+import { DataPreloadService } from '@core/context/data-preload.service';
 import { UserPreferencesService } from '@core/services/user-preferences.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { WhatsNewService } from '@core/services/whats-new.service';

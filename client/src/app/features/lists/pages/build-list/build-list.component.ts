@@ -9,7 +9,7 @@ import { alreadyShown } from '@core/http/shown-errors';
 import { ApiService } from '@core/services/api.service';
 import { CustomerStore, CustomersApiService } from '@features/customers';
 import { AppStateService } from '@core/services/app-state.service';
-import { DataPreloadService } from '@core/services/data-preload.service';
+import { DataPreloadService } from '@core/context/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { PermissionService } from '@core/access/permission.service';
@@ -2411,7 +2411,7 @@ export class BuildListComponent {
     this._cancelMemberSearch$.next();
     this._memberSearchTimeout = setTimeout(() => {
       const tus = this.effectiveTradeUnits();
-      this.apiService.searchCustomers(term, tus.length > 0 ? tus : undefined)
+      this.customersApi.searchCustomers(term, tus.length > 0 ? tus : undefined)
         .pipe(takeUntil(this._cancelMemberSearch$), takeUntilDestroyed(this.destroyRef))
         .subscribe({
           next: (results) => {

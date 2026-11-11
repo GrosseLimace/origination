@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { ApiError } from '@core/errors/api-error';
 import { environment } from '@env/environment';
-import { FieldPlanDocument, FieldPlanUploadType } from '@models';
+import { FieldPlanDocument, FieldPlanUploadType } from '../../../models/field-plan.model';
 
 /**
  * A producer's 45Z documents in Doc Store, through the API (Doc Store is reached only by the server, with the
